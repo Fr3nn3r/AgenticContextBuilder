@@ -1,0 +1,9 @@
+[project]
+name = "contextmanager"
+version = "0.1.0"
+description = "Context Manager for processing claims documents"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "unstructured[pdf]>=0.18.3",
+]
