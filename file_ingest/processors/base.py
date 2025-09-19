@@ -3,8 +3,9 @@
 # Defines the contract that all processors must implement
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from pathlib import Path
+from pydantic import BaseModel
 
 
 class BaseProcessor(ABC):
@@ -15,41 +16,47 @@ class BaseProcessor(ABC):
     implement configure and validate methods for setup and validation.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Union[Dict[str, Any], BaseModel]] = None):
         """
         Initialize the processor with optional configuration.
 
         Args:
-            config: Dictionary containing processor-specific configuration
+            config: Dictionary or Pydantic model containing processor-specific configuration
         """
-        self.config = config or {}
+        if isinstance(config, BaseModel):
+            self.config = config.model_dump()
+        else:
+            self.config = config or {}
         self.name = self.__class__.__name__
 
     @abstractmethod
-    def process_file(self, file_path: Path, existing_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def process_file(self, file_path: Path, existing_metadata: Optional[Union[Dict[str, Any], BaseModel]] = None) -> Union[Dict[str, Any], BaseModel]:
         """
         Process a single file and return metadata.
 
         Args:
             file_path: Path to the file to process
-            existing_metadata: Any metadata from previous processors in the pipeline
+            existing_metadata: Any metadata from previous processors in the pipeline (dict or Pydantic model)
 
         Returns:
-            Dictionary containing the processed metadata
+            Dictionary or Pydantic model containing the processed metadata
 
         Raises:
             ProcessingError: When file processing fails
         """
         pass
 
-    def configure(self, config: Dict[str, Any]) -> None:
+    def configure(self, config: Union[Dict[str, Any], BaseModel]) -> None:
         """
         Configure the processor with new settings.
 
         Args:
-            config: Configuration dictionary
+            config: Configuration dictionary or Pydantic model
         """
-        self.config.update(config)
+        if isinstance(config, BaseModel):
+            self.config.update(config.model_dump())
+        else:
+            self.config.update(config)
 
     def validate_config(self) -> bool:
         """

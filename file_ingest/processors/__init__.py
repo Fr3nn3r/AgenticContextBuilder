@@ -5,7 +5,8 @@
 import importlib
 import inspect
 from pathlib import Path
-from typing import Dict, List, Type, Any
+from typing import Dict, List, Type, Any, Union
+from pydantic import BaseModel
 from .base import BaseProcessor, ProcessingError
 
 
@@ -49,7 +50,7 @@ class ProcessorRegistry:
             except ImportError as e:
                 print(f"Warning: Could not import processor module {module_name}: {e}")
 
-    def get_processor(self, name: str, config: Dict[str, Any] = None) -> BaseProcessor:
+    def get_processor(self, name: str, config: Union[Dict[str, Any], BaseModel] = None) -> BaseProcessor:
         """
         Get an instance of a processor by name.
 
@@ -120,7 +121,7 @@ class ProcessingPipeline:
         self.registry = registry
         self.processors: List[BaseProcessor] = []
 
-    def add_processor(self, processor_name: str, config: Dict[str, Any] = None) -> None:
+    def add_processor(self, processor_name: str, config: Union[Dict[str, Any], BaseModel] = None) -> None:
         """
         Add a processor to the pipeline.
 
@@ -159,7 +160,9 @@ class ProcessingPipeline:
                     processor_name=processor.name
                 )
 
-        return metadata
+        # Convert any Pydantic models to dictionaries for external API compatibility
+        return _serialize_for_json(metadata)
+
 
     def get_pipeline_info(self) -> List[Dict[str, Any]]:
         """
@@ -169,6 +172,19 @@ class ProcessingPipeline:
             List of processor information dictionaries
         """
         return [processor.get_processor_info() for processor in self.processors]
+
+
+def _serialize_for_json(obj):
+    """Convert Pydantic models and other objects to JSON-serializable format."""
+    if hasattr(obj, 'model_dump'):
+        # It's a Pydantic model
+        return obj.model_dump()
+    elif isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    else:
+        return obj
 
 
 # Global registry instance

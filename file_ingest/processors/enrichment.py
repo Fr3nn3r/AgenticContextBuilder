@@ -4,7 +4,8 @@
 
 import mimetypes
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+from pydantic import BaseModel
 
 from .base import BaseProcessor
 
@@ -22,7 +23,7 @@ class EnrichmentProcessor(BaseProcessor):
     DESCRIPTION = "Enriches file metadata with additional analysis and categorization"
     SUPPORTED_EXTENSIONS = ["*"]  # Supports all file types
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Union[Dict[str, Any], BaseModel]] = None):
         super().__init__(config)
         # Default configuration
         self.config.setdefault('enable_content_analysis', False)
@@ -30,7 +31,7 @@ class EnrichmentProcessor(BaseProcessor):
         self.config.setdefault('analyze_images', False)
         self.config.setdefault('extract_text_preview', False)
 
-    def process_file(self, file_path: Path, existing_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def process_file(self, file_path: Path, existing_metadata: Optional[Union[Dict[str, Any], BaseModel]] = None) -> Dict[str, Any]:
         """
         Enrich existing file metadata with additional information.
 

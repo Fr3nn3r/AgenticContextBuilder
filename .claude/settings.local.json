@@ -16,7 +16,8 @@
       "Bash(python -m pytest -v)",
       "Bash(move:*)",
       "Bash(ren:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(uv tree:*)"
     ],
     "deny": [],
     "ask": []

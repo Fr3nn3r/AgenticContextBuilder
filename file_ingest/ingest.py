@@ -2,13 +2,35 @@
 # Core ingestion orchestration and dataset processing logic
 # Coordinates file processing through the plugin pipeline
 
+from __future__ import annotations
+
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 
 from .processors import ProcessingPipeline, registry
 from .utils import generate_ingestion_id, ensure_directory, get_relative_path_safe, safe_filename
+
+if TYPE_CHECKING:
+    from .models import (
+        FileIngestorConfig, ProcessorConfig, ProcessingInfo, ProcessorInfo,
+        DatasetSummary, DatasetInfo, ProcessedFileInfo, IngestionSummary,
+        OverallSummary, FileProcessingResult, FileMetadata
+    )
+
+
+def _serialize_for_json(obj: Any) -> Any:
+    """Convert Pydantic models and other objects to JSON-serializable format."""
+    if hasattr(obj, 'model_dump'):
+        # It's a Pydantic model
+        return obj.model_dump()
+    elif isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    else:
+        return obj
 
 
 class FileIngestor:
@@ -19,14 +41,29 @@ class FileIngestor:
     a configurable pipeline of processors.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Union[Dict[str, Any], FileIngestorConfig]] = None):
         """
         Initialize the file ingestor.
 
         Args:
-            config: Configuration dictionary for the ingestor and processors
+            config: Configuration dictionary or FileIngestorConfig for the ingestor and processors
         """
-        self.config = config or {}
+        from .models import FileIngestorConfig
+
+        # Convert to typed config
+        if isinstance(config, dict):
+            try:
+                self.typed_config = FileIngestorConfig(**config)
+            except Exception:
+                # Fallback to default config if validation fails
+                self.typed_config = FileIngestorConfig()
+        elif isinstance(config, FileIngestorConfig):
+            self.typed_config = config
+        else:
+            self.typed_config = FileIngestorConfig()
+
+        # Keep dict version for backward compatibility
+        self.config = self.typed_config.model_dump()
         self.pipeline = ProcessingPipeline(registry)
         self._setup_pipeline()
 
@@ -37,14 +74,10 @@ class FileIngestor:
         By default, adds the MetadataProcessor. Additional processors
         can be configured in the config under 'processors'.
         """
-        # Default processors
-        processors_config = self.config.get('processors', [
-            {'name': 'MetadataProcessor', 'config': {}}
-        ])
-
-        for proc_config in processors_config:
-            processor_name = proc_config['name']
-            processor_config = proc_config.get('config', {})
+        # Use typed config for processors
+        for proc_config in self.typed_config.processors:
+            processor_name = proc_config.name
+            processor_config = proc_config.config
             self.pipeline.add_processor(processor_name, processor_config)
 
     def ingest_file(self, file_path: Path) -> Dict[str, Any]:
@@ -60,7 +93,9 @@ class FileIngestor:
         Raises:
             ProcessingError: If file processing fails
         """
-        return self.pipeline.process_file(file_path)
+        result = self.pipeline.process_file(file_path)
+        # Convert any Pydantic models to dictionaries for backward compatibility
+        return _serialize_for_json(result)
 
     def ingest_dataset_folder(
         self,
@@ -133,7 +168,7 @@ class FileIngestor:
 
                     # Write metadata to individual file
                     with open(metadata_file_path, 'w', encoding='utf-8') as f:
-                        json.dump(complete_metadata, f, indent=2, ensure_ascii=False)
+                        json.dump(_serialize_for_json(complete_metadata), f, indent=2, ensure_ascii=False)
 
                     processed_files.append({
                         'original_file': str(item),
@@ -149,6 +184,7 @@ class FileIngestor:
                     processed_files.append({
                         'original_file': str(item),
                         'relative_path': str(relative_path),
+                        'file_name': item.name,
                         'error': str(e),
                         'processing_failed': True
                     })

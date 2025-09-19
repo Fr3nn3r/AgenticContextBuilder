@@ -1,12 +1,36 @@
 # Tests for ContextManager
 
-This directory contains comprehensive tests for the ContextManager project.
+This directory contains comprehensive tests for the ContextManager file ingestion system.
 
 ## Test Structure
 
-- `test_metadata_extraction_units.py`: Unit tests for individual functions in `extract_datasets_metadata.py`
-- `test_metadata_extraction_integration.py`: Integration tests for component interactions and workflows
+The test suite is organized into logical categories:
+
+### Core Tests (`test_core/`)
+- `test_utils.py`: Core utility functions (hashing, file operations, ID generation)
+- `test_metadata_processor.py`: MetadataProcessor functionality
+- `test_file_ingestor.py`: FileIngestor class and main orchestration logic
+
+### Processor Tests (`test_processors/`)
+- `test_processor_registry.py`: Processor discovery and registry management
+- `test_enrichment_processor.py`: EnrichmentProcessor functionality
+- `test_metadata_processor.py`: MetadataProcessor specific tests
+
+### Integration Tests (`test_integration/`)
+- `test_file_ingestor.py`: End-to-end file ingestion workflows
+- `test_cli.py`: Command-line interface integration tests
+
+### Test Fixtures (`test_fixtures/`)
+- `test_mock_data_generator.py`: Mock data generation system tests
+
+### Legacy Tests (maintained for compatibility)
+- `test_metadata_extraction_units.py`: Original unit tests for legacy functions
+- `test_metadata_extraction_integration.py`: Original integration tests
+- `test_integration_with_fixtures.py`: Fixture system demonstration tests
+
+### Configuration
 - `conftest.py`: Shared pytest fixtures and test utilities
+- `pytest.ini`: Test configuration and settings
 - `__init__.py`: Test package initialization
 
 ## Running Tests
@@ -18,38 +42,54 @@ Install test dependencies:
 uv sync
 ```
 
-### Running Unit Tests
+### Running Core Tests
 
-Run all unit tests:
+Run all core functionality tests:
 ```bash
-uv run python -m pytest tests/test_metadata_extraction_units.py -v
+uv run python -m pytest tests/test_core/ -v
 ```
 
-Run specific test class:
+Run specific core test modules:
 ```bash
-uv run python -m pytest tests/test_metadata_extraction_units.py::TestGetFileHash -v
+uv run python -m pytest tests/test_core/test_utils.py -v
+uv run python -m pytest tests/test_core/test_metadata_processor.py -v
 ```
 
-Run single test:
+### Running Processor Tests
+
+Run all processor tests:
 ```bash
-uv run python -m pytest tests/test_metadata_extraction_units.py::TestGetFileHash::test_valid_file_md5 -v
+uv run python -m pytest tests/test_processors/ -v
+```
+
+Run specific processor tests:
+```bash
+uv run python -m pytest tests/test_processors/test_processor_registry.py -v
+uv run python -m pytest tests/test_processors/test_enrichment_processor.py -v
 ```
 
 ### Running Integration Tests
 
 Run all integration tests:
 ```bash
+uv run python -m pytest tests/test_integration/ -v
+```
+
+Run CLI integration tests:
+```bash
+uv run python -m pytest tests/test_integration/test_cli.py -v
+```
+
+### Running Legacy Tests
+
+Run legacy unit tests:
+```bash
+uv run python -m pytest tests/test_metadata_extraction_units.py -v
+```
+
+Run legacy integration tests:
+```bash
 uv run python -m pytest tests/test_metadata_extraction_integration.py -v
-```
-
-Run dataset processing tests:
-```bash
-uv run python -m pytest tests/test_metadata_extraction_integration.py::TestProcessDatasetFolder -v
-```
-
-Run main function tests:
-```bash
-uv run python -m pytest tests/test_metadata_extraction_integration.py::TestMainFunction -v
 ```
 
 ### Running All Tests
@@ -61,9 +101,21 @@ uv run python -m pytest tests/ -v
 
 ### Coverage Reports
 
-Generate coverage report:
+Generate coverage report for the file ingestion system:
 ```bash
-uv run python -m pytest tests/test_metadata_extraction_units.py --cov=scripts --cov-report=term-missing --cov-report=html
+uv run python -m pytest tests/ --cov=file_ingest --cov-report=term-missing --cov-report=html
+```
+
+Generate coverage for specific modules:
+```bash
+# Core functionality coverage
+uv run python -m pytest tests/test_core/ --cov=file_ingest --cov-report=html
+
+# Processor coverage
+uv run python -m pytest tests/test_processors/ --cov=file_ingest.processors --cov-report=html
+
+# Integration coverage
+uv run python -m pytest tests/test_integration/ --cov=file_ingest --cov-report=html
 ```
 
 View HTML coverage report:
@@ -71,65 +123,73 @@ View HTML coverage report:
 # Open htmlcov/index.html in your browser
 ```
 
-### Test Categories
+### Current Test Categories
 
-The tests are organized into the following categories:
+#### Core Tests (`test_core/`)
 
-1. **Hash Function Tests** (`TestGetFileHash`)
-   - Tests for MD5, SHA1, SHA256 hash calculations
-   - Error handling for missing files and permissions
-   - Edge cases like empty files and large files
+1. **Utility Function Tests** (`test_utils.py`)
+   - Hash function tests (MD5, SHA1, SHA256)
+   - File operation utilities
+   - ID generation and formatting functions
+   - Byte formatting and conversion
+   - Error handling for edge cases
 
-2. **Metadata Extraction Tests** (`TestExtractFileMetadata`)
-   - Basic file attributes (name, path, size, extension)
-   - Timestamp extraction and formatting
-   - Permission and file type detection
-   - MIME type identification
-   - Hash generation for files
-   - Windows-specific attributes
-   - Error handling scenarios
+2. **MetadataProcessor Tests** (`test_metadata_processor.py`)
+   - File metadata extraction
+   - Hash generation integration
+   - MIME type detection
+   - Permission and timestamp handling
+   - Configuration validation
 
-3. **Utility Function Tests** (`TestFormatBytes`)
-   - Byte to human-readable format conversion
-   - Edge cases and precision testing
+#### Processor Tests (`test_processors/`)
 
-4. **ID Generation Tests** (`TestGenerateExtractionId`)
-   - Date format consistency
-   - Random suffix uniqueness
-   - Input folder name handling
-   - Special character support
+1. **Processor Registry Tests** (`test_processor_registry.py`)
+   - Automatic processor discovery
+   - Registry management and instantiation
+   - Pipeline construction and execution
+   - Error handling for missing processors
 
-### Integration Tests (`test_metadata_extraction_integration.py`)
+2. **EnrichmentProcessor Tests** (`test_enrichment_processor.py`)
+   - Content analysis functionality
+   - File categorization logic
+   - Configuration handling
+   - Integration with existing metadata
 
-1. **Dataset Processing Tests** (`TestProcessDatasetFolder`)
-   - Basic functionality with single dataset and multiple files
-   - Directory structure preservation for nested folders
-   - Subfolder filtering (include/exclude specific subfolders)
-   - Output file generation (individual metadata files + summary)
-   - **Comprehensive special character handling** (unicode, long names, edge cases)
-   - **Comprehensive mixed file types and MIME detection** (25+ file types, binary patterns)
+#### Integration Tests (`test_integration/`)
 
-2. **Main Function Tests** (`TestMainFunction`)
-   - Command-line argument parsing (all combinations)
-   - Dataset selection (specific datasets vs default count)
-   - Subfolder filtering integration with CLI args
-   - Error scenarios (invalid paths, permissions, missing datasets)
-   - Output generation (extraction summary creation)
-   - Mixed successful and failed dataset processing
+1. **FileIngestor Integration** (`test_file_ingestor.py`)
+   - End-to-end file processing workflows
+   - Dataset folder processing
+   - Output structure validation
+   - Error handling and recovery
 
-### Fixture Integration Tests (`test_integration_with_fixtures.py`)
+2. **CLI Integration** (`test_cli.py`)
+   - Command-line argument parsing
+   - Batch processing operations
+   - Configuration file handling
+   - User interface validation
 
-1. **Fixture System Demonstration** (`TestFixturesIntegration`)
-   - **Fixture-based extraction workflow** (demonstrates fixture usage with minimal extraction testing)
-   - **Fixture special cases integration** (unicode and edge case fixture robustness)
-   - **Deterministic hash verification** (reproducible hash testing with known values)
-   - **Fixture performance and scale demonstration** (large dataset creation efficiency)
-   - **Complete fixture system capabilities** (multi-dataset fixture system features)
+#### Legacy Tests (maintained for compatibility)
 
-**Key Differences:**
-- **Integration tests**: Focus on comprehensive extraction functionality and edge cases
-- **Fixture tests**: Focus on demonstrating fixture system capabilities and deterministic behavior
-- **No duplication**: Each test has distinct purpose and validation criteria
+1. **Legacy Unit Tests** (`test_metadata_extraction_units.py`)
+   - Hash function tests for legacy functions
+   - Metadata extraction tests for original implementation
+   - Utility function tests (byte formatting, ID generation)
+   - Comprehensive edge case coverage
+
+2. **Legacy Integration Tests** (`test_metadata_extraction_integration.py`)
+   - Dataset processing tests with original workflow
+   - Command-line interface tests for legacy scripts
+   - Comprehensive special character and file type handling
+   - Output structure validation for original format
+
+3. **Fixture Integration Tests** (`test_integration_with_fixtures.py`)
+   - Fixture system demonstration and validation
+   - Deterministic hash verification with known values
+   - Performance and scale testing with large datasets
+   - Unicode and edge case fixture robustness testing
+
+**Note**: Legacy tests are maintained to ensure backward compatibility during the transition to the new file ingestion system. They test the same core functionality but using the original implementation.
 
 ## Test Configuration
 
@@ -141,16 +201,27 @@ The test suite is configured via `pytest.ini` with:
 
 ## Fixtures
 
-### Basic Fixtures (available in `conftest.py`)
+### Core Fixtures (available in `conftest.py`)
+
+#### Basic File Fixtures
 - `temp_dir`: Temporary directory for test files
-- `sample_text_file`: Sample text file
-- `sample_binary_file`: Sample binary file
-- `sample_json_file`: Sample JSON file
-- `sample_directory_structure`: Nested directory structure
-- `unicode_files`: Files with unicode names
-- `large_file`: Large file for performance testing
-- `empty_file`: Empty file for edge cases
-- `special_char_files`: Files with special characters
+- `sample_text_file`: Sample text file with known content
+- `sample_binary_file`: Sample binary file for testing
+- `sample_json_file`: Sample JSON file with structured data
+- `sample_directory_structure`: Nested directory structure for hierarchy tests
+- `unicode_files`: Files with international character names
+- `large_file`: Large file for performance and memory testing
+- `empty_file`: Empty file for edge case testing
+- `special_char_files`: Files with special characters and edge case names
+
+#### System Fixtures
+- `mock_cli_args`: Factory for creating CLI argument objects
+- `cleanup_test_data`: Utility for registering test files for cleanup
+
+#### File Ingest Fixtures
+- `basic_ingestor`: Basic FileIngestor instance for testing
+- `configured_ingestor`: FileIngestor with custom configuration
+- `sample_dataset`: Simple dataset structure for ingestion testing
 
 ### Advanced Mock Data Fixtures (from `test_fixtures/`)
 - `mock_data_generator`: MockDataGenerator instance with fixed seed for reproducible content

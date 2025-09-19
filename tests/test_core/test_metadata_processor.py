@@ -14,6 +14,7 @@ import pytest
 
 from file_ingest.processors.metadata import MetadataProcessor
 from file_ingest.processors.base import ProcessingError
+from file_ingest.models import FileMetadata, MetadataProcessorConfig
 
 
 class TestMetadataProcessor:
@@ -23,6 +24,13 @@ class TestMetadataProcessor:
         """Set up test fixtures before each test method."""
         self.processor = MetadataProcessor()
 
+    def _get_metadata_dict(self, result):
+        """Helper method to convert Pydantic model to dict if needed."""
+        metadata = result['file_metadata']
+        if hasattr(metadata, 'model_dump'):
+            return metadata.model_dump()
+        return metadata
+
     def test_basic_file_attributes(self, tmp_path):
         """Test extraction of basic file attributes."""
         test_file = tmp_path / "test_file.txt"
@@ -30,7 +38,7 @@ class TestMetadataProcessor:
         test_file.write_text(test_content)
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Check basic attributes
         assert metadata['file_name'] == "test_file.txt"
@@ -45,7 +53,7 @@ class TestMetadataProcessor:
         test_file.write_text("test")
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Check that timestamps are present and in ISO format
         assert 'created_time' in metadata
@@ -63,7 +71,7 @@ class TestMetadataProcessor:
         test_file.write_text("test")
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Check permissions structure
         assert 'permissions' in metadata
@@ -86,7 +94,7 @@ class TestMetadataProcessor:
         test_file.write_text("test")
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
         assert metadata['is_file'] is True
         assert metadata['is_directory'] is False
         assert metadata['is_symlink'] is False
@@ -96,7 +104,7 @@ class TestMetadataProcessor:
         test_dir.mkdir()
 
         result = self.processor.process_file(test_dir)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
         assert metadata['is_file'] is False
         assert metadata['is_directory'] is True
         assert metadata['is_symlink'] is False
@@ -117,7 +125,7 @@ class TestMetadataProcessor:
             test_file.write_text("test content")
 
             result = self.processor.process_file(test_file)
-            metadata = result['file_metadata']
+            metadata = self._get_metadata_dict(result)
             assert metadata['mime_type'] == expected_mime
 
     def test_hash_generation_for_files(self, tmp_path):
@@ -127,7 +135,7 @@ class TestMetadataProcessor:
         test_file.write_text(test_content)
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Check that hashes are present for files
         assert 'hashes' in metadata
@@ -152,7 +160,7 @@ class TestMetadataProcessor:
         test_dir.mkdir()
 
         result = self.processor.process_file(test_dir)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Directories should not have hashes
         assert 'hashes' not in metadata
@@ -164,7 +172,7 @@ class TestMetadataProcessor:
         test_file.write_text("test")
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Check Windows attributes are present on Windows
         assert 'windows_attributes' in metadata
@@ -180,7 +188,7 @@ class TestMetadataProcessor:
         test_file.write_text("test")
 
         result = self.processor.process_file(test_file)
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Windows attributes should not be present on non-Windows
         assert 'windows_attributes' not in metadata
@@ -188,7 +196,7 @@ class TestMetadataProcessor:
     def test_error_handling_nonexistent_file(self):
         """Test error handling for non-existent files."""
         result = self.processor.process_file(Path("/nonexistent/file.txt"))
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         # Should return error metadata
         assert 'error' in metadata
@@ -201,7 +209,7 @@ class TestMetadataProcessor:
     def test_error_handling_permission_denied(self, mock_stat):
         """Test error handling when permission is denied."""
         result = self.processor.process_file(Path("/some/file.txt"))
-        metadata = result['file_metadata']
+        metadata = self._get_metadata_dict(result)
 
         assert 'error' in metadata
         assert 'metadata_ingestion_failed' in metadata
@@ -216,6 +224,8 @@ class TestMetadataProcessor:
         processor = MetadataProcessor({'include_hashes': False})
         result = processor.process_file(test_file)
         metadata = result['file_metadata']
+        if hasattr(metadata, 'model_dump'):
+            metadata = metadata.model_dump()
 
         # Hashes should not be present
         assert 'hashes' not in metadata
@@ -229,13 +239,16 @@ class TestMetadataProcessor:
         processor = MetadataProcessor({'hash_algorithms': ['md5']})
         result = processor.process_file(test_file)
         metadata = result['file_metadata']
+        if hasattr(metadata, 'model_dump'):
+            metadata = metadata.model_dump()
 
-        # Only MD5 should be present
+        # Only MD5 should be computed (others should be None)
         assert 'hashes' in metadata
         hashes = metadata['hashes']
         assert 'md5' in hashes
-        assert 'sha1' not in hashes
-        assert 'sha256' not in hashes
+        assert hashes['md5'] is not None
+        assert hashes['sha1'] is None
+        assert hashes['sha256'] is None
 
     def test_configuration_disable_permissions(self, tmp_path):
         """Test disabling permissions extraction via configuration."""
@@ -246,6 +259,8 @@ class TestMetadataProcessor:
         processor = MetadataProcessor({'include_permissions': False})
         result = processor.process_file(test_file)
         metadata = result['file_metadata']
+        if hasattr(metadata, 'model_dump'):
+            metadata = metadata.model_dump()
 
         # Permissions should not be present
         assert 'permissions' not in metadata
@@ -261,17 +276,19 @@ class TestMetadataProcessor:
 
     def test_validate_config_invalid_algorithm(self):
         """Test configuration validation with invalid hash algorithm."""
-        processor = MetadataProcessor({
-            'hash_algorithms': ['invalid_algorithm']
-        })
-        assert processor.validate_config() is False
+        # Should raise ValidationError during construction
+        with pytest.raises(Exception):  # ValidationError from Pydantic
+            MetadataProcessor({
+                'hash_algorithms': ['invalid_algorithm']
+            })
 
     def test_validate_config_invalid_type(self):
         """Test configuration validation with invalid type."""
-        processor = MetadataProcessor({
-            'hash_algorithms': 'not_a_list'
-        })
-        assert processor.validate_config() is False
+        # Should raise ValidationError during construction
+        with pytest.raises(Exception):  # ValidationError from Pydantic
+            MetadataProcessor({
+                'hash_algorithms': 'not_a_list'
+            })
 
     def test_processor_info(self):
         """Test processor information retrieval."""
