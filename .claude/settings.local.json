@@ -15,7 +15,8 @@
       "Bash(export VIRTUAL_ENV_PROMPT=\"\")",
       "Bash(python -m pytest -v)",
       "Bash(move:*)",
-      "Bash(ren:*)"
+      "Bash(ren:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
