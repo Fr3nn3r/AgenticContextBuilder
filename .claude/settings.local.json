@@ -4,7 +4,18 @@
       "Bash(python scripts/extract_datasets_metadata.py:*)",
       "Bash(python -m pytest tests/test_metadata_extraction_units.py::TestGetFileHash::test_valid_file_md5 -v)",
       "Bash(uv sync:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(set VIRTUAL_ENV=)",
+      "Bash(dir:*)",
+      "Bash(rd:*)",
+      "Bash(env)",
+      "Bash(unset VIRTUAL_ENV)",
+      "Bash(unset VIRTUAL_ENV_PROMPT)",
+      "Bash(export VIRTUAL_ENV=\"\")",
+      "Bash(export VIRTUAL_ENV_PROMPT=\"\")",
+      "Bash(python -m pytest -v)",
+      "Bash(move:*)",
+      "Bash(ren:*)"
     ],
     "deny": [],
     "ask": []
