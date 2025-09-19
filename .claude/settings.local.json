@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python scripts/extract_datasets_metadata.py:*)"
+      "Bash(python scripts/extract_datasets_metadata.py:*)",
+      "Bash(python -m pytest tests/test_metadata_extraction_units.py::TestGetFileHash::test_valid_file_md5 -v)",
+      "Bash(uv sync:*)",
+      "Bash(uv run:*)"
     ],
     "deny": [],
     "ask": []
