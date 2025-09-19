@@ -1,53 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:)",
-      "Bash(ls:)",
-      "Bash(git add:)",
-      "Bash(git commit:)",
-      "Bash(git pull:)",
-      "Bash(uvicorn:)",
-      "Bash(git push:)",
-      "Bash(grep:)",
-      "mcpidegetDiagnostics",
-      "Bash(npm run lint)",
-      "Bash(git checkout:)",
-      "Bash(rg:)",
-      "Bash(npm run build:)",
-      "Bash(git pull:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(grep:*)",
-      "Bash(npm run build:*)",
-      "Bash(ls:*)",
-      "Bash(git checkout:*)",
-      "Bash(git merge:*)",
-      "Bash(find:*)",
-      "Bash(npm run typecheck:*)"
+      "Bash(python scripts/extract_datasets_metadata.py:*)"
     ],
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(:(){:|:&};:)",
-      "Bash(dd if=/dev/random of=/dev/sda)",
-      "Bash(chmod -R 777 /)",
-      "Bash(wget -O- | bash)",
-      "Bash(sudo rm -rf /)",
-      "Bash(mv ~ /dev/null)",
-      "Bash(> ~/.bash_history)",
-      "Bash(curl | bash)",
-      "Bash(mkfs.)",
-      "Bash(echo > /etc*)",
-      "Bash(kill -9 1)",
-      "Bash(killall5)",
-      "Bash(shutdown)",
-      "Bash(reboot)",
-      "Bash(git clean -fdx)",
-      "Bash(git clean)",
-      "Bash(git push origin dev --force)",
-      "Bash(git push origin david --force)",
-      "Bash(git push origin main --force)",
-      "Bash(git reset --hard)"
-    ]
+    "deny": [],
+    "ask": []
   }
 }
