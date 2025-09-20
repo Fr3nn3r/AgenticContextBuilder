@@ -136,7 +136,7 @@ class BaseContentHandler(ABC):
 
     def _create_processing_info(self, status: str, ai_model: Optional[str] = None,
                               prompt_version: Optional[str] = None, error_message: Optional[str] = None,
-                              processing_time: Optional[float] = None) -> ProcessingInfo:
+                              processing_time: Optional[float] = None, extraction_method: Optional[str] = None) -> ProcessingInfo:
         """
         Create standardized processing information.
 
@@ -146,6 +146,7 @@ class BaseContentHandler(ABC):
             prompt_version: Version of prompt used
             error_message: Error message if processing failed
             processing_time: Time taken for processing in seconds
+            extraction_method: Method used for content extraction
 
         Returns:
             ProcessingInfo object
@@ -156,7 +157,8 @@ class BaseContentHandler(ABC):
             processing_status=status,
             prompt_version=prompt_version,
             error_message=error_message,
-            processing_time_seconds=processing_time
+            processing_time_seconds=processing_time,
+            extraction_method=extraction_method
         )
 
     def _make_openai_request(self, prompt: str, image_base64: Optional[str] = None,
@@ -310,14 +312,14 @@ class TextContentHandler(BaseContentHandler):
                 status="success",
                 ai_model=prompt_config.model,
                 prompt_version=prompt_version,
-                processing_time=processing_time
+                processing_time=processing_time,
+                extraction_method="Direct Text"
             )
 
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
                 data_content=extracted_data,  # Renamed from extracted_data
-                data_summary=text_summary,  # Renamed from text_summary
                 data_text_content=content  # Renamed from raw_content, type-specific field
             )
 
@@ -386,14 +388,14 @@ class ImageContentHandler(BaseContentHandler):
                 status="success",
                 ai_model=prompt_config.model,
                 prompt_version=prompt_version,
-                processing_time=processing_time
+                processing_time=processing_time,
+                extraction_method="Vision API"
             )
 
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
                 data_content={"description": ai_response},  # Store AI analysis as structured data
-                data_summary=ai_response,  # Also store as summary
                 data_image_content=image_base64  # Store base64 image in type-specific field
             )
 
@@ -424,29 +426,61 @@ class PDFContentHandler(BaseContentHandler):
         return file_path.suffix.lower() == '.pdf'
 
     def process(self, file_path: Path, existing_metadata: Optional[Dict[str, Any]] = None) -> FileContentOutput:
-        """Process PDF using OCR with Vision API fallback."""
+        """Process PDF using Vision API by default with OCR fallback."""
         import time
+        import os
         start_time = time.time()
 
         try:
-            # Try OCR first, then fallback to Vision API if needed
-            if self.config.get('enable_ocr_fallback', True):
+            # Check file size
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            pdf_large_threshold = self.config.get('pdf_large_file_threshold_mb', 50)
+            use_vision_default = self.config.get('pdf_use_vision_default', True)
+
+            self.logger.info(f"Processing PDF {file_path.name}: {file_size_mb:.2f}MB")
+
+            # Decide processing strategy
+            if use_vision_default:
+                # Try Vision API first
                 try:
-                    # Get OCR languages from config
-                    ocr_languages = self.config.get('ocr_languages', ['eng', 'spa'])
-
-                    # Use unstructured library for PDF text extraction with configured languages
-                    ocr_text = process_pdf_with_unstructured(str(file_path), languages=ocr_languages)
-
-                    # Check if OCR text is meaningful
-                    if self._is_ocr_meaningful(ocr_text):
-                        # Use text analysis on OCR result
-                        return self._process_pdf_text(file_path, ocr_text, start_time)
+                    if file_size_mb > pdf_large_threshold:
+                        self.logger.info(f"Large PDF ({file_size_mb:.2f}MB > {pdf_large_threshold}MB), using page-by-page Vision API processing")
+                        return self._process_large_pdf_with_vision(file_path, start_time)
+                    else:
+                        self.logger.info(f"Using Vision API extraction for {file_path}")
+                        return self._process_pdf_with_vision(file_path, start_time)
                 except Exception as e:
-                    self.logger.warning(f"OCR failed for {file_path}: {e}, falling back to Vision API")
+                    self.logger.warning(f"Vision API failed for {file_path}: {e}")
 
-            # Fallback to Vision API processing
-            return self._process_pdf_with_vision(file_path, start_time)
+                    # Fallback to OCR if enabled
+                    if self.config.get('ocr_as_fallback', True):
+                        self.logger.info(f"Falling back to OCR for {file_path}")
+                        return self._process_pdf_with_ocr_fallback(file_path, start_time)
+                    else:
+                        raise
+            else:
+                # Use OCR first (legacy behavior)
+                if self.config.get('enable_ocr_fallback', True):
+                    try:
+                        # Get OCR languages from config
+                        ocr_languages = self.config.get('ocr_languages', ['eng', 'spa'])
+
+                        # Use unstructured library for PDF text extraction with configured languages
+                        ocr_text = process_pdf_with_unstructured(str(file_path), languages=ocr_languages)
+
+                        # Check if OCR text is meaningful
+                        if self._is_ocr_meaningful(ocr_text):
+                            # Use text analysis on OCR result
+                            self.logger.info(f"Using OCR extraction for {file_path}")
+                            return self._process_pdf_text(file_path, ocr_text, start_time, extraction_method="OCR")
+                        else:
+                            self.logger.info(f"OCR text not meaningful for {file_path}, falling back to Vision API")
+                    except Exception as e:
+                        self.logger.warning(f"OCR failed for {file_path}: {e}, falling back to Vision API")
+
+                # Fallback to Vision API processing
+                self.logger.info(f"Using Vision API extraction for {file_path}")
+                return self._process_pdf_with_vision(file_path, start_time)
 
         except Exception as e:
             processing_time = time.time() - start_time
@@ -478,8 +512,15 @@ class PDFContentHandler(BaseContentHandler):
 
         return total_chars > 0 and (alphanum_chars / total_chars) >= 0.6
 
-    def _process_pdf_text(self, file_path: Path, text_content: str, start_time: float) -> FileContentOutput:
-        """Process PDF using extracted text content."""
+    def _process_pdf_text(self, file_path: Path, text_content: str, start_time: float, extraction_method: str = "OCR") -> FileContentOutput:
+        """Process PDF using extracted text content.
+
+        Args:
+            file_path: Path to the PDF file
+            text_content: Extracted text content
+            start_time: Start time for processing time calculation
+            extraction_method: Method used for extraction ("OCR" or "Vision API")
+        """
         # Truncate if too long
         max_chars = 8000
         original_text = text_content
@@ -546,7 +587,7 @@ class PDFContentHandler(BaseContentHandler):
         content_metadata = ContentAnalysis(
             content_type="document",
             file_category="pdf",
-            summary=summary if use_json else "PDF processed via OCR",
+            summary=summary if use_json else f"PDF processed via {extraction_method}",
             detected_language=parsed_analysis.get('language') if parsed_analysis else None
         )
 
@@ -554,23 +595,27 @@ class PDFContentHandler(BaseContentHandler):
             status="success",
             ai_model=prompt_config.model,
             prompt_version=prompt_version,
-            processing_time=processing_time
+            processing_time=processing_time,
+            extraction_method=extraction_method
         )
 
         # Structure the data_content based on whether we have parsed JSON
         if parsed_analysis:
-            # Include the parsed JSON analysis
+            # Include the parsed JSON analysis with extraction method
             data_content = parsed_analysis
+            data_content['_extraction_method'] = extraction_method
         else:
-            # Include text and raw analysis
-            data_content = {"text": original_text[:max_chars], "analysis": ai_response}
+            # Include text and raw analysis with extraction method
+            data_content = {
+                "text": original_text[:max_chars],
+                "analysis": ai_response,
+                "_extraction_method": extraction_method
+            }
 
         return FileContentOutput(
             processing_info=processing_info,
             content_metadata=content_metadata,  # Renamed from content_analysis
-            data_content=data_content,  # Now includes parsed JSON when available
-            data_summary=summary,  # Extracted summary
-            data_pdf_content=original_text  # Full original text content
+            data_content=data_content  # Now includes parsed JSON when available
         )
 
     def _process_pdf_with_vision(self, file_path: Path, start_time: float) -> FileContentOutput:
@@ -582,8 +627,9 @@ class PDFContentHandler(BaseContentHandler):
             prompt_config = self.prompt_manager.get_prompt("universal_document")
             prompt_version = self.prompt_manager.get_active_version("universal_document") or "1.0.0"
 
-            # Process each page (limit to first 3 pages for performance)
-            max_pages = min(3, len(pdf_doc))
+            # Process pages up to configured limit
+            max_pages_config = self.config.get('pdf_max_pages_vision', 20)
+            max_pages = min(max_pages_config, len(pdf_doc))
             for i in range(max_pages):
                 page = pdf_doc[i]
 
@@ -654,15 +700,14 @@ class PDFContentHandler(BaseContentHandler):
                 status="success",
                 ai_model=prompt_config.model,
                 prompt_version=prompt_version,
-                processing_time=processing_time
+                processing_time=processing_time,
+                extraction_method="Vision API"
             )
 
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content={"pages": results},  # Renamed from extracted_data
-                data_summary=f"PDF with {len(results)} analyzed pages",  # Add summary
-                data_pdf_content=str(results)  # Store page analyses in type-specific field
+                data_content={"pages": results, "_extraction_method": "Vision API"}  # Include extraction method
             )
 
         except Exception as e:
@@ -670,6 +715,171 @@ class PDFContentHandler(BaseContentHandler):
                 f"Vision API processing failed: {str(e)}",
                 error_type="vision_processing_failed",
                 original_error=e
+            )
+
+    def _process_large_pdf_with_vision(self, file_path: Path, start_time: float) -> FileContentOutput:
+        """Process large PDF files page by page with Vision API."""
+        results = []
+        all_pages_processed = True
+
+        try:
+            pdf_doc = pdfium.PdfDocument(file_path)
+            prompt_config = self.prompt_manager.get_prompt("universal_document")
+            prompt_version = self.prompt_manager.get_active_version("universal_document") or "1.0.0"
+
+            # Process pages up to configured limit
+            max_pages_config = self.config.get('pdf_max_pages_vision', 20)
+            max_pages = min(max_pages_config, len(pdf_doc))
+
+            self.logger.info(f"Processing {max_pages} pages from {len(pdf_doc)} total pages")
+
+            for i in range(max_pages):
+                try:
+                    page = pdf_doc[i]
+
+                    # Render page to image
+                    bitmap = page.render(scale=2)
+                    pil_image = bitmap.to_pil()
+
+                    # Convert to base64
+                    buffered = io.BytesIO()
+                    pil_image.save(buffered, format="PNG")
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+                    # Analyze with Vision API
+                    prompt_template = self.prompt_manager.get_prompt_template("universal_document")
+                    ai_response = self._make_openai_request(
+                        prompt_template,
+                        image_base64=img_base64,
+                        model=prompt_config.model,
+                        max_tokens=prompt_config.max_tokens,
+                        temperature=prompt_config.temperature
+                    )
+
+                    # Parse JSON if expected
+                    use_json = prompt_config.output_format == "json"
+                    if use_json and ai_response:
+                        try:
+                            import json
+                            cleaned_response = self._clean_json_response(ai_response)
+                            parsed_response = json.loads(cleaned_response)
+                            results.append({
+                                "page": i + 1,
+                                "analysis": parsed_response
+                            })
+                        except json.JSONDecodeError as e:
+                            self.logger.error(f"Failed to parse JSON for page {i+1}: {str(e)}")
+                            all_pages_processed = False
+                            break
+                    else:
+                        results.append({
+                            "page": i + 1,
+                            "analysis": ai_response
+                        })
+
+                    self.logger.debug(f"Processed page {i+1}/{max_pages}")
+
+                except Exception as e:
+                    self.logger.error(f"Failed to process page {i+1}: {str(e)}")
+                    all_pages_processed = False
+                    break
+
+            # If any page failed, fallback to OCR for entire document
+            if not all_pages_processed and self.config.get('ocr_as_fallback', True):
+                self.logger.warning(f"Vision API failed for one or more pages, falling back to OCR for entire document")
+                return self._process_pdf_with_ocr_fallback(file_path, start_time)
+
+            processing_time = time.time() - start_time
+
+            content_metadata = ContentAnalysis(
+                content_type="document",
+                file_category="pdf",
+                summary=f"Large PDF processed via Vision API ({len(results)}/{len(pdf_doc)} pages)"
+            )
+
+            processing_info = self._create_processing_info(
+                status="success",
+                ai_model=prompt_config.model,
+                prompt_version=prompt_version,
+                processing_time=processing_time,
+                extraction_method="Vision API (Page-by-Page)"
+            )
+
+            return FileContentOutput(
+                processing_info=processing_info,
+                content_metadata=content_metadata,
+                data_content={"pages": results, "_extraction_method": "Vision API (Page-by-Page)"}
+            )
+
+        except Exception as e:
+            # Fallback to OCR if enabled
+            if self.config.get('ocr_as_fallback', True):
+                self.logger.warning(f"Vision API processing failed: {e}, falling back to OCR")
+                return self._process_pdf_with_ocr_fallback(file_path, start_time)
+            else:
+                raise ContentProcessorError(
+                    f"Vision API processing failed: {str(e)}",
+                    error_type="vision_processing_failed",
+                    original_error=e
+                )
+
+    def _process_pdf_with_ocr_fallback(self, file_path: Path, start_time: float) -> FileContentOutput:
+        """Process PDF using OCR as a fallback method."""
+        try:
+            # Get OCR languages from config
+            ocr_languages = self.config.get('ocr_languages', ['eng', 'spa'])
+
+            self.logger.info(f"Processing {file_path} with OCR fallback")
+
+            # Use unstructured library for PDF text extraction
+            ocr_text = process_pdf_with_unstructured(str(file_path), languages=ocr_languages)
+
+            # Check if OCR text is meaningful
+            if self._is_ocr_meaningful(ocr_text):
+                return self._process_pdf_text(file_path, ocr_text, start_time, extraction_method="OCR (Fallback)")
+            else:
+                # OCR didn't produce meaningful text
+                self.logger.error(f"OCR fallback produced non-meaningful text for {file_path}")
+                processing_time = time.time() - start_time
+
+                processing_info = self._create_processing_info(
+                    status="error",
+                    error_message="Both Vision API and OCR failed to extract meaningful content",
+                    processing_time=processing_time,
+                    extraction_method="Failed"
+                )
+
+                content_metadata = ContentAnalysis(
+                    content_type="document",
+                    file_category="pdf",
+                    summary="Failed to extract content from PDF"
+                )
+
+                return FileContentOutput(
+                    processing_info=processing_info,
+                    content_metadata=content_metadata
+                )
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            self.logger.error(f"OCR fallback failed for {file_path}: {str(e)}")
+
+            processing_info = self._create_processing_info(
+                status="error",
+                error_message=f"OCR fallback failed: {str(e)}",
+                processing_time=processing_time,
+                extraction_method="Failed"
+            )
+
+            content_metadata = ContentAnalysis(
+                content_type="document",
+                file_category="pdf",
+                summary="Failed to extract content from PDF"
+            )
+
+            return FileContentOutput(
+                processing_info=processing_info,
+                content_metadata=content_metadata
             )
 
 
@@ -772,14 +982,14 @@ class SheetContentHandler(BaseContentHandler):
                 status="success",
                 ai_model=prompt_config.model,
                 prompt_version=prompt_version,
-                processing_time=processing_time
+                processing_time=processing_time,
+                extraction_method="Direct Parsing"
             )
 
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
                 data_content=structured_analysis,  # Renamed from extracted_data
-                data_summary=text_summary,  # Renamed from text_summary
                 data_spreadsheet_content=json_data  # Renamed from raw_content, type-specific field
             )
 
@@ -834,14 +1044,14 @@ class DocumentContentHandler(BaseContentHandler):
                 status="success" if results else "error",
                 ai_model="gpt-4o",
                 processing_time=processing_time,
-                error_message="Conversion failed" if not results else None
+                error_message="Conversion failed" if not results else None,
+                extraction_method="Document Conversion + Vision API"
             )
 
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
                 data_content={"document_analysis": results} if results else None,  # Renamed from extracted_data
-                data_summary="Document analyzed via Vision API" if results else "Document processing failed",
                 data_document_content=str(results) if results else None  # Type-specific field
             )
 

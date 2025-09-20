@@ -62,11 +62,14 @@ class ContentConfig(BaseModel):
     openai_api_key: Optional[str] = Field(None, description="OpenAI API key (will use dotenv if not provided)")
     enable_vision_api: bool = Field(True, description="Enable OpenAI Vision API for image/document processing")
     enable_ocr_fallback: bool = Field(True, description="Enable OCR fallback when Vision API fails")
+    pdf_use_vision_default: bool = Field(True, description="Use Vision API as default for PDFs (otherwise OCR first)")
 
     # Processing Configuration
     max_retries: int = Field(3, description="Maximum retries for failed API calls")
     timeout_seconds: int = Field(30, description="Timeout for API calls in seconds")
     max_file_size_mb: int = Field(50, description="Maximum file size to process in MB")
+    pdf_large_file_threshold_mb: int = Field(50, description="Threshold for splitting large PDFs into pages (MB)")
+    pdf_max_pages_vision: int = Field(20, description="Maximum pages to process with Vision API")
 
     # File Type Handlers
     file_type_handlers: Dict[str, bool] = Field(
@@ -95,6 +98,7 @@ class ContentConfig(BaseModel):
         default_factory=lambda: ['eng', 'spa'],
         description="Languages for OCR processing (e.g., ['eng', 'spa'] for English and Spanish)"
     )
+    ocr_as_fallback: bool = Field(True, description="Use OCR as fallback when Vision API fails")
 
     def get_default_prompts(self) -> Dict[str, PromptConfig]:
         """
@@ -271,6 +275,7 @@ class ProcessingInfo(BaseModel):
     processing_status: str = Field(..., description="Status: success, partial_success, or error")
     error_message: Optional[str] = Field(None, description="Error message if processing failed")
     processing_time_seconds: Optional[float] = Field(None, description="Time taken for processing")
+    extraction_method: Optional[str] = Field(None, description="Method used for content extraction: OCR, Vision API, Direct, etc.")
 
 
 class ContentAnalysis(BaseModel):
@@ -294,13 +299,11 @@ class FileContentOutput(BaseModel):
 
     # Common fields for all file types
     data_content: Optional[Dict[str, Any]] = Field(None, description="Structured JSON analysis from AI")
-    data_summary: Optional[str] = Field(None, description="Brief summary of the content")
 
     # Type-specific raw content fields
     data_text_content: Optional[str] = Field(None, description="Original text content (text files)")
     data_spreadsheet_content: Optional[str] = Field(None, description="Original spreadsheet data as JSON (spreadsheet files)")
     data_image_content: Optional[str] = Field(None, description="Base64 encoded image or description (image files)")
-    data_pdf_content: Optional[str] = Field(None, description="Extracted text from PDF (PDF files)")
     data_document_content: Optional[str] = Field(None, description="Extracted document content (document files)")
 
     def model_dump_for_json(self) -> Dict[str, Any]:

@@ -14,6 +14,10 @@
       "config": {
         "enable_vision_api": true,
         "enable_ocr_fallback": true,
+        "pdf_use_vision_default": true,
+        "pdf_large_file_threshold_mb": 50,
+        "pdf_max_pages_vision": 20,
+        "ocr_as_fallback": true,
         "max_retries": 3,
         "timeout_seconds": 30,
         "max_file_size_mb": 50,

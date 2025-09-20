@@ -20,7 +20,8 @@
       "Bash(uv tree:*)",
       "WebSearch",
       "Bash(uv add:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(del test_ocr_tracking.py)"
     ],
     "deny": [],
     "ask": []
