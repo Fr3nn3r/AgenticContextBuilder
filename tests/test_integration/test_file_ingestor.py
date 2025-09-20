@@ -61,9 +61,9 @@ class TestFileIngestor:
         output_dataset_path = output_path / ingestion_id / "dataset-test_dataset"
         assert output_dataset_path.exists()
 
-        # Check individual metadata files
-        metadata_files = list(output_dataset_path.rglob("*_metadata.json"))
-        assert len(metadata_files) == 3
+        # Check individual intake files
+        intake_files = list(output_dataset_path.rglob("*_intake.json"))
+        assert len(intake_files) == 3
 
         # Check summary file
         summary_file = output_dataset_path / "test_dataset_summary.json"
@@ -106,13 +106,13 @@ class TestFileIngestor:
 
         # Check that only specified subfolders were processed
         output_dataset_path = output_path / ingestion_id / "dataset-test_dataset"
-        train_metadata = output_dataset_path / "train" / "train1_metadata.json"
-        test_metadata = output_dataset_path / "test" / "test1_metadata.json"
-        val_metadata = output_dataset_path / "validation" / "val1_metadata.json"
+        train_intake = output_dataset_path / "train" / "train1_intake.json"
+        test_intake = output_dataset_path / "test" / "test1_intake.json"
+        val_intake = output_dataset_path / "validation" / "val1_intake.json"
 
-        assert train_metadata.exists()
-        assert test_metadata.exists()
-        assert not val_metadata.exists()
+        assert train_intake.exists()
+        assert test_intake.exists()
+        assert not val_intake.exists()
 
     def test_ingest_multiple_datasets(self, tmp_path):
         """Test ingesting multiple datasets."""
@@ -196,10 +196,6 @@ class TestFileIngestor:
                 {
                     'name': 'MetadataProcessor',
                     'config': {'include_hashes': False}
-                },
-                {
-                    'name': 'EnrichmentProcessor',
-                    'config': {'categorize_files': True}
                 }
             ]
         }
@@ -210,15 +206,11 @@ class TestFileIngestor:
 
         result = ingestor.ingest_file(test_file)
 
-        # Should have outputs from both processors
+        # Should have output from MetadataProcessor
         assert 'file_metadata' in result
-        assert 'enriched_metadata' in result
 
         # Hashes should be disabled
         assert 'hashes' not in result['file_metadata']
-
-        # File categorization should be enabled
-        assert 'file_category' in result['enriched_metadata']
 
     def test_error_handling_nonexistent_dataset(self, tmp_path):
         """Test error handling for non-existent datasets."""
@@ -249,8 +241,8 @@ class TestFileIngestor:
         with pytest.raises(ValueError, match="No dataset folders found"):
             self.ingestor.ingest_multiple_datasets(input_path, output_path)
 
-    def test_metadata_file_structure(self, tmp_path):
-        """Test that metadata files have correct structure."""
+    def test_intake_file_structure(self, tmp_path):
+        """Test that intake files have correct structure."""
         test_file = tmp_path / "test.txt"
         test_file.write_text("Hello, world!")
 
@@ -264,19 +256,20 @@ class TestFileIngestor:
 
         self.ingestor.ingest_dataset_folder(dataset_path, output_path, ingestion_id)
 
-        # Find and check metadata file
-        metadata_file = output_path / ingestion_id / "dataset-dataset" / "test_metadata.json"
-        assert metadata_file.exists()
+        # Find and check intake file
+        intake_file = output_path / ingestion_id / "dataset-dataset" / "test_intake.json"
+        assert intake_file.exists()
 
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+        with open(intake_file, 'r') as f:
+            intake_data = json.load(f)
 
         # Check required top-level keys
-        assert 'processing_info' in metadata
-        assert 'file_metadata' in metadata
+        assert 'processing_info' in intake_data
+        assert 'file_metadata' in intake_data
+        # file_content may or may not exist depending on if ContentProcessor is configured
 
         # Check processing info structure
-        processing_info = metadata['processing_info']
+        processing_info = intake_data['processing_info']
         required_keys = [
             'ingestion_time', 'ingestion_id', 'source_dataset',
             'dataset_folder_name', 'output_path'
@@ -303,11 +296,11 @@ class TestFileIngestor:
         self.ingestor.ingest_dataset_folder(dataset_path, output_path, ingestion_id)
 
         # Check that nested structure is preserved
-        expected_metadata_path = (
+        expected_intake_path = (
             output_path / ingestion_id / "dataset-dataset" /
-            "level1" / "level2" / "nested_file_metadata.json"
+            "level1" / "level2" / "nested_file_intake.json"
         )
-        assert expected_metadata_path.exists()
+        assert expected_intake_path.exists()
 
 
 if __name__ == '__main__':

@@ -196,49 +196,38 @@ class FileIngestor:
                     # Separate file_content from other metadata
                     file_content = file_metadata.pop('file_content', None)
 
-                    # Create metadata file (without AI content)
-                    complete_metadata = {
+                    # Create combined intake file with all data
+                    complete_intake = {
                         'processing_info': processing_info,
-                        **file_metadata  # Merge all non-content processor outputs
                     }
 
-                    # Prepare output directory and filenames
-                    relative_path_parent = relative_path.parent
-                    metadata_output_dir = output_dataset_path / relative_path_parent
+                    # Add all metadata (file_metadata, enrichment_info, etc.)
+                    for key, value in file_metadata.items():
+                        if key != 'processing_info':  # Avoid duplicate processing_info
+                            complete_intake[key] = value
 
-                    metadata_filename = f"{item.stem}_metadata.json"
-                    metadata_file_path = self.output_writer.write_metadata(
-                        complete_metadata,
-                        metadata_output_dir,
-                        metadata_filename
+                    # Add file_content if it exists (from ContentProcessor)
+                    if file_content:
+                        complete_intake['file_content'] = file_content
+
+                    # Prepare output directory and filename
+                    relative_path_parent = relative_path.parent
+                    intake_output_dir = output_dataset_path / relative_path_parent
+
+                    intake_filename = f"{item.stem}_intake.json"
+                    intake_file_path = self.output_writer.write_intake(
+                        complete_intake,
+                        intake_output_dir,
+                        intake_filename
                     )
 
                     file_info = {
                         'original_file': str(item),
                         'relative_path': str(relative_path),
-                        'metadata_file': str(metadata_file_path),
+                        'intake_file': str(intake_file_path),
                         'file_name': item.name,
-                        'metadata_filename': safe_filename(metadata_filename)
+                        'intake_filename': safe_filename(intake_filename)
                     }
-
-                    # Write separate content file if AI content was generated
-                    if file_content:
-                        content_filename = f"{item.stem}_content.json"
-
-                        # Create complete content file with processing info
-                        complete_content = {
-                            'processing_info': processing_info,
-                            'file_content': file_content
-                        }
-
-                        content_file_path = self.output_writer.write_content(
-                            complete_content,
-                            metadata_output_dir,
-                            content_filename
-                        )
-
-                        file_info['content_file'] = str(content_file_path)
-                        file_info['content_filename'] = safe_filename(content_filename)
 
                     processed_files.append(file_info)
 

@@ -298,7 +298,7 @@ class FileContentOutput(BaseModel):
     content_metadata: ContentAnalysis = Field(..., description="Metadata about the content type and analysis")
 
     # Common fields for all file types
-    data_content: Optional[Dict[str, Any]] = Field(None, description="Structured JSON analysis from AI")
+    content_data: Optional[Dict[str, Any]] = Field(None, description="Structured JSON analysis from AI")
 
     # Type-specific raw content fields
     data_text_content: Optional[str] = Field(None, description="Original text content (text files)")

@@ -23,17 +23,17 @@ class OutputWriter:
         """Initialize the output writer."""
         self.logger = logging.getLogger(__name__)
 
-    def write_metadata(
+    def write_intake(
         self,
-        metadata: Dict[str, Any],
+        intake_data: Dict[str, Any],
         output_dir: Path,
         filename: str
     ) -> Path:
         """
-        Write metadata to a JSON file.
+        Write combined intake data to a JSON file.
 
         Args:
-            metadata: Dictionary containing metadata to write
+            intake_data: Dictionary containing all intake data (metadata + content)
             output_dir: Directory to write the file to
             filename: Name of the file (will be sanitized)
 
@@ -45,36 +45,9 @@ class OutputWriter:
         file_path = output_dir / safe_name
 
         with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(to_jsonable(metadata), f, indent=2, ensure_ascii=False)
+            json.dump(to_jsonable(intake_data), f, indent=2, ensure_ascii=False)
 
-        self.logger.debug(f"Wrote metadata to {file_path}")
-        return file_path
-
-    def write_content(
-        self,
-        content: Dict[str, Any],
-        output_dir: Path,
-        filename: str
-    ) -> Path:
-        """
-        Write content data to a JSON file.
-
-        Args:
-            content: Dictionary containing content to write
-            output_dir: Directory to write the file to
-            filename: Name of the file (will be sanitized)
-
-        Returns:
-            Path to the written file
-        """
-        ensure_directory(output_dir)
-        safe_name = safe_filename(filename)
-        file_path = output_dir / safe_name
-
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(to_jsonable(content), f, indent=2, ensure_ascii=False)
-
-        self.logger.debug(f"Wrote content to {file_path}")
+        self.logger.debug(f"Wrote intake data to {file_path}")
         return file_path
 
     def write_dataset_summary(

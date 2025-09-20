@@ -311,7 +311,7 @@ class TextContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content=extracted_data,  # Renamed from extracted_data
+                content_data=extracted_data,
                 data_text_content=content  # Renamed from raw_content, type-specific field
             )
 
@@ -387,7 +387,7 @@ class ImageContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content={"description": ai_response},  # Store AI analysis as structured data
+                content_data={"description": ai_response},  # Store AI analysis as structured data
                 data_image_content=image_base64  # Store base64 image in type-specific field
             )
 
@@ -583,14 +583,14 @@ class PDFContentHandler(BaseContentHandler):
             extraction_method=extraction_method
         )
 
-        # Structure the data_content based on whether we have parsed JSON
+        # Structure the content_data based on whether we have parsed JSON
         if parsed_analysis:
             # Include the parsed JSON analysis with extraction method
-            data_content = parsed_analysis
-            data_content['_extraction_method'] = extraction_method
+            content_data = parsed_analysis
+            content_data['_extraction_method'] = extraction_method
         else:
             # Include text and raw analysis with extraction method
-            data_content = {
+            content_data = {
                 "text": original_text[:max_chars],
                 "analysis": ai_response,
                 "_extraction_method": extraction_method
@@ -599,7 +599,7 @@ class PDFContentHandler(BaseContentHandler):
         return FileContentOutput(
             processing_info=processing_info,
             content_metadata=content_metadata,  # Renamed from content_analysis
-            data_content=data_content  # Now includes parsed JSON when available
+            content_data=content_data  # Now includes parsed JSON when available
         )
 
     def _process_pdf_with_vision(self, file_path: Path, start_time: float) -> FileContentOutput:
@@ -683,7 +683,7 @@ class PDFContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content={"pages": results, "_extraction_method": "Vision API"}  # Include extraction method
+                content_data={"pages": results, "_extraction_method": "Vision API"}  # Include extraction method
             )
 
         except Exception as e:
@@ -784,7 +784,7 @@ class PDFContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,
-                data_content={"pages": results, "_extraction_method": "Vision API (Page-by-Page)"}
+                content_data={"pages": results, "_extraction_method": "Vision API (Page-by-Page)"}
             )
 
         except Exception as e:
@@ -957,7 +957,7 @@ class SheetContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content=structured_analysis,  # Renamed from extracted_data
+                content_data=structured_analysis,
                 data_spreadsheet_content=json_data  # Renamed from raw_content, type-specific field
             )
 
@@ -1019,7 +1019,7 @@ class DocumentContentHandler(BaseContentHandler):
             return FileContentOutput(
                 processing_info=processing_info,
                 content_metadata=content_metadata,  # Renamed from content_analysis
-                data_content={"document_analysis": results} if results else None,  # Renamed from extracted_data
+                content_data={"document_analysis": results} if results else None,
                 data_document_content=str(results) if results else None  # Type-specific field
             )
 
@@ -1059,7 +1059,7 @@ class DocumentContentHandler(BaseContentHandler):
                 if os.path.exists(temp_pdf) and os.path.getsize(temp_pdf) > 0:
                     pdf_handler = PDFContentHandler(self.openai_client, self.prompt_manager, self.config)
                     result = pdf_handler._process_pdf_with_vision(Path(temp_pdf), time.time())
-                    return result.data_content.get("pages", []) if result.data_content else []
+                    return result.content_data.get("pages", []) if result.content_data else []
 
             return [{"error": "Unsupported document format or conversion failed"}]
 
