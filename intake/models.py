@@ -64,14 +64,14 @@ class FileMetadata(BaseModel):
 
     # Error handling
     error: Optional[str] = Field(None, description="Error message if metadata extraction failed")
-    metadata_ingestion_failed: Optional[bool] = Field(None, description="Whether metadata extraction failed")
+    is_metadata_ingestion_failed: Optional[bool] = Field(None, description="Whether metadata extraction failed")
 
     def model_dump(self, **kwargs):
         """Override model_dump to exclude None values for optional fields."""
         data = super().model_dump(**kwargs)
 
         # Remove None values for truly optional fields
-        optional_fields = ['permissions', 'hashes', 'windows_attributes', 'error', 'metadata_ingestion_failed', 'mime_type', 'encoding']
+        optional_fields = ['permissions', 'hashes', 'windows_attributes', 'error', 'is_metadata_ingestion_failed', 'mime_type', 'encoding']
         return {k: v for k, v in data.items() if not (k in optional_fields and v is None)}
 
 
@@ -102,7 +102,7 @@ class ProcessedFileInfo(BaseModel):
     content_file: Optional[str] = Field(None, description="Path to the generated content file")
     content_filename: Optional[str] = Field(None, description="Name of the content file")
     error: Optional[str] = Field(None, description="Error message if processing failed")
-    processing_failed: Optional[bool] = Field(None, description="Whether processing failed")
+    is_processing_failed: Optional[bool] = Field(None, description="Whether processing failed")
 
 
 class DatasetInfo(BaseModel):

@@ -288,15 +288,7 @@ class TextContentHandler(BaseContentHandler):
                 except json.JSONDecodeError as e:
                     # If JSON parsing fails, treat as regular text
                     self.logger.warning(f"Failed to parse JSON response for {file_path}: {str(e)}")
-                    # Print response for debugging
-                    print(f"\n[JSON PARSE WARNING] Failed to parse response for text file {file_path.name}")
-                    print(f"Error: {str(e)}")
-                    print(f"Response that failed to parse:")
-                    print("-" * 80)
-                    print(ai_response[:1000] if len(ai_response) > 1000 else ai_response)
-                    if len(ai_response) > 1000:
-                        print(f"... (truncated, total length: {len(ai_response)} characters)")
-                    print("-" * 80)
+                    self.logger.debug(f"Response that failed to parse: {ai_response[:1000]}..." if len(ai_response) > 1000 else f"Response that failed to parse: {ai_response}")
                     extracted_data = None
 
             # Create content metadata (renamed from content_analysis)
@@ -569,15 +561,7 @@ class PDFContentHandler(BaseContentHandler):
                     # If JSON parsing fails when expected, log the full response for debugging
                     error_msg = f"Failed to parse JSON response from OpenAI API for PDF {file_path}: {str(e)}"
                     self.logger.error(error_msg)
-                    # Print full response for debugging (not just to log)
-                    print(f"\n[JSON PARSE ERROR] Failed to parse response for {file_path.name}")
-                    print(f"Error: {str(e)}")
-                    print(f"Response that failed to parse:")
-                    print("-" * 80)
-                    print(ai_response[:1000] if len(ai_response) > 1000 else ai_response)
-                    if len(ai_response) > 1000:
-                        print(f"... (truncated, total length: {len(ai_response)} characters)")
-                    print("-" * 80)
+                    self.logger.debug(f"Response that failed to parse: {ai_response[:1000]}..." if len(ai_response) > 1000 else f"Response that failed to parse: {ai_response}")
                     raise ContentProcessorError(
                         error_msg,
                         error_type="json_parsing_error",
@@ -668,15 +652,7 @@ class PDFContentHandler(BaseContentHandler):
                         # If JSON parsing fails when expected, log the full response for debugging
                         error_msg = f"Failed to parse JSON from Vision API for PDF page {i+1}: {str(e)}"
                         self.logger.error(error_msg)
-                        # Print full response for debugging
-                        print(f"\n[JSON PARSE ERROR] Failed to parse Vision API response for page {i+1}")
-                        print(f"Error: {str(e)}")
-                        print(f"Response that failed to parse:")
-                        print("-" * 80)
-                        print(ai_response[:1000] if len(ai_response) > 1000 else ai_response)
-                        if len(ai_response) > 1000:
-                            print(f"... (truncated, total length: {len(ai_response)} characters)")
-                        print("-" * 80)
+                        self.logger.debug(f"Response that failed to parse: {ai_response[:1000]}..." if len(ai_response) > 1000 else f"Response that failed to parse: {ai_response}")
                         raise ContentProcessorError(
                             error_msg,
                             error_type="json_parsing_error",
@@ -961,15 +937,7 @@ class SheetContentHandler(BaseContentHandler):
                 except json.JSONDecodeError as e:
                     # If JSON parsing fails, treat as regular text
                     self.logger.warning(f"Failed to parse JSON response for {file_path}: {str(e)}")
-                    # Print response for debugging
-                    print(f"\n[JSON PARSE WARNING] Failed to parse response for spreadsheet {file_path.name}")
-                    print(f"Error: {str(e)}")
-                    print(f"Response that failed to parse:")
-                    print("-" * 80)
-                    print(ai_response[:1000] if len(ai_response) > 1000 else ai_response)
-                    if len(ai_response) > 1000:
-                        print(f"... (truncated, total length: {len(ai_response)} characters)")
-                    print("-" * 80)
+                    self.logger.debug(f"Response that failed to parse: {ai_response[:1000]}..." if len(ai_response) > 1000 else f"Response that failed to parse: {ai_response}")
                     structured_analysis = None
 
             content_metadata = ContentAnalysis(
@@ -1090,8 +1058,8 @@ class DocumentContentHandler(BaseContentHandler):
                 # Process PDF with Vision API (reuse PDF handler logic)
                 if os.path.exists(temp_pdf) and os.path.getsize(temp_pdf) > 0:
                     pdf_handler = PDFContentHandler(self.openai_client, self.prompt_manager, self.config)
-                    result = pdf_handler._process_pdf_with_vision(Path(temp_pdf), 0)
-                    return result.extracted_data.get("pages", []) if result.extracted_data else []
+                    result = pdf_handler._process_pdf_with_vision(Path(temp_pdf), time.time())
+                    return result.data_content.get("pages", []) if result.data_content else []
 
             return [{"error": "Unsupported document format or conversion failed"}]
 

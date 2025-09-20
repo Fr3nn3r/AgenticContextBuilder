@@ -248,12 +248,14 @@ def main() -> int:
         input_path = Path(args.input_folder)
         output_path = Path(args.output_folder)
 
-        validate_path_exists(input_path, "input folder")
         validate_path_exists(input_path, "directory")
 
         # Load configuration
         config = load_config(args.config)
-        logger.info(f"Loaded configuration: {config}")
+        if args.verbose:
+            logger.debug(f"Loaded configuration: {config}")
+        else:
+            logger.info(f"Loaded configuration from {args.config}")
 
         # Create ingestor and process datasets
         ingestor = FileIngestor(config)

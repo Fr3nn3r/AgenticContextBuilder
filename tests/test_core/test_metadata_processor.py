@@ -200,8 +200,8 @@ class TestMetadataProcessor:
 
         # Should return error metadata
         assert 'error' in metadata
-        assert 'metadata_ingestion_failed' in metadata
-        assert metadata['metadata_ingestion_failed'] is True
+        assert 'is_metadata_ingestion_failed' in metadata
+        assert metadata['is_metadata_ingestion_failed'] is True
         assert metadata['file_name'] == "file.txt"
         assert 'file_path' in metadata
 
@@ -212,8 +212,8 @@ class TestMetadataProcessor:
         metadata = self._get_metadata_dict(result)
 
         assert 'error' in metadata
-        assert 'metadata_ingestion_failed' in metadata
-        assert metadata['metadata_ingestion_failed'] is True
+        assert 'is_metadata_ingestion_failed' in metadata
+        assert metadata['is_metadata_ingestion_failed'] is True
 
     def test_configuration_disable_hashes(self, tmp_path):
         """Test disabling hash calculation via configuration."""

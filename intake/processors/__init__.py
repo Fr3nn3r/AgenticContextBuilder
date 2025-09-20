@@ -4,10 +4,12 @@
 
 import importlib
 import inspect
+import logging
 from pathlib import Path
 from typing import Dict, List, Type, Any, Union
 from pydantic import BaseModel
 from .base import BaseProcessor, ProcessingError
+from ..serialization import to_jsonable
 
 
 class ProcessorRegistry:
@@ -20,6 +22,7 @@ class ProcessorRegistry:
 
     def __init__(self):
         self._processors: Dict[str, Type[BaseProcessor]] = {}
+        self.logger = logging.getLogger(__name__)
         self._discover_processors()
 
     def _discover_processors(self) -> None:
@@ -48,7 +51,7 @@ class ProcessorRegistry:
                         self._processors[name] = obj
 
             except ImportError as e:
-                print(f"Warning: Could not import processor module {module_name}: {e}")
+                self.logger.warning(f"Could not import processor module {module_name}: {e}")
 
     def get_processor(self, name: str, config: Union[Dict[str, Any], BaseModel] = None) -> BaseProcessor:
         """
@@ -161,7 +164,7 @@ class ProcessingPipeline:
                 )
 
         # Convert any Pydantic models to dictionaries for external API compatibility
-        return _serialize_for_json(metadata)
+        return to_jsonable(metadata)
 
 
     def get_pipeline_info(self) -> List[Dict[str, Any]]:
@@ -174,17 +177,6 @@ class ProcessingPipeline:
         return [processor.get_processor_info() for processor in self.processors]
 
 
-def _serialize_for_json(obj):
-    """Convert Pydantic models and other objects to JSON-serializable format."""
-    if hasattr(obj, 'model_dump'):
-        # It's a Pydantic model
-        return obj.model_dump()
-    elif isinstance(obj, dict):
-        return {k: _serialize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_serialize_for_json(item) for item in obj]
-    else:
-        return obj
 
 
 # Global registry instance

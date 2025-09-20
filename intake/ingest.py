@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
@@ -14,6 +15,8 @@ from dotenv import load_dotenv
 
 from .processors import ProcessingPipeline, registry
 from .utils import generate_ingestion_id, ensure_directory, get_relative_path_safe, safe_filename
+from .serialization import to_jsonable
+from .output_writer import OutputWriter
 
 if TYPE_CHECKING:
     from .models import (
@@ -23,17 +26,6 @@ if TYPE_CHECKING:
     )
 
 
-def _serialize_for_json(obj: Any) -> Any:
-    """Convert Pydantic models and other objects to JSON-serializable format."""
-    if hasattr(obj, 'model_dump'):
-        # It's a Pydantic model
-        return obj.model_dump()
-    elif isinstance(obj, dict):
-        return {k: _serialize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_serialize_for_json(item) for item in obj]
-    else:
-        return obj
 
 
 def _validate_ai_processor_requirements(config: Dict[str, Any]) -> None:
@@ -49,10 +41,10 @@ def _validate_ai_processor_requirements(config: Dict[str, Any]) -> None:
     # Load environment variables
     load_dotenv()
 
-    # Check if AIContextProcessor is in the pipeline
+    # Check if ContentProcessor is in the pipeline
     processors = config.get('processors', [])
     has_ai_processor = any(
-        proc.get('name') == 'AIContextProcessor'
+        proc.get('name') == 'ContentProcessor'
         for proc in processors
     )
 
@@ -65,9 +57,10 @@ def _validate_ai_processor_requirements(config: Dict[str, Any]) -> None:
 
         if not api_key:
             raise ValueError(
-                "AIContextProcessor is configured but no OpenAI API key found. "
+                "ContentProcessor is configured but no OpenAI API key found. "
                 "Please set OPENAI_API_KEY in your environment or .env file. "
-                "Alternatively, use a configuration without AIContextProcessor (e.g., config/metadata_only_config.json)"
+                "For AI processing use config/default_config.json, or for metadata-only "
+                "processing use config/metadata_only_config.json"
             )
 
 
@@ -103,6 +96,12 @@ class FileIngestor:
         # Keep dict version for backward compatibility
         self.config = self.typed_config.model_dump()
 
+        # Set up logger
+        self.logger = logging.getLogger(__name__)
+
+        # Set up output writer
+        self.output_writer = OutputWriter()
+
         # Validate AI processor requirements if configured
         _validate_ai_processor_requirements(self.config)
 
@@ -137,7 +136,7 @@ class FileIngestor:
         """
         result = self.pipeline.process_file(file_path)
         # Convert any Pydantic models to dictionaries for backward compatibility
-        return _serialize_for_json(result)
+        return to_jsonable(result)
 
     def ingest_dataset_folder(
         self,
@@ -179,7 +178,7 @@ class FileIngestor:
                     if top_level_folder not in subfolders_filter:
                         continue  # Skip files not in specified subfolders
 
-                print(f"  Processing file: {relative_path}")
+                self.logger.info(f"  Processing file: {relative_path}")
 
                 try:
                     # Process file through pipeline
@@ -206,27 +205,25 @@ class FileIngestor:
                     # Prepare output directory and filenames
                     relative_path_parent = relative_path.parent
                     metadata_output_dir = output_dataset_path / relative_path_parent
-                    ensure_directory(metadata_output_dir)
 
-                    metadata_filename = safe_filename(f"{item.stem}_metadata.json")
-                    metadata_file_path = metadata_output_dir / metadata_filename
-
-                    # Write metadata file
-                    with open(metadata_file_path, 'w', encoding='utf-8') as f:
-                        json.dump(_serialize_for_json(complete_metadata), f, indent=2, ensure_ascii=False)
+                    metadata_filename = f"{item.stem}_metadata.json"
+                    metadata_file_path = self.output_writer.write_metadata(
+                        complete_metadata,
+                        metadata_output_dir,
+                        metadata_filename
+                    )
 
                     file_info = {
                         'original_file': str(item),
                         'relative_path': str(relative_path),
                         'metadata_file': str(metadata_file_path),
                         'file_name': item.name,
-                        'metadata_filename': metadata_filename
+                        'metadata_filename': safe_filename(metadata_filename)
                     }
 
                     # Write separate content file if AI content was generated
                     if file_content:
-                        content_filename = safe_filename(f"{item.stem}_content.json")
-                        content_file_path = metadata_output_dir / content_filename
+                        content_filename = f"{item.stem}_content.json"
 
                         # Create complete content file with processing info
                         complete_content = {
@@ -234,23 +231,26 @@ class FileIngestor:
                             'file_content': file_content
                         }
 
-                        with open(content_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(_serialize_for_json(complete_content), f, indent=2, ensure_ascii=False)
+                        content_file_path = self.output_writer.write_content(
+                            complete_content,
+                            metadata_output_dir,
+                            content_filename
+                        )
 
                         file_info['content_file'] = str(content_file_path)
-                        file_info['content_filename'] = content_filename
+                        file_info['content_filename'] = safe_filename(content_filename)
 
                     processed_files.append(file_info)
 
                 except Exception as e:
-                    print(f"  [ERROR] Failed to process {relative_path}: {e}")
+                    self.logger.error(f"  Failed to process {relative_path}: {e}")
                     # Add failed file to processed list with error info
                     processed_files.append({
                         'original_file': str(item),
                         'relative_path': str(relative_path),
                         'file_name': item.name,
                         'error': str(e),
-                        'processing_failed': True
+                        'is_processing_failed': True
                     })
 
         # Create a summary file for the dataset
@@ -268,11 +268,11 @@ class FileIngestor:
             'processed_files': processed_files
         }
 
-        summary_file_path = output_dataset_path / safe_filename(f"{dataset_name}_summary.json")
-        with open(summary_file_path, 'w', encoding='utf-8') as f:
-            json.dump(dataset_summary, f, indent=2, ensure_ascii=False)
-
-        print(f"  Created summary: {summary_file_path}")
+        self.output_writer.write_dataset_summary(
+            dataset_summary,
+            output_dataset_path,
+            dataset_name
+        )
         return dataset_summary
 
     def ingest_multiple_datasets(
@@ -298,7 +298,7 @@ class FileIngestor:
         """
         # Generate unique ingestion ID
         ingestion_id = generate_ingestion_id(input_path)
-        print(f"Ingestion ID: {ingestion_id}")
+        self.logger.info(f"Ingestion ID: {ingestion_id}")
 
         # Create output directory
         ensure_directory(output_path)
@@ -318,7 +318,7 @@ class FileIngestor:
             # Check if all requested datasets exist
             missing_datasets = requested_datasets - available_datasets
             if missing_datasets:
-                print(f"Warning: Requested datasets not found: {', '.join(missing_datasets)}")
+                self.logger.warning(f"Requested datasets not found: {', '.join(missing_datasets)}")
 
             # Filter to only requested datasets that exist
             dataset_folders = [d for d in dataset_folders if d.name in requested_datasets]
@@ -331,16 +331,15 @@ class FileIngestor:
             # Process first N datasets if no specific datasets requested
             datasets_to_process = dataset_folders[:num_datasets] if num_datasets else dataset_folders
 
-        print(f"Processing {len(datasets_to_process)} datasets from {input_path}")
-        print(f"Output will be saved to: {output_path}")
-        print()
+        self.logger.info(f"Processing {len(datasets_to_process)} datasets from {input_path}")
+        self.logger.info(f"Output will be saved to: {output_path}")
 
         total_files_processed = 0
         total_files_failed = 0
         dataset_summaries = []
 
         for i, dataset_folder in enumerate(datasets_to_process, 1):
-            print(f"[{i}/{len(datasets_to_process)}] Processing dataset: {dataset_folder.name}")
+            self.logger.info(f"[{i}/{len(datasets_to_process)}] Processing dataset: {dataset_folder.name}")
 
             try:
                 dataset_summary = self.ingest_dataset_folder(
@@ -353,12 +352,10 @@ class FileIngestor:
                 total_files_failed += files_failed
                 dataset_summaries.append(dataset_summary)
 
-                print(f"  [OK] Processed {files_processed} files ({files_failed} failed)")
+                self.logger.info(f"  Processed {files_processed} files ({files_failed} failed)")
             except Exception as e:
-                print(f"  [ERROR] Error processing dataset {dataset_folder.name}: {e}")
+                self.logger.error(f"  Error processing dataset {dataset_folder.name}: {e}")
                 total_files_failed += 1
-
-            print()
 
         # Create overall summary
         overall_summary = {
@@ -378,14 +375,14 @@ class FileIngestor:
             'dataset_summaries': dataset_summaries
         }
 
-        overall_summary_path = output_path / ingestion_id / "ingestion_summary.json"
-        ensure_directory(overall_summary_path.parent)
-        with open(overall_summary_path, 'w', encoding='utf-8') as f:
-            json.dump(overall_summary, f, indent=2, ensure_ascii=False)
+        overall_summary_path = self.output_writer.write_ingestion_summary(
+            overall_summary,
+            output_path,
+            ingestion_id
+        )
 
-        print(f"Ingestion complete!")
-        print(f"Total files processed: {total_files_processed}")
-        print(f"Total files failed: {total_files_failed}")
-        print(f"Overall summary saved to: {overall_summary_path}")
+        self.logger.info(f"Ingestion complete!")
+        self.logger.info(f"Total files processed: {total_files_processed}")
+        self.logger.info(f"Total files failed: {total_files_failed}")
 
         return overall_summary

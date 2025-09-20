@@ -110,7 +110,7 @@ class MetadataProcessor(BaseProcessor):
                 is_file=False,
                 is_symlink=False,
                 error=str(e),
-                metadata_ingestion_failed=True
+                is_metadata_ingestion_failed=True
             )
             return {'file_metadata': error_metadata}
         except Exception as e:
