@@ -1,0 +1,26 @@
+{
+  "response": {
+    "summary": "Test document containing sample text with lists, dates, and author information for unit testing purposes.",
+    "document_type": "test_document",
+    "language": "en",
+    "key_topics": ["testing", "sample data", "documentation"],
+    "entities": {
+      "people": ["Test System"],
+      "organizations": [],
+      "locations": [],
+      "dates": ["2024-01-15"],
+      "numbers": ["1", "2", "3"]
+    },
+    "sentiment": "neutral",
+    "technical_level": "low",
+    "word_count": 67,
+    "has_code": false,
+    "has_tables": false,
+    "metadata": {
+      "title": null,
+      "author": "Test System",
+      "date_created": "2024-01-15"
+    }
+  },
+  "raw_response": "{\"summary\":\"Test document containing sample text with lists, dates, and author information for unit testing purposes.\",\"document_type\":\"test_document\",\"language\":\"en\",\"key_topics\":[\"testing\",\"sample data\",\"documentation\"],\"entities\":{\"people\":[\"Test System\"],\"organizations\":[],\"locations\":[],\"dates\":[\"2024-01-15\"],\"numbers\":[\"1\",\"2\",\"3\"]},\"sentiment\":\"neutral\",\"technical_level\":\"low\",\"word_count\":67,\"has_code\":false,\"has_tables\":false,\"metadata\":{\"title\":null,\"author\":\"Test System\",\"date_created\":\"2024-01-15\"}}"
+}

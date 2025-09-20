@@ -8,20 +8,15 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
-from openai import OpenAI
 from dotenv import load_dotenv
 
 from .base import BaseProcessor, ProcessingError
-from .content_support.models import ContentConfig, FileContentOutput, ContentProcessorError
+from .content_support.models import FileContentOutput, ContentProcessorError, ProcessingInfo, ContentAnalysis
 from .content_support.prompt_manager import PromptManager
-from .content_support.handlers import (
-    BaseContentHandler,
-    TextContentHandler,
-    ImageContentHandler,
-    PDFContentHandler,
-    SheetContentHandler,
-    DocumentContentHandler
-)
+from .content_support.config import ContentProcessorConfig, AIConfig
+from .content_support.factory import create_content_handler, get_all_handlers
+from .content_support.services import AIAnalysisService, OpenAIProvider
+from .content_support.handlers import BaseContentHandler
 
 
 class ContentProcessor(BaseProcessor):
@@ -37,7 +32,7 @@ class ContentProcessor(BaseProcessor):
     DESCRIPTION = "Content enrichment using AI models, OCR, and other extraction methods"
     SUPPORTED_EXTENSIONS = ["*"]  # Supports all file types via handlers
 
-    def __init__(self, config: Optional[Union[Dict[str, Any], ContentConfig]] = None):
+    def __init__(self, config: Optional[Union[Dict[str, Any], ContentProcessorConfig]] = None):
         """
         Initialize the content processor.
 
@@ -49,11 +44,11 @@ class ContentProcessor(BaseProcessor):
 
         # Convert configuration to typed config
         if isinstance(config, dict):
-            self.typed_config = ContentConfig(**config)
-        elif isinstance(config, ContentConfig):
+            self.typed_config = ContentProcessorConfig(**config)
+        elif isinstance(config, ContentProcessorConfig):
             self.typed_config = config
         else:
-            self.typed_config = ContentConfig()
+            self.typed_config = ContentProcessorConfig()
 
         # Initialize base class
         super().__init__(self.typed_config.model_dump())
@@ -61,8 +56,8 @@ class ContentProcessor(BaseProcessor):
         # Set up logging
         self.logger = logging.getLogger(__name__)
 
-        # Initialize OpenAI client
-        self.openai_client = self._initialize_openai_client()
+        # Initialize AI service
+        self.ai_service = self._initialize_ai_service()
 
         # Initialize prompt manager with default or configured prompts
         self.prompt_manager = self._initialize_prompt_manager()
@@ -72,33 +67,30 @@ class ContentProcessor(BaseProcessor):
 
         self.logger.info(f"ContentProcessor initialized with {len(self.handlers)} handlers")
 
-    def _initialize_openai_client(self) -> Optional[OpenAI]:
+    def _initialize_ai_service(self) -> Optional[AIAnalysisService]:
         """
-        Initialize OpenAI client with API key from config or environment.
+        Initialize AI service with configured provider.
 
         Returns:
-            OpenAI client or None if API key not available
+            AI service or None if not available
         """
-        # Get API key from config or environment
-        api_key = (
-            self.typed_config.openai_api_key or
-            os.getenv('OPENAI_API_KEY') or
-            os.getenv('OPENAI_KEY')
-        )
-
-        if not api_key:
-            self.logger.warning(
-                "OpenAI API key not found. AI processing will be disabled. "
-                "Set OPENAI_API_KEY in environment or provide in config."
-            )
-            return None
-
         try:
-            client = OpenAI(api_key=api_key)
-            self.logger.info("OpenAI client initialized successfully")
-            return client
+            # Create OpenAI provider with AI configuration
+            ai_config = self.typed_config.ai
+            provider = OpenAIProvider(ai_config)
+
+            if provider.is_available():
+                ai_service = AIAnalysisService(provider)
+                self.logger.info("AI service initialized successfully")
+                return ai_service
+            else:
+                self.logger.warning(
+                    "AI provider not available. AI processing will be disabled. "
+                    "Set OPENAI_API_KEY in environment or provide in config."
+                )
+                return None
         except Exception as e:
-            self.logger.error(f"Failed to initialize OpenAI client: {e}")
+            self.logger.error(f"Failed to initialize AI service: {e}")
             return None
 
     def _initialize_prompt_manager(self) -> PromptManager:
@@ -108,20 +100,15 @@ class ContentProcessor(BaseProcessor):
         Returns:
             PromptManager instance
         """
-        # Use configured prompts or get defaults
-        prompts = self.typed_config.prompts
-        if not prompts:
-            prompts = self.typed_config.get_default_prompts()
+        # Get default prompts from ContentConfig in models.py
+        from .content_support.models import ContentConfig
 
-        prompt_manager = PromptManager(prompts)
+        # Create temporary ContentConfig to get default prompts
+        temp_config = ContentConfig()
+        default_prompts = temp_config.get_default_prompts()
 
-        # Import any missing default prompts
-        if not prompts:
-            default_prompts_data = {
-                name: config.model_dump()
-                for name, config in self.typed_config.get_default_prompts().items()
-            }
-            prompt_manager.import_prompts(default_prompts_data)
+        # Use default prompts for now since config structure changed
+        prompt_manager = PromptManager(default_prompts)
 
         self.logger.info(f"Prompt manager initialized with {len(prompt_manager.prompts)} prompts")
         return prompt_manager
@@ -133,31 +120,18 @@ class ContentProcessor(BaseProcessor):
         Returns:
             List of enabled handlers
         """
-        handlers = []
-        handler_config = self.typed_config.file_type_handlers
+        if not self.ai_service:
+            self.logger.warning("AI service not available, handlers will have limited functionality")
+            return []
 
-        # Only create handlers for enabled file types
-        handler_classes = [
-            ('text', TextContentHandler),
-            ('image', ImageContentHandler),
-            ('pdf', PDFContentHandler),
-            ('sheet', SheetContentHandler),
-            ('document', DocumentContentHandler)
-        ]
+        # Use factory to create all enabled handlers
+        handlers = get_all_handlers(
+            ai_service=self.ai_service,
+            prompt_manager=self.prompt_manager,
+            config=self.typed_config
+        )
 
-        for handler_name, handler_class in handler_classes:
-            if handler_config.get(handler_name, True):  # Default to enabled
-                try:
-                    handler = handler_class(
-                        self.openai_client,
-                        self.prompt_manager,
-                        self.config
-                    )
-                    handlers.append(handler)
-                    self.logger.debug(f"Initialized {handler_name} handler")
-                except Exception as e:
-                    self.logger.error(f"Failed to initialize {handler_name} handler: {e}")
-
+        self.logger.info(f"Initialized {len(handlers)} handlers")
         return handlers
 
     def process_file(self, file_path: Path, existing_metadata: Optional[Union[Dict[str, Any], None]] = None) -> Dict[str, Any]:
@@ -192,7 +166,7 @@ class ContentProcessor(BaseProcessor):
             # Check file size limits
             if not self._check_file_size(file_path):
                 raise ContentProcessorError(
-                    f"File size exceeds limit of {self.typed_config.max_file_size_mb}MB",
+                    f"File size exceeds limit of {self.typed_config.processing.max_file_size_mb}MB",
                     error_type="file_too_large"
                 )
 
@@ -214,14 +188,14 @@ class ContentProcessor(BaseProcessor):
             )
 
             # Return as dictionary for pipeline compatibility
-            return {'file_content': result.model_dump_for_json()}
+            return {'file_content': result.model_dump()}
 
         except ContentProcessorError as e:
             # Log and re-raise our custom errors
             self.logger.error(f"Content processing failed for {file_path}: {e.message}")
 
             # Return error context instead of raising if configured for graceful degradation
-            if self.typed_config.file_type_handlers.get('graceful_degradation', True):
+            if self.typed_config.processing.graceful_degradation:
                 error_content = self._create_error_content(str(e), time.time() - start_time)
                 return {'file_content': error_content}
             else:
@@ -251,7 +225,7 @@ class ContentProcessor(BaseProcessor):
         """
         try:
             file_size_mb = file_path.stat().st_size / (1024 * 1024)
-            return file_size_mb <= self.typed_config.max_file_size_mb
+            return file_size_mb <= self.typed_config.processing.max_file_size_mb
         except Exception:
             return False
 
@@ -281,7 +255,6 @@ class ContentProcessor(BaseProcessor):
         Returns:
             Minimal content dictionary for system files
         """
-        from .content_support.models import ProcessingInfo, ContentAnalysis, FileContentOutput
 
         processing_info = ProcessingInfo(
             processor_version=self.VERSION,
@@ -298,10 +271,10 @@ class ContentProcessor(BaseProcessor):
         system_output = FileContentOutput(
             processing_info=processing_info,
             content_metadata=content_metadata,
-            data_summary=f"System file {filename} was skipped"
+            data_text_content=f"System file {filename} was skipped"
         )
 
-        return system_output.model_dump_for_json()
+        return system_output.model_dump()
 
     def _create_error_content(self, error_message: str, processing_time: float) -> Dict[str, Any]:
         """
@@ -314,7 +287,6 @@ class ContentProcessor(BaseProcessor):
         Returns:
             Error content dictionary
         """
-        from .content_support.models import ProcessingInfo, ContentAnalysis
 
         processing_info = ProcessingInfo(
             processor_version=self.VERSION,
@@ -333,7 +305,7 @@ class ContentProcessor(BaseProcessor):
             content_metadata=content_metadata  # Fixed field name
         )
 
-        return error_output.model_dump_for_json()
+        return error_output.model_dump()
 
     def validate_config(self) -> bool:
         """
@@ -344,11 +316,15 @@ class ContentProcessor(BaseProcessor):
         """
         try:
             # Validate base configuration
-            if not isinstance(self.typed_config, ContentConfig):
+            if not isinstance(self.typed_config, ContentProcessorConfig):
                 return False
 
             # Check if at least one handler is enabled
-            if not any(self.typed_config.file_type_handlers.values()):
+            enabled_handlers = [
+                self.typed_config.is_handler_enabled(name)
+                for name in ['text', 'image', 'pdf', 'spreadsheet', 'document']
+            ]
+            if not any(enabled_handlers):
                 self.logger.error("No file type handlers are enabled")
                 return False
 
@@ -359,9 +335,9 @@ class ContentProcessor(BaseProcessor):
                 self.logger.error(f"Invalid prompts found: {invalid_prompts}")
                 return False
 
-            # Check OpenAI client if vision API is enabled
-            if self.typed_config.enable_vision_api and not self.openai_client:
-                self.logger.warning("Vision API enabled but OpenAI client not available")
+            # Check AI service if vision API is enabled
+            if self.typed_config.ai.enable_vision_api and not self.ai_service:
+                self.logger.warning("Vision API enabled but AI service not available")
 
             return True
 
@@ -380,7 +356,7 @@ class ContentProcessor(BaseProcessor):
 
         # Add AI-specific information
         ai_info = {
-            'openai_client_available': self.openai_client is not None,
+            'ai_service_available': self.ai_service is not None,
             'enabled_handlers': [
                 handler.__class__.__name__
                 for handler in self.handlers
@@ -388,11 +364,11 @@ class ContentProcessor(BaseProcessor):
             'total_prompts': len(self.prompt_manager.prompts),
             'prompt_versions': self.prompt_manager.list_prompts(),
             'configuration': {
-                'enable_vision_api': self.typed_config.enable_vision_api,
-                'enable_ocr_fallback': self.typed_config.enable_ocr_fallback,
-                'max_file_size_mb': self.typed_config.max_file_size_mb,
-                'max_retries': self.typed_config.max_retries,
-                'timeout_seconds': self.typed_config.timeout_seconds
+                'enable_vision_api': self.typed_config.ai.enable_vision_api,
+                'enable_ocr_fallback': self.typed_config.pdf.ocr_as_fallback,
+                'max_file_size_mb': self.typed_config.processing.max_file_size_mb,
+                'max_retries': self.typed_config.ai.max_retries,
+                'timeout_seconds': self.typed_config.ai.timeout_seconds
             }
         }
 
@@ -420,26 +396,26 @@ class ContentProcessor(BaseProcessor):
             Dictionary with test results
         """
         results = {
-            'openai_client_available': self.openai_client is not None,
+            'ai_service_available': self.ai_service is not None,
             'api_key_configured': bool(
-                self.typed_config.openai_api_key or
+                self.typed_config.ai.openai_api_key or
                 os.getenv('OPENAI_API_KEY')
             ),
-            'vision_api_enabled': self.typed_config.enable_vision_api,
+            'vision_api_enabled': self.typed_config.ai.enable_vision_api,
             'test_request_successful': False,
             'error_message': None
         }
 
-        if self.openai_client:
+        if self.ai_service:
             try:
                 # Simple test request
-                response = self.openai_client.chat.completions.create(
+                response = self.ai_service.analyze_content(
+                    prompt="Hello",
                     model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Hello"}],
                     max_tokens=5
                 )
                 results['test_request_successful'] = True
-                results['test_response'] = response.choices[0].message.content
+                results['test_response'] = response
             except Exception as e:
                 results['error_message'] = str(e)
 

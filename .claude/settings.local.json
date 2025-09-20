@@ -21,7 +21,11 @@
       "WebSearch",
       "Bash(uv add:*)",
       "Bash(find:*)",
-      "Bash(del test_ocr_tracking.py)"
+      "Bash(del test_ocr_tracking.py)",
+      "Bash(findstr:*)",
+      "Bash(del nul)",
+      "Bash(git config:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

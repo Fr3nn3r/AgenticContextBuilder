@@ -11,3 +11,8 @@ dependencies = [
     "openai>=1.108.1",
     "python-dotenv>=1.1.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-mock>=3.15.1",
+]

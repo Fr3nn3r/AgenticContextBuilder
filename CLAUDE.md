@@ -14,6 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **I – Interface Segregation Principle (ISP)**: Don’t force classes to implement methods they don’t need. Better to have many small, specific interfaces than one fat, do-everything interface.
 - **D – Dependency Inversion Principle (DIP)**: Depend on abstractions (interfaces), not concrete implementations. High-level modules shouldn’t depend on low-level details. Both should depend on interfaces/contracts.
 
+### What “good” looks like
+High cohesion per file (one purpose), low coupling across files.
+Functions ≤50–80 lines, files typically ≤200–400 lines.
+Cross-cutting concerns (OpenAI calls, JSON cleaning, PDF page rendering, OCR) in small reusable modules.
+Lazy imports for heavy deps (e.g., pdfium, PIL, pandas) in their specific modules/paths.
+
 ### Naming standards
 1) Name by purpose, not by type or mechanics
   Bad: data, result, list1
@@ -72,7 +78,12 @@ e.g. # Business rule: claims older than 2 years cannot be reopened
 2. Document assumptions and edge cases
 e.g. # Assumes travel insurance IDs are globally unique (not just per country)
 3. Mark todos and decisions explicitly
-e.g. 
+e.g. // TODO: Replace with real OCR once accuracy >95%
+4. Public APIs / Interfaces need a docstring
+  Functions, classes, and modules exposed to other devs must explain:
+    What it does
+    Parameters (esp. units)
+    Return value / side effects
 
 
 ### Communication Style

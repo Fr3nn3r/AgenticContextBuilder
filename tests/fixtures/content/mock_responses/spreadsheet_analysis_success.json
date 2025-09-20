@@ -1,0 +1,82 @@
+{
+  "response": {
+    "summary": "Employee dataset with 5 records containing personal and employment information including names, ages, departments, salaries, and start dates.",
+    "dataset_type": "employee_data",
+    "columns": [
+      {
+        "name": "Name",
+        "data_type": "string",
+        "purpose": "Employee full name",
+        "has_nulls": false,
+        "unique_values_count": 5,
+        "sample_values": ["John Smith", "Jane Doe", "Bob Johnson"]
+      },
+      {
+        "name": "Age",
+        "data_type": "number",
+        "purpose": "Employee age in years",
+        "has_nulls": false,
+        "unique_values_count": 5,
+        "sample_values": [35, 28, 42]
+      },
+      {
+        "name": "Department",
+        "data_type": "string",
+        "purpose": "Employee department/division",
+        "has_nulls": false,
+        "unique_values_count": 4,
+        "sample_values": ["Engineering", "Marketing", "Sales"]
+      },
+      {
+        "name": "Salary",
+        "data_type": "number",
+        "purpose": "Annual salary in USD",
+        "has_nulls": false,
+        "unique_values_count": 5,
+        "sample_values": [95000, 75000, 85000]
+      },
+      {
+        "name": "Start_Date",
+        "data_type": "date",
+        "purpose": "Employment start date",
+        "has_nulls": false,
+        "unique_values_count": 5,
+        "sample_values": ["2020-01-15", "2021-03-22", "2019-07-10"]
+      }
+    ],
+    "statistics": {
+      "row_count": 5,
+      "column_count": 5,
+      "empty_cells_percentage": 0,
+      "data_completeness": "complete"
+    },
+    "insights": {
+      "key_patterns": [
+        "Engineering department has highest average salary",
+        "All employees started between 2018-2021"
+      ],
+      "anomalies": [],
+      "relationships": [
+        "No clear correlation between age and salary",
+        "Engineering department employees tend to have higher salaries"
+      ],
+      "trends": []
+    },
+    "data_quality": {
+      "overall_quality": "high",
+      "issues": [],
+      "recommendations": ["Consider adding employee ID field for unique identification"]
+    },
+    "use_cases": [
+      "HR analytics and reporting",
+      "Salary benchmarking analysis",
+      "Department budget planning"
+    ],
+    "metadata": {
+      "has_headers": true,
+      "delimiter": "comma",
+      "encoding_issues": false
+    }
+  },
+  "raw_response": "{\"summary\":\"Employee dataset with 5 records containing personal and employment information including names, ages, departments, salaries, and start dates.\",\"dataset_type\":\"employee_data\",\"columns\":[{\"name\":\"Name\",\"data_type\":\"string\",\"purpose\":\"Employee full name\",\"has_nulls\":false,\"unique_values_count\":5,\"sample_values\":[\"John Smith\",\"Jane Doe\",\"Bob Johnson\"]},{\"name\":\"Age\",\"data_type\":\"number\",\"purpose\":\"Employee age in years\",\"has_nulls\":false,\"unique_values_count\":5,\"sample_values\":[35,28,42]},{\"name\":\"Department\",\"data_type\":\"string\",\"purpose\":\"Employee department/division\",\"has_nulls\":false,\"unique_values_count\":4,\"sample_values\":[\"Engineering\",\"Marketing\",\"Sales\"]},{\"name\":\"Salary\",\"data_type\":\"number\",\"purpose\":\"Annual salary in USD\",\"has_nulls\":false,\"unique_values_count\":5,\"sample_values\":[95000,75000,85000]},{\"name\":\"Start_Date\",\"data_type\":\"date\",\"purpose\":\"Employment start date\",\"has_nulls\":false,\"unique_values_count\":5,\"sample_values\":[\"2020-01-15\",\"2021-03-22\",\"2019-07-10\"]}],\"statistics\":{\"row_count\":5,\"column_count\":5,\"empty_cells_percentage\":0,\"data_completeness\":\"complete\"},\"insights\":{\"key_patterns\":[\"Engineering department has highest average salary\",\"All employees started between 2018-2021\"],\"anomalies\":[],\"relationships\":[\"No clear correlation between age and salary\",\"Engineering department employees tend to have higher salaries\"],\"trends\":[]},\"data_quality\":{\"overall_quality\":\"high\",\"issues\":[],\"recommendations\":[\"Consider adding employee ID field for unique identification\"]},\"use_cases\":[\"HR analytics and reporting\",\"Salary benchmarking analysis\",\"Department budget planning\"],\"metadata\":{\"has_headers\":true,\"delimiter\":\"comma\",\"encoding_issues\":false}}"
+}
