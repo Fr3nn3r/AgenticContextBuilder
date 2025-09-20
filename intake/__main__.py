@@ -1,6 +1,6 @@
-# file_ingest/__main__.py
+# intake/__main__.py
 # Entry point for running the file ingestion package as a module
-# Allows execution via: python -m file_ingest
+# Allows execution via: python -m intake
 
 from .cli import main
 

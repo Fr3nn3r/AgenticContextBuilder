@@ -1,4 +1,4 @@
-# file_ingest/cli.py
+# intake/cli.py
 # Command-line interface for the file ingestion system
 # Handles argument parsing, logging configuration, and main execution
 
@@ -48,20 +48,23 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Process first 3 datasets with default settings
-  python -m file_ingest datasets/ output/
+  # Process with content enrichment (requires OPENAI_API_KEY)
+  python -m intake datasets/ output/ -c config/default_ai_config.json
 
-  # Process specific datasets
-  python -m file_ingest datasets/ output/ -d dataset1 dataset2
+  # Process metadata only (no AI)
+  python -m intake datasets/ output/ -c config/metadata_only_config.json
 
-  # Process only certain subfolders within datasets
-  python -m file_ingest datasets/ output/ -s train test
+  # Process specific datasets with AI
+  python -m intake datasets/ output/ -c config/default_ai_config.json -d dataset1 dataset2
+
+  # Process only certain subfolders
+  python -m intake datasets/ output/ -c config/default_ai_config.json -s train test
 
   # List available processors
-  python -m file_ingest --list-processors
+  python -m intake --list-processors
 
   # Verbose logging
-  python -m file_ingest datasets/ output/ -v
+  python -m intake datasets/ output/ -c config/default_ai_config.json -v
         """
     )
 
@@ -99,7 +102,9 @@ Examples:
     parser.add_argument(
         '-c', '--config',
         type=str,
-        help='Path to configuration file (JSON format)'
+        help='Path to configuration file (JSON format). '
+             'Use config/default_ai_config.json for AI processing or '
+             'config/metadata_only_config.json for metadata only'
     )
     parser.add_argument(
         '-v', '--verbose',
@@ -230,6 +235,9 @@ def main() -> int:
     # Check required arguments for main processing
     if not args.input_folder or not args.output_folder:
         parser.error("input_folder and output_folder are required for processing")
+
+    if not args.config:
+        parser.error("Configuration file is required. Use -c config/default_ai_config.json for AI processing or -c config/metadata_only_config.json for metadata only")
 
     # Setup logging
     setup_logging(args.verbose)

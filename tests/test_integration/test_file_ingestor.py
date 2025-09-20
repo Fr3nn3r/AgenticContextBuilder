@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import pytest
 
-from file_ingest.ingest import FileIngestor
+from intake.ingest import FileIngestor
 
 
 class TestFileIngestor:
@@ -46,7 +46,7 @@ class TestFileIngestor:
         (subfolder / "file3.txt").write_text("Content 3")
 
         output_path = tmp_path / "output"
-        ingestion_id = "test-2025-01-01-1234567890-test_dataset"
+        ingestion_id = "test-2025-01-01-1430-1234567890-test_dataset"
 
         result = self.ingestor.ingest_dataset_folder(
             dataset_path, output_path, ingestion_id
@@ -94,7 +94,7 @@ class TestFileIngestor:
         (val_folder / "val1.txt").write_text("Validation data 1")
 
         output_path = tmp_path / "output"
-        ingestion_id = "test-2025-01-01-1234567890-test_dataset"
+        ingestion_id = "test-2025-01-01-1430-1234567890-test_dataset"
 
         # Only process train and test folders
         result = self.ingestor.ingest_dataset_folder(
@@ -149,7 +149,7 @@ class TestFileIngestor:
 
         # Check that ingestion ID was used consistently
         ingestion_id = result['ingestion_summary']['ingestion_id']
-        assert ingestion_id.startswith("ingest-")
+        assert ingestion_id.startswith("intake-")
 
         # Check output structure
         output_ingestion_path = output_path / ingestion_id
@@ -260,7 +260,7 @@ class TestFileIngestor:
         test_file.write_text("Hello, world!")
 
         output_path = tmp_path / "output"
-        ingestion_id = "test-2025-01-01-1234567890-dataset"
+        ingestion_id = "test-2025-01-01-1430-1234567890-dataset"
 
         self.ingestor.ingest_dataset_folder(dataset_path, output_path, ingestion_id)
 
@@ -279,7 +279,7 @@ class TestFileIngestor:
         processing_info = metadata['processing_info']
         required_keys = [
             'ingestion_time', 'ingestion_id', 'source_dataset',
-            'dataset_folder_name', 'output_path', 'pipeline_info'
+            'dataset_folder_name', 'output_path'
         ]
         for key in required_keys:
             assert key in processing_info
@@ -298,7 +298,7 @@ class TestFileIngestor:
         (nested_dir / "nested_file.txt").write_text("Nested content")
 
         output_path = tmp_path / "output"
-        ingestion_id = "test-2025-01-01-1234567890-dataset"
+        ingestion_id = "test-2025-01-01-1430-1234567890-dataset"
 
         self.ingestor.ingest_dataset_folder(dataset_path, output_path, ingestion_id)
 

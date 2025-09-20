@@ -8,4 +8,6 @@ dependencies = [
     "unstructured[pdf]>=0.18.3",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "openai>=1.108.1",
+    "python-dotenv>=1.1.1",
 ]

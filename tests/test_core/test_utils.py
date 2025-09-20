@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
-from file_ingest.utils import (
+from intake.utils import (
     get_file_hash,
     format_bytes,
     generate_ingestion_id,
@@ -165,16 +165,16 @@ class TestGenerateIngestionId:
 
     def test_date_format_consistency(self):
         """Test that ingestion ID contains correct date format."""
-        with patch('file_ingest.utils.datetime') as mock_datetime:
-            # Mock current date
+        with patch('intake.utils.datetime') as mock_datetime:
+            # Mock current datetime with HHMM
             mock_now = MagicMock()
-            mock_now.strftime.return_value = "2025-09-19"
+            mock_now.strftime.return_value = "2025-09-19-1430"
             mock_datetime.now.return_value = mock_now
 
             ingestion_id = generate_ingestion_id(Path("/some/test_folder"))
 
-            # Should start with "ingest-2025-09-19-"
-            assert ingestion_id.startswith("ingest-2025-09-19-")
+            # Should start with "intake-2025-09-19-1430-"
+            assert ingestion_id.startswith("intake-2025-09-19-1430-")
 
     def test_random_suffix_uniqueness(self):
         """Test that random suffix makes IDs unique."""
@@ -209,23 +209,24 @@ class TestGenerateIngestionId:
         """Test the overall structure of ingestion ID."""
         ingestion_id = generate_ingestion_id(Path("/test/my_dataset"))
 
-        # Should have format: ingest-YYYY-MM-DD-XXXXXXXXXX-folder_name
+        # Should have format: intake-YYYY-MM-DD-HHMM-XXXXXXXXXX-folder_name
         parts = ingestion_id.split('-')
 
-        assert parts[0] == "ingest"
+        assert parts[0] == "intake"
         assert len(parts[1]) == 4  # Year
         assert len(parts[2]) == 2  # Month
         assert len(parts[3]) == 2  # Day
-        assert len(parts[4]) == 10  # Random suffix
-        assert parts[5] == "my_dataset"  # Folder name
+        assert len(parts[4]) == 4  # HHMM
+        assert len(parts[5]) == 10  # Random suffix
+        assert parts[6] == "my_dataset"  # Folder name
 
     def test_random_suffix_format(self):
         """Test that random suffix is 10 digits."""
         ingestion_id = generate_ingestion_id(Path("/test/folder"))
 
-        # Extract the random part (4th part when split by '-')
+        # Extract the random part (5th part when split by '-', after HH:MM)
         parts = ingestion_id.split('-')
-        random_part = parts[4]
+        random_part = parts[5]
 
         assert len(random_part) == 10
         assert random_part.isdigit()  # Should be all digits

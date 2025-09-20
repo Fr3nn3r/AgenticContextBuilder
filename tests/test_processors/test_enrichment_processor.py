@@ -7,7 +7,7 @@ Tests file categorization and metadata enrichment functionality.
 import pytest
 from pathlib import Path
 
-from file_ingest.processors.enrichment import EnrichmentProcessor
+from intake.processors.enrichment import EnrichmentProcessor
 
 
 class TestEnrichmentProcessor:

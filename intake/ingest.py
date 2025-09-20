@@ -1,13 +1,16 @@
-# file_ingest/ingest.py
+# intake/ingest.py
 # Core ingestion orchestration and dataset processing logic
 # Coordinates file processing through the plugin pipeline
 
 from __future__ import annotations
 
+import os
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
+
+from dotenv import load_dotenv
 
 from .processors import ProcessingPipeline, registry
 from .utils import generate_ingestion_id, ensure_directory, get_relative_path_safe, safe_filename
@@ -31,6 +34,41 @@ def _serialize_for_json(obj: Any) -> Any:
         return [_serialize_for_json(item) for item in obj]
     else:
         return obj
+
+
+def _validate_ai_processor_requirements(config: Dict[str, Any]) -> None:
+    """
+    Validate that AI processor requirements are met.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ValueError: If AI processor is configured but requirements not met
+    """
+    # Load environment variables
+    load_dotenv()
+
+    # Check if AIContextProcessor is in the pipeline
+    processors = config.get('processors', [])
+    has_ai_processor = any(
+        proc.get('name') == 'AIContextProcessor'
+        for proc in processors
+    )
+
+    if has_ai_processor:
+        # Check for OpenAI API key
+        api_key = (
+            os.getenv('OPENAI_API_KEY') or
+            os.getenv('OPENAI_KEY')
+        )
+
+        if not api_key:
+            raise ValueError(
+                "AIContextProcessor is configured but no OpenAI API key found. "
+                "Please set OPENAI_API_KEY in your environment or .env file. "
+                "Alternatively, use a configuration without AIContextProcessor (e.g., config/metadata_only_config.json)"
+            )
 
 
 class FileIngestor:
@@ -64,6 +102,10 @@ class FileIngestor:
 
         # Keep dict version for backward compatibility
         self.config = self.typed_config.model_dump()
+
+        # Validate AI processor requirements if configured
+        _validate_ai_processor_requirements(self.config)
+
         self.pipeline = ProcessingPipeline(registry)
         self._setup_pipeline()
 
@@ -150,33 +192,55 @@ class FileIngestor:
                         'source_dataset': dataset_name,
                         'dataset_folder_name': dataset_folder_name,
                         'output_path': str(output_dataset_path),
-                        'pipeline_info': self.pipeline.get_pipeline_info(),
                     }
 
-                    # Combine metadata with processing info
+                    # Separate file_content from other metadata
+                    file_content = file_metadata.pop('file_content', None)
+
+                    # Create metadata file (without AI content)
                     complete_metadata = {
                         'processing_info': processing_info,
-                        **file_metadata  # Merge all processor outputs
+                        **file_metadata  # Merge all non-content processor outputs
                     }
 
-                    # Create individual metadata file (preserve relative path structure)
+                    # Prepare output directory and filenames
                     relative_path_parent = relative_path.parent
-                    metadata_filename = safe_filename(f"{item.stem}_metadata.json")
                     metadata_output_dir = output_dataset_path / relative_path_parent
                     ensure_directory(metadata_output_dir)
+
+                    metadata_filename = safe_filename(f"{item.stem}_metadata.json")
                     metadata_file_path = metadata_output_dir / metadata_filename
 
-                    # Write metadata to individual file
+                    # Write metadata file
                     with open(metadata_file_path, 'w', encoding='utf-8') as f:
                         json.dump(_serialize_for_json(complete_metadata), f, indent=2, ensure_ascii=False)
 
-                    processed_files.append({
+                    file_info = {
                         'original_file': str(item),
                         'relative_path': str(relative_path),
                         'metadata_file': str(metadata_file_path),
                         'file_name': item.name,
                         'metadata_filename': metadata_filename
-                    })
+                    }
+
+                    # Write separate content file if AI content was generated
+                    if file_content:
+                        content_filename = safe_filename(f"{item.stem}_content.json")
+                        content_file_path = metadata_output_dir / content_filename
+
+                        # Create complete content file with processing info
+                        complete_content = {
+                            'processing_info': processing_info,
+                            'file_content': file_content
+                        }
+
+                        with open(content_file_path, 'w', encoding='utf-8') as f:
+                            json.dump(_serialize_for_json(complete_content), f, indent=2, ensure_ascii=False)
+
+                        file_info['content_file'] = str(content_file_path)
+                        file_info['content_filename'] = content_filename
+
+                    processed_files.append(file_info)
 
                 except Exception as e:
                     print(f"  [ERROR] Failed to process {relative_path}: {e}")
@@ -200,7 +264,6 @@ class FileIngestor:
                 'processing_time': datetime.now().isoformat(),
                 'total_files_processed': len([f for f in processed_files if 'error' not in f]),
                 'total_files_failed': len([f for f in processed_files if 'error' in f]),
-                'pipeline_info': self.pipeline.get_pipeline_info(),
             },
             'processed_files': processed_files
         }
@@ -311,7 +374,6 @@ class FileIngestor:
                 'total_files_processed': total_files_processed,
                 'total_files_failed': total_files_failed,
                 'processed_datasets': [d.name for d in datasets_to_process],
-                'pipeline_info': self.pipeline.get_pipeline_info(),
             },
             'dataset_summaries': dataset_summaries
         }

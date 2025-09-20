@@ -1,4 +1,4 @@
-# file_ingest/processors/__init__.py
+# intake/processors/__init__.py
 # Processor plugin registry and auto-discovery system
 # Automatically loads and manages all available processors
 

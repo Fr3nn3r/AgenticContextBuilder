@@ -1,4 +1,4 @@
-# file_ingest/__init__.py
+# intake/__init__.py
 # File ingestion package for extracting metadata from datasets
 # Provides extensible processing pipeline with pluggable processors
 

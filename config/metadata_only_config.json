@@ -1,0 +1,13 @@
+{
+  "processors": [
+    {
+      "name": "MetadataProcessor",
+      "config": {
+        "include_hashes": true,
+        "hash_algorithms": ["md5", "sha1", "sha256"],
+        "include_permissions": true,
+        "include_windows_attributes": true
+      }
+    }
+  ]
+}

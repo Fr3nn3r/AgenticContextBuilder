@@ -1,0 +1,95 @@
+{
+  "processors": [
+    {
+      "name": "MetadataProcessor",
+      "config": {
+        "include_hashes": true,
+        "hash_algorithms": ["md5", "sha1", "sha256"],
+        "include_permissions": true,
+        "include_windows_attributes": true
+      }
+    },
+    {
+      "name": "ContentProcessor",
+      "config": {
+        "enable_vision_api": true,
+        "enable_ocr_fallback": true,
+        "max_retries": 3,
+        "timeout_seconds": 30,
+        "max_file_size_mb": 50,
+        "file_type_handlers": {
+          "text": true,
+          "image": true,
+          "pdf": true,
+          "sheet": true,
+          "document": true
+        },
+        "enable_async_processing": true,
+        "connection_pool_size": 10,
+        "ocr_languages": ["eng", "spa"],
+        "prompts": {
+          "universal_document": {
+            "active_version": "2.0.0",
+            "versions": {
+              "1.0.0": {
+                "template": "You are an AI assistant for universal document and image processing.\nFor the image provided:\n\nDescribe the content and any visible details as clearly as possible.\n\nIdentify the type of image or document, and include this as a field in your output.",
+                "model": "gpt-4o",
+                "max_tokens": 2048,
+                "temperature": 0.1,
+                "description": "Universal prompt for document and image analysis - plain text output"
+              },
+              "2.0.0": {
+                "template": "You are an AI assistant for universal document and image processing.\nFor the image provided:\n\nIf the image is a document (receipt, ticket, invoice, form, etc.), extract all visible information in structured JSON format (include key fields, tables, totals, dates, etc.).\n\nIf the image is a photo (e.g., a vehicle, damaged property, or objects), describe the content and any visible details as clearly as possible.\n\nIn all cases, identify the type of image or document, and include this as a field in your output.",
+                "model": "gpt-4o",
+                "max_tokens": 2048,
+                "temperature": 0.1,
+                "description": "Universal prompt for document and image analysis - JSON output",
+                "output_format": "json"
+              }
+            }
+          },
+          "text_analysis": {
+            "active_version": "2.0.0",
+            "versions": {
+              "1.0.0": {
+                "template": "Analyze the following text content and provide:\n1. A brief summary (1-2 sentences)\n2. Key topics or themes identified\n3. Document type (if identifiable)\n4. Language detected\n5. Any structured data found (dates, numbers, entities)\n\nText content:\n{content}",
+                "model": "gpt-4o",
+                "max_tokens": 1024,
+                "temperature": 0.1,
+                "description": "Analysis prompt for text-based files - plain text output"
+              },
+              "2.0.0": {
+                "template": "Analyze the following text content and return a JSON object with this exact structure:\n{{\n  \"summary\": \"Brief 1-2 sentence summary\",\n  \"document_type\": \"Type of document (e.g., email, report, article, code, etc.)\",\n  \"language\": \"ISO 639-1 language code (e.g., en, es, fr)\",\n  \"key_topics\": [\"topic1\", \"topic2\", ...],\n  \"entities\": {{\n    \"people\": [\"name1\", \"name2\", ...],\n    \"organizations\": [\"org1\", \"org2\", ...],\n    \"locations\": [\"location1\", \"location2\", ...],\n    \"dates\": [\"date1\", \"date2\", ...],\n    \"numbers\": [\"significant numbers or amounts\", ...]\n  }},\n  \"sentiment\": \"positive/negative/neutral\",\n  \"technical_level\": \"low/medium/high\",\n  \"word_count\": <number>,\n  \"has_code\": true/false,\n  \"has_tables\": true/false,\n  \"metadata\": {{\n    \"title\": \"extracted title if present\",\n    \"author\": \"extracted author if identifiable\",\n    \"date_created\": \"extracted creation date if found\"\n  }}\n}}\n\nIMPORTANT: Return ONLY valid JSON, no additional text or explanations.\n\nText content to analyze:\n{content}",
+                "model": "gpt-4o",
+                "max_tokens": 1500,
+                "temperature": 0.1,
+                "description": "JSON-structured analysis prompt for text-based files",
+                "output_format": "json"
+              }
+            }
+          },
+          "spreadsheet_analysis": {
+            "active_version": "2.0.0",
+            "versions": {
+              "1.0.0": {
+                "template": "Analyze this spreadsheet data and provide:\n1. Data structure summary\n2. Column types and purposes\n3. Key patterns or insights\n4. Data quality assessment\n5. Potential use cases\n\nData:\n{content}",
+                "model": "gpt-4o",
+                "max_tokens": 1024,
+                "temperature": 0.1,
+                "description": "Analysis prompt for spreadsheet files - plain text output"
+              },
+              "2.0.0": {
+                "template": "Analyze the following spreadsheet data and return a JSON object with this exact structure:\n{{\n  \"summary\": \"Brief description of the spreadsheet content and purpose\",\n  \"dataset_type\": \"Type of data (e.g., financial, inventory, customer_data, time_series, etc.)\",\n  \"columns\": [\n    {{\n      \"name\": \"column_name\",\n      \"data_type\": \"string/number/date/boolean/mixed\",\n      \"purpose\": \"Description of what this column represents\",\n      \"has_nulls\": true/false,\n      \"unique_values_count\": <number if applicable>,\n      \"sample_values\": [\"val1\", \"val2\", \"val3\"]\n    }}\n  ],\n  \"statistics\": {{\n    \"row_count\": <number>,\n    \"column_count\": <number>,\n    \"empty_cells_percentage\": <number>,\n    \"data_completeness\": \"complete/mostly_complete/sparse\"\n  }},\n  \"insights\": {{\n    \"key_patterns\": [\"pattern1\", \"pattern2\", ...],\n    \"anomalies\": [\"anomaly1\", \"anomaly2\", ...],\n    \"relationships\": [\"Column A correlates with Column B\", ...],\n    \"trends\": [\"trend1\", \"trend2\", ...]\n  }},\n  \"data_quality\": {{\n    \"overall_quality\": \"high/medium/low\",\n    \"issues\": [\"issue1\", \"issue2\", ...],\n    \"recommendations\": [\"recommendation1\", \"recommendation2\", ...]\n  }},\n  \"use_cases\": [\"Potential use case 1\", \"Potential use case 2\", ...],\n  \"metadata\": {{\n    \"has_headers\": true/false,\n    \"delimiter\": \"comma/tab/semicolon/etc\",\n    \"encoding_issues\": true/false,\n    \"date_format\": \"detected date format if applicable\"\n  }}\n}}\n\nIMPORTANT: Return ONLY valid JSON, no additional text or explanations.\n\nSpreadsheet data to analyze:\n{content}",
+                "model": "gpt-4o",
+                "max_tokens": 2000,
+                "temperature": 0.1,
+                "description": "JSON-structured analysis prompt for spreadsheet files",
+                "output_format": "json"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

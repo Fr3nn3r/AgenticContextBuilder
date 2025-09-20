@@ -1,4 +1,4 @@
-# file_ingest/utils.py
+# intake/utils.py
 # Shared utility functions for file ingestion system
 # Contains common operations like hashing, formatting, and ID generation
 
@@ -62,7 +62,7 @@ def generate_ingestion_id(input_folder: Path) -> str:
     """
     Generate unique ingestion ID with timestamp and input folder name.
 
-    Format: ingest-YYYY-MM-DD-XXXXXXXXXX-folder_name
+    Format: intake-YYYY-MM-DD-HHMM-XXXXXXXXXX-folder_name
 
     Args:
         input_folder: Path to the input folder being processed
@@ -70,10 +70,10 @@ def generate_ingestion_id(input_folder: Path) -> str:
     Returns:
         Unique ingestion ID string
     """
-    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_datetime = datetime.now().strftime("%Y-%m-%d-%H%M")
     random_suffix = ''.join([str(random.randint(0, 9)) for _ in range(10)])
     input_folder_name = input_folder.name
-    return f"ingest-{current_date}-{random_suffix}-{input_folder_name}"
+    return f"intake-{current_datetime}-{random_suffix}-{input_folder_name}"
 
 
 def ensure_directory(path: Path) -> None:

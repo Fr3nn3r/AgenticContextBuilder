@@ -1,4 +1,4 @@
-# file_ingest/processors/base.py
+# intake/processors/base.py
 # Base processor interface for the file ingestion system
 # Defines the contract that all processors must implement
 

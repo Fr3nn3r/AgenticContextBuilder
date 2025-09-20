@@ -1,4 +1,4 @@
-# file_ingest/processors/metadata.py
+# intake/processors/metadata.py
 # Core metadata processor for extracting file system and basic file information
 # Migrated from original extract_datasets_metadata.py with ingestion terminology
 

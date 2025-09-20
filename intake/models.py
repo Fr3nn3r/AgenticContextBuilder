@@ -1,4 +1,4 @@
-# file_ingest/models.py
+# intake/models.py
 # Pydantic data models for file ingestion system
 # Defines structured data models for metadata, processing info, and summaries
 
@@ -90,7 +90,6 @@ class ProcessingInfo(BaseModel):
     source_dataset: str = Field(..., description="Name of the source dataset")
     dataset_folder_name: str = Field(..., description="Name of the dataset output folder")
     output_path: str = Field(..., description="Path where output files are stored")
-    pipeline_info: List[ProcessorInfo] = Field(..., description="Information about processors used")
 
 
 class ProcessedFileInfo(BaseModel):
@@ -100,6 +99,8 @@ class ProcessedFileInfo(BaseModel):
     file_name: str = Field(..., description="Name of the original file")
     metadata_file: Optional[str] = Field(None, description="Path to the generated metadata file")
     metadata_filename: Optional[str] = Field(None, description="Name of the metadata file")
+    content_file: Optional[str] = Field(None, description="Path to the generated content file")
+    content_filename: Optional[str] = Field(None, description="Name of the content file")
     error: Optional[str] = Field(None, description="Error message if processing failed")
     processing_failed: Optional[bool] = Field(None, description="Whether processing failed")
 
@@ -114,7 +115,6 @@ class DatasetInfo(BaseModel):
     processing_time: str = Field(..., description="Timestamp when processing completed")
     total_files_processed: int = Field(..., description="Number of files successfully processed")
     total_files_failed: int = Field(..., description="Number of files that failed processing")
-    pipeline_info: List[ProcessorInfo] = Field(..., description="Information about processors used")
 
 
 class DatasetSummary(BaseModel):
@@ -136,7 +136,6 @@ class IngestionSummary(BaseModel):
     total_files_processed: int = Field(..., description="Total number of files successfully processed")
     total_files_failed: int = Field(..., description="Total number of files that failed processing")
     processed_datasets: List[str] = Field(..., description="Names of datasets that were processed")
-    pipeline_info: List[ProcessorInfo] = Field(..., description="Information about processors used")
 
 
 class OverallSummary(BaseModel):

@@ -1,4 +1,4 @@
-# file_ingest/processors/enrichment.py
+# intake/processors/enrichment.py
 # Example enrichment processor for demonstrating extensibility
 # Can be used as a template for creating custom processors
 
