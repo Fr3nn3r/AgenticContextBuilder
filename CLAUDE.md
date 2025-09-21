@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # IMPORTANT
 - never EVER take action unless the User explicitly tells you to.
 - never EVER make assumptions -> ask questions.
+- Read PROJECT_CONTEXT.md for project context.
 
 ## Development Guidelines
 
@@ -100,3 +101,4 @@ e.g. # Using regex instead of JSON parser because input is malformed in legacy s
 # IMPORTANT
 - never EVER take action unless the User explicitly tells you to.
 - never EVER make assumptions -> ask questions.
+- Read PROJECT_CONTEXT.md for project context.

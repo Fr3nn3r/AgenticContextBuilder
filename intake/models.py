@@ -191,6 +191,33 @@ class FileIngestorConfig(BaseModel):
 
 
 # Complete file processing result
+class KeyDataPoint(BaseModel):
+    """Individual key data point extracted from a document."""
+    key: str = Field(..., description="Field name or data point identifier")
+    value: Any = Field(..., description="Extracted value")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
+    page: Optional[int] = Field(None, description="Page number where data was found")
+
+
+class DocumentInsights(BaseModel):
+    """Business-oriented insights extracted from a document."""
+    summary: str = Field(..., description="Brief 1-2 sentence summary of document")
+    content_category: str = Field(..., description="Business document category")
+    key_data_points: List[KeyDataPoint] = Field(..., description="Top key data points")
+    category_confidence: float = Field(..., ge=0.0, le=1.0, description="Category classification confidence")
+    language: Optional[str] = Field(None, description="ISO 639-1 language code")
+    total_pages_analyzed: Optional[int] = Field(None, description="Number of pages analyzed")
+    extraction_method: Optional[str] = Field(None, description="Method used for extraction")
+
+
+class EnrichmentMetadata(BaseModel):
+    """Metadata added by the enrichment processor."""
+    document_insights: Optional[DocumentInsights] = Field(None, description="Document-level insights")
+    enrichment_version: str = Field(..., description="Version of enrichment processor")
+    enrichment_timestamp: str = Field(..., description="When enrichment was performed")
+    processing_time_ms: Optional[float] = Field(None, description="Time taken for enrichment")
+
+
 class FileProcessingResult(BaseModel):
     """Complete result of processing a single file through the pipeline."""
     processing_info: ProcessingInfo = Field(..., description="Processing metadata")

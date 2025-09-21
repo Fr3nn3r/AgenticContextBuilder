@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
 Tests for the enrichment processor.
-Tests file categorization and metadata enrichment functionality.
+Tests document insights and key data extraction functionality.
 """
 
 import pytest
 from pathlib import Path
+from unittest.mock import Mock, patch
+import json
 
 from intake.processors.enrichment import EnrichmentProcessor
+from intake.models import DocumentInsights, KeyDataPoint
 
 
 class TestEnrichmentProcessor:
@@ -15,210 +18,286 @@ class TestEnrichmentProcessor:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.processor = EnrichmentProcessor()
+        # Mock configuration to avoid loading real config files
+        with patch('intake.processors.enrichment.Path.exists', return_value=False):
+            with patch.object(EnrichmentProcessor, '_init_prompt_provider'):
+                with patch.object(EnrichmentProcessor, '_init_ai_provider'):
+                    self.processor = EnrichmentProcessor()
+                    # Manually set up mock providers
+                    self.processor.prompt_provider = Mock()
+                    self.processor.ai_provider = Mock()
 
-    def test_file_categorization_image(self, tmp_path):
-        """Test categorization of image files."""
-        test_file = tmp_path / "test.jpg"
-        test_file.write_bytes(b"fake image content")
-
-        result = self.processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        assert 'file_category' in metadata
-        category = metadata['file_category']
-        assert category['primary_category'] == 'image'
-        assert category['extension'] == '.jpg'
-        assert category['mime_type'] == 'image/jpeg'
-
-    def test_file_categorization_document(self, tmp_path):
-        """Test categorization of document files."""
+    def test_process_file_with_vision_api_content(self, tmp_path):
+        """Test processing a file with Vision API extracted content."""
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
-        result = self.processor.process_file(test_file)
-        metadata = result['enriched_metadata']
+        # Mock existing metadata from ContentProcessor
+        existing_metadata = {
+            'file_content': {
+                'content_data': {
+                    'pages': [
+                        {'page': 1, 'analysis': 'Invoice #12345\nAmount: $500\nDate: 2024-01-15'},
+                        {'page': 2, 'analysis': 'Additional terms and conditions'}
+                    ],
+                    '_extraction_method': 'Vision API'
+                },
+                'content_metadata': {
+                    'content_type': 'document',
+                    'file_category': 'pdf'
+                }
+            }
+        }
 
-        category = metadata['file_category']
-        assert category['primary_category'] == 'document'
-        assert category['extension'] == '.pdf'
-        assert category['mime_type'] == 'application/pdf'
-
-    def test_file_categorization_code(self, tmp_path):
-        """Test categorization of code files."""
-        test_file = tmp_path / "script.py"
-        test_file.write_text("print('hello world')")
-
-        result = self.processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        category = metadata['file_category']
-        assert category['primary_category'] == 'code'
-        assert category['extension'] == '.py'
-        assert category['mime_type'] == 'text/x-python'
-
-    def test_file_categorization_unknown(self, tmp_path):
-        """Test categorization of unknown file types."""
-        test_file = tmp_path / "test.xyz"
-        test_file.write_bytes(b"unknown content")
-
-        result = self.processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        category = metadata['file_category']
-        assert category['primary_category'] == 'other'
-        assert category['extension'] == '.xyz'
-
-    def test_binary_vs_text_detection(self, tmp_path):
-        """Test detection of binary vs text files."""
-        # Text file
-        text_file = tmp_path / "test.txt"
-        text_file.write_text("Hello, world!")
-
-        result = self.processor.process_file(text_file)
-        metadata = result['enriched_metadata']
-        assert metadata['file_category']['is_binary'] is False
-
-        # Binary-like file (though we can't easily create a true binary file in tests)
-        binary_file = tmp_path / "test.bin"
-        binary_file.write_bytes(b"binary content")
-
-        result = self.processor.process_file(binary_file)
-        metadata = result['enriched_metadata']
-        assert metadata['file_category']['is_binary'] is True
-
-    def test_configuration_disable_categorization(self, tmp_path):
-        """Test disabling file categorization via configuration."""
-        processor = EnrichmentProcessor({'categorize_files': False})
-
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("test content")
-
-        result = processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        # File categorization should not be present
-        assert 'file_category' not in metadata
-
-    def test_placeholder_content_analysis(self, tmp_path):
-        """Test placeholder content analysis functionality."""
-        processor = EnrichmentProcessor({'enable_content_analysis': True})
-
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("test content")
-
-        result = processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        # Should have placeholder content analysis
-        assert 'content_analysis' in metadata
-        assert metadata['content_analysis']['status'] == 'not_implemented'
-
-    def test_placeholder_image_analysis(self, tmp_path):
-        """Test placeholder image analysis functionality."""
-        processor = EnrichmentProcessor({'analyze_images': True})
-
-        test_file = tmp_path / "test.jpg"
-        test_file.write_bytes(b"fake image")
-
-        result = processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        # Should have placeholder image analysis
-        assert 'image_analysis' in metadata
-        assert metadata['image_analysis']['status'] == 'not_implemented'
-
-    def test_placeholder_text_preview(self, tmp_path):
-        """Test placeholder text preview functionality."""
-        processor = EnrichmentProcessor({'extract_text_preview': True})
-
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("test content")
-
-        result = processor.process_file(test_file)
-        metadata = result['enriched_metadata']
-
-        # Should have placeholder text preview
-        assert 'text_preview' in metadata
-        assert metadata['text_preview']['status'] == 'not_implemented'
-
-    def test_enrichment_info_metadata(self, tmp_path):
-        """Test enrichment information metadata."""
-        processor = EnrichmentProcessor({
-            'categorize_files': True,
-            'enable_content_analysis': True
+        # Mock AI response for synthesis
+        mock_response = json.dumps({
+            'summary': 'Invoice document for $500 dated January 15, 2024',
+            'content_category': 'invoice',
+            'key_data_points': [
+                {'key': 'invoice_number', 'value': '12345', 'confidence': 0.95, 'page': 1},
+                {'key': 'amount', 'value': 500, 'confidence': 0.98, 'page': 1},
+                {'key': 'date', 'value': '2024-01-15', 'confidence': 0.97, 'page': 1}
+            ],
+            'category_confidence': 0.95,
+            'language': 'en'
         })
 
+        self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
+        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        assert 'enrichment_metadata' in result
+        metadata = result['enrichment_metadata']
+        assert 'document_insights' in metadata
+        insights = metadata['document_insights']
+        assert insights['summary'] == 'Invoice document for $500 dated January 15, 2024'
+        assert insights['content_category'] == 'invoice'
+        assert len(insights['key_data_points']) == 3
+
+    def test_process_file_with_ocr_content(self, tmp_path):
+        """Test processing a file with OCR extracted content."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake pdf content")
+
+        # Mock existing metadata from ContentProcessor
+        existing_metadata = {
+            'file_content': {
+                'content_data': {
+                    'text': 'Policy Number: POL-2024-001\nPremium: $1200/year\nCoverage: Comprehensive',
+                    '_extraction_method': 'OCR'
+                },
+                'content_metadata': {
+                    'content_type': 'document',
+                    'file_category': 'pdf'
+                }
+            }
+        }
+
+        # Mock AI response for analysis
+        mock_response = json.dumps({
+            'summary': 'Insurance policy document with comprehensive coverage',
+            'content_category': 'policy_document',
+            'key_data_points': [
+                {'key': 'policy_number', 'value': 'POL-2024-001', 'confidence': 0.92},
+                {'key': 'premium', 'value': 1200, 'confidence': 0.89},
+                {'key': 'coverage_type', 'value': 'Comprehensive', 'confidence': 0.85}
+            ],
+            'category_confidence': 0.88,
+            'language': 'en'
+        })
+
+        self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
+        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        assert 'enrichment_metadata' in result
+        metadata = result['enrichment_metadata']
+        insights = metadata['document_insights']
+        assert insights['content_category'] == 'policy_document'
+        assert len(insights['key_data_points']) == 3
+
+    def test_process_file_without_content(self, tmp_path):
+        """Test processing a file without extracted content."""
         test_file = tmp_path / "test.txt"
         test_file.write_text("test content")
 
-        result = processor.process_file(test_file)
-        metadata = result['enriched_metadata']
+        # No content extracted
+        existing_metadata = {}
 
-        # Should have enrichment info
-        assert 'enrichment_info' in metadata
-        enrichment_info = metadata['enrichment_info']
-        assert enrichment_info['processor_version'] == '1.0.0'
+        result = self.processor.process_file(test_file, existing_metadata)
 
-        # Should list enabled features
-        enabled_features = enrichment_info['enrichment_features_enabled']
-        assert 'categorize_files' in enabled_features
-        assert 'enable_content_analysis' in enabled_features
+        # Should return empty dict when no content available
+        assert result == {}
 
-    def test_is_image_file_detection(self):
-        """Test internal image file detection method."""
-        test_cases = [
-            (Path("test.jpg"), True),
-            (Path("test.png"), True),
-            (Path("test.gif"), True),
-            (Path("test.txt"), False),
-            (Path("test.pdf"), False),
-        ]
+    def test_process_file_with_disabled_insights(self, tmp_path):
+        """Test processing when document insights is disabled."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake content")
 
-        for file_path, expected in test_cases:
-            result = self.processor._is_image_file(file_path)
-            assert result == expected
+        self.processor.config['enable_document_insights'] = False
 
-    def test_is_text_file_detection(self):
-        """Test internal text file detection method."""
-        test_cases = [
-            (Path("test.txt"), True),
-            (Path("script.py"), True),
-            (Path("style.css"), True),
-            (Path("data.json"), True),
-            (Path("image.jpg"), False),
-            (Path("video.mp4"), False),
-        ]
+        existing_metadata = {
+            'file_content': {
+                'content_data': {'text': 'Some content'},
+                'content_metadata': {}
+            }
+        }
 
-        for file_path, expected in test_cases:
-            result = self.processor._is_text_file(file_path)
-            assert result == expected
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        # Should return empty dict when disabled
+        assert result == {}
+
+    def test_ai_provider_error_handling(self, tmp_path):
+        """Test error handling when AI provider fails."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake content")
+
+        existing_metadata = {
+            'file_content': {
+                'content_data': {'text': 'Some content'},
+                'content_metadata': {}
+            }
+        }
+
+        # Mock AI provider to raise an error
+        self.processor.ai_provider.analyze_text = Mock(side_effect=Exception("API error"))
+        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        assert 'enrichment_metadata' in result
+        metadata = result['enrichment_metadata']
+        assert 'error' in metadata
+        assert 'API error' in metadata['error']
+
+    def test_max_key_points_limit(self, tmp_path):
+        """Test that key data points are limited to max_key_points config."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake content")
+
+        existing_metadata = {
+            'file_content': {
+                'content_data': {'text': 'Test content'},
+                'content_metadata': {}
+            }
+        }
+
+        # Mock response with many key data points
+        key_points = [{'key': f'key_{i}', 'value': i, 'confidence': 0.9} for i in range(20)]
+        mock_response = json.dumps({
+            'summary': 'Test document',
+            'content_category': 'other',
+            'key_data_points': key_points,
+            'category_confidence': 0.8
+        })
+
+        self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
+        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.config['max_key_points'] = 5
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        insights = result['enrichment_metadata']['document_insights']
+        assert len(insights['key_data_points']) == 5
 
     def test_validate_config_valid(self):
         """Test configuration validation with valid config."""
-        processor = EnrichmentProcessor({
-            'enable_content_analysis': True,
-            'categorize_files': False,
-            'analyze_images': True,
-            'extract_text_preview': False
-        })
-        assert processor.validate_config() is True
+        # Set up valid config
+        self.processor.config['enable_document_insights'] = True
+        self.processor.config['enable_key_extraction'] = True
+        self.processor.config['max_key_points'] = 10
+        self.processor.config['confidence_threshold'] = 0.7
 
-    def test_validate_config_invalid_type(self):
-        """Test configuration validation with invalid types."""
-        processor = EnrichmentProcessor({
-            'enable_content_analysis': 'not_a_boolean'
-        })
-        assert processor.validate_config() is False
+        # Mock providers to be available
+        self.processor.prompt_provider = Mock()
+        self.processor.ai_provider = Mock()
+
+        assert self.processor.validate_config() is True
+
+    def test_validate_config_invalid_max_key_points(self):
+        """Test configuration validation with invalid max_key_points."""
+        self.processor.config['max_key_points'] = 100  # Too high
+
+        # Mock providers to be available
+        self.processor.prompt_provider = Mock()
+        self.processor.ai_provider = Mock()
+
+        assert self.processor.validate_config() is False
+
+    def test_validate_config_invalid_confidence_threshold(self):
+        """Test configuration validation with invalid confidence_threshold."""
+        self.processor.config['confidence_threshold'] = 1.5  # Out of range
+
+        # Mock providers to be available
+        self.processor.prompt_provider = Mock()
+        self.processor.ai_provider = Mock()
+
+        assert self.processor.validate_config() is False
 
     def test_processor_info(self):
         """Test processor information retrieval."""
         info = self.processor.get_processor_info()
 
         assert info['name'] == 'EnrichmentProcessor'
-        assert info['version'] == '1.0.0'
+        assert info['version'] == '2.0.0'
         assert 'description' in info
         assert info['supported_extensions'] == ['*']
+
+    def test_json_response_parsing(self):
+        """Test JSON response parsing with various formats."""
+        # Test clean JSON
+        clean_json = '{"summary": "test", "content_category": "other", "key_data_points": []}'
+        result = self.processor._parse_json_response(clean_json)
+        assert result['summary'] == 'test'
+
+        # Test JSON with markdown code block
+        markdown_json = '```json\n{"summary": "test", "content_category": "other", "key_data_points": []}\n```'
+        result = self.processor._parse_json_response(markdown_json)
+        assert result['summary'] == 'test'
+
+        # Test invalid JSON (should return fallback)
+        invalid_json = 'not valid json'
+        result = self.processor._parse_json_response(invalid_json)
+        assert result['summary'] == 'Failed to parse document insights'
+        assert result['content_category'] == 'other'
+
+    def test_retry_logic(self, tmp_path):
+        """Test retry logic for AI calls."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake content")
+
+        existing_metadata = {
+            'file_content': {
+                'content_data': {'text': 'Test content'},
+                'content_metadata': {}
+            }
+        }
+
+        # Mock to fail twice, then succeed
+        mock_response = json.dumps({
+            'summary': 'Test document',
+            'content_category': 'other',
+            'key_data_points': [],
+            'category_confidence': 0.8
+        })
+
+        self.processor.ai_provider.analyze_text = Mock(
+            side_effect=[Exception("API error"), Exception("API error"), mock_response]
+        )
+        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.config['max_retries'] = 2
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        # Should succeed after retries
+        assert 'enrichment_metadata' in result
+        assert 'document_insights' in result['enrichment_metadata']
+
+        # Verify it was called 3 times (initial + 2 retries)
+        assert self.processor.ai_provider.analyze_text.call_count == 3
 
 
 if __name__ == '__main__':

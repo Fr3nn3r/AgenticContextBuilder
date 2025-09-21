@@ -15,20 +15,20 @@ from .page_processor import PageProcessor
 class VisionAPIStrategy(PDFExtractionStrategy):
     """PDF extraction using Vision API on rendered pages."""
 
-    def __init__(self, config: Dict[str, Any], ai_service, prompt_manager, response_parser):
+    def __init__(self, config: Dict[str, Any], ai_service, prompt_provider, response_parser):
         """
         Initialize Vision API strategy.
 
         Args:
             config: Configuration with Vision API settings
             ai_service: AI service for Vision API calls
-            prompt_manager: Prompt manager for templates
+            prompt_provider: Prompt provider for templates
             response_parser: Response parser for JSON extraction
         """
         super().__init__(config)
         self.logger = logging.getLogger(__name__)
         self.ai_service = ai_service
-        self.prompt_manager = prompt_manager
+        self.prompt_provider = prompt_provider
         self.response_parser = response_parser
         self.page_processor = PageProcessor()
 
@@ -68,8 +68,8 @@ class VisionAPIStrategy(PDFExtractionStrategy):
         import pypdfium2 as pdfium
 
         pdf_doc = pdfium.PdfDocument(pdf_path)
-        prompt_config = self.prompt_manager.get_prompt("universal_document")
-        prompt_version = self.prompt_manager.get_active_version("universal_document") or "1.0.0"
+        prompt_config = self.prompt_provider.get_prompt("universal-document")
+        prompt_version = self.prompt_provider.get_active_version("universal-document") or "1.0.0"
 
         # Process pages up to limit
         max_pages = min(
@@ -102,7 +102,7 @@ class VisionAPIStrategy(PDFExtractionStrategy):
         import pypdfium2 as pdfium
 
         pdf_doc = pdfium.PdfDocument(pdf_path)
-        prompt_config = self.prompt_manager.get_prompt("universal_document")
+        prompt_config = self.prompt_provider.get_prompt("universal-document")
 
         max_pages = min(
             self.config.get('pdf_max_pages_vision', 20),
@@ -147,7 +147,7 @@ class VisionAPIStrategy(PDFExtractionStrategy):
             image_base64 = self.page_processor.render_page_to_base64(page)
 
             # Get prompt template
-            prompt_template = self.prompt_manager.get_prompt_template("universal_document")
+            prompt_template = self.prompt_provider.get_prompt_template("universal-document")
 
             # Analyze with Vision API
             ai_response = self.ai_service.analyze_content(

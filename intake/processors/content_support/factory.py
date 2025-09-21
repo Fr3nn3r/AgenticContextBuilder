@@ -15,14 +15,14 @@ from .handlers import (
     PDFContentHandler
 )
 from .services import AIAnalysisService, ResponseParser
-from .prompt_manager import PromptManager
+from ...services import PromptProvider
 from .config import ContentProcessorConfig
 
 
 def create_content_handler(
     file_path: Path,
     ai_service: AIAnalysisService,
-    prompt_manager: PromptManager,
+    prompt_provider: PromptProvider,
     config: ContentProcessorConfig
 ) -> Optional[BaseContentHandler]:
     """
@@ -31,7 +31,7 @@ def create_content_handler(
     Args:
         file_path: Path to the file to process
         ai_service: AI analysis service
-        prompt_manager: Prompt manager instance
+        prompt_provider: Prompt manager instance
         config: Content processor configuration
 
     Returns:
@@ -74,7 +74,7 @@ def create_content_handler(
     try:
         handler = handler_class(
             ai_service=ai_service,
-            prompt_manager=prompt_manager,
+            prompt_provider=prompt_provider,
             response_parser=response_parser,
             config=config.model_dump()  # Pass full config as dict
         )
@@ -94,7 +94,7 @@ def create_content_handler(
 
 def get_all_handlers(
     ai_service: AIAnalysisService,
-    prompt_manager: PromptManager,
+    prompt_provider: PromptProvider,
     config: ContentProcessorConfig
 ) -> List[BaseContentHandler]:
     """
@@ -102,7 +102,7 @@ def get_all_handlers(
 
     Args:
         ai_service: AI analysis service
-        prompt_manager: Prompt manager instance
+        prompt_provider: Prompt manager instance
         config: Content processor configuration
 
     Returns:
@@ -125,7 +125,7 @@ def get_all_handlers(
             try:
                 handler = handler_class(
                     ai_service=ai_service,
-                    prompt_manager=prompt_manager,
+                    prompt_provider=prompt_provider,
                     response_parser=response_parser,
                     config=config.model_dump()
                 )

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from ..models import FileContentOutput, ProcessingInfo, ContentAnalysis
-from ..prompt_manager import PromptManager
+from ....services import PromptProvider
 from ..services import AIAnalysisService, ResponseParser, track_processing_time
 
 
@@ -23,7 +23,7 @@ class BaseContentHandler(ABC):
     def __init__(
         self,
         ai_service: AIAnalysisService,
-        prompt_manager: PromptManager,
+        prompt_provider: PromptProvider,
         response_parser: ResponseParser,
         config: Dict[str, Any]
     ):
@@ -32,12 +32,12 @@ class BaseContentHandler(ABC):
 
         Args:
             ai_service: AI analysis service for content processing
-            prompt_manager: Prompt management instance
+            prompt_provider: Prompt provider instance
             response_parser: Response parsing service
             config: Handler-specific configuration
         """
         self.ai_service = ai_service
-        self.prompt_manager = prompt_manager
+        self.prompt_provider = prompt_provider
         self.response_parser = response_parser
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")

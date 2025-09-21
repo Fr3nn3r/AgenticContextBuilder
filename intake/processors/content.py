@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from .base import BaseProcessor, ProcessingError
 from .content_support.models import FileContentOutput, ContentProcessorError, ProcessingInfo, ContentAnalysis
-from .content_support.prompt_manager import PromptManager
+from ..services import PromptProvider
 from .content_support.config import ContentProcessorConfig, AIConfig
 from .content_support.factory import create_content_handler, get_all_handlers
 from .content_support.services import AIAnalysisService, OpenAIProvider
@@ -32,12 +32,13 @@ class ContentProcessor(BaseProcessor):
     DESCRIPTION = "Content enrichment using AI models, OCR, and other extraction methods"
     SUPPORTED_EXTENSIONS = ["*"]  # Supports all file types via handlers
 
-    def __init__(self, config: Optional[Union[Dict[str, Any], ContentProcessorConfig]] = None):
+    def __init__(self, config: Optional[Union[Dict[str, Any], ContentProcessorConfig]] = None, prompt_provider: Optional[PromptProvider] = None):
         """
         Initialize the content processor.
 
         Args:
             config: Configuration dictionary or ContentConfig object
+            prompt_provider: Optional PromptProvider instance (dependency injection)
         """
         # Load environment variables from .env file
         load_dotenv()
@@ -59,8 +60,11 @@ class ContentProcessor(BaseProcessor):
         # Initialize AI service
         self.ai_service = self._initialize_ai_service()
 
-        # Initialize prompt manager with default or configured prompts
-        self.prompt_manager = self._initialize_prompt_manager()
+        # Initialize prompt provider (use injected or create new)
+        if prompt_provider:
+            self.prompt_provider = prompt_provider
+        else:
+            self.prompt_provider = self._initialize_prompt_provider()
 
         # Initialize file type handlers
         self.handlers: List[BaseContentHandler] = self._initialize_handlers()
@@ -93,25 +97,32 @@ class ContentProcessor(BaseProcessor):
             self.logger.error(f"Failed to initialize AI service: {e}")
             return None
 
-    def _initialize_prompt_manager(self) -> PromptManager:
+    def _initialize_prompt_provider(self) -> PromptProvider:
         """
-        Initialize prompt manager with configured or default prompts.
+        Initialize prompt provider from configuration.
 
         Returns:
-            PromptManager instance
+            PromptProvider instance
         """
-        # Get default prompts from ContentConfig in models.py
-        from .content_support.models import ContentConfig
+        # Get config file path from configuration
+        config_file = self.config.get('prompts_config_file', 'config/content_config.json')
+        config_path = Path(config_file)
 
-        # Create temporary ContentConfig to get default prompts
-        temp_config = ContentConfig()
-        default_prompts = temp_config.get_default_prompts()
+        if not config_path.exists():
+            raise ContentProcessorError(
+                f"Content processor config not found at {config_path}",
+                error_type="config_not_found"
+            )
 
-        # Use default prompts for now since config structure changed
-        prompt_manager = PromptManager(default_prompts)
+        # Create prompt provider from config file
+        prompt_provider = PromptProvider.from_config_file(
+            config_path,
+            prompts_dir=Path('prompts'),
+            processor_name='content'
+        )
 
-        self.logger.info(f"Prompt manager initialized with {len(prompt_manager.prompts)} prompts")
-        return prompt_manager
+        self.logger.info(f"Prompt provider initialized from {config_path}")
+        return prompt_provider
 
     def _initialize_handlers(self) -> List[BaseContentHandler]:
         """
@@ -127,7 +138,7 @@ class ContentProcessor(BaseProcessor):
         # Use factory to create all enabled handlers
         handlers = get_all_handlers(
             ai_service=self.ai_service,
-            prompt_manager=self.prompt_manager,
+            prompt_provider=self.prompt_provider,
             config=self.typed_config
         )
 
@@ -329,10 +340,9 @@ class ContentProcessor(BaseProcessor):
                 return False
 
             # Validate prompts
-            prompt_validation = self.prompt_manager.validate_all_prompts()
-            if not all(prompt_validation.values()):
-                invalid_prompts = [name for name, valid in prompt_validation.items() if not valid]
-                self.logger.error(f"Invalid prompts found: {invalid_prompts}")
+            # Check if prompt provider is available
+            if not self.prompt_provider:
+                self.logger.error("Prompt provider not initialized")
                 return False
 
             # Check AI service if vision API is enabled
@@ -361,8 +371,8 @@ class ContentProcessor(BaseProcessor):
                 handler.__class__.__name__
                 for handler in self.handlers
             ],
-            'total_prompts': len(self.prompt_manager.prompts),
-            'prompt_versions': self.prompt_manager.list_prompts(),
+            'total_prompts': len(self.prompt_provider.list_prompts()) if self.prompt_provider else 0,
+            'prompt_versions': self.prompt_provider.list_prompts() if self.prompt_provider else {},
             'configuration': {
                 'enable_vision_api': self.typed_config.ai.enable_vision_api,
                 'enable_ocr_fallback': self.typed_config.pdf.ocr_as_fallback,

@@ -25,7 +25,7 @@ class PDFContentHandler(BaseContentHandler):
         self.vision_strategy = VisionAPIStrategy(
             self.config,
             self.ai_service,
-            self.prompt_manager,
+            self.prompt_provider,
             self.response_parser
         )
         self.ocr_strategy = OCRStrategy(self.config)
@@ -221,8 +221,8 @@ class PDFContentHandler(BaseContentHandler):
         summary = f"PDF processed via {extraction_method} ({processed_pages}/{total_pages} pages)"
 
         # Get prompt configuration for metadata
-        prompt_config = self.prompt_manager.get_prompt("universal_document")
-        prompt_version = self.prompt_manager.get_active_version("universal_document") or "1.0.0"
+        prompt_config = self.prompt_provider.get_prompt("universal-document")
+        prompt_version = self.prompt_provider.get_active_version("universal-document") or "1.0.0"
 
         content_metadata = self.create_content_metadata(
             content_type="document",
@@ -266,11 +266,11 @@ class PDFContentHandler(BaseContentHandler):
             truncated = True
 
         # Get AI analysis
-        prompt_name = "text_analysis"
-        prompt_config = self.prompt_manager.get_active_prompt(prompt_name)
-        prompt_version = self.prompt_manager.get_active_version(prompt_name) or "1.0.0"
+        prompt_name = "text-analysis"
+        prompt_config = self.prompt_provider.get_prompt(prompt_name)
+        prompt_version = self.prompt_provider.get_active_version(prompt_name) or "1.0.0"
 
-        prompt_template = self.prompt_manager.get_prompt_template(
+        prompt_template = self.prompt_provider.get_prompt_template(
             prompt_name,
             content=text_content
         )
