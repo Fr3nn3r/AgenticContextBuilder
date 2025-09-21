@@ -12,7 +12,7 @@ class TestTextContentHandler:
     """Test suite for TextContentHandler."""
 
     @pytest.fixture
-    def text_handler(self, ai_service, prompt_manager, response_parser):
+    def text_handler(self, ai_service, prompt_provider, response_parser):
         """Create text handler with mocked dependencies."""
         config = {
             'text_truncation_chars': 1000
@@ -20,7 +20,7 @@ class TestTextContentHandler:
 
         return TextContentHandler(
             ai_service=ai_service,
-            prompt_manager=prompt_manager,
+            prompt_provider=prompt_provider,
             response_parser=response_parser,
             config=config
         )
@@ -114,12 +114,12 @@ class TestTextContentHandler:
     def test_missing_prompt_configuration(self, text_handler, sample_text_file):
         """Test error when prompt configuration is missing."""
         # Mock missing prompt
-        with patch.object(text_handler.prompt_manager, 'get_active_prompt', return_value=None):
+        with patch.object(text_handler.prompt_provider, 'get_prompt', return_value=None):
             result = text_handler.process(sample_text_file)
 
             # Should return error result when prompt is missing
             assert result.processing_info.processing_status == "error"
-            assert "Prompt 'text_analysis' not found" in result.processing_info.error_message
+            assert "Prompt 'text-analysis' not found" in result.processing_info.error_message
 
     def test_ai_analysis_failure(self, text_handler, sample_text_file):
         """Test handling of AI analysis failure."""

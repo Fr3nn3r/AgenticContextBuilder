@@ -1,224 +1,287 @@
 # intake/processors/enrichment.py
-# Example enrichment processor for demonstrating extensibility
-# Can be used as a template for creating custom processors
 
-import mimetypes
+import json
+import logging
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 from pydantic import BaseModel
 
 from .base import BaseProcessor
+from ..models import DocumentInsights, KeyDataPoint, EnrichmentMetadata
+from ..services import PromptProvider
+from .content_support.interfaces.ai_provider import AIProviderInterface
+from .content_support.services.ai_analysis import OpenAIProvider
+from .content_support.config import AIConfig
 
 
 class EnrichmentProcessor(BaseProcessor):
     """
-    Example processor that enriches file metadata with additional information.
+    Enriches documents with business-oriented insights and key data extraction.
 
-    This processor demonstrates how to create custom processors that build
-    on existing metadata. It can add content analysis, file categorization,
-    and other enhanced metadata.
+    This processor analyzes document content to provide:
+    - Meaningful document summaries
+    - Business category classification
+    - Key data point extraction
+    - Confidence scoring for all extractions
     """
 
-    VERSION = "1.0.0"
-    DESCRIPTION = "Enriches file metadata with additional analysis and categorization"
+    VERSION = "2.0.0"
+    DESCRIPTION = "Enriches documents with business insights and key data extraction"
     SUPPORTED_EXTENSIONS = ["*"]  # Supports all file types
 
     def __init__(self, config: Optional[Union[Dict[str, Any], BaseModel]] = None):
         super().__init__(config)
+        self.logger = logging.getLogger(__name__)
+
         # Default configuration
-        self.config.setdefault('enable_content_analysis', False)
-        self.config.setdefault('categorize_files', True)
-        self.config.setdefault('analyze_images', False)
-        self.config.setdefault('extract_text_preview', False)
+        self.config.setdefault('enable_document_insights', True)
+        self.config.setdefault('enable_key_extraction', True)
+        self.config.setdefault('max_key_points', 10)
+        self.config.setdefault('confidence_threshold', 0.7)
+        self.config.setdefault('max_retries', 2)
+        self.config.setdefault('timeout_seconds', 30)
+        self.config.setdefault('batch_pages', True)
+        self.config.setdefault('max_pages_per_batch', 10)
+
+        # Initialize components
+        self._init_prompt_provider()
+        self._init_ai_provider()
+        self._enrichment_cache = {}
+
+    def _init_prompt_provider(self):
+        """Initialize the prompt provider with enrichment configuration."""
+        config_file = self.config.get('prompts_config_file', 'config/enrichment_config.json')
+        config_path = Path(config_file)
+
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                enrichment_config = json.load(f)
+                self.prompt_provider = PromptProvider(
+                    prompts_dir=Path('prompts'),
+                    config=enrichment_config
+                )
+        else:
+            self.logger.warning(f"Enrichment config not found at {config_path}")
+            self.prompt_provider = None
+
+    def _init_ai_provider(self):
+        """Initialize the AI provider for document analysis."""
+        try:
+            ai_config = AIConfig()
+            self.ai_provider = OpenAIProvider(ai_config)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize AI provider: {e}")
+            self.ai_provider = None
 
     def process_file(self, file_path: Path, existing_metadata: Optional[Union[Dict[str, Any], BaseModel]] = None) -> Dict[str, Any]:
         """
-        Enrich existing file metadata with additional information.
+        Enrich document metadata with business insights.
 
         Args:
             file_path: Path to the file to process
             existing_metadata: Metadata from previous processors
 
         Returns:
-            Dictionary containing enriched metadata
+            Dictionary containing document insights
         """
-        enriched_metadata = {}
+        if not self.config.get('enable_document_insights', True):
+            return {}
 
-        # File categorization
-        if self.config.get('categorize_files', True):
-            enriched_metadata['file_category'] = self._categorize_file(file_path)
+        # Check if content was extracted by ContentProcessor
+        if not existing_metadata or 'file_content' not in existing_metadata:
+            self.logger.info(f"No content found for enrichment: {file_path.name}")
+            return {}
 
-        # Content analysis (placeholder for future implementation)
-        if self.config.get('enable_content_analysis', False):
-            enriched_metadata['content_analysis'] = self._analyze_content(file_path)
+        start_time = time.time()
 
-        # Image analysis (placeholder for future implementation)
-        if (self.config.get('analyze_images', False) and
-            self._is_image_file(file_path)):
-            enriched_metadata['image_analysis'] = self._analyze_image(file_path)
+        try:
+            # Extract content data
+            file_content = existing_metadata.get('file_content', {})
+            content_data = file_content.get('content_data', {})
+            content_metadata = file_content.get('content_metadata', {})
 
-        # Text preview (placeholder for future implementation)
-        if (self.config.get('extract_text_preview', False) and
-            self._is_text_file(file_path)):
-            enriched_metadata['text_preview'] = self._extract_text_preview(file_path)
+            # Process based on extraction method
+            if 'pages' in content_data:
+                # Vision API results - synthesize from pages
+                insights = self._synthesize_pages(content_data, content_metadata)
+            elif 'text' in content_data:
+                # OCR/text results - analyze directly
+                insights = self._analyze_text(content_data['text'], content_metadata)
+            else:
+                self.logger.warning(f"No processable content in file: {file_path.name}")
+                return {}
 
-        # Add processing metadata
-        enriched_metadata['enrichment_info'] = {
-            'processor_version': self.VERSION,
-            'enrichment_features_enabled': [
-                key for key, value in self.config.items()
-                if key.startswith(('enable_', 'categorize_', 'analyze_', 'extract_')) and value
-            ]
-        }
+            # Build enrichment metadata
+            processing_time_ms = (time.time() - start_time) * 1000
 
-        return {'enriched_metadata': enriched_metadata}
+            enrichment = EnrichmentMetadata(
+                document_insights=insights,
+                enrichment_version=self.VERSION,
+                enrichment_timestamp=datetime.now().isoformat(),
+                processing_time_ms=processing_time_ms
+            )
 
-    def _categorize_file(self, file_path: Path) -> Dict[str, Any]:
+            return {'enrichment_metadata': enrichment.model_dump()}
+
+        except Exception as e:
+            self.logger.error(f"Enrichment failed for {file_path.name}: {str(e)}")
+            return {
+                'enrichment_metadata': {
+                    'error': str(e),
+                    'enrichment_version': self.VERSION,
+                    'enrichment_timestamp': datetime.now().isoformat()
+                }
+            }
+
+    def _synthesize_pages(self, content_data: Dict, content_metadata: Dict) -> DocumentInsights:
         """
-        Categorize the file based on extension and MIME type.
+        Synthesize document insights from multi-page Vision API results.
 
         Args:
-            file_path: Path to the file
+            content_data: Content data with pages
+            content_metadata: Metadata about content extraction
 
         Returns:
-            Dictionary containing file category information
+            DocumentInsights object
         """
-        extension = file_path.suffix.lower()
-        mime_type, _ = mimetypes.guess_type(file_path)
+        pages = content_data.get('pages', [])
+        extraction_method = content_data.get('_extraction_method', 'Vision API')
 
-        # Define category mappings
-        categories = {
-            'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp'],
-            'video': ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm'],
-            'audio': ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma'],
-            'document': ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'],
-            'spreadsheet': ['.xls', '.xlsx', '.csv', '.ods'],
-            'presentation': ['.ppt', '.pptx', '.odp'],
-            'archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
-            'code': ['.py', '.js', '.html', '.css', '.java', '.cpp', '.c', '.go', '.rs'],
-            'data': ['.json', '.xml', '.yaml', '.yml', '.sql', '.db', '.sqlite'],
-        }
+        if not pages:
+            raise ValueError("No pages to synthesize")
 
-        # Find category based on extension
-        file_category = 'other'
-        for category, extensions in categories.items():
-            if extension in extensions:
-                file_category = category
-                break
+        # Prepare pages summary for synthesis prompt
+        pages_summary = json.dumps(pages[:self.config.get('max_pages_per_batch', 10)])
 
-        # Additional MIME type analysis
-        mime_category = None
-        if mime_type:
-            if mime_type.startswith('image/'):
-                mime_category = 'image'
-            elif mime_type.startswith('video/'):
-                mime_category = 'video'
-            elif mime_type.startswith('audio/'):
-                mime_category = 'audio'
-            elif mime_type.startswith('text/'):
-                mime_category = 'text'
-            elif 'application/' in mime_type:
-                if 'pdf' in mime_type:
-                    mime_category = 'document'
-                elif any(x in mime_type for x in ['zip', 'archive', 'compressed']):
-                    mime_category = 'archive'
+        # Get synthesis prompt
+        prompt = self.prompt_provider.get_prompt_template(
+            'document-enrichment',
+            role='synthesis',
+            pages_summary=pages_summary,
+            page_count=len(pages),
+            extraction_method=extraction_method
+        )
 
-        return {
-            'primary_category': file_category,
-            'mime_category': mime_category,
-            'extension': extension,
-            'mime_type': mime_type,
-            'is_binary': not self._is_text_file(file_path),
-        }
+        # Call AI for synthesis
+        response = self._call_ai_with_retry(prompt)
 
-    def _analyze_content(self, file_path: Path) -> Dict[str, Any]:
+        # Parse response
+        insights_data = self._parse_json_response(response)
+
+        # Create DocumentInsights
+        return DocumentInsights(
+            summary=insights_data.get('summary', 'Document processed'),
+            content_category=insights_data.get('content_category', 'other'),
+            key_data_points=[
+                KeyDataPoint(**kdp) for kdp in insights_data.get('key_data_points', [])
+            ][:self.config.get('max_key_points', 10)],
+            category_confidence=insights_data.get('category_confidence', 0.5),
+            language=insights_data.get('language'),
+            total_pages_analyzed=len(pages),
+            extraction_method=extraction_method
+        )
+
+    def _analyze_text(self, text_content: str, content_metadata: Dict) -> DocumentInsights:
         """
-        Placeholder for content analysis functionality.
-
-        This could be extended to include:
-        - Text sentiment analysis
-        - Language detection
-        - Content summarization
-        - Keyword extraction
+        Analyze text content to extract document insights.
 
         Args:
-            file_path: Path to the file
+            text_content: Text to analyze
+            content_metadata: Metadata about content extraction
 
         Returns:
-            Dictionary containing content analysis results
+            DocumentInsights object
         """
-        return {
-            'status': 'not_implemented',
-            'note': 'Content analysis feature is not yet implemented',
-            'future_features': [
-                'text_sentiment_analysis',
-                'language_detection',
-                'content_summarization',
-                'keyword_extraction'
-            ]
-        }
+        # Truncate if needed
+        max_chars = 8000
+        if len(text_content) > max_chars:
+            text_content = text_content[:max_chars] + "\n[... content truncated ...]"
 
-    def _analyze_image(self, file_path: Path) -> Dict[str, Any]:
+        # Get analysis prompt
+        prompt = self.prompt_provider.get_prompt_template(
+            'document-enrichment',
+            role='analysis',
+            content=text_content
+        )
+
+        # Call AI for analysis
+        response = self._call_ai_with_retry(prompt)
+
+        # Parse response
+        insights_data = self._parse_json_response(response)
+
+        # Create DocumentInsights
+        return DocumentInsights(
+            summary=insights_data.get('summary', 'Document analyzed'),
+            content_category=insights_data.get('content_category', 'other'),
+            key_data_points=[
+                KeyDataPoint(**kdp) for kdp in insights_data.get('key_data_points', [])
+            ][:self.config.get('max_key_points', 10)],
+            category_confidence=insights_data.get('category_confidence', 0.5),
+            language=insights_data.get('language'),
+            extraction_method=content_metadata.get('extraction_method', 'OCR')
+        )
+
+    def _call_ai_with_retry(self, prompt: str) -> str:
         """
-        Placeholder for image analysis functionality.
-
-        This could be extended to include:
-        - Image dimensions and properties
-        - Color analysis
-        - Object detection
-        - Duplicate image detection
+        Call AI provider with retry logic.
 
         Args:
-            file_path: Path to the image file
+            prompt: The prompt to send
 
         Returns:
-            Dictionary containing image analysis results
+            AI response string
         """
-        return {
-            'status': 'not_implemented',
-            'note': 'Image analysis feature is not yet implemented',
-            'future_features': [
-                'image_dimensions',
-                'color_analysis',
-                'object_detection',
-                'duplicate_detection'
-            ]
-        }
+        if not self.ai_provider:
+            raise ValueError("AI provider not initialized")
 
-    def _extract_text_preview(self, file_path: Path) -> Dict[str, Any]:
+        max_retries = self.config.get('max_retries', 2)
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.ai_provider.analyze_text(
+                    prompt,
+                    model="gpt-4o",
+                    max_tokens=1500,
+                    temperature=0.3
+                )
+                return response
+            except Exception as e:
+                if attempt == max_retries:
+                    raise
+                self.logger.warning(f"AI call failed (attempt {attempt + 1}): {e}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+
+    def _parse_json_response(self, response: str) -> Dict:
         """
-        Placeholder for text preview extraction.
-
-        This could be extended to include:
-        - First N characters/lines of text files
-        - Text encoding detection
-        - Line count and statistics
+        Parse JSON response from AI.
 
         Args:
-            file_path: Path to the text file
+            response: Raw AI response
 
         Returns:
-            Dictionary containing text preview
+            Parsed JSON dictionary
         """
-        return {
-            'status': 'not_implemented',
-            'note': 'Text preview feature is not yet implemented',
-            'future_features': [
-                'text_preview',
-                'encoding_detection',
-                'line_count_statistics'
-            ]
-        }
+        try:
+            # Clean response if needed
+            response = response.strip()
+            if response.startswith('```json'):
+                response = response[7:]
+            if response.endswith('```'):
+                response = response[:-3]
 
-    def _is_image_file(self, file_path: Path) -> bool:
-        """Check if file is an image based on extension."""
-        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp'}
-        return file_path.suffix.lower() in image_extensions
-
-    def _is_text_file(self, file_path: Path) -> bool:
-        """Check if file is likely a text file based on extension."""
-        text_extensions = {'.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', '.yaml', '.yml'}
-        return file_path.suffix.lower() in text_extensions
+            return json.loads(response)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse AI response as JSON: {e}")
+            # Return minimal valid structure
+            return {
+                'summary': 'Failed to parse document insights',
+                'content_category': 'other',
+                'key_data_points': [],
+                'category_confidence': 0.0
+            }
 
     def validate_config(self) -> bool:
         """
@@ -227,16 +290,35 @@ class EnrichmentProcessor(BaseProcessor):
         Returns:
             True if configuration is valid
         """
-        # All boolean configuration options
-        boolean_options = [
-            'enable_content_analysis',
-            'categorize_files',
-            'analyze_images',
-            'extract_text_preview'
+        # Required components
+        if not self.prompt_provider:
+            self.logger.warning("Prompt provider not initialized")
+            return False
+
+        if not self.ai_provider:
+            self.logger.warning("AI provider not initialized")
+            return False
+
+        # Validate configuration values
+        required_configs = [
+            'enable_document_insights',
+            'enable_key_extraction',
+            'max_key_points',
+            'confidence_threshold'
         ]
 
-        for option in boolean_options:
-            if option in self.config and not isinstance(self.config[option], bool):
+        for config_key in required_configs:
+            if config_key not in self.config:
+                self.logger.warning(f"Missing required config: {config_key}")
                 return False
+
+        # Validate numeric ranges
+        if self.config['max_key_points'] < 1 or self.config['max_key_points'] > 50:
+            self.logger.warning("max_key_points should be between 1 and 50")
+            return False
+
+        if self.config['confidence_threshold'] < 0.0 or self.config['confidence_threshold'] > 1.0:
+            self.logger.warning("confidence_threshold should be between 0.0 and 1.0")
+            return False
 
         return True

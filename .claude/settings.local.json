@@ -25,7 +25,9 @@
       "Bash(findstr:*)",
       "Bash(del nul)",
       "Bash(git config:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(del update_handlers.py)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

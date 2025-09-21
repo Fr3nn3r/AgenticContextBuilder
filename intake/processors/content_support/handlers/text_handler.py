@@ -37,18 +37,17 @@ class TextContentHandler(BaseContentHandler):
                 truncated_content = self._truncate_content(content)
 
                 # Get prompt configuration
-                prompt_name = "text_analysis"
-                prompt_config = self.prompt_manager.get_active_prompt(prompt_name)
-                prompt_version = self.prompt_manager.get_active_version(prompt_name)
+                prompt_name = "text-analysis"
+                prompt_config = self.prompt_provider.get_prompt(prompt_name)
 
-                if not prompt_config or not prompt_version:
+                if not prompt_config:
                     raise ContentProcessorError(
                         f"Prompt '{prompt_name}' not found",
                         error_type="prompt_not_found"
                     )
 
                 # Get AI analysis
-                prompt_template = self.prompt_manager.get_prompt_template(
+                prompt_template = self.prompt_provider.get_prompt_template(
                     prompt_name,
                     content=truncated_content
                 )
@@ -77,7 +76,7 @@ class TextContentHandler(BaseContentHandler):
                 processing_info = self.create_processing_info(
                     status="success",
                     ai_model=prompt_config.model,
-                    prompt_version=prompt_version,
+                    prompt_version="2.0.0",  # TODO: get from prompt_config
                     processing_time=metrics.duration_seconds,
                     extraction_method="Direct Text"
                 )

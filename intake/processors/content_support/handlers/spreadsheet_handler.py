@@ -40,9 +40,9 @@ class SpreadsheetContentHandler(BaseContentHandler):
                 truncated_data = self._truncate_json(json_data)
 
                 # Get prompt configuration
-                prompt_name = "spreadsheet_analysis"
-                prompt_config = self.prompt_manager.get_active_prompt(prompt_name)
-                prompt_version = self.prompt_manager.get_active_version(prompt_name)
+                prompt_name = "spreadsheet-analysis"
+                prompt_config = self.prompt_provider.get_prompt(prompt_name)
+                prompt_version = self.prompt_provider.get_active_version(prompt_name)
 
                 if not prompt_config or not prompt_version:
                     raise ContentProcessorError(
@@ -51,7 +51,7 @@ class SpreadsheetContentHandler(BaseContentHandler):
                     )
 
                 # Get AI analysis
-                prompt_template = self.prompt_manager.get_prompt_template(
+                prompt_template = self.prompt_provider.get_prompt_template(
                     prompt_name,
                     content=truncated_data
                 )

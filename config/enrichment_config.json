@@ -1,0 +1,126 @@
+{
+  "processor": {
+    "name": "EnrichmentProcessor",
+    "enabled": true,
+    "config": {
+      "enable_document_insights": true,
+      "enable_key_extraction": true,
+      "max_key_points": 10,
+      "confidence_threshold": 0.7,
+      "max_retries": 2,
+      "timeout_seconds": 30,
+      "batch_pages": true,
+      "max_pages_per_batch": 10,
+      "cache_enrichments": true,
+      "cache_ttl_seconds": 3600
+    }
+  },
+  "prompts": {
+    "document-enrichment-analysis": {
+      "active_version": "1.0.0",
+      "versions": {
+        "1.0.0": {
+          "model": "gpt-4o",
+          "max_tokens": 1500,
+          "temperature": 0.3,
+          "description": "Analyzes document content and extracts business insights",
+          "output_format": "json",
+          "parameters": {
+            "content": "Document text content to analyze",
+            "max_content_length": 8000
+          }
+        }
+      }
+    },
+    "document-enrichment-synthesis": {
+      "active_version": "1.0.0",
+      "versions": {
+        "1.0.0": {
+          "model": "gpt-4o-mini",
+          "max_tokens": 1000,
+          "temperature": 0.3,
+          "description": "Synthesizes multi-page document analyses into document-level insights",
+          "output_format": "json",
+          "parameters": {
+            "pages_summary": "JSON array of page-level analyses",
+            "page_count": "Total number of pages",
+            "extraction_method": "Method used for extraction (Vision API, OCR, etc.)"
+          }
+        }
+      }
+    }
+  },
+  "business_categories": {
+    "insurance": [
+      "fnol_form",
+      "claim_form",
+      "policy_document",
+      "insurance_card"
+    ],
+    "financial": [
+      "invoice",
+      "receipt",
+      "expense_report",
+      "statement",
+      "financial_statement",
+      "estimate"
+    ],
+    "identification": [
+      "drivers_license",
+      "passport",
+      "id_card"
+    ],
+    "legal": [
+      "police_report",
+      "contract",
+      "legal_document",
+      "authorization_form"
+    ],
+    "medical": [
+      "medical_record"
+    ],
+    "vehicle": [
+      "vehicle_registration",
+      "inspection_report"
+    ],
+    "communication": [
+      "email_chain",
+      "correspondence"
+    ],
+    "tax": [
+      "tax_document"
+    ],
+    "forms": [
+      "application_form"
+    ],
+    "other": [
+      "other"
+    ]
+  },
+  "extraction_priorities": {
+    "high": [
+      "claim_number",
+      "policy_number",
+      "invoice_number",
+      "case_number",
+      "incident_date",
+      "due_date",
+      "total_amount",
+      "customer_name",
+      "vendor_name"
+    ],
+    "medium": [
+      "service_date",
+      "location",
+      "description",
+      "status",
+      "reference_number",
+      "account_number"
+    ],
+    "low": [
+      "notes",
+      "comments",
+      "additional_info"
+    ]
+  }
+}

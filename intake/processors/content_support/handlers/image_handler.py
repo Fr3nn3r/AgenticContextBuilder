@@ -35,17 +35,17 @@ class ImageContentHandler(BaseContentHandler):
                 image_base64 = self._encode_image(file_path)
 
                 # Get prompt configuration
-                prompt_name = "universal_document"
-                prompt_config = self.prompt_manager.get_active_prompt(prompt_name)
-                prompt_version = self.prompt_manager.get_active_version(prompt_name)
+                prompt_name = "universal-document"
+                prompt_config = self.prompt_provider.get_prompt(prompt_name)
+                prompt_version = self.prompt_provider.get_active_version(prompt_name) or "1.0.0"
 
                 if not prompt_config:
                     # Fallback to default configuration
-                    prompt_config = self.prompt_manager.get_prompt(prompt_name)
+                    prompt_config = self.prompt_provider.get_prompt(prompt_name)
                     prompt_version = "1.0.0"
 
                 # Get AI analysis
-                prompt_template = self.prompt_manager.get_prompt_template(prompt_name)
+                prompt_template = self.prompt_provider.get_prompt_template(prompt_name)
 
                 ai_response = self.ai_service.analyze_content(
                     prompt_template,

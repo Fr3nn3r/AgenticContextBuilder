@@ -12,7 +12,7 @@ class TestPDFContentHandler:
     """Test suite for PDFContentHandler."""
 
     @pytest.fixture
-    def pdf_handler(self, ai_service, prompt_manager, response_parser):
+    def pdf_handler(self, ai_service, prompt_provider, response_parser):
         """Create PDF handler with mocked dependencies."""
         config = {
             'pdf_use_vision_default': True,
@@ -25,7 +25,7 @@ class TestPDFContentHandler:
 
         return PDFContentHandler(
             ai_service=ai_service,
-            prompt_manager=prompt_manager,
+            prompt_provider=prompt_provider,
             response_parser=response_parser,
             config=config
         )

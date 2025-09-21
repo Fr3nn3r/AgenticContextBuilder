@@ -9,7 +9,7 @@ import pytest
 
 from intake.processors.content_support.interfaces import AIProviderInterface
 from intake.processors.content_support.services import AIAnalysisService, ResponseParser
-from intake.processors.content_support.prompt_manager import PromptManager
+from intake.services import PromptProvider
 from intake.processors.content_support.config import ContentProcessorConfig
 
 
@@ -88,15 +88,44 @@ def test_config():
 
 
 @pytest.fixture
-def prompt_manager():
-    """Create prompt manager with test prompts."""
-    from intake.processors.content_support.models import ContentConfig, PromptConfig
+def prompt_provider(tmp_path):
+    """Create prompt provider with test prompts."""
+    # Create temporary prompt files for testing
+    prompts_dir = tmp_path / "prompts" / "content"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get default prompts
-    temp_config = ContentConfig()
-    default_prompts = temp_config.get_default_prompts()
+    # Create a simple test prompt
+    test_prompt = prompts_dir / "text-analysis-1.0.0.md"
+    test_prompt.write_text("Test prompt: {content}")
 
-    return PromptManager(default_prompts)
+    # Create minimal config
+    config = {
+        "prompts": {
+            "text-analysis": {
+                "active_version": "1.0.0",
+                "versions": {
+                    "1.0.0": {
+                        "model": "gpt-4o",
+                        "max_tokens": 1000,
+                        "temperature": 0.1,
+                        "output_format": "json"
+                    }
+                }
+            }
+        }
+    }
+
+    return PromptProvider(
+        prompts_dir=tmp_path / "prompts",
+        config=config,
+        processor_name="content"
+    )
+
+
+@pytest.fixture
+def prompt_manager(prompt_provider):
+    """Backwards compatibility fixture - maps to prompt_provider."""
+    return prompt_provider
 
 
 @pytest.fixture
