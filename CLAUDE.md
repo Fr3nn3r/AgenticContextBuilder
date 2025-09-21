@@ -80,6 +80,10 @@ Lazy imports for heavy deps (e.g., pdfium, PIL, pandas) in their specific module
 - EXPLAIN EVERYTHING CLEARLY & COMPLETELY
 - Address ALL of user's points and questions clearly and completely.
 
+### Misc
+Prefer ASCII-only CLI output by default: use “[OK]”/“[X]” instead of ✓/✗ for cross-platform safety.
+Use folder `scripts` to store temporary test scripts
+
 ### Minimal Comment Policy
 1. Explain why, not what: Don’t repeat code in English, explain intent, business rules, or trade-offs
 e.g. # Business rule: claims older than 2 years cannot be reopened

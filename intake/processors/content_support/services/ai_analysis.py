@@ -151,11 +151,7 @@ class OpenAIProvider(AIProviderInterface):
                 error_type="client_not_initialized"
             )
 
-        if not self.config.enable_vision_api:
-            raise AIProviderError(
-                "Vision API is not enabled",
-                error_type="vision_api_disabled"
-            )
+        # Vision API is always available if client is initialized
 
         try:
             content = [
@@ -190,7 +186,7 @@ class OpenAIProvider(AIProviderInterface):
             "provider": "OpenAI",
             "available": self.is_available(),
             "default_model": self.config.default_model,
-            "vision_enabled": self.config.enable_vision_api,
+            "vision_enabled": self.is_available(),  # Vision available if client is available
             "max_retries": self.config.max_retries,
             "timeout_seconds": self.config.timeout_seconds
         }

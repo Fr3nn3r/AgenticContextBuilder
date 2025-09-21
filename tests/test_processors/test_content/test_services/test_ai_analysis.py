@@ -141,19 +141,19 @@ class TestOpenAIProvider:
         assert result == "AI response"
         mock_client.chat.completions.create.assert_called_once()
 
-    @patch('openai.OpenAI')
-    def test_analyze_image_vision_disabled(self, mock_openai_class):
-        """Test image analysis when Vision API is disabled."""
-        config = AIConfig(
-            openai_api_key="test-key",
-            enable_vision_api=False
-        )
-        provider = OpenAIProvider(config)
+    def test_analyze_image_no_client(self):
+        """Test image analysis when client is not initialized."""
+        # Don't mock OpenAI here - we want the client to not be initialized
+        with patch.dict('os.environ', {}, clear=True):
+            config = AIConfig(
+                openai_api_key=None  # No API key means no client
+            )
+            provider = OpenAIProvider(config)
 
-        with pytest.raises(AIProviderError) as exc_info:
-            provider.analyze_image("Test prompt", "base64_data")
+            with pytest.raises(AIProviderError) as exc_info:
+                provider.analyze_image("Test prompt", "base64_data")
 
-        assert exc_info.value.error_type == "vision_api_disabled"
+            assert exc_info.value.error_type == "client_not_initialized"
 
     @patch('openai.OpenAI')
     def test_analyze_image_success(self, mock_openai_class):
@@ -165,7 +165,7 @@ class TestOpenAIProvider:
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai_class.return_value = mock_client
 
-        config = AIConfig(openai_api_key="test-key", enable_vision_api=True)
+        config = AIConfig(openai_api_key="test-key")
         provider = OpenAIProvider(config)
 
         result = provider.analyze_image("Describe image", "base64_data")

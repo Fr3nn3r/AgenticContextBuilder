@@ -17,6 +17,7 @@ from .content_support.config import ContentProcessorConfig, AIConfig
 from .content_support.factory import create_content_handler, get_all_handlers
 from .content_support.services import AIAnalysisService, OpenAIProvider
 from .content_support.handlers import BaseContentHandler
+from .content_support.extractors import get_registry
 
 
 class ContentProcessor(BaseProcessor):
@@ -66,6 +67,9 @@ class ContentProcessor(BaseProcessor):
         else:
             self.prompt_provider = self._initialize_prompt_provider()
 
+        # Initialize and configure extraction registry
+        self._configure_extraction_registry()
+
         # Initialize file type handlers
         self.handlers: List[BaseContentHandler] = self._initialize_handlers()
 
@@ -96,6 +100,52 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             self.logger.error(f"Failed to initialize AI service: {e}")
             return None
+
+    def _configure_extraction_registry(self) -> None:
+        """
+        Configure the extraction registry with methods from config.
+        """
+        registry = get_registry()
+
+        # Get extraction methods from config
+        extraction_methods = self.config.get('extraction_methods', {})
+
+        if not extraction_methods:
+            # Default configuration if none provided
+            extraction_methods = {
+                'ocr_tesseract': {
+                    'enabled': True,
+                    'priority': 1,
+                    'config': {
+                        'languages': ['eng'],
+                        'quality_threshold': 0.6
+                    }
+                },
+                'vision_openai': {
+                    'enabled': True,
+                    'priority': 2,
+                    'config': {
+                        'model': 'gpt-4o',
+                        'max_pages': 20
+                    }
+                }
+            }
+
+        # Configure registry with extraction methods
+        registry.configure(extraction_methods)
+
+        # Validate configuration
+        errors = registry.validate_configuration(extraction_methods)
+        if errors:
+            for error in errors:
+                self.logger.warning(f"Extraction method configuration issue: {error}")
+
+            # Check if at least one method is available
+            if "At least one extraction method must be enabled" in errors[0]:
+                raise ValueError(
+                    "No extraction methods are enabled. "
+                    "Enable at least one method (ocr_tesseract or vision_openai) in config."
+                )
 
     def _initialize_prompt_provider(self) -> PromptProvider:
         """
@@ -345,9 +395,9 @@ class ContentProcessor(BaseProcessor):
                 self.logger.error("Prompt provider not initialized")
                 return False
 
-            # Check AI service if vision API is enabled
-            if self.typed_config.ai.enable_vision_api and not self.ai_service:
-                self.logger.warning("Vision API enabled but AI service not available")
+            # Check AI service availability
+            if not self.ai_service:
+                self.logger.warning("AI service not available")
 
             return True
 
@@ -374,8 +424,7 @@ class ContentProcessor(BaseProcessor):
             'total_prompts': len(self.prompt_provider.list_prompts()) if self.prompt_provider else 0,
             'prompt_versions': self.prompt_provider.list_prompts() if self.prompt_provider else {},
             'configuration': {
-                'enable_vision_api': self.typed_config.ai.enable_vision_api,
-                'enable_ocr_fallback': self.typed_config.pdf.ocr_as_fallback,
+                'extraction_methods': list(self.config.get('extraction_methods', {}).keys()),
                 'max_file_size_mb': self.typed_config.processing.max_file_size_mb,
                 'max_retries': self.typed_config.ai.max_retries,
                 'timeout_seconds': self.typed_config.ai.timeout_seconds
@@ -411,7 +460,7 @@ class ContentProcessor(BaseProcessor):
                 self.typed_config.ai.openai_api_key or
                 os.getenv('OPENAI_API_KEY')
             ),
-            'vision_api_enabled': self.typed_config.ai.enable_vision_api,
+            'vision_api_enabled': self.ai_service is not None,
             'test_request_successful': False,
             'error_message': None
         }

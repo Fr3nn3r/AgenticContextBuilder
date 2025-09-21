@@ -1,4 +1,4 @@
-"""Tests for PDF content handler."""
+"""Tests for PDF content handler with new extraction architecture."""
 
 import pytest
 from pathlib import Path
@@ -6,35 +6,45 @@ from unittest.mock import Mock, patch, MagicMock
 
 from intake.processors.content_support.handlers.pdf import PDFContentHandler
 from intake.processors.content_support.models import FileContentOutput, ContentProcessorError
+from intake.processors.content_support.extractors import ExtractionResult, PageExtractionResult
 
 
 class TestPDFContentHandler:
-    """Test suite for PDFContentHandler."""
+    """Test suite for PDFContentHandler with new extraction architecture."""
 
     @pytest.fixture
     def pdf_handler(self, ai_service, prompt_provider, response_parser):
         """Create PDF handler with mocked dependencies."""
         config = {
-            'pdf_use_vision_default': True,
-            'ocr_as_fallback': True,
-            'pdf_large_file_threshold_mb': 50,
-            'pdf_max_pages_vision': 20,
-            'ocr_languages': ['eng', 'spa'],
-            'text_truncation_chars': 1000
+            'text_truncation_chars': 1000,
+            'extraction_methods': {
+                'ocr_tesseract': {
+                    'enabled': True,
+                    'priority': 1,
+                    'config': {'languages': ['eng']}
+                },
+                'vision_openai': {
+                    'enabled': True,
+                    'priority': 2,
+                    'config': {'model': 'gpt-4o'}
+                }
+            }
         }
 
-        return PDFContentHandler(
+        handler = PDFContentHandler(
             ai_service=ai_service,
             prompt_provider=prompt_provider,
             response_parser=response_parser,
             config=config
         )
 
+        return handler
+
     def test_initialization(self, pdf_handler):
-        """Test PDF handler initialization."""
+        """Test PDF handler initialization with registry."""
         assert pdf_handler is not None
-        assert hasattr(pdf_handler, 'vision_strategy')
-        assert hasattr(pdf_handler, 'ocr_strategy')
+        assert hasattr(pdf_handler, 'registry')
+        assert pdf_handler.registry is not None
 
     def test_can_handle_pdf(self, pdf_handler, tmp_path):
         """Test that handler recognizes PDF files."""
@@ -51,249 +61,257 @@ class TestPDFContentHandler:
         assert pdf_handler.can_handle(txt_file) is False
 
     @patch('os.path.getsize')
-    def test_process_with_vision_default(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test processing with Vision API as default."""
+    def test_process_with_multiple_methods(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing with multiple extraction methods."""
         mock_getsize.return_value = 1024 * 1024  # 1MB
-
         pdf_file = sample_files_path / "sample.pdf"
 
-        # Mock vision strategy
-        with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.vision_strategy, 'extract') as mock_extract:
-                mock_extract.return_value = {
-                    "pages": [{"page": 1, "analysis": "Test content"}],
-                    "extraction_method": "Vision API",
-                    "total_pages": 1,
-                    "processed_pages": 1
-                }
+        # Mock registry to return multiple extraction results
+        mock_results = [
+            ExtractionResult(
+                method="ocr_tesseract",
+                status="success",
+                pages=[
+                    PageExtractionResult(
+                        page_number=1,
+                        status="success",
+                        content={"text": "OCR extracted text", "confidence": 0.95},
+                        quality_score=0.95
+                    )
+                ]
+            ),
+            ExtractionResult(
+                method="vision_openai",
+                status="success",
+                pages=[
+                    PageExtractionResult(
+                        page_number=1,
+                        status="success",
+                        content={"document_type": "invoice", "text_content": "Vision extracted text"}
+                    )
+                ]
+            )
+        ]
 
-                result = pdf_handler.process(pdf_file)
-
-                assert isinstance(result, FileContentOutput)
-                assert result.processing_info.processing_status == "success"
-                assert result.processing_info.extraction_method == "Vision API"
-                mock_extract.assert_called_once()
-
-    @patch('os.path.getsize')
-    def test_vision_to_ocr_fallback(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test fallback from Vision API to OCR."""
-        mock_getsize.return_value = 1024 * 1024  # 1MB
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        # Vision fails, OCR succeeds
-        with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.vision_strategy, 'extract', side_effect=Exception("Vision failed")):
-                with patch.object(pdf_handler.ocr_strategy, 'extract') as mock_ocr:
-                    mock_ocr.return_value = {
-                        "text": "OCR extracted text",
-                        "extraction_method": "OCR",
-                        "has_sufficient_quality": True,
-                        "quality_stats": {"has_sufficient_quality": True}
-                    }
-
-                    result = pdf_handler.process(pdf_file)
-
-                    assert result.processing_info.processing_status == "success"
-                    assert "OCR (Fallback)" in result.processing_info.extraction_method
-                    mock_ocr.assert_called_once()
-
-    @patch('os.path.getsize')
-    def test_ocr_first_when_configured(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test using OCR first when configured."""
-        mock_getsize.return_value = 1024 * 1024  # 1MB
-        pdf_handler.config['pdf_use_vision_default'] = False
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        with patch.object(pdf_handler.ocr_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.ocr_strategy, 'extract') as mock_ocr:
-                mock_ocr.return_value = {
-                    "text": "OCR text",
-                    "extraction_method": "OCR",
-                    "has_sufficient_quality": True,
-                    "quality_stats": {"has_sufficient_quality": True}
-                }
-
-                result = pdf_handler.process(pdf_file)
-
-                assert result.processing_info.extraction_method == "OCR"
-                mock_ocr.assert_called_once()
-
-    @patch('os.path.getsize')
-    def test_ocr_insufficient_quality_fallback(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test fallback to Vision when OCR quality is insufficient."""
-        mock_getsize.return_value = 1024 * 1024
-        pdf_handler.config['pdf_use_vision_default'] = False
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        # OCR returns low quality, fallback to Vision
-        with patch.object(pdf_handler.ocr_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.ocr_strategy, 'extract') as mock_ocr:
-                mock_ocr.return_value = {
-                    "text": "???",
-                    "extraction_method": "OCR",
-                    "has_sufficient_quality": False,
-                    "quality_stats": {"has_sufficient_quality": False}
-                }
-
-                with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=True):
-                    with patch.object(pdf_handler.vision_strategy, 'extract') as mock_vision:
-                        mock_vision.return_value = {
-                            "pages": [{"page": 1, "analysis": "Vision content"}],
-                            "extraction_method": "Vision API"
-                        }
-
-                        result = pdf_handler.process(pdf_file)
-
-                        assert result.processing_info.extraction_method == "Vision API"
-                        mock_vision.assert_called_once()
-
-    @patch('os.path.getsize')
-    def test_both_strategies_fail(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test error handling when both strategies fail."""
-        mock_getsize.return_value = 1024 * 1024
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        # Both strategies fail
-        with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.vision_strategy, 'extract', side_effect=Exception("Vision failed")):
-                with patch.object(pdf_handler.ocr_strategy, 'extract', side_effect=Exception("OCR failed")):
-                    result = pdf_handler.process(pdf_file)
-
-                    assert result.processing_info.processing_status == "error"
-                    assert "Both Vision API and OCR failed" in result.processing_info.error_message
-
-    @patch('os.path.getsize')
-    def test_no_fallback_when_disabled(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test that fallback doesn't occur when disabled."""
-        mock_getsize.return_value = 1024 * 1024
-        pdf_handler.config['ocr_as_fallback'] = False
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        # Vision fails, no OCR fallback
-        with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=True):
-            with patch.object(pdf_handler.vision_strategy, 'extract', side_effect=Exception("Vision failed")):
-                result = pdf_handler.process(pdf_file)
-
-                # Should return error result since fallback is disabled
-                assert result.processing_info.processing_status == "error"
-                assert "Vision failed" in result.processing_info.error_message
-
-    def test_process_vision_result(self, pdf_handler):
-        """Test processing of Vision API extraction results."""
-        extraction_result = {
-            "pages": [
-                {"page": 1, "analysis": {"content": "Page 1"}},
-                {"page": 2, "analysis": {"content": "Page 2"}}
-            ],
-            "total_pages": 2,
-            "processed_pages": 2
-        }
-
-        result = pdf_handler._process_vision_result(
-            Path("test.pdf"),
-            extraction_result,
-            "Vision API",
-            Mock(duration_seconds=1.0)
-        )
-
-        assert isinstance(result, FileContentOutput)
-        assert result.content_data["pages"] == extraction_result["pages"]
-        assert result.content_data["_extraction_method"] == "Vision API"
-
-    def test_process_text_result_with_ai_analysis(self, pdf_handler, ai_service, response_parser):
-        """Test processing of OCR text with AI analysis."""
-        text_content = "Extracted text content from OCR"
-
-        # Mock AI analysis
-        ai_service.analyze_content = Mock(return_value='{"summary": "AI summary", "language": "en"}')
-        response_parser.parse_ai_response = Mock(
-            return_value=({"summary": "AI summary", "language": "en"}, "AI summary")
-        )
-
-        result = pdf_handler._process_text_result(
-            Path("test.pdf"),
-            text_content,
-            "OCR",
-            Mock(duration_seconds=1.0)
-        )
-
-        assert isinstance(result, FileContentOutput)
-        assert result.content_metadata.summary == "AI summary"
-        assert result.content_metadata.detected_language == "en"
-        assert result.content_data["_extraction_method"] == "OCR"
-
-    def test_process_text_result_truncation(self, pdf_handler):
-        """Test that long text is truncated properly."""
-        long_text = "x" * 2000  # Exceed truncation limit
-
-        result = pdf_handler._process_text_result(
-            Path("test.pdf"),
-            long_text,
-            "OCR",
-            Mock(duration_seconds=1.0)
-        )
-
-        assert "_truncated" in result.content_data
-        assert result.content_data["_truncated"] is True
-
-    @patch('os.path.getsize')
-    def test_large_file_detection(self, mock_getsize, pdf_handler, sample_files_path):
-        """Test that large files are handled differently."""
-        # Set file size above threshold
-        mock_getsize.return_value = 60 * 1024 * 1024  # 60MB
-
-        pdf_file = sample_files_path / "sample.pdf"
-
-        with patch.object(pdf_handler.vision_strategy, 'extract') as mock_extract:
-            mock_extract.return_value = {
-                "pages": [],
-                "extraction_method": "Vision API (Page-by-Page)"
-            }
-
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=mock_results):
             result = pdf_handler.process(pdf_file)
 
-            # Check that large file processing was triggered
-            mock_extract.assert_called_once()
+            assert isinstance(result, FileContentOutput)
+            assert result.processing_info.processing_status == "success"
+            assert "ocr_tesseract" in result.processing_info.extracted_by
+            assert "vision_openai" in result.processing_info.extracted_by
+            assert len(result.extraction_results) == 2
 
-    def test_no_strategy_available(self, pdf_handler, sample_files_path):
-        """Test error when no extraction strategy is available."""
-        pdf_handler.config['pdf_use_vision_default'] = False
-
+    @patch('os.path.getsize')
+    def test_process_with_partial_success(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing when one method succeeds and another fails."""
+        mock_getsize.return_value = 1024 * 1024
         pdf_file = sample_files_path / "sample.pdf"
 
-        # Neither strategy can handle
-        with patch.object(pdf_handler.ocr_strategy, 'can_handle', return_value=False):
-            with patch.object(pdf_handler.vision_strategy, 'can_handle', return_value=False):
-                result = pdf_handler.process(pdf_file)
+        mock_results = [
+            ExtractionResult(
+                method="ocr_tesseract",
+                status="error",
+                pages=[],
+                error="OCR failed"
+            ),
+            ExtractionResult(
+                method="vision_openai",
+                status="success",
+                pages=[
+                    PageExtractionResult(
+                        page_number=1,
+                        status="success",
+                        content={"text_content": "Vision content"}
+                    )
+                ]
+            )
+        ]
 
-                assert result.processing_info.processing_status == "error"
-                assert "No extraction strategy available" in result.processing_info.error_message
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=mock_results):
+            result = pdf_handler.process(pdf_file)
 
+            assert result.processing_info.processing_status == "partial_success"
+            assert "vision_openai" in result.processing_info.extracted_by
+            assert "ocr_tesseract" in result.processing_info.failed_methods
 
-@pytest.mark.skipif(
-    True,  # Skip by default as pypdfium2 may not be installed
-    reason="pypdfium2 not installed"
-)
-class TestPDFHandlerIntegration:
-    """Integration tests for PDF handler with real PDF processing."""
+    @patch('os.path.getsize')
+    def test_process_with_skipped_methods(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing when some methods are skipped."""
+        mock_getsize.return_value = 1024 * 1024
+        pdf_file = sample_files_path / "sample.pdf"
 
+        mock_results = [
+            ExtractionResult(
+                method="ocr_tesseract",
+                status="skipped",
+                pages=[],
+                error="Tesseract not installed"
+            ),
+            ExtractionResult(
+                method="vision_openai",
+                status="success",
+                pages=[
+                    PageExtractionResult(
+                        page_number=1,
+                        status="success",
+                        content={"text_content": "Vision content"}
+                    )
+                ]
+            )
+        ]
+
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=mock_results):
+            result = pdf_handler.process(pdf_file)
+
+            # When one method is skipped but another succeeds, status is success
+            # (skipped doesn't count as failure)
+            assert result.processing_info.processing_status == "success"
+            assert "vision_openai" in result.processing_info.extracted_by
+            assert "ocr_tesseract" in result.processing_info.skipped_methods
+
+    @patch('os.path.getsize')
+    def test_process_all_methods_fail(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing when all methods fail."""
+        mock_getsize.return_value = 1024 * 1024
+        pdf_file = sample_files_path / "sample.pdf"
+
+        mock_results = [
+            ExtractionResult(
+                method="ocr_tesseract",
+                status="error",
+                pages=[],
+                error="OCR failed"
+            ),
+            ExtractionResult(
+                method="vision_openai",
+                status="error",
+                pages=[],
+                error="Vision API failed"
+            )
+        ]
+
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=mock_results):
+            result = pdf_handler.process(pdf_file)
+
+            assert result.processing_info.processing_status == "error"
+            assert len(result.processing_info.failed_methods) == 2
+
+    @patch('os.path.getsize')
+    def test_process_no_methods_available(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing when no extraction methods are available."""
+        mock_getsize.return_value = 1024 * 1024
+        pdf_file = sample_files_path / "sample.pdf"
+
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=[]):
+            result = pdf_handler.process(pdf_file)
+
+            assert result.processing_info.processing_status == "error"
+            assert "No extraction methods" in result.processing_info.error_message
+
+    @patch('os.path.getsize')
+    def test_process_with_unreadable_pages(self, mock_getsize, pdf_handler, sample_files_path):
+        """Test processing with pages marked as unreadable."""
+        mock_getsize.return_value = 1024 * 1024
+        pdf_file = sample_files_path / "sample.pdf"
+
+        mock_results = [
+            ExtractionResult(
+                method="ocr_tesseract",
+                status="success",
+                pages=[
+                    PageExtractionResult(
+                        page_number=1,
+                        status="success",
+                        content={"text": "Page 1 text"},
+                        quality_score=0.95
+                    ),
+                    PageExtractionResult(
+                        page_number=2,
+                        status="unreadable_content",
+                        content=None,
+                        quality_score=0,
+                        error="No readable text found"
+                    )
+                ]
+            )
+        ]
+
+        with patch.object(pdf_handler.registry, 'extract_from_file', return_value=mock_results):
+            result = pdf_handler.process(pdf_file)
+
+            assert result.processing_info.processing_status == "success"
+            extraction = result.extraction_results[0]
+            assert extraction["pages"][0]["status"] == "success"
+            assert extraction["pages"][1]["status"] == "unreadable_content"
+
+    def test_determine_overall_status_all_success(self, pdf_handler):
+        """Test status determination when all methods succeed."""
+        mock_results = [
+            Mock(status="success"),
+            Mock(status="success")
+        ]
+
+        status = pdf_handler._determine_overall_status(mock_results)
+        assert status == "success"
+
+    def test_determine_overall_status_partial_success(self, pdf_handler):
+        """Test status determination with mixed results."""
+        mock_results = [
+            Mock(status="success"),
+            Mock(status="error"),
+            Mock(status="skipped")
+        ]
+
+        status = pdf_handler._determine_overall_status(mock_results)
+        assert status == "partial_success"
+
+    def test_determine_overall_status_all_error(self, pdf_handler):
+        """Test status determination when all fail."""
+        mock_results = [
+            Mock(status="error"),
+            Mock(status="error")
+        ]
+
+        status = pdf_handler._determine_overall_status(mock_results)
+        assert status == "error"
+
+    def test_determine_overall_status_all_skipped(self, pdf_handler):
+        """Test status determination when all are skipped."""
+        mock_results = [
+            Mock(status="skipped"),
+            Mock(status="skipped")
+        ]
+
+        status = pdf_handler._determine_overall_status(mock_results)
+        assert status == "error"
+
+    def test_format_extraction_result(self, pdf_handler):
+        """Test formatting of extraction results."""
+        result = ExtractionResult(
+            method="test_method",
+            status="success",
+            pages=[
+                PageExtractionResult(
+                    page_number=1,
+                    status="success",
+                    content={"test": "data"},
+                    quality_score=0.9,
+                    processing_time=1.5
+                )
+            ],
+            error=None
+        )
+
+        formatted = pdf_handler._format_extraction_result(result)
+
+        assert formatted["method"] == "test_method"
+        assert formatted["status"] == "success"
+        assert len(formatted["pages"]) == 1
+        assert formatted["pages"][0]["page_number"] == 1
+        assert formatted["pages"][0]["quality_score"] == 0.9
+
+    @pytest.mark.integration
     def test_process_real_pdf(self, sample_files_path):
-        """Test processing a real PDF file."""
-        # This would test with actual PDF processing
-        # Requires pypdfium2 and other dependencies
-        pass
-
-
-# TODO: Add tests for no API key scenario
-# - Test behavior when AI service is not available
-# - Test fallback mechanisms without AI
-
-# TODO: Add performance tests
-# - Test with large PDFs (100+ pages)
-# - Test memory usage during processing
-# - Test concurrent PDF processing
+        """Integration test with real PDF processing (requires dependencies)."""
+        pytest.skip("Integration test - requires OCR/Vision dependencies")

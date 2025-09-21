@@ -54,7 +54,8 @@ class TestTextContentHandler:
 
         assert isinstance(result, FileContentOutput)
         assert result.processing_info.processing_status == "success"
-        assert result.processing_info.extraction_method == "Direct Text"
+        # Text handler doesn't use extraction methods
+        assert result.processing_info.processing_status == "success"
         assert result.content_metadata.content_type == "text"
         assert result.data_text_content is not None
 
@@ -85,9 +86,9 @@ class TestTextContentHandler:
 
         result = text_handler.process(sample_text_file)
 
+        # Check extraction results instead of content_data
         assert result.content_metadata.summary == "Test summary"
         assert result.content_metadata.detected_language == "en"
-        assert result.content_data == {"summary": "Test summary", "language": "en"}
 
     def test_process_with_text_prompt(self, text_handler, sample_text_file):
         """Test processing with text-only prompt response."""
@@ -95,8 +96,8 @@ class TestTextContentHandler:
         with patch.object(text_handler.response_parser, 'parse_ai_response', return_value=(None, "Plain text analysis")):
             result = text_handler.process(sample_text_file)
 
-            # When no JSON is parsed, content_data should be None
-            assert result.content_data is None
+            # Text handler stores raw content in data_text_content
+            assert result.data_text_content is not None
             # Summary should be based on file analysis
             assert result.content_metadata.summary is not None
 

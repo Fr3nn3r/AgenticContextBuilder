@@ -2,7 +2,7 @@
 # Centralized configuration management for content processing
 # Handles all configuration settings, thresholds, and feature flags
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -20,28 +20,29 @@ class HandlerConfig(BaseModel):
     )
 
 
-class PDFConfig(BaseModel):
-    """PDF-specific processing configuration."""
+class ExtractionMethodConfig(BaseModel):
+    """Configuration for an individual extraction method."""
 
-    use_vision_default: bool = Field(
+    enabled: bool = Field(
+        False,
+        description="Whether this extraction method is enabled"
+    )
+    priority: int = Field(
+        999,
+        description="Execution order priority (lower numbers run first)"
+    )
+    config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Method-specific configuration"
+    )
+
+
+class ExtractionPolicyConfig(BaseModel):
+    """Policy configuration for extraction behavior."""
+
+    require_at_least_one: bool = Field(
         True,
-        description="Use Vision API as default for PDFs (otherwise OCR first)"
-    )
-    large_file_threshold_mb: int = Field(
-        50,
-        description="Threshold for splitting large PDFs into pages (MB)"
-    )
-    max_pages_vision: int = Field(
-        20,
-        description="Maximum pages to process with Vision API"
-    )
-    ocr_as_fallback: bool = Field(
-        True,
-        description="Use OCR as fallback when Vision API fails"
-    )
-    ocr_languages: List[str] = Field(
-        default_factory=lambda: ['eng', 'spa'],
-        description="Languages for OCR processing"
+        description="Error if no extraction methods are enabled"
     )
 
 
@@ -71,10 +72,6 @@ class AIConfig(BaseModel):
     timeout_seconds: int = Field(
         30,
         description="Timeout for API calls in seconds"
-    )
-    enable_vision_api: bool = Field(
-        True,
-        description="Enable OpenAI Vision API for image/document processing"
     )
 
 
@@ -150,9 +147,13 @@ class ContentProcessorConfig(BaseModel):
         default_factory=ProcessingConfig,
         description="General processing settings"
     )
-    pdf: PDFConfig = Field(
-        default_factory=PDFConfig,
-        description="PDF-specific settings"
+    extraction_methods: Dict[str, ExtractionMethodConfig] = Field(
+        default_factory=dict,
+        description="Extraction methods configuration"
+    )
+    extraction_policy: ExtractionPolicyConfig = Field(
+        default_factory=ExtractionPolicyConfig,
+        description="Extraction policy configuration"
     )
     handlers: HandlerRegistry = Field(
         default_factory=HandlerRegistry,

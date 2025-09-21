@@ -1,6 +1,5 @@
 # intake/processors/content_support/handlers/pdf/pdf_handler.py
-# Main PDF content handler that coordinates extraction strategies
-# Manages strategy selection and fallback mechanisms
+# Main PDF content handler that uses extraction registry
 
 import os
 from pathlib import Path
@@ -9,26 +8,18 @@ from typing import Dict, Any, Optional
 from ..base import BaseContentHandler
 from ...models import FileContentOutput, ContentProcessorError
 from ...services import track_processing_time
-from .strategies import VisionAPIStrategy, OCRStrategy
+from ...extractors import get_registry
 
 
 class PDFContentHandler(BaseContentHandler):
-    """Handler for PDF files with multiple extraction strategies."""
+    """Handler for PDF files using extraction registry."""
 
     SUPPORTED_EXTENSIONS = {'.pdf'}
 
     def __init__(self, *args, **kwargs):
-        """Initialize PDF handler with extraction strategies."""
+        """Initialize PDF handler with extraction registry."""
         super().__init__(*args, **kwargs)
-
-        # Initialize strategies
-        self.vision_strategy = VisionAPIStrategy(
-            self.config,
-            self.ai_service,
-            self.prompt_provider,
-            self.response_parser
-        )
-        self.ocr_strategy = OCRStrategy(self.config)
+        self.registry = get_registry()
 
     def can_handle(self, file_path: Path) -> bool:
         """Check if file is a PDF."""
@@ -39,24 +30,67 @@ class PDFContentHandler(BaseContentHandler):
         file_path: Path,
         existing_metadata: Optional[Dict[str, Any]] = None
     ) -> FileContentOutput:
-        """Process PDF using configured strategy with fallback."""
+        """Process PDF using configured extraction methods."""
         with track_processing_time("pdf_processing") as metrics:
             try:
                 # Check file size
                 file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
                 self.logger.info(f"Processing PDF {file_path.name}: {file_size_mb:.2f}MB")
 
-                # Determine primary strategy
-                use_vision_default = self.config.get('pdf_use_vision_default', True)
+                # Get extraction results from all enabled methods
+                extraction_results = self.registry.extract_from_file(file_path)
 
-                if use_vision_default:
-                    # Try Vision API first
-                    result = self._try_vision_with_fallback(file_path, metrics)
-                else:
-                    # Try OCR first
-                    result = self._try_ocr_with_fallback(file_path, metrics)
+                # Check if we have any results
+                if not extraction_results:
+                    raise ContentProcessorError(
+                        "No extraction methods available or enabled for PDF",
+                        error_type="no_methods_available"
+                    )
 
-                return result
+                # Determine overall status
+                status = self._determine_overall_status(extraction_results)
+
+                # Get list of methods used
+                extracted_by = []
+                skipped_methods = []
+                failed_methods = []
+
+                for result in extraction_results:
+                    if result.status in ["success", "partial_success"]:
+                        extracted_by.append(result.method)
+                    elif result.status == "skipped":
+                        skipped_methods.append(result.method)
+                    else:  # error
+                        failed_methods.append(result.method)
+
+                # Get total pages from first successful method
+                total_pages = 0
+                for result in extraction_results:
+                    if result.pages:
+                        total_pages = max(page.page_number for page in result.pages)
+                        break
+
+                # Create processing info
+                processing_info = self.create_processing_info(
+                    status=status,
+                    processing_time=metrics.duration_seconds,
+                    extracted_by=extracted_by,
+                    skipped_methods=skipped_methods,
+                    failed_methods=failed_methods
+                )
+
+                # Create content metadata
+                content_metadata = self.create_content_metadata(
+                    content_type="document",
+                    file_category="pdf",
+                    total_pages=total_pages
+                )
+
+                return FileContentOutput(
+                    processing_info=processing_info,
+                    content_metadata=content_metadata,
+                    extraction_results=[self._format_extraction_result(r) for r in extraction_results]
+                )
 
             except Exception as e:
                 self.logger.error(f"PDF processing failed for {file_path}: {str(e)}")
@@ -74,252 +108,67 @@ class PDFContentHandler(BaseContentHandler):
 
                 return FileContentOutput(
                     processing_info=processing_info,
-                    content_metadata=content_metadata
+                    content_metadata=content_metadata,
+                    extraction_results=[]
                 )
 
-    def _try_vision_with_fallback(self, file_path: Path, metrics) -> FileContentOutput:
-        """Try Vision API with OCR fallback."""
-        try:
-            # Attempt Vision API extraction
-            if self.vision_strategy.can_handle(file_path):
-                self.logger.info(f"Using Vision API extraction for {file_path}")
-                extraction_result = self.vision_strategy.extract(file_path)
-                return self._process_extraction_result(
-                    file_path,
-                    extraction_result,
-                    "Vision API",
-                    metrics
-                )
-        except Exception as e:
-            self.logger.warning(f"Vision API failed for {file_path}: {e}")
+    def _determine_overall_status(self, extraction_results) -> str:
+        """
+        Determine overall processing status from extraction results.
 
-            # Fallback to OCR if enabled
-            if self.config.get('ocr_as_fallback', True):
-                self.logger.info(f"Falling back to OCR for {file_path}")
-                return self._try_ocr_extraction(file_path, metrics, is_fallback=True)
-            else:
-                raise
+        Status hierarchy:
+        - success: All enabled methods succeeded on all pages
+        - partial_success: At least one method succeeded on at least one page
+                          OR some methods succeeded while others failed/skipped
+        - error: All methods failed or were skipped
+        """
+        has_success = False
+        has_partial = False
+        has_error = False
+        all_skipped = True
 
-    def _try_ocr_with_fallback(self, file_path: Path, metrics) -> FileContentOutput:
-        """Try OCR with Vision API fallback."""
-        try:
-            # Attempt OCR extraction
-            if self.ocr_strategy.can_handle(file_path):
-                self.logger.info(f"Using OCR extraction for {file_path}")
-                extraction_result = self.ocr_strategy.extract(file_path)
+        for result in extraction_results:
+            if result.status == "success":
+                has_success = True
+                all_skipped = False
+            elif result.status == "partial_success":
+                has_partial = True
+                all_skipped = False
+            elif result.status == "error":
+                has_error = True
+                all_skipped = False
+            # skipped doesn't affect all_skipped check
 
-                # Check if OCR produced meaningful text
-                if extraction_result.get('has_sufficient_quality', False):
-                    return self._process_extraction_result(
-                        file_path,
-                        extraction_result,
-                        "OCR",
-                        metrics
-                    )
-                else:
-                    self.logger.info(f"OCR text not meaningful for {file_path}, trying Vision API")
+        if all_skipped:
+            return "error"
 
-        except Exception as e:
-            self.logger.warning(f"OCR failed for {file_path}: {e}")
-
-        # Fallback to Vision API
-        if self.vision_strategy.can_handle(file_path):
-            self.logger.info(f"Using Vision API extraction for {file_path}")
-            extraction_result = self.vision_strategy.extract(file_path)
-            return self._process_extraction_result(
-                file_path,
-                extraction_result,
-                "Vision API",
-                metrics
-            )
+        if has_success and not has_error and not has_partial:
+            return "success"
+        elif has_success or has_partial:
+            return "partial_success"
         else:
-            raise ContentProcessorError(
-                "No extraction strategy available for PDF",
-                error_type="no_strategy_available"
-            )
+            return "error"
 
-    def _try_ocr_extraction(self, file_path: Path, metrics, is_fallback: bool = False) -> FileContentOutput:
-        """Try OCR extraction."""
-        try:
-            extraction_result = self.ocr_strategy.extract(file_path)
-            extraction_method = "OCR (Fallback)" if is_fallback else "OCR"
-            return self._process_extraction_result(
-                file_path,
-                extraction_result,
-                extraction_method,
-                metrics
-            )
-        except Exception as e:
-            self.logger.error(f"OCR extraction failed: {str(e)}")
+    def _format_extraction_result(self, result) -> Dict[str, Any]:
+        """Format extraction result for output."""
+        return {
+            "method": result.method,
+            "status": result.status,
+            "pages": [self._format_page_result(page) for page in result.pages] if result.pages else [],
+            "error": result.error
+        }
 
-            # Return error result
-            processing_info = self.create_processing_info(
-                status="error",
-                error_message=f"Both Vision API and OCR failed: {str(e)}",
-                processing_time=metrics.duration_seconds,
-                extraction_method="Failed"
-            )
+    def _format_page_result(self, page) -> Dict[str, Any]:
+        """Format page extraction result for output."""
+        formatted = {
+            "page_number": page.page_number,
+            "status": page.status,
+            "content": page.content,
+            "quality_score": page.quality_score,
+            "processing_time": page.processing_time
+        }
 
-            content_metadata = self.create_content_metadata(
-                content_type="document",
-                file_category="pdf",
-                summary="Failed to extract content from PDF"
-            )
+        if page.error:
+            formatted["error"] = page.error
 
-            return FileContentOutput(
-                processing_info=processing_info,
-                content_metadata=content_metadata
-            )
-
-    def _process_extraction_result(
-        self,
-        file_path: Path,
-        extraction_result: Dict[str, Any],
-        extraction_method: str,
-        metrics
-    ) -> FileContentOutput:
-        """Process extraction result and apply AI analysis."""
-
-        # Handle Vision API results (pages)
-        if "pages" in extraction_result:
-            return self._process_vision_result(
-                file_path,
-                extraction_result,
-                extraction_method,
-                metrics
-            )
-
-        # Handle OCR results (text)
-        elif "text" in extraction_result:
-            return self._process_text_result(
-                file_path,
-                extraction_result["text"],
-                extraction_method,
-                metrics
-            )
-
-        else:
-            raise ContentProcessorError(
-                "Invalid extraction result format",
-                error_type="invalid_result"
-            )
-
-    def _process_vision_result(
-        self,
-        file_path: Path,
-        extraction_result: Dict[str, Any],
-        extraction_method: str,
-        metrics
-    ) -> FileContentOutput:
-        """Process Vision API extraction results."""
-
-        pages_info = extraction_result.get("pages", [])
-        total_pages = extraction_result.get("total_pages", len(pages_info))
-        processed_pages = extraction_result.get("processed_pages", len(pages_info))
-
-        # Create summary
-        summary = f"PDF processed via {extraction_method} ({processed_pages}/{total_pages} pages)"
-
-        # Get prompt configuration for metadata
-        prompt_config = self.prompt_provider.get_prompt("universal-document")
-        prompt_version = self.prompt_provider.get_active_version("universal-document") or "1.0.0"
-
-        content_metadata = self.create_content_metadata(
-            content_type="document",
-            file_category="pdf",
-            summary=summary
-        )
-
-        processing_info = self.create_processing_info(
-            status="success",
-            ai_model=prompt_config.model if prompt_config else "gpt-4o",
-            prompt_version=prompt_version,
-            processing_time=metrics.duration_seconds,
-            extraction_method=extraction_method
-        )
-
-        return FileContentOutput(
-            processing_info=processing_info,
-            content_metadata=content_metadata,
-            content_data={
-                "pages": pages_info,
-                "_extraction_method": extraction_method
-            }
-        )
-
-    def _process_text_result(
-        self,
-        file_path: Path,
-        text_content: str,
-        extraction_method: str,
-        metrics
-    ) -> FileContentOutput:
-        """Process OCR text extraction results with AI analysis."""
-
-        # Truncate if necessary
-        max_chars = self.config.get('text_truncation_chars', 8000)
-        truncated = False
-        original_text = text_content
-
-        if len(text_content) > max_chars:
-            text_content = text_content[:max_chars] + "\n[... content truncated ...]"
-            truncated = True
-
-        # Get AI analysis
-        prompt_name = "text-analysis"
-        prompt_config = self.prompt_provider.get_prompt(prompt_name)
-        prompt_version = self.prompt_provider.get_active_version(prompt_name) or "1.0.0"
-
-        prompt_template = self.prompt_provider.get_prompt_template(
-            prompt_name,
-            content=text_content
-        )
-
-        ai_response = self.ai_service.analyze_content(
-            prompt_template,
-            model=prompt_config.model,
-            max_tokens=prompt_config.max_tokens,
-            temperature=prompt_config.temperature
-        )
-
-        # Parse response
-        parsed_data, summary = self.response_parser.parse_ai_response(
-            ai_response,
-            expected_format=prompt_config.output_format or "text"
-        )
-
-        # Create metadata
-        content_metadata = self.create_content_metadata(
-            content_type="document",
-            file_category="pdf",
-            summary=summary if parsed_data else f"PDF processed via {extraction_method}",
-            detected_language=parsed_data.get('language') if isinstance(parsed_data, dict) else None
-        )
-
-        processing_info = self.create_processing_info(
-            status="success",
-            ai_model=prompt_config.model,
-            prompt_version=prompt_version,
-            processing_time=metrics.duration_seconds,
-            extraction_method=extraction_method
-        )
-
-        # Structure content data
-        if parsed_data:
-            content_data = parsed_data
-            content_data['_extraction_method'] = extraction_method
-            if truncated:
-                content_data['_truncated'] = True
-        else:
-            content_data = {
-                "text": original_text[:max_chars],
-                "analysis": ai_response,
-                "_extraction_method": extraction_method,
-                "_truncated": truncated
-            }
-
-        return FileContentOutput(
-            processing_info=processing_info,
-            content_metadata=content_metadata,
-            content_data=content_data
-        )
+        return formatted

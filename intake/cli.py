@@ -103,8 +103,14 @@ Examples:
         '-c', '--config',
         type=str,
         help='Path to configuration file (JSON format). '
-             'Use config/default_ai_config.json for AI processing or '
-             'config/metadata_only_config.json for metadata only'
+             'Use config/default_config.json for default processing'
+    )
+    parser.add_argument(
+        '--extraction-methods',
+        type=str,
+        help='Comma-separated list of extraction methods to use '
+             '(e.g., ocr_tesseract,vision_openai). '
+             'Overrides config file settings. Use "all" for all available methods.'
     )
     parser.add_argument(
         '-v', '--verbose',
@@ -123,6 +129,11 @@ Examples:
         type=str,
         metavar='PROCESSOR_NAME',
         help='Show detailed information about a specific processor and exit'
+    )
+    parser.add_argument(
+        '--validate-config',
+        action='store_true',
+        help='Validate configuration file and check extraction method requirements'
     )
 
     return parser
@@ -213,6 +224,85 @@ def show_processor_info(processor_name: str) -> None:
         print(f"Available processors: {', '.join(registry.list_processors())}")
 
 
+def validate_config_command(config_path: str) -> int:
+    """
+    Validate a configuration file and check extraction method requirements.
+
+    Args:
+        config_path: Path to configuration file
+
+    Returns:
+        Exit code (0 for valid, 1 for invalid)
+    """
+    print(f"Validating configuration: {config_path}")
+    print("=" * 50)
+
+    try:
+        # Load configuration
+        config = load_config(config_path)
+
+        # Check overall structure
+        if 'processors' not in config:
+            print("[X] Invalid config: missing 'processors' section")
+            return 1
+
+        print("[OK] Configuration structure is valid")
+
+        # Check for ContentProcessor and validate extraction methods
+        has_content_processor = False
+        for processor in config.get('processors', []):
+            if processor.get('name') == 'ContentProcessor':
+                has_content_processor = True
+                proc_config = processor.get('config', {})
+                extraction_methods = proc_config.get('extraction_methods', {})
+
+                if not extraction_methods:
+                    print("[!] No extraction methods configured (will use defaults)")
+                else:
+                    print("\nExtraction Methods:")
+                    from .processors.content_support.extractors import get_registry
+                    registry = get_registry()
+
+                    # Validate extraction methods
+                    errors = registry.validate_configuration(extraction_methods)
+
+                    if errors:
+                        print("\n[X] Configuration errors:")
+                        for error in errors:
+                            print(f"  - {error}")
+                        return 1
+
+                    # Show status of each method
+                    for method_name, method_config in extraction_methods.items():
+                        enabled = method_config.get('enabled', False)
+                        priority = method_config.get('priority', 999)
+                        status = "[OK] Enabled" if enabled else "[ ] Disabled"
+                        print(f"  {method_name}: {status} (priority: {priority})")
+
+                        # Check if method is available
+                        if enabled and method_name in registry.get_registered_methods():
+                            if registry.is_method_available(method_name):
+                                print(f"    [OK] Requirements met")
+                            else:
+                                print(f"    [!] Requirements not met (missing libraries or API key)")
+
+        if not has_content_processor:
+            print("\n[i] ContentProcessor not configured (metadata only mode)")
+
+        print("\n[OK] Configuration is valid")
+        return 0
+
+    except FileNotFoundError:
+        print(f"[X] Configuration file not found: {config_path}")
+        return 1
+    except ValueError as e:
+        print(f"[X] Invalid configuration: {e}")
+        return 1
+    except Exception as e:
+        print(f"[X] Unexpected error: {e}")
+        return 1
+
+
 def main() -> int:
     """
     Main entry point for the CLI application.
@@ -232,12 +322,18 @@ def main() -> int:
         show_processor_info(args.processor_info)
         return 0
 
+    # Handle config validation
+    if args.validate_config:
+        if not args.config:
+            parser.error("--validate-config requires -c/--config to specify configuration file")
+        return validate_config_command(args.config)
+
     # Check required arguments for main processing
     if not args.input_folder or not args.output_folder:
         parser.error("input_folder and output_folder are required for processing")
 
     if not args.config:
-        parser.error("Configuration file is required. Use -c config/default_ai_config.json for AI processing or -c config/metadata_only_config.json for metadata only")
+        parser.error("Configuration file is required. Use -c config/default_config.json for default processing")
 
     # Setup logging
     setup_logging(args.verbose)
@@ -252,6 +348,49 @@ def main() -> int:
 
         # Load configuration
         config = load_config(args.config)
+
+        # Override extraction methods if specified
+        if args.extraction_methods:
+            # Parse extraction methods
+            if args.extraction_methods.lower() == 'all':
+                # Enable all available methods
+                from .processors.content_support.extractors import get_registry
+                registry = get_registry()
+                available_methods = registry.get_registered_methods()
+
+                # Update config to enable all methods
+                for processor in config.get('processors', []):
+                    if processor.get('name') == 'ContentProcessor':
+                        if 'config' not in processor:
+                            processor['config'] = {}
+                        processor['config']['extraction_methods'] = {
+                            method: {'enabled': True, 'priority': i+1, 'config': {}}
+                            for i, method in enumerate(available_methods)
+                        }
+            else:
+                # Enable specific methods
+                methods = [m.strip() for m in args.extraction_methods.split(',')]
+
+                # Update config to use specified methods
+                for processor in config.get('processors', []):
+                    if processor.get('name') == 'ContentProcessor':
+                        if 'config' not in processor:
+                            processor['config'] = {}
+                        # Disable all methods first
+                        if 'extraction_methods' in processor['config']:
+                            for method in processor['config']['extraction_methods']:
+                                processor['config']['extraction_methods'][method]['enabled'] = False
+                        else:
+                            processor['config']['extraction_methods'] = {}
+
+                        # Enable specified methods
+                        for i, method in enumerate(methods):
+                            processor['config']['extraction_methods'][method] = {
+                                'enabled': True,
+                                'priority': i+1,
+                                'config': {}
+                            }
+
         if args.verbose:
             logger.debug(f"Loaded configuration: {config}")
         else:

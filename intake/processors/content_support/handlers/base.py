@@ -83,7 +83,10 @@ class BaseContentHandler(ABC):
         prompt_version: Optional[str] = None,
         error_message: Optional[str] = None,
         processing_time: Optional[float] = None,
-        extraction_method: Optional[str] = None
+        extraction_method: Optional[str] = None,
+        extracted_by: Optional[list] = None,
+        skipped_methods: Optional[list] = None,
+        failed_methods: Optional[list] = None
     ) -> ProcessingInfo:
         """
         Create standardized processing information.
@@ -101,12 +104,12 @@ class BaseContentHandler(ABC):
         """
         return ProcessingInfo(
             processor_version="1.0.0",
-            ai_model_used=ai_model,
             processing_status=status,
-            prompt_version=prompt_version,
             error_message=error_message,
             processing_time_seconds=processing_time,
-            extraction_method=extraction_method
+            extracted_by=extracted_by,
+            skipped_methods=skipped_methods,
+            failed_methods=failed_methods
         )
 
     def create_content_metadata(
@@ -114,7 +117,8 @@ class BaseContentHandler(ABC):
         content_type: str,
         file_category: str,
         summary: Optional[str] = None,
-        detected_language: Optional[str] = None
+        detected_language: Optional[str] = None,
+        **kwargs  # Accept additional parameters for flexibility
     ) -> ContentAnalysis:
         """
         Create standardized content metadata.

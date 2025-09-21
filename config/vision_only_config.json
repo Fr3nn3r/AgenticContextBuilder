@@ -1,5 +1,5 @@
 {
-  "description": "OCR-only configuration - Vision API disabled",
+  "description": "Vision API only configuration - OCR disabled",
   "processors": [
     {
       "name": "MetadataProcessor",
@@ -17,18 +17,20 @@
       "config": {
         "extraction_methods": {
           "ocr_tesseract": {
-            "enabled": true,
+            "enabled": false,
             "priority": 1,
-            "config": {
-              "languages": ["eng", "spa"],
-              "quality_threshold": 0.5,
-              "max_file_size_mb": 200
-            }
+            "config": {}
           },
           "vision_openai": {
-            "enabled": false,
+            "enabled": true,
             "priority": 2,
-            "config": {}
+            "config": {
+              "model": "gpt-4o",
+              "max_pages": 50,
+              "max_file_size_mb": 30,
+              "temperature": 0.1,
+              "max_tokens": 2048
+            }
           }
         },
         "extraction_policy": {

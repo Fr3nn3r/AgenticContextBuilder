@@ -13,12 +13,31 @@
       "name": "ContentProcessor",
       "config": {
         "prompts_config_file": "config/content_config.json",
-        "enable_vision_api": true,
-        "enable_ocr_fallback": true,
-        "pdf_use_vision_default": true,
-        "pdf_large_file_threshold_mb": 50,
-        "pdf_max_pages_vision": 20,
-        "ocr_as_fallback": true,
+        "extraction_methods": {
+          "ocr_tesseract": {
+            "enabled": true,
+            "priority": 1,
+            "config": {
+              "languages": ["eng", "spa"],
+              "quality_threshold": 0.6,
+              "max_file_size_mb": 100
+            }
+          },
+          "vision_openai": {
+            "enabled": true,
+            "priority": 2,
+            "config": {
+              "model": "gpt-4o",
+              "max_pages": 20,
+              "max_file_size_mb": 20,
+              "temperature": 0.1,
+              "max_tokens": 2048
+            }
+          }
+        },
+        "extraction_policy": {
+          "require_at_least_one": true
+        },
         "max_retries": 3,
         "timeout_seconds": 30,
         "max_file_size_mb": 50,
@@ -30,8 +49,7 @@
           "document": true
         },
         "enable_async_processing": true,
-        "connection_pool_size": 10,
-        "ocr_languages": ["eng", "spa"]
+        "connection_pool_size": 10
       }
     },
     {

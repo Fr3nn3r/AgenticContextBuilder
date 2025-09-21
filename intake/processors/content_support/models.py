@@ -11,13 +11,13 @@ from ...exceptions import IntakeError
 class ProcessingInfo(BaseModel):
     """Information about the processing operation."""
     processor_version: str = Field(..., description="Version of the content processor")
-    ai_model_used: Optional[str] = Field(None, description="AI model used for processing")
     processing_timestamp: str = Field(default_factory=lambda: datetime.now().isoformat(), description="When processing occurred")
-    prompt_version: Optional[str] = Field(None, description="Version of prompt used")
     processing_status: str = Field(..., description="Status: success, partial_success, or error")
     error_message: Optional[str] = Field(None, description="Error message if processing failed")
     processing_time_seconds: Optional[float] = Field(None, description="Time taken for processing")
-    extraction_method: Optional[str] = Field(None, description="Method used for content extraction: OCR, Vision API, Direct, etc.")
+    extracted_by: Optional[list] = Field(None, description="List of extraction methods that succeeded")
+    skipped_methods: Optional[list] = Field(None, description="List of extraction methods that were skipped")
+    failed_methods: Optional[list] = Field(None, description="List of extraction methods that failed")
 
 
 class ContentAnalysis(BaseModel):
@@ -39,10 +39,10 @@ class FileContentOutput(BaseModel):
     processing_info: ProcessingInfo = Field(..., description="Information about the processing operation")
     content_metadata: ContentAnalysis = Field(..., description="Metadata about the content type and analysis")
 
-    # Common fields for all file types
-    content_data: Optional[Dict[str, Any]] = Field(None, description="Structured JSON analysis from AI")
+    # New extraction results structure
+    extraction_results: Optional[list] = Field(None, description="Results from each extraction method")
 
-    # Type-specific raw content fields
+    # Type-specific raw content fields (kept for compatibility)
     data_text_content: Optional[str] = Field(None, description="Original text content (text files)")
     data_spreadsheet_content: Optional[str] = Field(None, description="Original spreadsheet data as JSON (spreadsheet files)")
     data_image_content: Optional[str] = Field(None, description="Base64 encoded image or description (image files)")

@@ -1,23 +1,28 @@
 # intake/processors/content_support/handlers/image_handler.py
-# Handler for image files using OpenAI Vision API
-# Processes images to extract visual content and descriptions
+# Handler for image files using extraction registry
 
-import base64
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .base import BaseContentHandler
 from ..models import FileContentOutput, ContentProcessorError
 from ..services import track_processing_time
+from ..extractors import get_registry
 
 
 class ImageContentHandler(BaseContentHandler):
-    """Handler for image files using Vision API."""
+    """Handler for image files using extraction registry."""
 
     SUPPORTED_EXTENSIONS = {
         '.jpg', '.jpeg', '.png', '.gif',
         '.bmp', '.tiff', '.webp'
     }
+
+    def __init__(self, *args, **kwargs):
+        """Initialize image handler with extraction registry."""
+        super().__init__(*args, **kwargs)
+        self.registry = get_registry()
 
     def can_handle(self, file_path: Path) -> bool:
         """Check if file is a supported image type."""
@@ -28,62 +33,70 @@ class ImageContentHandler(BaseContentHandler):
         file_path: Path,
         existing_metadata: Optional[Dict[str, Any]] = None
     ) -> FileContentOutput:
-        """Process image file using Vision API."""
+        """Process image file using configured extraction methods."""
         with track_processing_time("image_processing") as metrics:
             try:
-                # Convert image to base64
-                image_base64 = self._encode_image(file_path)
+                # Check file size
+                file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                self.logger.info(f"Processing image {file_path.name}: {file_size_mb:.2f}MB")
 
-                # Get prompt configuration
-                prompt_name = "universal-document"
-                prompt_config = self.prompt_provider.get_prompt(prompt_name)
-                prompt_version = self.prompt_provider.get_active_version(prompt_name) or "1.0.0"
+                # Get extraction results from all enabled methods
+                extraction_results = self.registry.extract_from_file(file_path)
 
-                if not prompt_config:
-                    # Fallback to default configuration
-                    prompt_config = self.prompt_provider.get_prompt(prompt_name)
-                    prompt_version = "1.0.0"
+                # Check if we have any results
+                if not extraction_results:
+                    raise ContentProcessorError(
+                        "No extraction methods available or enabled for images",
+                        error_type="no_methods_available"
+                    )
 
-                # Get AI analysis
-                prompt_template = self.prompt_provider.get_prompt_template(prompt_name)
+                # Determine overall status
+                status = self._determine_overall_status(extraction_results)
 
-                ai_response = self.ai_service.analyze_content(
-                    prompt_template,
-                    image_base64=image_base64,
-                    model=prompt_config.model,
-                    max_tokens=prompt_config.max_tokens,
-                    temperature=prompt_config.temperature
+                # Get list of methods used
+                extracted_by = []
+                skipped_methods = []
+                failed_methods = []
+
+                for result in extraction_results:
+                    if result.status in ["success", "partial_success"]:
+                        extracted_by.append(result.method)
+                    elif result.status == "skipped":
+                        skipped_methods.append(result.method)
+                    else:  # error
+                        failed_methods.append(result.method)
+
+                # Create processing info
+                processing_info = self.create_processing_info(
+                    status=status,
+                    processing_time=metrics.duration_seconds,
+                    extracted_by=extracted_by,
+                    skipped_methods=skipped_methods,
+                    failed_methods=failed_methods
                 )
 
-                # Parse response
-                parsed_data, summary = self.response_parser.parse_ai_response(
-                    ai_response,
-                    expected_format=prompt_config.output_format or "text"
-                )
-
-                # Create output
+                # Create content metadata
                 content_metadata = self.create_content_metadata(
                     content_type="image",
                     file_category="image",
-                    summary=summary if summary else "AI-analyzed image content"
+                    total_pages=1  # Images always have single page
                 )
 
-                processing_info = self.create_processing_info(
-                    status="success",
-                    ai_model=prompt_config.model,
-                    prompt_version=prompt_version,
-                    processing_time=metrics.duration_seconds,
-                    extraction_method="Vision API"
-                )
-
-                # Structure the content data
-                content_data = parsed_data if parsed_data else {"description": ai_response}
+                # Include base64 image data if we have at least one success
+                data_image_content = None
+                if status in ["success", "partial_success"]:
+                    try:
+                        import base64
+                        with open(file_path, 'rb') as f:
+                            data_image_content = base64.b64encode(f.read()).decode('utf-8')
+                    except Exception as e:
+                        self.logger.warning(f"Could not encode image to base64: {e}")
 
                 return FileContentOutput(
                     processing_info=processing_info,
                     content_metadata=content_metadata,
-                    content_data=content_data,
-                    data_image_content=image_base64
+                    extraction_results=[self._format_extraction_result(r) for r in extraction_results],
+                    data_image_content=data_image_content
                 )
 
             except Exception as e:
@@ -102,16 +115,66 @@ class ImageContentHandler(BaseContentHandler):
 
                 return FileContentOutput(
                     processing_info=processing_info,
-                    content_metadata=content_metadata
+                    content_metadata=content_metadata,
+                    extraction_results=[]
                 )
 
-    def _encode_image(self, file_path: Path) -> str:
-        """Encode image file to base64."""
-        try:
-            with open(file_path, 'rb') as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
-        except Exception as e:
-            raise ContentProcessorError(
-                f"Failed to encode image: {str(e)}",
-                error_type="image_encoding_error"
-            )
+    def _determine_overall_status(self, extraction_results) -> str:
+        """
+        Determine overall processing status from extraction results.
+
+        Status hierarchy:
+        - success: All enabled methods succeeded
+        - partial_success: At least one method succeeded
+                          OR some methods succeeded while others failed/skipped
+        - error: All methods failed or were skipped
+        """
+        has_success = False
+        has_partial = False
+        has_error = False
+        all_skipped = True
+
+        for result in extraction_results:
+            if result.status == "success":
+                has_success = True
+                all_skipped = False
+            elif result.status == "partial_success":
+                has_partial = True
+                all_skipped = False
+            elif result.status == "error":
+                has_error = True
+                all_skipped = False
+
+        if all_skipped:
+            return "error"
+
+        if has_success and not has_error and not has_partial:
+            return "success"
+        elif has_success or has_partial:
+            return "partial_success"
+        else:
+            return "error"
+
+    def _format_extraction_result(self, result) -> Dict[str, Any]:
+        """Format extraction result for output."""
+        return {
+            "method": result.method,
+            "status": result.status,
+            "pages": [self._format_page_result(page) for page in result.pages] if result.pages else [],
+            "error": result.error
+        }
+
+    def _format_page_result(self, page) -> Dict[str, Any]:
+        """Format page extraction result for output."""
+        formatted = {
+            "page_number": page.page_number,
+            "status": page.status,
+            "content": page.content,
+            "quality_score": page.quality_score,
+            "processing_time": page.processing_time
+        }
+
+        if page.error:
+            formatted["error"] = page.error
+
+        return formatted

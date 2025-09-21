@@ -27,7 +27,15 @@
       "Bash(git config:*)",
       "Bash(git add:*)",
       "Bash(del update_handlers.py)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(pip install:*)",
+      "Bash(tesseract:*)",
+      "Bash(winget search:*)",
+      "Bash(winget install:*)",
+      "Bash(where:*)",
+      "Bash(set PATH=%PATH%)",
+      "Bash(C:Program FilesTesseract-OCR)",
+      "Bash(\"C:\\Program Files\\Tesseract-OCR\\tesseract.exe\" --version)"
     ],
     "deny": [],
     "ask": []
