@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Any, Union
 import json
-from ..processors.content_support.models import PromptConfig, PromptVersionConfig, ContentProcessorError
+from .models import PromptVersionConfig, PromptError
 
 
 class PromptProvider:
@@ -101,7 +101,7 @@ class PromptProvider:
             Prompt template string
 
         Raises:
-            ContentProcessorError: If file not found or cannot be read
+            PromptError: If file not found or cannot be read
         """
         cache_key = str(filepath)
 
@@ -111,7 +111,7 @@ class PromptProvider:
 
         # Fail fast - no fallback defaults
         if not filepath.exists():
-            raise ContentProcessorError(
+            raise PromptError(
                 f"Required prompt file not found: {filepath}",
                 error_type="prompt_file_missing"
             )
@@ -125,7 +125,7 @@ class PromptProvider:
             return content
 
         except Exception as e:
-            raise ContentProcessorError(
+            raise PromptError(
                 f"Error loading prompt file {filepath}: {str(e)}",
                 error_type="prompt_file_error",
                 original_error=e
@@ -145,12 +145,12 @@ class PromptProvider:
             Formatted prompt string
 
         Raises:
-            ContentProcessorError: If prompt not found or formatting fails
+            PromptError: If prompt not found or formatting fails
         """
         prompt_version = self.get_prompt(name, role, version)
         if not prompt_version:
             prompt_key = f"{name}-{role}" if role else name
-            raise ContentProcessorError(
+            raise PromptError(
                 f"Prompt '{prompt_key}' (version: {version or 'active'}) not found",
                 error_type="prompt_not_found"
             )
@@ -158,13 +158,13 @@ class PromptProvider:
         try:
             return prompt_version.template.format(**kwargs)
         except KeyError as e:
-            raise ContentProcessorError(
+            raise PromptError(
                 f"Missing template variable in prompt '{name}': {str(e)}",
                 error_type="template_formatting_error",
                 original_error=e
             )
         except Exception as e:
-            raise ContentProcessorError(
+            raise PromptError(
                 f"Failed to format prompt '{name}': {str(e)}",
                 error_type="template_formatting_error",
                 original_error=e

@@ -1,0 +1,76 @@
+{
+  "description": "OCR-only configuration - Vision API disabled",
+  "processors": [
+    {
+      "name": "MetadataProcessor",
+      "enabled": true,
+      "config": {
+        "include_hashes": true,
+        "hash_algorithms": ["md5", "sha256"],
+        "include_permissions": true,
+        "include_windows_attributes": true
+      }
+    },
+    {
+      "name": "ContentProcessor",
+      "enabled": true,
+      "config": {
+        "enable_vision_api": false,
+        "enable_ocr_fallback": true,
+        "pdf_use_vision_default": false,
+        "ocr_as_fallback": false,
+        "pdf_large_file_threshold_mb": 50,
+        "pdf_max_pages_vision": 0,
+        "max_retries": 3,
+        "timeout_seconds": 30,
+        "max_file_size_mb": 50,
+        "file_type_handlers": {
+          "text": true,
+          "image": true,
+          "pdf": true,
+          "sheet": true,
+          "document": true
+        },
+        "enable_async_processing": true,
+        "connection_pool_size": 10,
+        "ocr_languages": ["eng", "spa"],
+        "processing": {
+          "max_file_size_mb": 50,
+          "text_truncation_chars": 8000,
+          "json_truncation_chars": 5000,
+          "graceful_degradation": true
+        },
+        "ai": {
+          "enable_vision_api": false,
+          "max_retries": 3,
+          "timeout_seconds": 30
+        },
+        "pdf": {
+          "use_vision_default": false,
+          "large_file_threshold_mb": 50,
+          "max_pages_vision": 0,
+          "ocr_as_fallback": false
+        }
+      }
+    },
+    {
+      "name": "EnrichmentProcessor",
+      "enabled": true,
+      "config": {
+        "enable_document_insights": true,
+        "enable_key_extraction": true,
+        "max_key_points": 10,
+        "confidence_threshold": 0.7,
+        "max_retries": 2,
+        "timeout_seconds": 30,
+        "batch_pages": true,
+        "max_pages_per_batch": 10
+      }
+    }
+  ],
+  "pipeline_settings": {
+    "continue_on_error": true,
+    "parallel_processing": false,
+    "max_workers": 4
+  }
+}
