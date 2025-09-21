@@ -3,7 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 # IMPORTANT
-- never EVER push to github unless the User explicitly tells you to.
+- never EVER take action unless the User explicitly tells you to.
+- never EVER make assumptions -> ask questions.
 
 ## Development Guidelines
 
@@ -72,6 +73,12 @@ Lazy imports for heavy deps (e.g., pdfium, PIL, pandas) in their specific module
 - Execute precisely what the user asks for, without additional features
 - Constantly verify you're not adding anything beyond explicit instructions
 
+### Communication Style
+- Use simple & easy-to-understand language. write in short sentences
+- Be CLEAR and STRAIGHT TO THE POINT
+- EXPLAIN EVERYTHING CLEARLY & COMPLETELY
+- Address ALL of user's points and questions clearly and completely.
+
 ### Minimal Comment Policy
 1. Explain why, not what: Don’t repeat code in English, explain intent, business rules, or trade-offs
 e.g. # Business rule: claims older than 2 years cannot be reopened
@@ -82,16 +89,14 @@ e.g. // TODO: Replace with real OCR once accuracy >95%
 4. Public APIs / Interfaces need a docstring
   Functions, classes, and modules exposed to other devs must explain:
     What it does
-    Parameters (esp. units)
-    Return value / side effects
-
-
-### Communication Style
-- Use simple & easy-to-understand language. write in short sentences
-- Be CLEAR and STRAIGHT TO THE POINT
-- EXPLAIN EVERYTHING CLEARLY & COMPLETELY
-- Address ALL of user's points and questions clearly and completely.
+    Parameters (specifying units)
+    Return value / side effects (exceptions)
+5. Comment “why not” when code looks weird
+e.g. # Using regex instead of JSON parser because input is malformed in legacy system
+6. Keep comments close and current
+  Outdated comments are worse than none
+  If code changes, update or delete the comment
 
 # IMPORTANT
-- never EVER push to github unless the User explicitly tells you to.
-- Apply coding and naming standards thouroughly
+- never EVER take action unless the User explicitly tells you to.
+- never EVER make assumptions -> ask questions.
