@@ -18,7 +18,7 @@ class TestContentProcessor:
 
         assert processor is not None
         assert processor.typed_config is not None
-        assert processor.prompt_manager is not None
+        assert processor.prompt_provider is not None
         assert hasattr(processor, 'handlers')
 
     def test_initialization_with_dict_config(self):

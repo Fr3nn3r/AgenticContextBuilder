@@ -340,10 +340,9 @@ class ContentProcessor(BaseProcessor):
                 return False
 
             # Validate prompts
-            prompt_validation = self.prompt_manager.validate_all_prompts()
-            if not all(prompt_validation.values()):
-                invalid_prompts = [name for name, valid in prompt_validation.items() if not valid]
-                self.logger.error(f"Invalid prompts found: {invalid_prompts}")
+            # Check if prompt provider is available
+            if not self.prompt_provider:
+                self.logger.error("Prompt provider not initialized")
                 return False
 
             # Check AI service if vision API is enabled
@@ -372,8 +371,8 @@ class ContentProcessor(BaseProcessor):
                 handler.__class__.__name__
                 for handler in self.handlers
             ],
-            'total_prompts': len(self.prompt_manager.prompts),
-            'prompt_versions': self.prompt_manager.list_prompts(),
+            'total_prompts': len(self.prompt_provider.list_prompts()) if self.prompt_provider else 0,
+            'prompt_versions': self.prompt_provider.list_prompts() if self.prompt_provider else {},
             'configuration': {
                 'enable_vision_api': self.typed_config.ai.enable_vision_api,
                 'enable_ocr_fallback': self.typed_config.pdf.ocr_as_fallback,
