@@ -55,16 +55,19 @@ class EnrichmentProcessor(BaseProcessor):
         config_file = self.config.get('prompts_config_file', 'config/enrichment_config.json')
         config_path = Path(config_file)
 
+        enrichment_config = {}
         if config_path.exists():
             with open(config_path, 'r') as f:
                 enrichment_config = json.load(f)
-                self.prompt_provider = PromptProvider(
-                    prompts_dir=Path('prompts'),
-                    config=enrichment_config
-                )
         else:
-            self.logger.warning(f"Enrichment config not found at {config_path}")
-            self.prompt_provider = None
+            self.logger.warning(f"Enrichment config not found at {config_path}, using defaults")
+
+        # Always initialize PromptProvider, even with empty config
+        self.prompt_provider = PromptProvider(
+            prompts_dir=Path('prompts'),
+            config=enrichment_config,
+            processor_name='enrichment'  # This ensures prompts are loaded from prompts/enrichment/
+        )
 
     def _init_ai_provider(self):
         """Initialize the AI provider for document analysis."""
@@ -97,20 +100,36 @@ class EnrichmentProcessor(BaseProcessor):
         start_time = time.time()
 
         try:
-            # Extract content data
+            # Extract content from new structure
             file_content = existing_metadata.get('file_content', {})
-            content_data = file_content.get('content_data', {})
+            extraction_results = file_content.get('extraction_results', [])
             content_metadata = file_content.get('content_metadata', {})
+            processing_info = file_content.get('processing_info', {})
 
-            # Process based on extraction method
-            if 'pages' in content_data:
+            # Check if any extraction succeeded
+            if not extraction_results:
+                self.logger.warning(
+                    f"No extraction results available for enrichment: {file_path.name}. "
+                    f"Processing status: {processing_info.get('processing_status', 'unknown')}"
+                )
+                return {}
+
+            # Use first extraction method result (following priority order)
+            first_extraction = extraction_results[0]
+            extraction_method = first_extraction.get('method', 'unknown')
+
+            # Process based on extraction content type
+            if 'pages' in first_extraction:
                 # Vision API results - synthesize from pages
-                insights = self._synthesize_pages(content_data, content_metadata)
-            elif 'text' in content_data:
-                # OCR/text results - analyze directly
-                insights = self._analyze_text(content_data['text'], content_metadata)
+                insights = self._synthesize_pages(first_extraction, content_metadata, extraction_method)
+            elif 'content' in first_extraction:
+                # Text-based results (OCR or other) - analyze directly
+                insights = self._analyze_text(first_extraction['content'], content_metadata, extraction_method)
             else:
-                self.logger.warning(f"No processable content in file: {file_path.name}")
+                self.logger.warning(
+                    f"No processable content in extraction results for {file_path.name}. "
+                    f"Extraction method: {extraction_method}"
+                )
                 return {}
 
             # Build enrichment metadata
@@ -135,19 +154,19 @@ class EnrichmentProcessor(BaseProcessor):
                 }
             }
 
-    def _synthesize_pages(self, content_data: Dict, content_metadata: Dict) -> DocumentInsights:
+    def _synthesize_pages(self, extraction_data: Dict, content_metadata: Dict, extraction_method: str) -> DocumentInsights:
         """
         Synthesize document insights from multi-page Vision API results.
 
         Args:
-            content_data: Content data with pages
+            extraction_data: Extraction result data with pages
             content_metadata: Metadata about content extraction
+            extraction_method: The extraction method used
 
         Returns:
             DocumentInsights object
         """
-        pages = content_data.get('pages', [])
-        extraction_method = content_data.get('_extraction_method', 'Vision API')
+        pages = extraction_data.get('pages', [])
 
         if not pages:
             raise ValueError("No pages to synthesize")
@@ -183,13 +202,14 @@ class EnrichmentProcessor(BaseProcessor):
             extraction_method=extraction_method
         )
 
-    def _analyze_text(self, text_content: str, content_metadata: Dict) -> DocumentInsights:
+    def _analyze_text(self, text_content: str, content_metadata: Dict, extraction_method: str) -> DocumentInsights:
         """
         Analyze text content to extract document insights.
 
         Args:
             text_content: Text to analyze
             content_metadata: Metadata about content extraction
+            extraction_method: The extraction method used
 
         Returns:
             DocumentInsights object
@@ -221,7 +241,7 @@ class EnrichmentProcessor(BaseProcessor):
             ][:self.config.get('max_key_points', 10)],
             category_confidence=insights_data.get('category_confidence', 0.5),
             language=insights_data.get('language'),
-            extraction_method=content_metadata.get('extraction_method', 'OCR')
+            extraction_method=extraction_method
         )
 
     def _call_ai_with_retry(self, prompt: str) -> str:

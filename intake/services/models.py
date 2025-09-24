@@ -20,5 +20,5 @@ class PromptVersionConfig(BaseModel):
 class PromptError(IntakeError):
     """Exception for prompt-related errors."""
 
-    def __init__(self, message: str, original_error: Optional[Exception] = None):
-        super().__init__(message, error_type="prompt_error", original_error=original_error)
+    def __init__(self, message: str, error_type: str = "prompt_error", original_error: Optional[Exception] = None):
+        super().__init__(message, error_type=error_type, original_error=original_error)

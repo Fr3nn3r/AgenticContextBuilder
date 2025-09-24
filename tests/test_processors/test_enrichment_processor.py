@@ -32,19 +32,24 @@ class TestEnrichmentProcessor:
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
-        # Mock existing metadata from ContentProcessor
+        # Mock existing metadata from ContentProcessor (new structure)
         existing_metadata = {
             'file_content': {
-                'content_data': {
-                    'pages': [
-                        {'page': 1, 'analysis': 'Invoice #12345\nAmount: $500\nDate: 2024-01-15'},
-                        {'page': 2, 'analysis': 'Additional terms and conditions'}
-                    ],
-                    '_extraction_method': 'Vision API'
-                },
+                'extraction_results': [
+                    {
+                        'method': 'vision_openai',
+                        'pages': [
+                            {'page': 1, 'analysis': 'Invoice #12345\nAmount: $500\nDate: 2024-01-15'},
+                            {'page': 2, 'analysis': 'Additional terms and conditions'}
+                        ]
+                    }
+                ],
                 'content_metadata': {
                     'content_type': 'document',
                     'file_category': 'pdf'
+                },
+                'processing_info': {
+                    'processing_status': 'success'
                 }
             }
         }
@@ -80,16 +85,21 @@ class TestEnrichmentProcessor:
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
-        # Mock existing metadata from ContentProcessor
+        # Mock existing metadata from ContentProcessor (new structure)
         existing_metadata = {
             'file_content': {
-                'content_data': {
-                    'text': 'Policy Number: POL-2024-001\nPremium: $1200/year\nCoverage: Comprehensive',
-                    '_extraction_method': 'OCR'
-                },
+                'extraction_results': [
+                    {
+                        'method': 'ocr_tesseract',
+                        'content': 'Policy Number: POL-2024-001\nPremium: $1200/year\nCoverage: Comprehensive'
+                    }
+                ],
                 'content_metadata': {
                     'content_type': 'document',
                     'file_category': 'pdf'
+                },
+                'processing_info': {
+                    'processing_status': 'success'
                 }
             }
         }
@@ -140,14 +150,35 @@ class TestEnrichmentProcessor:
 
         existing_metadata = {
             'file_content': {
-                'content_data': {'text': 'Some content'},
-                'content_metadata': {}
+                'extraction_results': [
+                    {'method': 'ocr_tesseract', 'content': 'Some content'}
+                ],
+                'content_metadata': {},
+                'processing_info': {'processing_status': 'success'}
             }
         }
 
         result = self.processor.process_file(test_file, existing_metadata)
 
         # Should return empty dict when disabled
+        assert result == {}
+
+    def test_process_file_with_empty_extraction_results(self, tmp_path):
+        """Test processing when extraction_results is empty."""
+        test_file = tmp_path / "test.pdf"
+        test_file.write_bytes(b"fake content")
+
+        existing_metadata = {
+            'file_content': {
+                'extraction_results': [],
+                'content_metadata': {},
+                'processing_info': {'processing_status': 'error'}
+            }
+        }
+
+        result = self.processor.process_file(test_file, existing_metadata)
+
+        # Should return empty dict and log warning
         assert result == {}
 
     def test_ai_provider_error_handling(self, tmp_path):
@@ -157,8 +188,11 @@ class TestEnrichmentProcessor:
 
         existing_metadata = {
             'file_content': {
-                'content_data': {'text': 'Some content'},
-                'content_metadata': {}
+                'extraction_results': [
+                    {'method': 'ocr_tesseract', 'content': 'Some content'}
+                ],
+                'content_metadata': {},
+                'processing_info': {'processing_status': 'success'}
             }
         }
 
@@ -180,8 +214,11 @@ class TestEnrichmentProcessor:
 
         existing_metadata = {
             'file_content': {
-                'content_data': {'text': 'Test content'},
-                'content_metadata': {}
+                'extraction_results': [
+                    {'method': 'ocr_tesseract', 'content': 'Test content'}
+                ],
+                'content_metadata': {},
+                'processing_info': {'processing_status': 'success'}
             }
         }
 
@@ -271,8 +308,11 @@ class TestEnrichmentProcessor:
 
         existing_metadata = {
             'file_content': {
-                'content_data': {'text': 'Test content'},
-                'content_metadata': {}
+                'extraction_results': [
+                    {'method': 'ocr_tesseract', 'content': 'Test content'}
+                ],
+                'content_metadata': {},
+                'processing_info': {'processing_status': 'success'}
             }
         }
 
