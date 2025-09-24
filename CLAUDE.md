@@ -19,8 +19,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### What “good” looks like
 High cohesion per file (one purpose), low coupling across files.
 Functions ≤50–80 lines, files typically ≤200–400 lines.
-Cross-cutting concerns (OpenAI calls, JSON cleaning, PDF page rendering, OCR) in small reusable modules.
-Lazy imports for heavy deps (e.g., pdfium, PIL, pandas) in their specific modules/paths.
 
 ### Naming standards
 1) Name by purpose, not by type or mechanics
