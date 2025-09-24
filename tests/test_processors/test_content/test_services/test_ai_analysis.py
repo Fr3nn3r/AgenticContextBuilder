@@ -4,9 +4,9 @@ import os
 import pytest
 from unittest.mock import Mock, patch
 
-from intake.processors.content_support.services import AIAnalysisService, OpenAIProvider
-from intake.processors.content_support.interfaces.ai_provider import AIProviderError
-from intake.processors.content_support.config import AIConfig
+from context_builder.processors.content_support.services import AIAnalysisService, OpenAIProvider
+from context_builder.processors.content_support.interfaces.ai_provider import AIProviderError
+from context_builder.processors.content_support.config import AIConfig
 
 
 class TestAIAnalysisService:

@@ -7,10 +7,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from intake.processors.content_support.interfaces import AIProviderInterface
-from intake.processors.content_support.services import AIAnalysisService, ResponseParser
-from intake.services import PromptProvider
-from intake.processors.content_support.config import ContentProcessorConfig
+from context_builder.processors.content_support.interfaces import AIProviderInterface
+from context_builder.processors.content_support.services import AIAnalysisService, ResponseParser
+from context_builder.services import PromptProvider
+from context_builder.processors.content_support.config import ContentProcessorConfig
 
 
 # Path to fixtures directory
@@ -179,8 +179,8 @@ def real_ai_service():
     Create real AI service if API key is available.
     Skip test if no API key is configured.
     """
-    from intake.processors.content_support.services import OpenAIProvider
-    from intake.processors.content_support.config import AIConfig
+    from context_builder.processors.content_support.services import OpenAIProvider
+    from context_builder.processors.content_support.config import AIConfig
 
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:

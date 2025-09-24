@@ -4,9 +4,9 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from intake.processors.content import ContentProcessor
-from intake.processors.content_support.models import ContentProcessorError
-from intake.processors.base import ProcessingError
+from context_builder.processors.content import ContentProcessor
+from context_builder.processors.content_support.models import ContentProcessorError
+from context_builder.processors.base import ProcessingError
 
 
 class TestContentProcessor:

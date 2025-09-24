@@ -3,7 +3,7 @@
 import pytest
 import json
 
-from intake.processors.content_support.services import ResponseParser
+from context_builder.processors.content_support.services import ResponseParser
 
 
 class TestResponseParser:

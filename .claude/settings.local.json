@@ -36,7 +36,9 @@
       "Bash(set PATH=%PATH%)",
       "Bash(C:Program FilesTesseract-OCR)",
       "Bash(\"C:\\Program Files\\Tesseract-OCR\\tesseract.exe\" --version)",
-      "Bash(del scriptstest_enrichment_prompts.py)"
+      "Bash(del scriptstest_enrichment_prompts.py)",
+      "Bash(mv:*)",
+      "Bash(del scriptsrename_imports.py)"
     ],
     "deny": [],
     "ask": []

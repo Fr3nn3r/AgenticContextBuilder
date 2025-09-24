@@ -4,9 +4,9 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from intake.processors.content_support.handlers.pdf import PDFContentHandler
-from intake.processors.content_support.models import FileContentOutput, ContentProcessorError
-from intake.processors.content_support.extractors import ExtractionResult, PageExtractionResult
+from context_builder.processors.content_support.handlers.pdf import PDFContentHandler
+from context_builder.processors.content_support.models import FileContentOutput, ContentProcessorError
+from context_builder.processors.content_support.extractors import ExtractionResult, PageExtractionResult
 
 
 class TestPDFContentHandler:

@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from intake.processors.content_support.extractors import get_registry
+from context_builder.processors.content_support.extractors import get_registry
 
 def demo_extraction_methods():
     """Demonstrate extraction methods functionality."""

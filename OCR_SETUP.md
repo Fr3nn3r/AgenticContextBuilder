@@ -37,22 +37,22 @@ Both extraction methods are now fully operational:
 
 #### Default Configuration (Both Methods)
 ```bash
-python -m intake /path/to/files output/ -c config/default_config.json
+python -m context_builder /path/to/files output/ -c config/default_config.json
 ```
 
 #### OCR Only
 ```bash
-python -m intake /path/to/files output/ --extraction-methods ocr_tesseract
+python -m context_builder /path/to/files output/ --extraction-methods ocr_tesseract
 ```
 
 #### Vision API Only
 ```bash
-python -m intake /path/to/files output/ --extraction-methods vision_openai
+python -m context_builder /path/to/files output/ --extraction-methods vision_openai
 ```
 
 #### Validate Configuration
 ```bash
-python -m intake --validate-config -c config/default_config.json
+python -m context_builder --validate-config -c config/default_config.json
 ```
 
 ### Benefits of Multiple Extraction Methods

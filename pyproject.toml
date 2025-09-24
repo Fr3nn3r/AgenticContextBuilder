@@ -1,5 +1,5 @@
 [project]
-name = "contextmanager"
+name = "context-builder"
 version = "0.1.0"
 description = "Context Manager for processing claims documents"
 readme = "README.md"

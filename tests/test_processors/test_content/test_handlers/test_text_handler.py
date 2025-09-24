@@ -4,8 +4,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from intake.processors.content_support.handlers import TextContentHandler
-from intake.processors.content_support.models import FileContentOutput, ContentProcessorError
+from context_builder.processors.content_support.handlers import TextContentHandler
+from context_builder.processors.content_support.models import FileContentOutput, ContentProcessorError
 
 
 class TestTextContentHandler:

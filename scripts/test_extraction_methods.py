@@ -11,7 +11,7 @@ from pathlib import Path
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from intake.processors.content_support.extractors import get_registry
+from context_builder.processors.content_support.extractors import get_registry
 
 
 def test_registry():

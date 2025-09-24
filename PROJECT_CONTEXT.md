@@ -6,18 +6,18 @@ ContextManager is a document ingestion and processing system that extracts conte
 ## Architecture Overview
 
 ### Core Modules
-- **intake/** - Main package containing all ingestion logic
+- **context_builder/** - Main package containing all ingestion logic
   - `ingest.py` - Orchestrates file/dataset processing through pipeline
   - `cli.py` - Command-line interface for running ingestion
   - `models.py` - Pydantic data models for type safety
   - `output_writer.py` - Handles JSON output generation
 
-- **intake/processors/** - Plugin-based processing pipeline
+- **context_builder/processors/** - Plugin-based processing pipeline
   - `base.py` - Abstract base class defining processor interface
   - `metadata.py` - Extracts filesystem metadata (size, timestamps, hashes)
   - `content.py` - AI-powered content extraction and analysis
 
-- **intake/processors/content_support/** - Content processing infrastructure
+- **context_builder/processors/content_support/** - Content processing infrastructure
   - `handlers/` - File type-specific handlers (PDF, image, text, spreadsheet, document)
   - `interfaces/` - Contracts for AI providers, extractors, image processors
   - `services/` - AI analysis service, processing tracker
@@ -41,7 +41,7 @@ ContextManager is a document ingestion and processing system that extracts conte
 ## Directory Structure
 ```
 ContextManager/
-├── intake/              # Main package
+├── context_builder/              # Main package
 │   ├── processors/      # Processing plugins
 │   │   ├── content_support/  # Content extraction infrastructure
 │   │   │   ├── handlers/     # File-type specific handlers
@@ -59,7 +59,7 @@ ContextManager/
 
 ## Key Interfaces & Contracts
 
-### BaseProcessor (intake/processors/base.py)
+### BaseProcessor (context_builder/processors/base.py)
 ```python
 class BaseProcessor(ABC):
     def process_file(file_path: Path, existing_metadata: Dict) -> Dict
@@ -81,7 +81,7 @@ class AIProvider(Protocol):
     def analyze_image(image_path: Path, prompt: str) -> str
 ```
 
-### Core Data Models (intake/models.py)
+### Core Data Models (context_builder/models.py)
 - `FileMetadata` - Core filesystem metadata
 - `FileContentOutput` - Content extraction results
 - `ProcessingInfo` - Processing metadata and statistics
@@ -117,12 +117,12 @@ class AIProvider(Protocol):
 
 ### Main CLI Command
 ```bash
-python -m intake.cli [input_path] [output_path] [options]
+python -m context_builder.cli [input_path] [output_path] [options]
 ```
 
 ### Programmatic Usage
 ```python
-from intake.ingest import FileIngestor
+from context_builder.ingest import FileIngestor
 ingestor = FileIngestor(config)
 result = ingestor.ingest_file(file_path)
 ```
@@ -152,7 +152,7 @@ uv run python -m pytest tests/ -v
 uv run python -m pytest tests/test_processors/test_content.py -v
 
 # Run with coverage
-uv run python -m pytest --cov=intake tests/
+uv run python -m pytest --cov=context_builder tests/
 ```
 
 ## Important Notes

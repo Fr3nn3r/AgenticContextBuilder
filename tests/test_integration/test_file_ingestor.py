@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import pytest
 
-from intake.ingest import FileIngestor
+from context_builder.ingest import FileIngestor
 
 
 class TestFileIngestor:

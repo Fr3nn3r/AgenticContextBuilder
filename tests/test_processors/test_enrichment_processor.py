@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import json
 
-from intake.processors.enrichment import EnrichmentProcessor
-from intake.models import DocumentInsights, KeyDataPoint
+from context_builder.processors.enrichment import EnrichmentProcessor
+from context_builder.models import DocumentInsights, KeyDataPoint
 
 
 class TestEnrichmentProcessor:

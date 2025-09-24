@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import json
 
-from intake.services import PromptProvider
-from intake.services.models import PromptError
+from context_builder.services import PromptProvider
+from context_builder.services.models import PromptError
 
 
 class TestPromptProvider:

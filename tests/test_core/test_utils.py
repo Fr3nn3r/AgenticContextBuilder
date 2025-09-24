@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
-from intake.utils import (
+from context_builder.utils import (
     get_file_hash,
     format_bytes,
     generate_ingestion_id,
@@ -165,7 +165,7 @@ class TestGenerateIngestionId:
 
     def test_date_format_consistency(self):
         """Test that ingestion ID contains correct date format."""
-        with patch('intake.utils.datetime') as mock_datetime:
+        with patch('context_builder.utils.datetime') as mock_datetime:
             # Mock current datetime with HHMM
             mock_now = MagicMock()
             mock_now.strftime.return_value = "2025-09-19-1430"

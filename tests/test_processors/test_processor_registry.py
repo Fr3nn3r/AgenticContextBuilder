@@ -7,14 +7,14 @@ Tests processor discovery, instantiation, and pipeline functionality.
 import pytest
 from unittest.mock import patch, MagicMock
 
-from intake.processors import (
+from context_builder.processors import (
     ProcessorRegistry,
     ProcessingPipeline,
     ProcessingError,
     registry
 )
-from intake.processors.metadata import MetadataProcessor
-from intake.processors.enrichment import EnrichmentProcessor
+from context_builder.processors.metadata import MetadataProcessor
+from context_builder.processors.enrichment import EnrichmentProcessor
 
 
 class TestProcessorRegistry:

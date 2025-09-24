@@ -12,9 +12,9 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
-from intake.processors.metadata import MetadataProcessor
-from intake.processors.base import ProcessingError
-from intake.models import FileMetadata, MetadataProcessorConfig
+from context_builder.processors.metadata import MetadataProcessor
+from context_builder.processors.base import ProcessingError
+from context_builder.models import FileMetadata, MetadataProcessorConfig
 
 
 class TestMetadataProcessor:
