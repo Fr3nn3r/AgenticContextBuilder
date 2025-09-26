@@ -114,17 +114,31 @@ class EnrichmentProcessor(BaseProcessor):
                 )
                 return {}
 
-            # Use first extraction method result (following priority order)
-            first_extraction = extraction_results[0]
-            extraction_method = first_extraction.get('method', 'unknown')
+            # Find the highest priority successful extraction
+            successful_extractions = [
+                r for r in extraction_results
+                if r.get('status') in ['success', 'partial_success']
+            ]
+
+            if not successful_extractions:
+                self.logger.warning(
+                    f"No successful extraction results for enrichment: {file_path.name}. "
+                    f"All extractions failed or were skipped."
+                )
+                return {}
+
+            # Sort by priority (lower number = higher priority) and take first
+            successful_extractions.sort(key=lambda x: x.get('priority', 999))
+            best_extraction = successful_extractions[0]
+            extraction_method = best_extraction.get('method', 'unknown')
 
             # Process based on extraction content type
-            if 'pages' in first_extraction:
+            if 'pages' in best_extraction:
                 # Vision API results - synthesize from pages
-                insights = self._synthesize_pages(first_extraction, content_metadata, extraction_method)
-            elif 'content' in first_extraction:
-                # Text-based results (OCR or other) - analyze directly
-                insights = self._analyze_text(first_extraction['content'], content_metadata, extraction_method)
+                insights = self._synthesize_pages(best_extraction, content_metadata, extraction_method)
+            elif 'content' in best_extraction:
+                # Text-based results (all handlers now use 'content' field) - analyze directly
+                insights = self._analyze_text(best_extraction['content'], content_metadata, extraction_method)
             else:
                 self.logger.warning(
                     f"No processable content in extraction results for {file_path.name}. "

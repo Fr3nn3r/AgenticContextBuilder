@@ -78,14 +78,31 @@ class TextContentHandler(BaseContentHandler):
                     ai_model=prompt_config.model,
                     prompt_version="2.0.0",  # TODO: get from prompt_config
                     processing_time=metrics.duration_seconds,
-                    extraction_method="Direct Text"
+                    extraction_method="direct_read"
                 )
+
+                # Create extraction results in standardized format
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": "success",
+                        "priority": 1,
+                        "content": content,
+                        "metadata": {
+                            "encoding": "utf-8",
+                            "line_count": len(content.splitlines()),
+                            "character_count": len(content),
+                            "truncated": len(content) > self.config.get('text_truncation_chars', 8000)
+                        },
+                        "error": None
+                    }
+                ]
 
                 return FileContentOutput(
                     processing_info=processing_info,
                     content_metadata=content_metadata,
                     content_data=parsed_data,
-                    data_text_content=content
+                    extraction_results=extraction_results
                 )
 
             except Exception as e:
@@ -102,9 +119,22 @@ class TextContentHandler(BaseContentHandler):
                     file_category="text_document"
                 )
 
+                # Create extraction results with error status
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": "error",
+                        "priority": 1,
+                        "content": "",
+                        "metadata": {},
+                        "error": str(e)
+                    }
+                ]
+
                 return FileContentOutput(
                     processing_info=processing_info,
-                    content_metadata=content_metadata
+                    content_metadata=content_metadata,
+                    extraction_results=extraction_results
                 )
 
     def _read_text_file(self, file_path: Path) -> str:

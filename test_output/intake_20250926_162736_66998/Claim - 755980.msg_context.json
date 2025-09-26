@@ -1,0 +1,143 @@
+{
+  "file_metadata": {
+    "file_name": "Claim - 755980.msg.txt",
+    "file_path": "C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\data\\01-Claims-Travel-Canada\\[NAME_100]\\Claim - 755980.msg.txt",
+    "file_extension": ".txt",
+    "file_size_bytes": 1442,
+    "file_size_human": "1.41 KB",
+    "created_time": "2025-09-03T14:45:30.397263",
+    "modified_time": "2025-07-13T18:43:41.910173",
+    "accessed_time": "2025-09-26T16:12:04.537096",
+    "is_directory": false,
+    "is_file": true,
+    "is_symlink": false,
+    "mime_type": "text/plain",
+    "permissions": {
+      "octal": "0o666",
+      "readable": true,
+      "writable": true,
+      "executable": true
+    },
+    "hashes": {
+      "md5": "6072728f5ef739b44ecac0aa4dfd4e33",
+      "sha1": "f377f32e55c159fefe2207e04fffb865a6996706",
+      "sha256": "108cad2b663ce3c5a4f5d0346179b32d55a5da16a842acc3a2dbe82e2e6434b2",
+      "sha384": null,
+      "sha512": null
+    },
+    "windows_attributes": {
+      "hidden": false,
+      "system": false,
+      "archive": true
+    }
+  },
+  "file_content": {
+    "processing_info": {
+      "processor_version": "1.0.0",
+      "processing_timestamp": "2025-09-26T16:27:41.541287",
+      "processing_status": "success",
+      "error_message": null,
+      "processing_time_seconds": null,
+      "extracted_by": null,
+      "skipped_methods": null,
+      "failed_methods": null
+    },
+    "content_metadata": {
+      "content_type": "text",
+      "detected_language": "en",
+      "confidence_score": null,
+      "file_category": "text_document",
+      "summary": "The email is a notification regarding a claim submission underwritten by Zurich American Insurance Company, requesting the recipient to complete and return the attached claim form."
+    },
+    "extraction_results": [
+      {
+        "method": "direct_read",
+        "status": "success",
+        "priority": 1,
+        "content": "Sender: 991_saskatchewantローラ <saepsm@saskatchewanhealth.com>, Sent on: 2025-02-19 18:49:01+01:00, Subject: Claim # 938 00, Message: Dear Rachel Todd,\nClaim # 938 00\nThank you for submitting your Claim, underwritten by Zurich American Insurance Company.\nAttached is the claim form in reference to your request. Please complete it and forward it back with all documents required at your earliest convenience.\nPlease allow fifteen business days for new claim notification documents to be processed once received.\nThe claim number above will be your reference number and can be used when communicating with Zurich Travel Assist regarding your claim.\nIn order to process your claim, all documents required must be submitted. If you have additional documentation that you believe may assist in the processing of this claim, please submit those as well and allow 15 business days for the process of your claim. Please keep a copy of all the submitted correspondence for your records.\n\nKind Regards,\nClaims Administration\n\n\n[image]\nZurich Travel Insurance\nP.C. Box 8  a sağlado-, CO 4  snp. Box y   3ao. Box iii 88  e-soa,  88 aee. Box\n\nFax : 908-   eeeo-sedn\nEmail : eihealth@clintonfoundation.com<mailto:neaaaaednc@aeeaec窛ysd.net<mailto:aeaeec@saerpsdps.com>\n\n-----PDF ATTACHMENT:  GoReady Trip Claim Form.pdf-----\n\n-------Table information-------\n\n\n\n-------Table information-------\n\n\n\n-------Table information-------\n;\n",
+        "metadata": {
+          "encoding": "utf-8",
+          "line_count": 31,
+          "character_count": 1414,
+          "truncated": false
+        },
+        "error": null
+      }
+    ]
+  },
+  "enrichment_metadata": {
+    "document_insights": {
+      "summary": "This document is an email from the Claims Administration regarding the submission and processing of an insurance claim with Zurich American Insurance Company.",
+      "content_category": "correspondence",
+      "key_data_points": [
+        {
+          "key": "Sender",
+          "value": "991_saskatchewantローラ <saepsm@saskatchewanhealth.com>",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Sent Date",
+          "value": "2025-02-19T18:49:01+01:00",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Subject",
+          "value": "Claim # 938 00",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Recipient",
+          "value": "Rachel Todd",
+          "confidence": 0.9,
+          "page": null
+        },
+        {
+          "key": "Claim Number",
+          "value": "938 00",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Insurance Company",
+          "value": "Zurich American Insurance Company",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Processing Time",
+          "value": "15 business days",
+          "confidence": 0.9,
+          "page": null
+        },
+        {
+          "key": "Contact Email",
+          "value": "eihealth@clintonfoundation.com",
+          "confidence": 0.85,
+          "page": null
+        },
+        {
+          "key": "Attachment",
+          "value": "GoReady Trip Claim Form.pdf",
+          "confidence": 0.95,
+          "page": null
+        },
+        {
+          "key": "Processing Requirement",
+          "value": "All documents required must be submitted",
+          "confidence": 0.9,
+          "page": null
+        }
+      ],
+      "category_confidence": 0.85,
+      "language": "en",
+      "total_pages_analyzed": null,
+      "extraction_method": "direct_read"
+    },
+    "enrichment_version": "2.0.0",
+    "enrichment_timestamp": "2025-09-26T16:27:44.768467",
+    "processing_time_ms": 3227.0379066467285
+  }
+}

@@ -40,7 +40,7 @@ class TestContentProcessor:
 
         assert processor.typed_config == test_config
 
-    @patch('intake.processors.content.load_dotenv')
+    @patch('context_builder.processors.content.load_dotenv')
     def test_ai_service_initialization_no_key(self, mock_load_dotenv):
         """Test AI service initialization without API key."""
         # Mock load_dotenv to do nothing (prevent loading from .env file)
@@ -102,7 +102,7 @@ class TestContentProcessor:
 
         assert "File size exceeds limit" in str(exc_info.value)
 
-    @patch('intake.processors.content_support.factory.create_content_handler')
+    @patch('context_builder.processors.content_support.factory.create_content_handler')
     def test_process_file_no_handler(self, mock_create_handler, tmp_path, test_config):
         """Test processing file with no available handler."""
         mock_create_handler.return_value = None
@@ -119,7 +119,7 @@ class TestContentProcessor:
 
         assert "No handler available" in str(exc_info.value)
 
-    @patch('intake.processors.content_support.factory.get_all_handlers')
+    @patch('context_builder.processors.content_support.factory.get_all_handlers')
     def test_process_file_with_handler(self, mock_get_handlers, sample_text_file):
         """Test successful file processing with handler."""
         # Create mock handler

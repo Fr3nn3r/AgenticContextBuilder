@@ -43,19 +43,47 @@ class DocumentContentHandler(BaseContentHandler):
                     summary="Document processed via Vision API conversion"
                 )
 
+                # Determine status and extract content
+                has_error = any(isinstance(r, dict) and "error" in r for r in results) if results else True
+                status = "error" if has_error or not results else "success"
+
+                # Extract text content from results
+                content_text = ""
+                if results and not has_error:
+                    content_text = "\n\n".join(
+                        str(page.get("content", "")) if isinstance(page, dict) else str(page)
+                        for page in results
+                    )
+
                 processing_info = self.create_processing_info(
-                    status="success" if results else "error",
+                    status=status,
                     ai_model="gpt-4o",
                     processing_time=metrics.duration_seconds,
-                    error_message="Conversion failed" if not results else None,
-                    extraction_method="Document Conversion + Vision API"
+                    error_message="Conversion failed" if has_error else None,
+                    extraction_method="direct_read"
                 )
+
+                # Create extraction results in standardized format
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": status,
+                        "priority": 1,
+                        "content": content_text,
+                        "metadata": {
+                            "conversion_method": "document_to_pdf_vision",
+                            "page_count": len(results) if results else 0,
+                            "original_format": file_path.suffix.lower()
+                        },
+                        "error": results[0].get("error") if has_error and results else None
+                    }
+                ]
 
                 return FileContentOutput(
                     processing_info=processing_info,
                     content_metadata=content_metadata,
                     content_data={"document_analysis": results} if results else None,
-                    data_document_content=str(results) if results else None
+                    extraction_results=extraction_results
                 )
 
             except Exception as e:
@@ -72,9 +100,24 @@ class DocumentContentHandler(BaseContentHandler):
                     file_category="office_document"
                 )
 
+                # Create extraction results with error status
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": "error",
+                        "priority": 1,
+                        "content": "",
+                        "metadata": {
+                            "original_format": file_path.suffix.lower()
+                        },
+                        "error": str(e)
+                    }
+                ]
+
                 return FileContentOutput(
                     processing_info=processing_info,
-                    content_metadata=content_metadata
+                    content_metadata=content_metadata,
+                    extraction_results=extraction_results
                 )
 
     def _convert_and_analyze_document(self, file_path: Path) -> List[Dict[str, Any]]:

@@ -82,14 +82,32 @@ class SpreadsheetContentHandler(BaseContentHandler):
                     ai_model=prompt_config.model,
                     prompt_version=prompt_version,
                     processing_time=metrics.duration_seconds,
-                    extraction_method="Direct Parsing"
+                    extraction_method="direct_read"
                 )
+
+                # Create extraction results in standardized format
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": "success",
+                        "priority": 1,
+                        "content": json_data,
+                        "metadata": {
+                            "row_count": len(df),
+                            "column_count": len(df.columns),
+                            "columns": list(df.columns),
+                            "truncated": len(json_data) > self.config.get('json_truncation_chars', 6000),
+                            "file_format": file_path.suffix.lower()
+                        },
+                        "error": None
+                    }
+                ]
 
                 return FileContentOutput(
                     processing_info=processing_info,
                     content_metadata=content_metadata,
                     content_data=parsed_data,
-                    data_spreadsheet_content=json_data
+                    extraction_results=extraction_results
                 )
 
             except Exception as e:
@@ -106,9 +124,24 @@ class SpreadsheetContentHandler(BaseContentHandler):
                     file_category="spreadsheet"
                 )
 
+                # Create extraction results with error status
+                extraction_results = [
+                    {
+                        "method": "direct_read",
+                        "status": "error",
+                        "priority": 1,
+                        "content": "",
+                        "metadata": {
+                            "file_format": file_path.suffix.lower()
+                        },
+                        "error": str(e)
+                    }
+                ]
+
                 return FileContentOutput(
                     processing_info=processing_info,
-                    content_metadata=content_metadata
+                    content_metadata=content_metadata,
+                    extraction_results=extraction_results
                 )
 
     def _read_spreadsheet(self, file_path: Path, pd):

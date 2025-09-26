@@ -19,7 +19,7 @@ class TestEnrichmentProcessor:
     def setup_method(self):
         """Set up test fixtures before each test method."""
         # Mock configuration to avoid loading real config files
-        with patch('intake.processors.enrichment.Path.exists', return_value=False):
+        with patch('context_builder.processors.enrichment.Path.exists', return_value=False):
             with patch.object(EnrichmentProcessor, '_init_prompt_provider'):
                 with patch.object(EnrichmentProcessor, '_init_ai_provider'):
                     self.processor = EnrichmentProcessor()

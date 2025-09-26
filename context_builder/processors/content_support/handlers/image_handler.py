@@ -82,21 +82,10 @@ class ImageContentHandler(BaseContentHandler):
                     total_pages=1  # Images always have single page
                 )
 
-                # Include base64 image data if we have at least one success
-                data_image_content = None
-                if status in ["success", "partial_success"]:
-                    try:
-                        import base64
-                        with open(file_path, 'rb') as f:
-                            data_image_content = base64.b64encode(f.read()).decode('utf-8')
-                    except Exception as e:
-                        self.logger.warning(f"Could not encode image to base64: {e}")
-
                 return FileContentOutput(
                     processing_info=processing_info,
                     content_metadata=content_metadata,
-                    extraction_results=[self._format_extraction_result(r) for r in extraction_results],
-                    data_image_content=data_image_content
+                    extraction_results=[self._format_extraction_result(r) for r in extraction_results]
                 )
 
             except Exception as e:

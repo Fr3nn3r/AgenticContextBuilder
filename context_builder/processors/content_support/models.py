@@ -39,14 +39,8 @@ class FileContentOutput(BaseModel):
     processing_info: ProcessingInfo = Field(..., description="Information about the processing operation")
     content_metadata: ContentAnalysis = Field(..., description="Metadata about the content type and analysis")
 
-    # New extraction results structure
+    # Standardized extraction results structure
     extraction_results: Optional[list] = Field(None, description="Results from each extraction method")
-
-    # Type-specific raw content fields (kept for compatibility)
-    data_text_content: Optional[str] = Field(None, description="Original text content (text files)")
-    data_spreadsheet_content: Optional[str] = Field(None, description="Original spreadsheet data as JSON (spreadsheet files)")
-    data_image_content: Optional[str] = Field(None, description="Base64 encoded image or description (image files)")
-    data_document_content: Optional[str] = Field(None, description="Extracted document content (document files)")
 
     def model_dump_for_json(self) -> Dict[str, Any]:
         """
