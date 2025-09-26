@@ -54,6 +54,7 @@ ContextManager/
 ├── config/             # Configuration files
 ├── prompts/            # AI prompt templates
 ├── data/               # Input data directory
+├── tmp/                # For temporary files e.g. temporary test scripts
 └── output/             # Processing output directory
 ```
 

@@ -39,34 +39,39 @@ class SpreadsheetContentHandler(BaseContentHandler):
                 # Truncate if necessary
                 truncated_data = self._truncate_json(json_data)
 
-                # Get prompt configuration
-                prompt_name = "spreadsheet-analysis"
-                prompt_config = self.prompt_provider.get_prompt(prompt_name)
-                prompt_version = self.prompt_provider.get_active_version(prompt_name)
+                # Get prompt configuration from handler config
+                handler_prompts = self.config.get('handler_prompts', {})
+                spreadsheet_prompt_config = handler_prompts.get('spreadsheet', {
+                    'name': 'spreadsheet-analysis',
+                    'version': '2.0.0'
+                })
 
-                if not prompt_config or not prompt_version:
+                # Load prompt using the new method
+                try:
+                    prompt_template = self.prompt_provider.get_prompt_from_config(
+                        spreadsheet_prompt_config,
+                        processor_type='content'
+                    )
+                    # Format the template with content
+                    prompt = prompt_template.format(content=truncated_data)
+                except Exception as e:
                     raise ContentProcessorError(
-                        f"Prompt '{prompt_name}' not found",
-                        error_type="prompt_not_found"
+                        f"Failed to load spreadsheet analysis prompt: {e}",
+                        error_type="prompt_error"
                     )
 
-                # Get AI analysis
-                prompt_template = self.prompt_provider.get_prompt_template(
-                    prompt_name,
-                    content=truncated_data
-                )
-
+                # Use the formatted prompt
                 ai_response = self.ai_service.analyze_content(
-                    prompt_template,
-                    model=prompt_config.model,
-                    max_tokens=prompt_config.max_tokens,
-                    temperature=prompt_config.temperature
+                    prompt,
+                    model="gpt-4o",  # Use default model
+                    max_tokens=2000,
+                    temperature=0.1
                 )
 
                 # Parse response
                 parsed_data, summary = self.response_parser.parse_ai_response(
                     ai_response,
-                    expected_format=prompt_config.output_format or "text"
+                    expected_format="json"  # spreadsheet-analysis-2.0.0 uses JSON format
                 )
 
                 # Create output
@@ -79,8 +84,8 @@ class SpreadsheetContentHandler(BaseContentHandler):
 
                 processing_info = self.create_processing_info(
                     status="success",
-                    ai_model=prompt_config.model,
-                    prompt_version=prompt_version,
+                    ai_model="gpt-4o",
+                    prompt_version=spreadsheet_prompt_config.get('version', '2.0.0'),
                     processing_time=metrics.duration_seconds,
                     extraction_method="direct_read"
                 )

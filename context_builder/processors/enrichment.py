@@ -52,22 +52,21 @@ class EnrichmentProcessor(BaseProcessor):
 
     def _init_prompt_provider(self):
         """Initialize the prompt provider with enrichment configuration."""
-        config_file = self.config.get('prompts_config_file', 'config/enrichment_config.json')
-        config_path = Path(config_file)
-
-        enrichment_config = {}
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                enrichment_config = json.load(f)
-        else:
-            self.logger.warning(f"Enrichment config not found at {config_path}, using defaults")
-
-        # Always initialize PromptProvider, even with empty config
+        # Initialize prompt provider
         self.prompt_provider = PromptProvider(
             prompts_dir=Path('prompts'),
-            config=enrichment_config,
-            processor_name='enrichment'  # This ensures prompts are loaded from prompts/enrichment/
+            processor_name='enrichment'
         )
+
+        # Store prompt configs for later use (with defaults if not specified)
+        self.synthesis_prompt_config = self.config.get('synthesis_prompt', {
+            'name': 'document-enrichment-synthesis',
+            'version': '1.0.0'
+        })
+        self.analysis_prompt_config = self.config.get('analysis_prompt', {
+            'name': 'document-enrichment-analysis',
+            'version': '1.0.0'
+        })
 
     def _init_ai_provider(self):
         """Initialize the AI provider for document analysis."""
@@ -189,13 +188,20 @@ class EnrichmentProcessor(BaseProcessor):
         pages_summary = json.dumps(pages[:self.config.get('max_pages_per_batch', 10)])
 
         # Get synthesis prompt
-        prompt = self.prompt_provider.get_prompt_template(
-            'document-enrichment',
-            role='synthesis',
-            pages_summary=pages_summary,
-            page_count=len(pages),
-            extraction_method=extraction_method
-        )
+        try:
+            prompt_template = self.prompt_provider.get_prompt_from_config(
+                self.synthesis_prompt_config,
+                processor_type='enrichment'
+            )
+            # Format the template with variables
+            prompt = prompt_template.format(
+                pages_summary=pages_summary,
+                page_count=len(pages),
+                extraction_method=extraction_method
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load synthesis prompt: {e}")
+            raise
 
         # Call AI for synthesis
         response = self._call_ai_with_retry(prompt)
@@ -234,11 +240,18 @@ class EnrichmentProcessor(BaseProcessor):
             text_content = text_content[:max_chars] + "\n[... content truncated ...]"
 
         # Get analysis prompt
-        prompt = self.prompt_provider.get_prompt_template(
-            'document-enrichment',
-            role='analysis',
-            content=text_content
-        )
+        try:
+            prompt_template = self.prompt_provider.get_prompt_from_config(
+                self.analysis_prompt_config,
+                processor_type='enrichment'
+            )
+            # Format the template with variables
+            prompt = prompt_template.format(
+                content=text_content
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load analysis prompt: {e}")
+            raise
 
         # Call AI for analysis
         response = self._call_ai_with_retry(prompt)

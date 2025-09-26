@@ -38,7 +38,9 @@
       "Bash(\"C:\\Program Files\\Tesseract-OCR\\tesseract.exe\" --version)",
       "Bash(del scriptstest_enrichment_prompts.py)",
       "Bash(mv:*)",
-      "Bash(del scriptsrename_imports.py)"
+      "Bash(del scriptsrename_imports.py)",
+      "Bash(cat:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []

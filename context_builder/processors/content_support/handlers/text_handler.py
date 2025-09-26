@@ -36,33 +36,39 @@ class TextContentHandler(BaseContentHandler):
                 # Truncate if necessary
                 truncated_content = self._truncate_content(content)
 
-                # Get prompt configuration
-                prompt_name = "text-analysis"
-                prompt_config = self.prompt_provider.get_prompt(prompt_name)
+                # Get prompt configuration from handler config
+                handler_prompts = self.config.get('handler_prompts', {})
+                text_prompt_config = handler_prompts.get('text', {
+                    'name': 'text-analysis',
+                    'version': '2.0.0'
+                })
 
-                if not prompt_config:
+                # Load prompt using the new method
+                try:
+                    prompt_template = self.prompt_provider.get_prompt_from_config(
+                        text_prompt_config,
+                        processor_type='content'
+                    )
+                    # Format the template with content
+                    prompt = prompt_template.format(content=truncated_content)
+                except Exception as e:
                     raise ContentProcessorError(
-                        f"Prompt '{prompt_name}' not found",
-                        error_type="prompt_not_found"
+                        f"Failed to load text analysis prompt: {e}",
+                        error_type="prompt_error"
                     )
 
-                # Get AI analysis
-                prompt_template = self.prompt_provider.get_prompt_template(
-                    prompt_name,
-                    content=truncated_content
-                )
-
+                # Use the formatted prompt
                 ai_response = self.ai_service.analyze_content(
-                    prompt_template,
-                    model=prompt_config.model,
-                    max_tokens=prompt_config.max_tokens,
-                    temperature=prompt_config.temperature
+                    prompt,
+                    model="gpt-4o",  # Use default model
+                    max_tokens=1500,
+                    temperature=0.1
                 )
 
                 # Parse response
                 parsed_data, summary = self.response_parser.parse_ai_response(
                     ai_response,
-                    expected_format=prompt_config.output_format or "text"
+                    expected_format="json"  # text-analysis-2.0.0 uses JSON format
                 )
 
                 # Create output
@@ -75,8 +81,8 @@ class TextContentHandler(BaseContentHandler):
 
                 processing_info = self.create_processing_info(
                     status="success",
-                    ai_model=prompt_config.model,
-                    prompt_version="2.0.0",  # TODO: get from prompt_config
+                    ai_model="gpt-4o",
+                    prompt_version=text_prompt_config.get('version', '2.0.0'),
                     processing_time=metrics.duration_seconds,
                     extraction_method="direct_read"
                 )

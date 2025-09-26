@@ -15,6 +15,16 @@
       "name": "ContentProcessor",
       "enabled": true,
       "config": {
+        "handler_prompts": {
+          "text": {
+            "name": "text-analysis",
+            "version": "2.0.0"
+          },
+          "spreadsheet": {
+            "name": "spreadsheet-analysis",
+            "version": "2.0.0"
+          }
+        },
         "extraction_methods": {
           "ocr_tesseract": {
             "enabled": false,
@@ -29,7 +39,11 @@
               "max_pages": 50,
               "max_file_size_mb": 30,
               "temperature": 0.1,
-              "max_tokens": 2048
+              "max_tokens": 2048,
+              "prompt": {
+                "name": "universal-document",
+                "version": "3.0.0"
+              }
             }
           }
         },
@@ -70,7 +84,15 @@
         "max_retries": 2,
         "timeout_seconds": 30,
         "batch_pages": true,
-        "max_pages_per_batch": 10
+        "max_pages_per_batch": 10,
+        "synthesis_prompt": {
+          "name": "document-enrichment-synthesis",
+          "version": "1.0.0"
+        },
+        "analysis_prompt": {
+          "name": "document-enrichment-analysis",
+          "version": "1.0.0"
+        }
       }
     }
   ],

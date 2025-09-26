@@ -149,29 +149,18 @@ class ContentProcessor(BaseProcessor):
 
     def _initialize_prompt_provider(self) -> PromptProvider:
         """
-        Initialize prompt provider from configuration.
+        Initialize prompt provider for content processing.
 
         Returns:
             PromptProvider instance
         """
-        # Get config file path from configuration
-        config_file = self.config.get('prompts_config_file', 'config/content_config.json')
-        config_path = Path(config_file)
-
-        if not config_path.exists():
-            raise ContentProcessorError(
-                f"Content processor config not found at {config_path}",
-                error_type="config_not_found"
-            )
-
-        # Create prompt provider from config file
-        prompt_provider = PromptProvider.from_config_file(
-            config_path,
+        # Initialize prompt provider with content processor context
+        prompt_provider = PromptProvider(
             prompts_dir=Path('prompts'),
             processor_name='content'
         )
 
-        self.logger.info(f"Prompt provider initialized from {config_path}")
+        self.logger.info("Prompt provider initialized for content processing")
         return prompt_provider
 
     def _initialize_handlers(self) -> List[BaseContentHandler]:

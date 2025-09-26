@@ -9,6 +9,8 @@ from typing import Optional, Tuple, Dict, Any
 import json
 
 from .base import ExtractionStrategy, PageExtractionResult
+from ....services.prompt_provider import PromptProvider
+from ....services.models import PromptError
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ class VisionOpenAIStrategy(ExtractionStrategy):
         self.pdf_renderer = None
         self.openai_client = None
         self.prompt_template = None
+        self.prompt_provider = None
 
     def validate_requirements(self) -> Tuple[bool, Optional[str]]:
         """Check if OpenAI API key and required libraries are available."""
@@ -67,38 +70,41 @@ class VisionOpenAIStrategy(ExtractionStrategy):
                 except ImportError:
                     logger.warning("pypdfium2 not available, PDF Vision support disabled")
 
-            # Set default prompt template
-            self._setup_prompt_template()
+            # Setup prompt provider and load prompt
+            self._setup_prompt_provider()
 
             return True, None
 
         except ImportError as e:
             return False, f"Required libraries not installed: {str(e)}"
 
-    def _setup_prompt_template(self) -> None:
-        """Setup the prompt template for Vision API."""
-        self.prompt_template = """Analyze this document/image and extract structured information.
+    def _setup_prompt_provider(self) -> None:
+        """Setup the prompt provider and load prompt template."""
+        # Get prompt configuration from config
+        prompt_config = self.config.get('prompt')
 
-Your task is to:
-1. Extract all visible text content
-2. Identify the document type (invoice, report, form, letter, etc.)
-3. Extract key information and metadata
-4. Note any important visual elements
+        if not prompt_config:
+            raise PromptError(
+                "No prompt configuration found in vision_openai config. "
+                "Expected 'prompt' with 'name' and 'version' keys.",
+                error_type="config_missing"
+            )
 
-Respond with a JSON structure containing:
-{
-  "document_type": "type of document",
-  "title": "document title if identifiable",
-  "text_content": "all extracted text",
-  "key_information": {
-    // Relevant key-value pairs based on document type
-  },
-  "visual_elements": [
-    // List of notable visual elements
-  ],
-  "language": "primary language of the document",
-  "summary": "brief summary of the document"
-}"""
+        # Initialize prompt provider
+        from pathlib import Path
+        prompts_dir = Path("prompts")
+        self.prompt_provider = PromptProvider(prompts_dir=prompts_dir)
+
+        # Load the prompt template
+        try:
+            self.prompt_template = self.prompt_provider.get_prompt_from_config(
+                prompt_config,
+                processor_type="content"
+            )
+            logger.info(f"Loaded prompt: {prompt_config.get('name')}-{prompt_config.get('version')}")
+        except PromptError as e:
+            logger.error(f"Failed to load prompt: {e}")
+            raise
 
     def get_total_pages(self, file_path: Path) -> int:
         """Get total number of pages in the file."""

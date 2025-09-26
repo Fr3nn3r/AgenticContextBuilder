@@ -32,6 +32,46 @@ class PromptProvider:
         self.logger = logging.getLogger(__name__)
         self._prompt_cache: Dict[str, str] = {}
 
+    def get_prompt_from_config(self, prompt_config: Dict[str, Any], processor_type: str = None) -> str:
+        """
+        Load a prompt based on configuration with name and version.
+
+        Args:
+            prompt_config: Dict with 'name' and 'version' keys
+            processor_type: Type of processor ('content', 'enrichment', etc.)
+
+        Returns:
+            The prompt template string
+
+        Raises:
+            PromptError: If prompt file not found or cannot be loaded
+        """
+        if not prompt_config:
+            raise PromptError("No prompt configuration provided", error_type="config_missing")
+
+        name = prompt_config.get("name")
+        version = prompt_config.get("version")
+
+        if not name or not version:
+            raise PromptError(
+                f"Prompt config must include both 'name' and 'version'. Got: {prompt_config}",
+                error_type="config_invalid"
+            )
+
+        # Build the filename: {name}-{version}.md
+        filename = f"{name}-{version}.md"
+
+        # Determine the path based on processor type or self.processor_name
+        if processor_type:
+            prompt_file = self.prompts_dir / processor_type / filename
+        elif self.processor_name:
+            prompt_file = self.prompts_dir / self.processor_name / filename
+        else:
+            prompt_file = self.prompts_dir / filename
+
+        # Load and return the prompt (will raise PromptError if not found)
+        return self._load_prompt_file(prompt_file)
+
     def get_prompt(self, name: str, role: str = None, version: str = None) -> Optional[PromptVersionConfig]:
         """
         Retrieve a prompt configuration by name, role, and version.

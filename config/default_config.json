@@ -1,18 +1,30 @@
 {
+  "description": "Default configuration with both OCR and Vision API enabled",
   "processors": [
     {
       "name": "MetadataProcessor",
+      "enabled": true,
       "config": {
         "include_hashes": true,
-        "hash_algorithms": ["md5", "sha1", "sha256"],
+        "hash_algorithms": ["md5", "sha256"],
         "include_permissions": true,
         "include_windows_attributes": true
       }
     },
     {
       "name": "ContentProcessor",
+      "enabled": true,
       "config": {
-        "prompts_config_file": "config/content_config.json",
+        "handler_prompts": {
+          "text": {
+            "name": "text-analysis",
+            "version": "2.0.0"
+          },
+          "spreadsheet": {
+            "name": "spreadsheet-analysis",
+            "version": "2.0.0"
+          }
+        },
         "extraction_methods": {
           "ocr_tesseract": {
             "enabled": true,
@@ -31,7 +43,11 @@
               "max_pages": 20,
               "max_file_size_mb": 20,
               "temperature": 0.1,
-              "max_tokens": 2048
+              "max_tokens": 2048,
+              "prompt": {
+                "name": "universal-document",
+                "version": "3.0.0"
+              }
             }
           }
         },
@@ -49,11 +65,21 @@
           "document": true
         },
         "enable_async_processing": true,
-        "connection_pool_size": 10
+        "connection_pool_size": 10,
+        "processing": {
+          "max_file_size_mb": 50,
+          "text_truncation_chars": 8000,
+          "json_truncation_chars": 5000
+        },
+        "ai": {
+          "max_retries": 3,
+          "timeout_seconds": 30
+        }
       }
     },
     {
       "name": "EnrichmentProcessor",
+      "enabled": true,
       "config": {
         "enable_document_insights": true,
         "enable_key_extraction": true,
@@ -63,8 +89,20 @@
         "timeout_seconds": 30,
         "batch_pages": true,
         "max_pages_per_batch": 10,
-        "prompts_config_file": "config/enrichment_config.json"
+        "synthesis_prompt": {
+          "name": "document-enrichment-synthesis",
+          "version": "1.0.0"
+        },
+        "analysis_prompt": {
+          "name": "document-enrichment-analysis",
+          "version": "1.0.0"
+        }
       }
     }
-  ]
+  ],
+  "pipeline_settings": {
+    "continue_on_error": true,
+    "parallel_processing": false,
+    "max_workers": 4
+  }
 }

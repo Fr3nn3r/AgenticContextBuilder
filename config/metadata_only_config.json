@@ -1,13 +1,20 @@
 {
+  "description": "Metadata extraction only - No content processing",
   "processors": [
     {
       "name": "MetadataProcessor",
+      "enabled": true,
       "config": {
         "include_hashes": true,
-        "hash_algorithms": ["md5", "sha1", "sha256"],
+        "hash_algorithms": ["md5", "sha256"],
         "include_permissions": true,
         "include_windows_attributes": true
       }
     }
-  ]
+  ],
+  "pipeline_settings": {
+    "continue_on_error": true,
+    "parallel_processing": false,
+    "max_workers": 4
+  }
 }
