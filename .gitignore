@@ -53,3 +53,4 @@ tmp/
 data/
 output/
 htmlcov/
+.pytest_cache/
