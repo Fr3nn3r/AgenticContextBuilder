@@ -177,6 +177,9 @@ def process_single_file(
 
         return True, metadata, None
 
+    except KeyboardInterrupt:
+        # Re-raise immediately to stop processing
+        raise
     except Exception as e:
         error_msg = f"Failed to process {file_path.name}: {str(e)}"
         logger.exception(error_msg)  # This logs the full stack trace
@@ -269,7 +272,8 @@ def process_folder(
                         "error": "Processing interrupted by user",
                         "timestamp": datetime.now().isoformat()
                     })
-                break
+                # Re-raise the KeyboardInterrupt to stop immediately
+                raise
 
     return results, interrupted
 
