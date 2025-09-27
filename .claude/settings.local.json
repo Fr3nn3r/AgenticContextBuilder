@@ -41,7 +41,9 @@
       "Bash(del scriptsrename_imports.py)",
       "Bash(cat:*)",
       "Bash(xargs:*)",
-      "Bash(del \"C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\context_builder\\cli_old.py\")"
+      "Bash(del \"C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\context_builder\\cli_old.py\")",
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(C:UsersfbrunAppDataLocalMicrosoftWinGetLinks)"
     ],
     "deny": [],
     "ask": []

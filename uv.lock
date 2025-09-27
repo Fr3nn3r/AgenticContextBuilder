@@ -372,6 +372,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "openai" },
+    { name = "pdf2image" },
     { name = "pillow" },
     { name = "pypdfium2" },
     { name = "pytesseract" },
@@ -390,6 +391,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "openai", specifier = ">=1.108.1" },
+    { name = "pdf2image", specifier = ">=1.17.0" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pypdfium2", specifier = ">=4.30.0" },
     { name = "pytesseract", specifier = ">=0.3.13" },
