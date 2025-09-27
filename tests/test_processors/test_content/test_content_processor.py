@@ -85,7 +85,8 @@ class TestContentProcessor:
         assert 'file_content' in result
         content = result['file_content']
         assert content['processing_info']['processing_status'] == 'success'
-        assert 'System file' in content.get('data_text_content', '')
+        # System files should be processed but may not have content extracted
+        assert content['content_metadata']['file_category'] == 'system_file'
 
     def test_process_file_size_limit(self, tmp_path, test_config):
         """Test file size limit enforcement."""

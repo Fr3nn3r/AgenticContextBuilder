@@ -97,7 +97,7 @@ class TestOpenAIProvider:
         config = AIConfig(openai_api_key="test-key")
         provider = OpenAIProvider(config)
 
-        mock_openai_class.assert_called_once_with(api_key="test-key")
+        mock_openai_class.assert_called_once_with(api_key="test-key", timeout=30)
         assert provider.is_available()
 
     @patch.dict('os.environ', {'OPENAI_API_KEY': 'env-test-key'})
@@ -107,7 +107,7 @@ class TestOpenAIProvider:
         config = AIConfig()  # No key in config
         provider = OpenAIProvider(config)
 
-        mock_openai_class.assert_called_once_with(api_key="env-test-key")
+        mock_openai_class.assert_called_once_with(api_key="env-test-key", timeout=30)
 
     @patch.dict('os.environ', {}, clear=True)  # Clear environment to ensure no API key
     def test_analyze_text_no_client(self):

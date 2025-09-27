@@ -26,6 +26,15 @@ class TestEnrichmentProcessor:
                     # Manually set up mock providers
                     self.processor.prompt_provider = Mock()
                     self.processor.ai_provider = Mock()
+                    # Set up prompt configs that are expected by the new implementation
+                    self.processor.synthesis_prompt_config = {
+                        'name': 'document-enrichment-synthesis',
+                        'version': '1.0.0'
+                    }
+                    self.processor.analysis_prompt_config = {
+                        'name': 'document-enrichment-analysis',
+                        'version': '1.0.0'
+                    }
 
     def test_process_file_with_vision_api_content(self, tmp_path):
         """Test processing a file with Vision API extracted content."""
@@ -38,10 +47,13 @@ class TestEnrichmentProcessor:
                 'extraction_results': [
                     {
                         'method': 'vision_openai',
+                        'status': 'success',
+                        'priority': 2,
                         'pages': [
-                            {'page': 1, 'analysis': 'Invoice #12345\nAmount: $500\nDate: 2024-01-15'},
-                            {'page': 2, 'analysis': 'Additional terms and conditions'}
-                        ]
+                            {'page': 1, 'content': {'text_content': 'Invoice #12345\nAmount: $500\nDate: 2024-01-15'}},
+                            {'page': 2, 'content': {'text_content': 'Additional terms and conditions'}}
+                        ],
+                        'error': None
                     }
                 ],
                 'content_metadata': {
@@ -68,7 +80,7 @@ class TestEnrichmentProcessor:
         })
 
         self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
-        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.prompt_provider.get_prompt_from_config = Mock(return_value="Test prompt: {pages_summary}")
 
         result = self.processor.process_file(test_file, existing_metadata)
 
@@ -91,7 +103,10 @@ class TestEnrichmentProcessor:
                 'extraction_results': [
                     {
                         'method': 'ocr_tesseract',
-                        'content': 'Policy Number: POL-2024-001\nPremium: $1200/year\nCoverage: Comprehensive'
+                        'status': 'success',
+                        'priority': 1,
+                        'content': 'Policy Number: POL-2024-001\nPremium: $1200/year\nCoverage: Comprehensive',
+                        'error': None
                     }
                 ],
                 'content_metadata': {
@@ -118,12 +133,13 @@ class TestEnrichmentProcessor:
         })
 
         self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
-        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.prompt_provider.get_prompt_from_config = Mock(return_value="Test prompt: {content}")
 
         result = self.processor.process_file(test_file, existing_metadata)
 
         assert 'enrichment_metadata' in result
         metadata = result['enrichment_metadata']
+        assert 'document_insights' in metadata
         insights = metadata['document_insights']
         assert insights['content_category'] == 'policy_document'
         assert len(insights['key_data_points']) == 3
@@ -151,7 +167,7 @@ class TestEnrichmentProcessor:
         existing_metadata = {
             'file_content': {
                 'extraction_results': [
-                    {'method': 'ocr_tesseract', 'content': 'Some content'}
+                    {'method': 'ocr_tesseract', 'status': 'success', 'priority': 1, 'content': 'Some content', 'error': None}
                 ],
                 'content_metadata': {},
                 'processing_info': {'processing_status': 'success'}
@@ -189,7 +205,7 @@ class TestEnrichmentProcessor:
         existing_metadata = {
             'file_content': {
                 'extraction_results': [
-                    {'method': 'ocr_tesseract', 'content': 'Some content'}
+                    {'method': 'ocr_tesseract', 'status': 'success', 'priority': 1, 'content': 'Some content', 'error': None}
                 ],
                 'content_metadata': {},
                 'processing_info': {'processing_status': 'success'}
@@ -198,7 +214,7 @@ class TestEnrichmentProcessor:
 
         # Mock AI provider to raise an error
         self.processor.ai_provider.analyze_text = Mock(side_effect=Exception("API error"))
-        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.prompt_provider.get_prompt_from_config = Mock(return_value="Test prompt: {content}")
 
         result = self.processor.process_file(test_file, existing_metadata)
 
@@ -215,7 +231,7 @@ class TestEnrichmentProcessor:
         existing_metadata = {
             'file_content': {
                 'extraction_results': [
-                    {'method': 'ocr_tesseract', 'content': 'Test content'}
+                    {'method': 'ocr_tesseract', 'status': 'success', 'priority': 1, 'content': 'Test content', 'error': None}
                 ],
                 'content_metadata': {},
                 'processing_info': {'processing_status': 'success'}
@@ -232,7 +248,7 @@ class TestEnrichmentProcessor:
         })
 
         self.processor.ai_provider.analyze_text = Mock(return_value=mock_response)
-        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.prompt_provider.get_prompt_from_config = Mock(return_value="Test prompt: {content}")
         self.processor.config['max_key_points'] = 5
 
         result = self.processor.process_file(test_file, existing_metadata)
@@ -309,7 +325,7 @@ class TestEnrichmentProcessor:
         existing_metadata = {
             'file_content': {
                 'extraction_results': [
-                    {'method': 'ocr_tesseract', 'content': 'Test content'}
+                    {'method': 'ocr_tesseract', 'status': 'success', 'priority': 1, 'content': 'Test content', 'error': None}
                 ],
                 'content_metadata': {},
                 'processing_info': {'processing_status': 'success'}
@@ -327,7 +343,7 @@ class TestEnrichmentProcessor:
         self.processor.ai_provider.analyze_text = Mock(
             side_effect=[Exception("API error"), Exception("API error"), mock_response]
         )
-        self.processor.prompt_provider.get_prompt_template = Mock(return_value="Test prompt")
+        self.processor.prompt_provider.get_prompt_from_config = Mock(return_value="Test prompt: {content}")
         self.processor.config['max_retries'] = 2
 
         result = self.processor.process_file(test_file, existing_metadata)

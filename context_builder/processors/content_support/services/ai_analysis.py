@@ -4,6 +4,7 @@
 
 import os
 import logging
+import time
 from typing import Optional, Dict, Any
 
 from ..interfaces.ai_provider import AIProviderInterface, AIProviderError
@@ -23,16 +24,22 @@ class AIAnalysisService:
         self.provider = provider
         self.logger = logging.getLogger(__name__)
 
+        # Get retry config from provider if available
+        self.max_retries = getattr(provider, 'max_retries', 3)
+        self.initial_delay = 1.0
+
     def analyze_content(
         self,
         prompt: str,
         image_base64: Optional[str] = None,
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
+        max_retries: Optional[int] = None,
+        initial_delay: Optional[float] = None
     ) -> str:
         """
-        Analyze content using the configured AI provider.
+        Analyze content using the configured AI provider with retry logic.
 
         Args:
             prompt: Text prompt for analysis
@@ -40,12 +47,14 @@ class AIAnalysisService:
             model: Model to use (provider-specific)
             max_tokens: Maximum tokens for response
             temperature: Temperature for generation
+            max_retries: Maximum number of retry attempts (uses config default if None)
+            initial_delay: Initial delay between retries (uses 1.0 if None)
 
         Returns:
             AI response as string
 
         Raises:
-            AIProviderError: If analysis fails
+            AIProviderError: If analysis fails after all retries
         """
         if not self.provider.is_available():
             raise AIProviderError(
@@ -53,22 +62,59 @@ class AIAnalysisService:
                 error_type="provider_unavailable"
             )
 
-        try:
-            if image_base64:
-                return self.provider.analyze_image(
-                    prompt, image_base64, model, max_tokens, temperature
+        last_error = None
+        max_retries = max_retries if max_retries is not None else self.max_retries
+        delay = initial_delay if initial_delay is not None else self.initial_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                if image_base64:
+                    return self.provider.analyze_image(
+                        prompt, image_base64, model, max_tokens, temperature
+                    )
+                else:
+                    return self.provider.analyze_text(
+                        prompt, model, max_tokens, temperature
+                    )
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+
+                # Check if error is retryable
+                is_retryable = any([
+                    'rate limit' in error_msg,
+                    'timeout' in error_msg,
+                    'connection' in error_msg,
+                    'temporary' in error_msg,
+                    '429' in error_msg,  # Too Many Requests
+                    '503' in error_msg,  # Service Unavailable
+                    '504' in error_msg,  # Gateway Timeout
+                ])
+
+                if not is_retryable or attempt == max_retries:
+                    self.logger.error(f"AI analysis failed after {attempt + 1} attempts: {str(e)}")
+                    raise AIProviderError(
+                        f"AI analysis failed: {str(e)}",
+                        error_type="analysis_failed",
+                        original_error=e
+                    )
+
+                # Log retry attempt
+                self.logger.warning(
+                    f"AI analysis attempt {attempt + 1} failed (retryable error), "
+                    f"retrying in {delay:.1f}s: {str(e)}"
                 )
-            else:
-                return self.provider.analyze_text(
-                    prompt, model, max_tokens, temperature
-                )
-        except Exception as e:
-            self.logger.error(f"AI analysis failed: {str(e)}")
-            raise AIProviderError(
-                f"AI analysis failed: {str(e)}",
-                error_type="analysis_failed",
-                original_error=e
-            )
+
+                # Wait before retrying with exponential backoff
+                time.sleep(delay)
+                delay = min(delay * 2, 30)  # Cap at 30 seconds
+
+        # Should not reach here, but handle just in case
+        raise AIProviderError(
+            f"AI analysis failed: {str(last_error)}",
+            error_type="analysis_failed",
+            original_error=last_error
+        )
 
 
 class OpenAIProvider(AIProviderInterface):
@@ -84,6 +130,8 @@ class OpenAIProvider(AIProviderInterface):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self._client = None
+        self.max_retries = config.max_retries
+        self.timeout = config.timeout_seconds
         self._initialize_client()
 
     def _initialize_client(self):
@@ -101,7 +149,10 @@ class OpenAIProvider(AIProviderInterface):
         try:
             # Lazy import of OpenAI client
             from openai import OpenAI
-            self._client = OpenAI(api_key=api_key)
+            self._client = OpenAI(
+                api_key=api_key,
+                timeout=self.timeout
+            )
             self.logger.info("OpenAI client initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize OpenAI client: {e}")

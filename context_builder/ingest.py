@@ -85,8 +85,9 @@ class FileIngestor:
         if isinstance(config, dict):
             try:
                 self.typed_config = FileIngestorConfig(**config)
-            except Exception:
+            except (TypeError, ValueError) as e:
                 # Fallback to default config if validation fails
+                self.logger.warning(f"Config validation failed, using defaults: {e}")
                 self.typed_config = FileIngestorConfig()
         elif isinstance(config, FileIngestorConfig):
             self.typed_config = config
@@ -232,7 +233,7 @@ class FileIngestor:
                     processed_files.append(file_info)
 
                 except Exception as e:
-                    self.logger.error(f"  Failed to process {relative_path}: {e}")
+                    self.logger.exception(f"  Failed to process {relative_path}: {e}")
                     # Add failed file to processed list with error info
                     processed_files.append({
                         'original_file': str(item),
@@ -343,7 +344,7 @@ class FileIngestor:
 
                 self.logger.info(f"  Processed {files_processed} files ({files_failed} failed)")
             except Exception as e:
-                self.logger.error(f"  Error processing dataset {dataset_folder.name}: {e}")
+                self.logger.exception(f"  Error processing dataset {dataset_folder.name}: {e}")
                 total_files_failed += 1
 
         # Create overall summary

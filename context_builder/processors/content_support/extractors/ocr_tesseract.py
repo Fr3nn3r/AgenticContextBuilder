@@ -31,8 +31,8 @@ class OCRTesseractStrategy(ExtractionStrategy):
         return False
 
     @property
-    def max_file_size_mb(self) -> int:
-        return self.config.get('max_file_size_mb', 100)
+    def max_file_size_mb(self) -> float:
+        return float(self.config.get('max_file_size_mb', 100.0))
 
     def _setup(self) -> None:
         """Setup Tesseract configuration."""

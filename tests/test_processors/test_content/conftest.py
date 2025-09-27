@@ -94,32 +94,34 @@ def prompt_provider(tmp_path):
     prompts_dir = tmp_path / "prompts" / "content"
     prompts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create a simple test prompt
-    test_prompt = prompts_dir / "text-analysis-1.0.0.md"
-    test_prompt.write_text("Test prompt: {content}")
+    # Create test prompts that match what handlers expect
+    text_prompt = prompts_dir / "text-analysis-2.0.0.md"
+    text_prompt.write_text("Test prompt: {content}")
 
-    # Create minimal config
-    config = {
-        "prompts": {
-            "text-analysis": {
-                "active_version": "1.0.0",
-                "versions": {
-                    "1.0.0": {
-                        "model": "gpt-4o",
-                        "max_tokens": 1000,
-                        "temperature": 0.1,
-                        "output_format": "json"
-                    }
-                }
-            }
-        }
-    }
+    spreadsheet_prompt = prompts_dir / "spreadsheet-analysis-2.0.0.md"
+    spreadsheet_prompt.write_text("Test spreadsheet prompt: {content}")
 
-    return PromptProvider(
+    # Mock the get_prompt_from_config method to return the prompt template
+    provider = PromptProvider(
         prompts_dir=tmp_path / "prompts",
-        config=config,
+        config={},  # Empty config since we're using direct prompt loading
         processor_name="content"
     )
+
+    # Add the method that our handlers use
+    original_get = provider.get_prompt_from_config
+    def mock_get_prompt_from_config(prompt_config, processor_type=None):
+        # For tests, just return a simple template
+        if prompt_config.get('name') == 'text-analysis':
+            return "Test prompt: {content}"
+        elif prompt_config.get('name') == 'spreadsheet-analysis':
+            return "Test spreadsheet prompt: {content}"
+        else:
+            return original_get(prompt_config, processor_type)
+
+    provider.get_prompt_from_config = mock_get_prompt_from_config
+
+    return provider
 
 
 @pytest.fixture

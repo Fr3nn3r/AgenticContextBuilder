@@ -62,7 +62,7 @@ class ExtractionStrategy(ABC):
 
     @property
     @abstractmethod
-    def max_file_size_mb(self) -> int:
+    def max_file_size_mb(self) -> float:
         """Maximum file size this method can handle in MB."""
         pass
 
@@ -200,6 +200,8 @@ class ExtractionStrategy(ABC):
         unreadable_count = 0
 
         for page_num in range(1, total_pages + 1):
+            if total_pages > 1:
+                logger.info(f"Processing page {page_num}/{total_pages} with {self.name}...")
             start_time = time.time()
             try:
                 page_result = self.extract_page(file_path, page_num, total_pages)

@@ -28,7 +28,7 @@
         "extraction_methods": {
           "ocr_tesseract": {
             "enabled": true,
-            "priority": 1,
+            "priority": 2,
             "config": {
               "languages": ["eng", "spa"],
               "quality_threshold": 0.6,
@@ -37,7 +37,7 @@
           },
           "vision_openai": {
             "enabled": true,
-            "priority": 2,
+            "priority": 1,
             "config": {
               "model": "gpt-4o",
               "max_pages": 20,

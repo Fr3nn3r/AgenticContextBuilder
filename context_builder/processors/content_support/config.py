@@ -14,9 +14,9 @@ class HandlerConfig(BaseModel):
         default_factory=list,
         description="File extensions this handler supports"
     )
-    max_file_size_mb: Optional[int] = Field(
+    max_file_size_mb: Optional[float] = Field(
         None,
-        description="Maximum file size for this handler (overrides global)"
+        description="Maximum file size for this handler in MB (overrides global)"
     )
 
 
@@ -78,8 +78,8 @@ class AIConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """General processing configuration."""
 
-    max_file_size_mb: int = Field(
-        50,
+    max_file_size_mb: float = Field(
+        50.0,
         description="Global maximum file size to process in MB"
     )
     enable_async_processing: bool = Field(

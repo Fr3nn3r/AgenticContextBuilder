@@ -15,7 +15,13 @@ class TestTextContentHandler:
     def text_handler(self, ai_service, prompt_provider, response_parser):
         """Create text handler with mocked dependencies."""
         config = {
-            'text_truncation_chars': 1000
+            'text_truncation_chars': 1000,
+            'handler_prompts': {
+                'text': {
+                    'name': 'text-analysis',
+                    'version': '2.0.0'
+                }
+            }
         }
 
         return TextContentHandler(
@@ -54,10 +60,9 @@ class TestTextContentHandler:
 
         assert isinstance(result, FileContentOutput)
         assert result.processing_info.processing_status == "success"
-        # Text handler doesn't use extraction methods
-        assert result.processing_info.processing_status == "success"
+        # Text handler stores content in extraction_results
         assert result.content_metadata.content_type == "text"
-        assert result.data_text_content is not None
+        assert result.extraction_results[0]["content"] is not None
 
     def test_process_large_file_truncation(self, text_handler, large_text_file):
         """Test that large files are processed successfully."""
@@ -66,7 +71,7 @@ class TestTextContentHandler:
         assert isinstance(result, FileContentOutput)
         # Check that processing succeeds for large files
         assert result.processing_info.processing_status == "success"
-        assert result.data_text_content is not None
+        assert result.extraction_results[0]["content"] is not None
 
     def test_process_empty_file(self, text_handler, empty_file):
         """Test processing an empty file."""
@@ -74,7 +79,7 @@ class TestTextContentHandler:
 
         assert isinstance(result, FileContentOutput)
         assert result.processing_info.processing_status == "success"
-        assert result.data_text_content == ""
+        assert result.extraction_results[0]["content"] == ""
 
     def test_process_with_json_prompt(self, text_handler, sample_text_file):
         """Test processing with JSON-formatted prompt response."""
@@ -97,7 +102,7 @@ class TestTextContentHandler:
             result = text_handler.process(sample_text_file)
 
             # Text handler stores raw content in data_text_content
-            assert result.data_text_content is not None
+            assert result.extraction_results[0]["content"] is not None
             # Summary should be based on file analysis
             assert result.content_metadata.summary is not None
 
@@ -115,12 +120,13 @@ class TestTextContentHandler:
     def test_missing_prompt_configuration(self, text_handler, sample_text_file):
         """Test error when prompt configuration is missing."""
         # Mock missing prompt
-        with patch.object(text_handler.prompt_provider, 'get_prompt', return_value=None):
+        with patch.object(text_handler.prompt_provider, 'get_prompt_from_config',
+                         side_effect=Exception("Failed to load text analysis prompt")):
             result = text_handler.process(sample_text_file)
 
             # Should return error result when prompt is missing
             assert result.processing_info.processing_status == "error"
-            assert "Prompt 'text-analysis' not found" in result.processing_info.error_message
+            assert "Failed to load text analysis prompt" in result.processing_info.error_message
 
     def test_ai_analysis_failure(self, text_handler, sample_text_file):
         """Test handling of AI analysis failure."""

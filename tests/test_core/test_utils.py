@@ -360,7 +360,7 @@ class TestSafeFilename:
 
         for empty_name in test_cases:
             result = safe_filename(empty_name)
-            assert result == "unnamed_file"
+            assert result == "unnamed"
 
     def test_long_filename_truncation(self):
         """Test truncation of very long filenames."""

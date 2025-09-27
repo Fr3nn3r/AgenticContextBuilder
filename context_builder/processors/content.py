@@ -97,8 +97,8 @@ class ContentProcessor(BaseProcessor):
                     "Set OPENAI_API_KEY in environment or provide in config."
                 )
                 return None
-        except Exception as e:
-            self.logger.error(f"Failed to initialize AI service: {e}")
+        except (ImportError, ValueError, KeyError) as e:
+            self.logger.exception(f"Failed to initialize AI service: {e}")
             return None
 
     def _configure_extraction_registry(self) -> None:
@@ -258,7 +258,7 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             # Handle unexpected errors
             processing_time = time.time() - start_time
-            self.logger.error(f"Unexpected error processing {file_path}: {e}")
+            self.logger.exception(f"Unexpected error processing {file_path}: {e}")
 
             error_content = self._create_error_content(str(e), processing_time)
             return {'file_content': error_content}
@@ -276,7 +276,7 @@ class ContentProcessor(BaseProcessor):
         try:
             file_size_mb = file_path.stat().st_size / (1024 * 1024)
             return file_size_mb <= self.typed_config.processing.max_file_size_mb
-        except Exception:
+        except (OSError, AttributeError):
             return False
 
     def _find_handler(self, file_path: Path) -> Optional[BaseContentHandler]:
@@ -390,8 +390,8 @@ class ContentProcessor(BaseProcessor):
 
             return True
 
-        except Exception as e:
-            self.logger.error(f"Configuration validation failed: {e}")
+        except (TypeError, ValueError, KeyError) as e:
+            self.logger.exception(f"Configuration validation failed: {e}")
             return False
 
     def get_processor_info(self) -> Dict[str, Any]:
@@ -465,6 +465,7 @@ class ContentProcessor(BaseProcessor):
                 results['test_request_successful'] = True
                 results['test_response'] = response
             except Exception as e:
+                self.logger.exception(f"Test AI provider failed: {e}")
                 results['error_message'] = str(e)
 
         return results

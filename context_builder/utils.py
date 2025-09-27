@@ -128,11 +128,24 @@ def safe_filename(filename: str, replacement: str = "_") -> str:
     Create a safe filename by replacing invalid characters.
 
     Args:
-        filename: Original filename
-        replacement: Character to replace invalid characters with
+        filename: Original filename that may contain invalid characters
+        replacement: Character to replace invalid characters with (default: "_")
 
     Returns:
-        Sanitized filename safe for filesystem use
+        Sanitized filename safe for filesystem use across all platforms
+
+    Examples:
+        >>> safe_filename("file:name.txt")
+        "file_name.txt"
+        >>> safe_filename("a" * 300 + ".pdf")
+        # Returns truncated name preserving .pdf extension
+
+    Notes:
+        - Removes Windows invalid characters: < > : " | ? * \\ /
+        - Removes control characters (ASCII 0-31)
+        - Handles Windows reserved names (CON, PRN, AUX, etc.)
+        - Limits filename to 255 characters (filesystem limit)
+        - Preserves file extensions when truncating
     """
     # Windows invalid characters: < > : " | ? * \ /
     # Also remove control characters
@@ -144,9 +157,21 @@ def safe_filename(filename: str, replacement: str = "_") -> str:
     # Remove control characters (0-31)
     safe_name = ''.join(char for char in safe_name if ord(char) >= 32)
 
+    # Trim whitespace
+    safe_name = safe_name.strip()
+
+    # Handle Windows reserved names
+    reserved = ['CON', 'PRN', 'AUX', 'NUL'] + [f'{x}{i}' for x in ['COM', 'LPT'] for i in range(1, 10)]
+    if '.' in safe_name:
+        name_part, ext_part = safe_name.rsplit('.', 1)
+        if name_part.upper() in reserved:
+            safe_name = name_part + '_.' + ext_part
+    elif safe_name.upper() in reserved:
+        safe_name = safe_name + '_'
+
     # Ensure filename is not empty and not too long
-    if not safe_name.strip():
-        safe_name = "unnamed_file"
+    if not safe_name or safe_name in ['.', '..']:
+        safe_name = "unnamed"
 
     # Limit filename length (255 is common filesystem limit)
     if len(safe_name) > 255:

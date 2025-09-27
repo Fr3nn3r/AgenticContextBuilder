@@ -35,8 +35,8 @@ class VisionOpenAIStrategy(ExtractionStrategy):
         return True
 
     @property
-    def max_file_size_mb(self) -> int:
-        return self.config.get('max_file_size_mb', 20)
+    def max_file_size_mb(self) -> float:
+        return float(self.config.get('max_file_size_mb', 20.0))
 
     def _setup(self) -> None:
         """Setup OpenAI Vision configuration."""
@@ -124,6 +124,7 @@ class VisionOpenAIStrategy(ExtractionStrategy):
         """Extract content from a single page using Vision API."""
         try:
             # Get image data
+            logger.info(f"Preparing page {page_num}/{total_pages} for Vision API processing...")
             if file_path.suffix.lower() == '.pdf':
                 image_base64 = self._pdf_page_to_base64(file_path, page_num - 1)
             else:
@@ -136,8 +137,14 @@ class VisionOpenAIStrategy(ExtractionStrategy):
                     )
                 image_base64 = self._file_to_base64(file_path)
 
+            # Log image size for debugging
+            image_size_kb = len(image_base64) / 1024
+            logger.info(f"Image prepared (size: {image_size_kb:.1f}KB). Calling OpenAI Vision API...")
+
             # Call Vision API
             response = self._call_vision_api(image_base64)
+
+            logger.info(f"OpenAI Vision API response received for page {page_num}/{total_pages}")
 
             # Parse response
             try:
@@ -208,6 +215,12 @@ class VisionOpenAIStrategy(ExtractionStrategy):
             raise Exception("OpenAI client not initialized")
 
         try:
+            import time
+            start_time = time.time()
+
+            logger.info(f"Sending request to OpenAI Vision API (model: {self.model})...")
+            logger.info(f"Waiting for OpenAI Vision API response... (this may take 10-30 seconds)")
+
             response = self.openai_client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -228,6 +241,9 @@ class VisionOpenAIStrategy(ExtractionStrategy):
                 max_tokens=self.max_tokens,
                 response_format={"type": "text"}
             )
+
+            elapsed_time = time.time() - start_time
+            logger.info(f"OpenAI Vision API responded in {elapsed_time:.1f} seconds")
 
             return response.choices[0].message.content
 
