@@ -162,6 +162,12 @@ class AcquisitionFactory:
                     cls.register("openai", OpenAIVisionAcquisition)
                 except ImportError as e:
                     raise ValueError(f"Failed to import OpenAI implementation: {e}")
+            elif name_lower == "tesseract":
+                try:
+                    from context_builder.impl.tesseract_acquisition import TesseractAcquisition
+                    cls.register("tesseract", TesseractAcquisition)
+                except ImportError as e:
+                    raise ValueError(f"Failed to import Tesseract implementation: {e}")
 
         if name_lower not in cls._registry:
             available = ", ".join(cls._registry.keys())

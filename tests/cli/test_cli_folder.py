@@ -320,7 +320,10 @@ class TestMainFolderProcessing:
         subdir.mkdir()
         (subdir / "nested.pdf").touch()
 
-        test_args = ['cli.py', str(folder), '--recursive']
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        test_args = ['cli.py', str(folder), '-o', str(output_dir), '--recursive']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error
@@ -333,7 +336,10 @@ class TestMainFolderProcessing:
         folder.mkdir()
         (folder / "text.txt").touch()
 
-        test_args = ['cli.py', str(folder)]
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        test_args = ['cli.py', str(folder), '-o', str(output_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         with pytest.raises(SystemExit) as exc:
@@ -350,7 +356,10 @@ class TestMainFolderProcessing:
         folder.mkdir()
         (folder / "test.jpg").touch()
 
-        test_args = ['cli.py', str(folder), '--quiet']
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        test_args = ['cli.py', str(folder), '-o', str(output_dir), '--quiet']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error

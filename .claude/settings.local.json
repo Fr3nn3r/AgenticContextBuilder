@@ -43,7 +43,8 @@
       "Bash(xargs:*)",
       "Bash(del \"C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\context_builder\\cli_old.py\")",
       "WebFetch(domain:platform.openai.com)",
-      "Bash(C:UsersfbrunAppDataLocalMicrosoftWinGetLinks)"
+      "Bash(C:UsersfbrunAppDataLocalMicrosoftWinGetLinks)",
+      "Bash(del test-context.json)"
     ],
     "deny": [],
     "ask": []

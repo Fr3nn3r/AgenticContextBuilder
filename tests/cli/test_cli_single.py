@@ -297,8 +297,10 @@ class TestCLIMainSingleFile:
         """Test verbose logging mode."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
-        test_args = ['cli.py', str(test_file), '--verbose']
+        test_args = ['cli.py', str(test_file), '-o', str(output_dir), '--verbose']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Save original level
@@ -375,11 +377,13 @@ class TestCLIMainSingleFile:
         """Test handling of acquisition errors."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = AcquisitionError("API failed")
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:

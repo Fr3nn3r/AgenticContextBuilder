@@ -240,11 +240,13 @@ class TestCLIErrorHandling:
         """Test handling of AcquisitionError."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = AcquisitionError("Processing failed")
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -259,11 +261,13 @@ class TestCLIErrorHandling:
         """Test handling of ConfigurationError."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = ConfigurationError("API key missing")
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -278,11 +282,13 @@ class TestCLIErrorHandling:
         """Test handling of APIError."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = APIError("Rate limit exceeded")
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -297,11 +303,13 @@ class TestCLIErrorHandling:
         """Test handling of unexpected errors."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = RuntimeError("Unexpected error")
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -316,11 +324,13 @@ class TestCLIErrorHandling:
         """Test handling of KeyboardInterrupt."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = KeyboardInterrupt()
 
-            test_args = ['cli.py', str(test_file)]
+            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
