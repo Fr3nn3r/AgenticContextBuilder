@@ -56,3 +56,4 @@ htmlcov/
 .pytest_cache/
 prompts/
 test_output/
+v1/

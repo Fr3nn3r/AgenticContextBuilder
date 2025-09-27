@@ -6,6 +6,7 @@ import json
 import logging
 import signal
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -55,18 +56,77 @@ def setup_argparser() -> argparse.ArgumentParser:
         action="store_true",
         help="Process folder recursively (when input is a folder)"
     )
+
+    # Derive provider choices from factory
+    available_providers = ["openai"]  # Default list, will be extended if more are registered
     parser.add_argument(
         "-p", "--provider",
         type=str,
         default="openai",
-        choices=["openai"],
+        choices=available_providers,
         help="Vision API provider to use (default: openai)"
     )
+
+    # Model configuration
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model name to use (provider-specific, e.g., 'gpt-4o' for OpenAI)"
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Maximum tokens for response (default: provider-specific)"
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Temperature for response generation (0.0-2.0, default: provider-specific)"
+    )
+
+    # PDF processing options
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Maximum pages to process from PDFs (default: 20)"
+    )
+    parser.add_argument(
+        "--render-scale",
+        type=float,
+        default=None,
+        help="Render scale for PDF to image conversion (default: 2.0)"
+    )
+
+    # API resilience options
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="API request timeout in seconds (default: 120)"
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=None,
+        help="Maximum number of retries for API calls (default: 3)"
+    )
+
+    # Observability options
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Minimal console output"
+    )
+
     return parser
 
 
@@ -85,11 +145,14 @@ def get_supported_files(folder: Path, recursive: bool = False) -> list[Path]:
     files = []
 
     if recursive:
-        for ext in supported_extensions:
-            files.extend(folder.rglob(f"*{ext}"))
+        all_files = folder.rglob("*")
     else:
-        for ext in supported_extensions:
-            files.extend(folder.glob(f"*{ext}"))
+        all_files = folder.glob("*")
+
+    # Filter by suffix (case-insensitive)
+    for file_path in all_files:
+        if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
+            files.append(file_path)
 
     # Sort files for consistent ordering
     return sorted(files)
@@ -99,7 +162,8 @@ def process_file(
     filepath: Path,
     output_dir: Path,
     provider: str = "openai",
-    acquisition: Optional[DataAcquisition] = None
+    acquisition: Optional[DataAcquisition] = None,
+    config: Optional[dict] = None
 ) -> dict:
     """
     Process a file and extract context using specified provider.
@@ -109,6 +173,7 @@ def process_file(
         output_dir: Directory for output JSON
         provider: Vision API provider name
         acquisition: Optional acquisition instance to reuse
+        config: Optional configuration dictionary
 
     Returns:
         Dictionary with the processing result
@@ -122,6 +187,13 @@ def process_file(
     if acquisition is None:
         acquisition = AcquisitionFactory.create(provider)
 
+        # Apply configuration if provided
+        if config:
+            for key, value in config.items():
+                if value is not None and hasattr(acquisition, key):
+                    setattr(acquisition, key, value)
+                    logger.debug(f"Set {key}={value} on acquisition instance")
+
     # Process the file
     logger.info(f"Using {provider} vision API for processing")
     result = acquisition.process(filepath)
@@ -129,7 +201,7 @@ def process_file(
     return result
 
 
-def save_single_result(result: dict, filepath: Path, output_dir: Path) -> Path:
+def save_single_result(result: dict, filepath: Path, output_dir: Path, session_id: str = None) -> Path:
     """
     Save a single file processing result.
 
@@ -137,16 +209,21 @@ def save_single_result(result: dict, filepath: Path, output_dir: Path) -> Path:
         result: Processing result dictionary
         filepath: Original file path
         output_dir: Output directory
+        session_id: Optional session ID to include in results
 
     Returns:
         Path to saved file
     """
+    # Add session ID if provided
+    if session_id:
+        result['session_id'] = session_id
+
     # Generate output filename
     output_filename = f"{filepath.stem}-context.json"
     output_path = output_dir / output_filename
 
     # Save result
-    logger.info(f"Saving results to: {output_path}")
+    logger.info(f"[Session {session_id}] Saving results to: {output_path}" if session_id else f"Saving results to: {output_path}")
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
@@ -157,7 +234,9 @@ def process_folder(
     folder: Path,
     output_dir: Path,
     provider: str = "openai",
-    recursive: bool = False
+    recursive: bool = False,
+    config: Optional[dict] = None,
+    session_id: str = None
 ) -> int:
     """
     Process all files in a folder, each to its own output file.
@@ -167,6 +246,8 @@ def process_folder(
         output_dir: Output directory
         provider: Vision API provider
         recursive: Whether to search recursively
+        config: Optional configuration dictionary
+        session_id: Optional session ID for tracking
 
     Returns:
         Number of successfully processed files
@@ -183,19 +264,29 @@ def process_folder(
     # Create acquisition instance once
     acquisition = AcquisitionFactory.create(provider)
 
+    # Apply configuration if provided
+    if config:
+        for key, value in config.items():
+            if value is not None and hasattr(acquisition, key):
+                setattr(acquisition, key, value)
+                logger.debug(f"Set {key}={value} on acquisition instance")
+
     success_count = 0
     error_count = 0
     output_files = []
 
     for i, filepath in enumerate(files, 1):
-        logger.info(f"[{i}/{len(files)}] Processing: {filepath}")
+        if session_id:
+            logger.info(f"[Session {session_id}] [{i}/{len(files)}] Processing: {filepath}")
+        else:
+            logger.info(f"[{i}/{len(files)}] Processing: {filepath}")
 
         try:
             # Process the file
-            result = process_file(filepath, output_dir, provider, acquisition)
+            result = process_file(filepath, output_dir, provider, acquisition, config)
 
             # Save individual result
-            output_path = save_single_result(result, filepath, output_dir)
+            output_path = save_single_result(result, filepath, output_dir, session_id)
             output_files.append(output_path)
             success_count += 1
 
@@ -228,6 +319,8 @@ def main():
     # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+    elif args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Validate input path
     input_path = Path(args.input_path)
@@ -249,6 +342,27 @@ def main():
         logger.error(f"Output path is not a directory: {output_dir}")
         sys.exit(1)
 
+    # Generate session ID for tracking
+    session_id = str(uuid.uuid4())[:8]
+    logger.info(f"Starting session: {session_id}")
+
+    # Build configuration dictionary from CLI args
+    config = {}
+    if args.model is not None:
+        config['model'] = args.model
+    if args.max_tokens is not None:
+        config['max_tokens'] = args.max_tokens
+    if args.temperature is not None:
+        config['temperature'] = args.temperature
+    if args.max_pages is not None:
+        config['max_pages'] = args.max_pages
+    if args.render_scale is not None:
+        config['render_scale'] = args.render_scale
+    if args.timeout is not None:
+        config['timeout'] = args.timeout
+    if args.retries is not None:
+        config['retries'] = args.retries
+
     # Process based on input type
     try:
         if input_path.is_file():
@@ -256,11 +370,13 @@ def main():
             result = process_file(
                 filepath=input_path,
                 output_dir=output_dir,
-                provider=args.provider
+                provider=args.provider,
+                config=config
             )
-            output_path = save_single_result(result, input_path, output_dir)
-            logger.info(f"Successfully processed file. Output: {output_path}")
-            print(f"[OK] Context extracted to: {output_path}")
+            output_path = save_single_result(result, input_path, output_dir, session_id)
+            logger.info(f"[Session {session_id}] Successfully processed file. Output: {output_path}")
+            if not args.quiet:
+                print(f"[OK] Context extracted to: {output_path}")
 
         elif input_path.is_dir():
             # Process folder
@@ -268,13 +384,17 @@ def main():
                 folder=input_path,
                 output_dir=output_dir,
                 provider=args.provider,
-                recursive=args.recursive
+                recursive=args.recursive,
+                config=config,
+                session_id=session_id
             )
             if success_count > 0:
-                logger.info(f"Successfully processed {success_count} files")
-                print(f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}")
+                logger.info(f"[Session {session_id}] Successfully processed {success_count} files")
+                if not args.quiet:
+                    print(f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}")
             else:
-                print(f"[X] No supported files found in {input_path}")
+                if not args.quiet:
+                    print(f"[X] No supported files found in {input_path}")
                 sys.exit(1)
         else:
             logger.error(f"Invalid input path: {input_path}")

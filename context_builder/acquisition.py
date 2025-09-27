@@ -31,7 +31,7 @@ class ConfigurationError(AcquisitionError):
 class DataAcquisition(ABC):
     """Abstract base class for data acquisition implementations."""
 
-    SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.tiff'}
+    SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.tiff', '.tif'}
 
     def __init__(self):
         """Initialize the acquisition handler."""

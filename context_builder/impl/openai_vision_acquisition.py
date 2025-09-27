@@ -5,9 +5,9 @@ import hashlib
 import logging
 import mimetypes
 import os
-import tempfile
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from io import BytesIO
 
 from context_builder.acquisition import (
@@ -61,7 +61,16 @@ Respond with a JSON structure containing:
         try:
             from openai import OpenAI
 
-            self.client = OpenAI(api_key=self.api_key)
+            # Default timeout and retry configuration
+            self.timeout = 120  # seconds
+            self.retries = 3  # number of retries
+
+            # Initialize client with timeout
+            self.client = OpenAI(
+                api_key=self.api_key,
+                timeout=self.timeout,
+                max_retries=0  # We handle retries ourselves for better control
+            )
             logger.debug("OpenAI client initialized successfully")
         except ImportError:
             raise ConfigurationError(
@@ -162,28 +171,32 @@ Respond with a JSON structure containing:
             logger.error(f"Failed to encode PIL image: {e}")
             raise IOError(f"Cannot encode image: {e}")
 
-    def _convert_pdf_to_images(self, pdf_path: Path) -> List:
+    def _process_pdf_pages(self, pdf_path: Path) -> List[Dict[str, Any]]:
         """
-        Convert PDF pages to images using pypdfium2 for high quality rendering.
+        Process PDF pages one by one to minimize memory usage.
 
         Args:
             pdf_path: Path to PDF file
 
         Returns:
-            List of PIL Image objects
+            List of extracted content dictionaries for each page
 
         Raises:
-            IOError: If PDF cannot be converted
+            IOError: If PDF cannot be processed
         """
         try:
             import pypdfium2 as pdfium
-            from PIL import Image
 
-            logger.info(f"Converting PDF to images with pypdfium2: {pdf_path}")
+            logger.info(f"Processing PDF pages with pypdfium2: {pdf_path}")
 
             # Open PDF document
             pdf_doc = pdfium.PdfDocument(pdf_path)
-            images = []
+            all_results = []
+            total_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
 
             try:
                 total_pages = len(pdf_doc)
@@ -197,21 +210,55 @@ Respond with a JSON structure containing:
                     logger.info(f"PDF has {total_pages} pages")
 
                 for page_index in range(pages_to_process):
+                    logger.info(f"Processing page {page_index + 1}/{pages_to_process}...")
+
+                    # Render single page
                     page = pdf_doc[page_index]
-
-                    # Render at high quality (configurable scale factor for better extraction)
                     mat = page.render(scale=self.render_scale)
-
-                    # Convert to PIL Image
                     img = mat.to_pil()
-                    images.append(img)
 
-                    logger.debug(
-                        f"Converted page {page_index + 1}/{pages_to_process} to image (scale={self.render_scale})"
-                    )
+                    # Encode and prepare messages
+                    base64_image = self._encode_image_from_pil(img)
 
-                logger.info(f"Successfully converted {len(images)} pages from PDF")
-                return images
+                    # Free the image memory immediately
+                    del img
+                    del mat
+
+                    page_messages = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Page {page_index + 1} of {pages_to_process}\n\n{self.DEFAULT_PROMPT}",
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{base64_image}"
+                                    },
+                                },
+                            ],
+                        }
+                    ]
+
+                    # Call API with retry logic
+                    response = self._call_api_with_retry(page_messages)
+
+                    # Parse and store result
+                    page_result = self._parse_response(response.choices[0].message.content)
+                    page_result["page_number"] = page_index + 1
+                    all_results.append(page_result)
+
+                    # Accumulate usage
+                    if hasattr(response, "usage"):
+                        total_usage["prompt_tokens"] += response.usage.prompt_tokens
+                        total_usage["completion_tokens"] += response.usage.completion_tokens
+                        total_usage["total_tokens"] += response.usage.total_tokens
+
+                    logger.debug(f"Completed processing page {page_index + 1}")
+
+                return all_results, total_usage
 
             finally:
                 # Always close the PDF document
@@ -223,8 +270,8 @@ Respond with a JSON structure containing:
                 "Please install it with: pip install pypdfium2"
             )
         except Exception as e:
-            logger.error(f"Failed to convert PDF to images: {e}")
-            raise IOError(f"Cannot convert PDF file: {e}")
+            logger.error(f"Failed to process PDF pages: {e}")
+            raise IOError(f"Cannot process PDF file: {e}")
 
     def _prepare_messages(self, file_path: Path) -> list:
         """
@@ -249,6 +296,7 @@ Respond with a JSON structure containing:
             ".gif": "image/gif",
             ".bmp": "image/bmp",
             ".tiff": "image/tiff",
+            ".tif": "image/tiff",
             ".webp": "image/webp",
         }
         mime_type = mime_types.get(extension, "image/jpeg")
@@ -269,6 +317,58 @@ Respond with a JSON structure containing:
         ]
 
         return messages
+
+    def _call_api_with_retry(self, messages: list, attempt: int = 0) -> Any:
+        """
+        Call OpenAI API with retry logic and exponential backoff.
+
+        Args:
+            messages: Messages to send to API
+            attempt: Current retry attempt number
+
+        Returns:
+            API response object
+
+        Raises:
+            APIError: If all retries exhausted
+        """
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                response_format={"type": "json_object"},
+                timeout=self.timeout
+            )
+            return response
+
+        except Exception as e:
+            error_str = str(e).lower()
+            is_retryable = any(
+                keyword in error_str
+                for keyword in ["rate", "429", "500", "502", "503", "504", "timeout"]
+            )
+
+            if is_retryable and attempt < self.retries - 1:
+                # Exponential backoff: 2^attempt * base_delay
+                wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                logger.warning(
+                    f"API call failed (attempt {attempt + 1}/{self.retries}): {e}. "
+                    f"Retrying in {wait_time} seconds..."
+                )
+                time.sleep(wait_time)
+                return self._call_api_with_retry(messages, attempt + 1)
+            else:
+                # Map to appropriate error type
+                if "api_key" in error_str or "authentication" in error_str:
+                    raise ConfigurationError(f"Invalid API key: {e}")
+                elif "rate" in error_str or "429" in error_str:
+                    raise APIError(f"Rate limit exceeded after {self.retries} retries: {e}")
+                elif "timeout" in error_str:
+                    raise APIError(f"Request timed out after {self.retries} retries: {e}")
+                else:
+                    raise APIError(f"API call failed after {self.retries} retries: {e}")
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """
@@ -340,15 +440,9 @@ Respond with a JSON structure containing:
                 # Prepare messages
                 messages = self._prepare_messages(filepath)
 
-                # Call OpenAI API
+                # Call OpenAI API with retry logic
                 logger.debug(f"Calling OpenAI API with model: {self.model}")
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                    response_format={"type": "json_object"},
-                )
+                response = self._call_api_with_retry(messages)
 
                 # Parse response
                 page_content = self._parse_response(response.choices[0].message.content)
@@ -367,73 +461,16 @@ Respond with a JSON structure containing:
 
                 return result
 
-            # For PDFs, convert to images and process page by page
+            # For PDFs, process pages one by one to minimize memory
             else:
-                logger.info(
-                    "Converting PDF to images using pypdfium2 for processing..."
-                )
-                # Convert PDF to images and process page by page
-                images = self._convert_pdf_to_images(filepath)
+                logger.info("Processing PDF using memory-efficient streaming...")
 
-                all_results = []
-                total_usage = {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                }
-
-                for i, image in enumerate(images, 1):
-                    logger.info(f"Processing page {i}/{len(images)}...")
-
-                    # Encode the image
-                    base64_image = self._encode_image_from_pil(image)
-
-                    # Prepare messages with the image
-                    page_messages = [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Page {i} of {len(images)}\n\n{self.DEFAULT_PROMPT}",
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{base64_image}"
-                                    },
-                                },
-                            ],
-                        }
-                    ]
-
-                    # Call OpenAI API for this page
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=page_messages,
-                        max_tokens=self.max_tokens,
-                        temperature=self.temperature,
-                        response_format={"type": "json_object"},
-                    )
-
-                    # Parse and store result
-                    page_result = self._parse_response(
-                        response.choices[0].message.content
-                    )
-                    page_result["page_number"] = i
-                    all_results.append(page_result)
-
-                    # Accumulate usage
-                    if hasattr(response, "usage"):
-                        total_usage["prompt_tokens"] += response.usage.prompt_tokens
-                        total_usage[
-                            "completion_tokens"
-                        ] += response.usage.completion_tokens
-                        total_usage["total_tokens"] += response.usage.total_tokens
+                # Process PDF pages (streaming approach)
+                pages, total_usage = self._process_pdf_pages(filepath)
 
                 # Add pages to result
-                result["total_pages"] = len(images)
-                result["pages"] = all_results
+                result["total_pages"] = len(pages)
+                result["pages"] = pages
 
                 # Add total usage information
                 if total_usage["total_tokens"] > 0:
