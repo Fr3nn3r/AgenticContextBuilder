@@ -4,7 +4,12 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A robust document context extraction tool using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
+Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
+
+#  ,_,
+# (O,O)
+# (   )
+# -"-"-
 
 ## ✨ Features
 
@@ -24,7 +29,7 @@ A robust document context extraction tool using AI vision APIs to extract struct
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/AgenticContextBuilder.git
+git clone https://github.com/Fr3nn3r/AgenticContextBuilder.git
 cd AgenticContextBuilder
 
 # Install dependencies using uv (recommended)
