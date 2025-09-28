@@ -11,6 +11,8 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "pillow>=11.3.0",
     "pypdfium2>=4.30.0",
+    "rich>=14.1.0",
+    "colorlog>=6.9.0",
 ]
 
 [dependency-groups]

@@ -173,7 +173,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_content = b"test data"
         test_file.write_bytes(test_content)
 
-        metadata = mock_acquisition._get_file_metadata(test_file)
+        from context_builder.utils.file_utils import get_file_metadata
+        metadata = get_file_metadata(test_file)
 
         assert metadata["file_name"] == "test.jpg"
         assert metadata["file_path"] == str(test_file.resolve())
@@ -188,7 +189,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_file.parent.mkdir(parents=True, exist_ok=True)
         test_file.write_bytes(b"data")
 
-        metadata = mock_acquisition._get_file_metadata(test_file)
+        from context_builder.utils.file_utils import get_file_metadata
+        metadata = get_file_metadata(test_file)
 
         # Path should be resolved to absolute
         assert Path(metadata["file_path"]).is_absolute()
@@ -211,7 +213,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
             test_file = tmp_path / filename
             test_file.write_bytes(b"data")
 
-            metadata = mock_acquisition._get_file_metadata(test_file)
+            from context_builder.utils.file_utils import get_file_metadata
+            metadata = get_file_metadata(test_file)
             # mimetypes.guess_type might return None for some extensions
             if metadata["mime_type"] != "application/octet-stream":
                 assert expected_mime in metadata["mime_type"]
@@ -221,7 +224,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_file = tmp_path / "test.xyz"
         test_file.write_bytes(b"data")
 
-        metadata = mock_acquisition._get_file_metadata(test_file)
+        from context_builder.utils.file_utils import get_file_metadata
+        metadata = get_file_metadata(test_file)
 
         assert metadata["mime_type"] == "application/octet-stream"
 
@@ -231,7 +235,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_content = b"test data for md5"
         test_file.write_bytes(test_content)
 
-        metadata = mock_acquisition._get_file_metadata(test_file)
+        from context_builder.utils.file_utils import get_file_metadata
+        metadata = get_file_metadata(test_file)
 
         # Calculate expected MD5
         import hashlib
@@ -246,7 +251,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_content = b"x" * (5 * 1024 * 1024)
         test_file.write_bytes(test_content)
 
-        md5_hash = mock_acquisition._calculate_md5(test_file)
+        from context_builder.utils.hashing import calculate_file_md5
+        md5_hash = calculate_file_md5(test_file)
 
         # Should calculate correctly
         import hashlib
@@ -258,7 +264,8 @@ class TestOpenAIVisionAcquisitionFileMetadata:
         test_file = tmp_path / "nonexistent.jpg"
 
         with caplog.at_level(logging.WARNING):
-            result = mock_acquisition._calculate_md5(test_file)
+            from context_builder.utils.hashing import calculate_file_md5
+            result = calculate_file_md5(test_file)
 
         assert result == ""
         assert "Failed to calculate MD5" in caplog.text

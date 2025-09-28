@@ -11,13 +11,56 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import colorlog
 from dotenv import load_dotenv
+from rich.console import Console
 
-from context_builder.acquisition import AcquisitionFactory, AcquisitionError, DataAcquisition
+from context_builder.acquisition import (
+    AcquisitionFactory,
+    AcquisitionError,
+    DataAcquisition,
+)
 
+
+# Configure colored logging
+def setup_colored_logging(verbose: bool = False):
+    """Set up colored logging configuration."""
+    level = logging.DEBUG if verbose else logging.INFO
+
+    # Create colored formatter
+    formatter = colorlog.ColoredFormatter(
+        "%(asctime)s - %(log_color)s%(levelname)s%(reset)s - %(name)s - %(message)s",
+        datefmt="%H:%M:%S",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "red,bg_white",
+        },
+    )
+
+    # Configure root logger
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    root_logger.handlers.clear()  # Remove existing handlers
+    root_logger.addHandler(handler)
+
+    # Filter out noisy OpenAI logs
+    openai_logger = logging.getLogger("openai._base_client")
+    openai_logger.setLevel(logging.WARNING)  # Only show warnings and errors
+
+    # Also filter out other noisy loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+# Set up basic logging initially
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -31,100 +74,119 @@ def signal_handler(signum, frame):
 def setup_signal_handlers():
     """Set up signal handlers for graceful shutdown."""
     signal.signal(signal.SIGINT, signal_handler)
-    if hasattr(signal, 'SIGTERM'):
+    if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, signal_handler)
 
 
 def setup_argparser() -> argparse.ArgumentParser:
     """Set up command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="Extract structured context from documents using AI vision APIs"
-    )
-    parser.add_argument(
-        "input_path",
-        type=str,
-        help="Path to the file or folder to process"
-    )
-    parser.add_argument(
-        "-o", "--output-dir",
-        type=str,
-        default=".",
-        help="Output directory for JSON results (default: current directory)"
-    )
-    parser.add_argument(
-        "-r", "--recursive",
-        action="store_true",
-        help="Process folder recursively (when input is a folder)"
+        description="Extract structured context from documents using AI vision APIs",
+        epilog="""
+Examples:
+  %(prog)s document.pdf                    # Process a single PDF
+  %(prog)s folder/ -r                      # Process all files in folder recursively
+  %(prog)s file.pdf -o results/           # Save results to specific directory
+  %(prog)s doc.pdf --model gpt-4o         # Use specific model
+  %(prog)s folder/ -r --max-pages 10       # Limit pages per document
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Derive provider choices from factory
-    available_providers = ["openai"]  # Default list, will be extended if more are registered
+    # Required arguments
     parser.add_argument(
-        "-p", "--provider",
-        type=str,
-        default="openai",
+        "input_path", metavar="PATH", help="Path to the file or folder to process"
+    )
+
+    # Output options
+    output_group = parser.add_argument_group("Output Options")
+    output_group.add_argument(
+        "-o",
+        "--output-dir",
+        metavar="DIR",
+        default=".",
+        help="Output directory for JSON results (default: current directory)",
+    )
+    output_group.add_argument(
+        "-r",
+        "--recursive",
+        action="store_true",
+        help="Process folder recursively (when input is a folder)",
+    )
+
+    # Provider options
+    provider_group = parser.add_argument_group("Provider Options")
+    available_providers = [
+        "openai"
+    ]  # Default list, will be extended if more are registered
+    provider_group.add_argument(
+        "-p",
+        "--provider",
         choices=available_providers,
-        help="Vision API provider to use (default: openai)"
+        default="openai",
+        help="Vision API provider to use (default: openai)",
     )
 
     # Model configuration
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Model name to use (provider-specific, e.g., 'gpt-4o' for OpenAI)"
+    model_group = parser.add_argument_group("Model Configuration")
+    model_group.add_argument(
+        "--model", metavar="MODEL", help="Model name to use (e.g., 'gpt-4o' for OpenAI)"
     )
-    parser.add_argument(
+    model_group.add_argument(
         "--max-tokens",
         type=int,
-        default=None,
-        help="Maximum tokens for response (default: provider-specific)"
+        metavar="N",
+        help="Maximum tokens for response (default: provider-specific)",
     )
-    parser.add_argument(
+    model_group.add_argument(
         "--temperature",
         type=float,
-        default=None,
-        help="Temperature for response generation (0.0-2.0, default: provider-specific)"
+        metavar="FLOAT",
+        help="Temperature for response generation (0.0-2.0, default: provider-specific)",
     )
 
     # PDF processing options
-    parser.add_argument(
+    pdf_group = parser.add_argument_group("PDF Processing")
+    pdf_group.add_argument(
         "--max-pages",
         type=int,
-        default=None,
-        help="Maximum pages to process from PDFs (default: 20)"
+        metavar="N",
+        help="Maximum pages to process from PDFs (default: 20)",
     )
-    parser.add_argument(
+    pdf_group.add_argument(
         "--render-scale",
         type=float,
-        default=None,
-        help="Render scale for PDF to image conversion (default: 2.0)"
+        metavar="FLOAT",
+        help="Render scale for PDF to image conversion (default: 2.0)",
     )
 
-    # API resilience options
-    parser.add_argument(
+    # API options
+    api_group = parser.add_argument_group("API Options")
+    api_group.add_argument(
         "--timeout",
         type=int,
-        default=None,
-        help="API request timeout in seconds (default: 120)"
+        metavar="SECONDS",
+        help="API request timeout in seconds (default: 120)",
     )
-    parser.add_argument(
+    api_group.add_argument(
         "--retries",
         type=int,
-        default=None,
-        help="Maximum number of retries for API calls (default: 3)"
+        metavar="N",
+        help="Maximum number of retries for API calls (default: 3)",
     )
 
-    # Observability options
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose logging"
+    # Logging options
+    logging_group = parser.add_argument_group("Logging Options")
+    logging_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
-    parser.add_argument(
-        "-q", "--quiet",
+    logging_group.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+    logging_group.add_argument(
+        "--rich-output",
         action="store_true",
-        help="Minimal console output"
+        help="Display results in rich format to stdout only (no files saved, all logs suppressed, incompatible with -v)",
     )
 
     return parser
@@ -163,7 +225,7 @@ def process_file(
     output_dir: Path,
     provider: str = "openai",
     acquisition: Optional[DataAcquisition] = None,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
 ) -> dict:
     """
     Process a file and extract context using specified provider.
@@ -201,7 +263,9 @@ def process_file(
     return result
 
 
-def save_single_result(result: dict, filepath: Path, output_dir: Path, session_id: str = None) -> Path:
+def save_single_result(
+    result: dict, filepath: Path, output_dir: Path, session_id: str = None
+) -> Path:
     """
     Save a single file processing result.
 
@@ -216,15 +280,19 @@ def save_single_result(result: dict, filepath: Path, output_dir: Path, session_i
     """
     # Add session ID if provided
     if session_id:
-        result['session_id'] = session_id
+        result["session_id"] = session_id
 
     # Generate output filename
     output_filename = f"{filepath.stem}-context.json"
     output_path = output_dir / output_filename
 
     # Save result
-    logger.info(f"[Session {session_id}] Saving results to: {output_path}" if session_id else f"Saving results to: {output_path}")
-    with open(output_path, 'w', encoding='utf-8') as f:
+    logger.info(
+        f"[Session {session_id}] Saving results to: {output_path}"
+        if session_id
+        else f"Saving results to: {output_path}"
+    )
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     return output_path
@@ -236,7 +304,9 @@ def process_folder(
     provider: str = "openai",
     recursive: bool = False,
     config: Optional[dict] = None,
-    session_id: str = None
+    session_id: str = None,
+    rich_output: bool = False,
+    console: Optional[Console] = None,
 ) -> int:
     """
     Process all files in a folder, each to its own output file.
@@ -277,7 +347,9 @@ def process_folder(
 
     for i, filepath in enumerate(files, 1):
         if session_id:
-            logger.info(f"[Session {session_id}] [{i}/{len(files)}] Processing: {filepath}")
+            logger.info(
+                f"[Session {session_id}] [{i}/{len(files)}] Processing: {filepath}"
+            )
         else:
             logger.info(f"[{i}/{len(files)}] Processing: {filepath}")
 
@@ -285,21 +357,29 @@ def process_folder(
             # Process the file
             result = process_file(filepath, output_dir, provider, acquisition, config)
 
-            # Save individual result
-            output_path = save_single_result(result, filepath, output_dir, session_id)
-            output_files.append(output_path)
+            if rich_output and console:
+                # Simply print the result to stdout
+                console.print(result)
+            else:
+                # Save individual result
+                output_path = save_single_result(result, filepath, output_dir, session_id)
+                output_files.append(output_path)
+
             success_count += 1
 
         except KeyboardInterrupt:
-            logger.info(f"Interrupted. Processed {success_count} files before interruption.")
+            logger.info(
+                f"Interrupted. Processed {success_count} files before interruption."
+            )
             raise  # Re-raise to be caught by main handler
 
         except Exception as e:
             logger.error(f"Failed to process {filepath}: {e}")
             error_count += 1
 
-    logger.info(f"Processed {success_count} files successfully, {error_count} failed")
-    logger.info(f"Output files saved to: {output_dir}")
+    if not rich_output:
+        logger.info(f"Processed {success_count} files successfully, {error_count} failed")
+        logger.info(f"Output files saved to: {output_dir}")
 
     return success_count
 
@@ -316,11 +396,27 @@ def main():
     parser = setup_argparser()
     args = parser.parse_args()
 
-    # Set logging level
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    elif args.quiet:
-        logging.getLogger().setLevel(logging.WARNING)
+    # Check for mutually exclusive options
+    if args.rich_output and args.verbose:
+        print("[X] Error: --rich-output and -v/--verbose are mutually exclusive")
+        sys.exit(1)
+
+    # Initialize Rich console if needed
+    console = None
+    if args.rich_output:
+        console = Console()
+        # Suppress all logging when using rich output
+        logging.disable(logging.CRITICAL)
+    else:
+        # Set up colored logging only if not using rich output
+        setup_colored_logging(verbose=args.verbose)
+
+    # Set logging level (only if not using rich output)
+    if not args.rich_output:
+        if args.verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
+        elif args.quiet:
+            logging.getLogger().setLevel(logging.WARNING)
 
     # Validate input path
     input_path = Path(args.input_path)
@@ -328,19 +424,20 @@ def main():
         logger.error(f"Path not found: {input_path}")
         sys.exit(1)
 
-    # Validate output directory
+    # Validate output directory (skip if using rich output since no files are saved)
     output_dir = Path(args.output_dir)
-    if not output_dir.exists():
-        logger.info(f"Creating output directory: {output_dir}")
-        try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.error(f"Failed to create output directory: {e}")
-            sys.exit(1)
+    if not args.rich_output:
+        if not output_dir.exists():
+            logger.info(f"Creating output directory: {output_dir}")
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to create output directory: {e}")
+                sys.exit(1)
 
-    if not output_dir.is_dir():
-        logger.error(f"Output path is not a directory: {output_dir}")
-        sys.exit(1)
+        if not output_dir.is_dir():
+            logger.error(f"Output path is not a directory: {output_dir}")
+            sys.exit(1)
 
     # Generate session ID for tracking
     session_id = str(uuid.uuid4())[:8]
@@ -349,19 +446,19 @@ def main():
     # Build configuration dictionary from CLI args
     config = {}
     if args.model is not None:
-        config['model'] = args.model
+        config["model"] = args.model
     if args.max_tokens is not None:
-        config['max_tokens'] = args.max_tokens
+        config["max_tokens"] = args.max_tokens
     if args.temperature is not None:
-        config['temperature'] = args.temperature
+        config["temperature"] = args.temperature
     if args.max_pages is not None:
-        config['max_pages'] = args.max_pages
+        config["max_pages"] = args.max_pages
     if args.render_scale is not None:
-        config['render_scale'] = args.render_scale
+        config["render_scale"] = args.render_scale
     if args.timeout is not None:
-        config['timeout'] = args.timeout
+        config["timeout"] = args.timeout
     if args.retries is not None:
-        config['retries'] = args.retries
+        config["retries"] = args.retries
 
     # Process based on input type
     try:
@@ -371,12 +468,19 @@ def main():
                 filepath=input_path,
                 output_dir=output_dir,
                 provider=args.provider,
-                config=config
+                config=config,
             )
-            output_path = save_single_result(result, input_path, output_dir, session_id)
-            logger.info(f"[Session {session_id}] Successfully processed file. Output: {output_path}")
-            if not args.quiet:
-                print(f"[OK] Context extracted to: {output_path}")
+
+            if args.rich_output:
+                # Simply print the result to stdout
+                console.print(result)
+            else:
+                output_path = save_single_result(result, input_path, output_dir, session_id)
+                logger.info(
+                    f"[Session {session_id}] Successfully processed file. Output: {output_path}"
+                )
+                if not args.quiet:
+                    print(f"[OK] Context extracted to: {output_path}")
 
         elif input_path.is_dir():
             # Process folder
@@ -386,15 +490,24 @@ def main():
                 provider=args.provider,
                 recursive=args.recursive,
                 config=config,
-                session_id=session_id
+                session_id=session_id,
+                rich_output=args.rich_output,
+                console=console,
             )
             if success_count > 0:
-                logger.info(f"[Session {session_id}] Successfully processed {success_count} files")
-                if not args.quiet:
-                    print(f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}")
+                if not args.rich_output:
+                    logger.info(
+                        f"[Session {session_id}] Successfully processed {success_count} files"
+                    )
+                    if not args.quiet:
+                        print(
+                            f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}"
+                        )
             else:
-                if not args.quiet:
+                if not args.quiet and not args.rich_output:
                     print(f"[X] No supported files found in {input_path}")
+                elif args.rich_output:
+                    console.print(f"[red][X] No supported files found in {input_path}[/red]")
                 sys.exit(1)
         else:
             logger.error(f"Invalid input path: {input_path}")

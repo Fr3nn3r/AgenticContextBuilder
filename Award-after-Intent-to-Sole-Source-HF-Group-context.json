@@ -1,0 +1,41 @@
+{
+  "file_name": "Award-after-Intent-to-Sole-Source-HF-Group.pdf",
+  "file_path": "C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\tests\\assets\\Award-after-Intent-to-Sole-Source-HF-Group.pdf",
+  "file_extension": ".pdf",
+  "file_size_bytes": 21297,
+  "mime_type": "application/pdf",
+  "md5": "7e607839e40fdcf8b332a767a098baa8",
+  "total_pages": 1,
+  "pages": [
+    {
+      "document_type": "Statement of Award",
+      "language": "English",
+      "summary": "A statement of award from Francis Marion University for bindery services.",
+      "key_information": {
+        "University": "Francis Marion University",
+        "Department": "Purchasing Office",
+        "Address": "PO Box 100547, Florence, SC 29502-0547",
+        "Posting Date": "11/02/2018",
+        "Description": "Bindery Services including pickup and delivery of all bound items",
+        "Issue Date of Intent to Sole Source": "10/15/2018",
+        "Award Posting Date": "11/02/2018",
+        "Sole Source Awarded To": "HF Group",
+        "Address of Awardee": "6204 Corporate Park Drive, Browns Summit, NC 27214",
+        "Amount": "On an as-needed basis",
+        "Director of Purchasing": "Paul J. MacDonald"
+      },
+      "visual_elements": [
+        "University logo",
+        "Signature line"
+      ],
+      "text_content": "Francis Marion University\nPurchasing Office\nPO Box 100547\nFlorence, SC 29502-0547\n\nStatement of Award\nPosting Date: 11/02/2018\n\nThis is a statement of award and serves as acceptance of your offer.\n\nContractor should not perform work prior to the receipt of a purchase order from Francis Marion University. The University assumes no liability for any expenses incurred prior to the effective date of the contract and issuance of a purchase order.\n\nDescription: Bindery Services including pickup and delivery of all bound items\nIssue Date of Intent to Sole Source: 10/15/2018\nAward Posting Date: 11/02/2018\nSole Source Awarded To: HF Group\nAddress: 6204 Corporate Park Drive, Browns Summit, NC 27214\n\nAmount: On an as-needed basis.\n\nDirector of Purchasing\nPaul J. MacDonald",
+      "page_number": 1
+    }
+  ],
+  "_usage": {
+    "prompt_tokens": 934,
+    "completion_tokens": 424,
+    "total_tokens": 1358
+  },
+  "session_id": "1a4b1d6c"
+}

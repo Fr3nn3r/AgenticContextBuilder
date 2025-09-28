@@ -11,10 +11,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Coding Standards: SOLID principles of software design
 - **S – Single Responsibility Principle (SRP)**: A class should have one job only. Each class should have a single reason to change.
-- **O –Open/Closed Principle (OCP)**: Code should be open for extension, closed for modification. We can new features without rewriting existing code.
+- **O – Open/Closed Principle (OCP)**: Code should be open for extension, closed for modification. We can new features without rewriting existing code.
 - **L – Liskov Substitution Principle (LSP)**: A child class should respect the contract of the parent.
 - **I – Interface Segregation Principle (ISP)**: Don’t force classes to implement methods they don’t need. Better to have many small, specific interfaces than one fat, do-everything interface.
 - **D – Dependency Inversion Principle (DIP)**: Depend on abstractions (interfaces), not concrete implementations. High-level modules shouldn’t depend on low-level details. Both should depend on interfaces/contracts.
+
+### Coding Principles: DRY + SSOT: No Duplicate Logic
+- **DRY - (Don’t Repeat Yourself)**: Never write the same code in two places. If you find yourself copying logic, stop and extract it into a shared function, class, or service.
+- **SSOT - (Single Source of Truth)**: Each piece of logic should exist in one place only. All other code should reference that one place. This avoids drift, bugs, and inconsistencies.
+- **Shared Utilities/Services**: Common operations (e.g., hashing, date formatting, JSON parsing) must live in a shared module/service. Do not re-implement them inside concrete classes.
+- **Use Standard Libraries First**: If the language already has a reliable library function (e.g., Python’s hashlib.md5, Java’s MessageDigest, Node’s crypto.createHash), always use it instead of writing a custom helper.
+- **Code Review Gate: Reviewers must ask**: “Where is the single source of truth?” when they see similar logic across files. If no SSOT exists, request a refactor before merge.
+
+Example
+❌ Bad: Two classes each define calculate_md5() internally.
+✔ Good: One HashingService (interface + implementation using standard library), injected or imported wherever needed.
 
 ### What “good” looks like
 High cohesion per file (one purpose), low coupling across files.

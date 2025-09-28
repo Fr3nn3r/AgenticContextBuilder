@@ -44,7 +44,9 @@
       "Bash(del \"C:\\Users\\fbrun\\Documents\\GitHub\\AgenticContextBuilder\\context_builder\\cli_old.py\")",
       "WebFetch(domain:platform.openai.com)",
       "Bash(C:UsersfbrunAppDataLocalMicrosoftWinGetLinks)",
-      "Bash(del test-context.json)"
+      "Bash(del test-context.json)",
+      "Bash(mkdir:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

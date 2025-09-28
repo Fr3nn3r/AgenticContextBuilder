@@ -206,18 +206,18 @@ class TestCLIErrorHandling:
             with patch('context_builder.cli.setup_signal_handlers'):
                 yield
 
-    def test_file_not_found(self, mock_env, monkeypatch, caplog):
+    def test_file_not_found(self, mock_env, monkeypatch, caplog, capsys):
         """Test handling of non-existent file."""
         test_args = ['cli.py', '/nonexistent/file.jpg']
         monkeypatch.setattr(sys, 'argv', test_args)
 
-        with caplog.at_level(logging.ERROR):
-            with pytest.raises(SystemExit) as exc:
-                main()
+        with pytest.raises(SystemExit) as exc:
+            main()
 
-            assert exc.value.code == 1
-            # Error should be logged
-            assert "Path not found" in caplog.text
+        assert exc.value.code == 1
+        # Error should be logged to stderr (colorlog outputs there)
+        captured = capsys.readouterr()
+        assert "Path not found" in captured.err
 
     def test_invalid_output_dir(self, mock_env, tmp_path, monkeypatch):
         """Test handling of invalid output directory."""
@@ -394,7 +394,7 @@ class TestSessionTracking:
             with patch('context_builder.cli.setup_signal_handlers'):
                 yield
 
-    def test_session_id_generated(self, mock_env, tmp_path, monkeypatch, caplog):
+    def test_session_id_generated(self, mock_env, tmp_path, monkeypatch, capsys):
         """Test session ID is generated and logged."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
@@ -404,12 +404,12 @@ class TestSessionTracking:
                 test_args = ['cli.py', str(test_file)]
                 monkeypatch.setattr(sys, 'argv', test_args)
 
-                with caplog.at_level(logging.INFO):
-                    # Should complete without error
-                    main()
+                # Should complete without error
+                main()
 
-                # Check session ID was logged
-                assert "Starting session:" in caplog.text
+                # Check session ID was logged to stderr
+                captured = capsys.readouterr()
+                assert "Starting session:" in captured.err
 
     def test_session_id_format(self, mock_env, tmp_path, monkeypatch):
         """Test session ID format."""

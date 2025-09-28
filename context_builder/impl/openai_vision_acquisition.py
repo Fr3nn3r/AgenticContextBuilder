@@ -1,9 +1,7 @@
 """OpenAI Vision API implementation for data acquisition."""
 
 import base64
-import hashlib
 import logging
-import mimetypes
 import os
 import time
 from pathlib import Path
@@ -16,6 +14,7 @@ from context_builder.acquisition import (
     ConfigurationError,
     AcquisitionFactory,
 )
+from context_builder.utils.file_utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -91,47 +90,6 @@ Respond with a JSON structure containing:
             f"Using model: {self.model}, max_tokens: {self.max_tokens}, max_pages: {self.max_pages}"
         )
 
-    def _calculate_md5(self, file_path: Path) -> str:
-        """
-        Calculate MD5 hash of a file.
-
-        Args:
-            file_path: Path to file
-
-        Returns:
-            MD5 hash as hexadecimal string
-        """
-        hash_md5 = hashlib.md5()
-        try:
-            with open(file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    hash_md5.update(chunk)
-            return hash_md5.hexdigest()
-        except Exception as e:
-            logger.warning(f"Failed to calculate MD5: {e}")
-            return ""
-
-    def _get_file_metadata(self, filepath: Path) -> Dict[str, Any]:
-        """
-        Get file metadata.
-
-        Args:
-            filepath: Path to file
-
-        Returns:
-            Dictionary with file metadata
-        """
-        absolute_path = filepath.resolve()
-        mime_type, _ = mimetypes.guess_type(str(filepath))
-
-        return {
-            "file_name": filepath.name,
-            "file_path": str(absolute_path),
-            "file_extension": filepath.suffix.lower(),
-            "file_size_bytes": filepath.stat().st_size,
-            "mime_type": mime_type or "application/octet-stream",
-            "md5": self._calculate_md5(filepath),
-        }
 
     def _encode_image(self, image_path: Path) -> str:
         """
@@ -432,7 +390,7 @@ Respond with a JSON structure containing:
         logger.info(f"Processing with OpenAI Vision API: {filepath}")
 
         # Get file metadata first
-        result = self._get_file_metadata(filepath)
+        result = get_file_metadata(filepath)
 
         try:
             # For non-PDF files, process directly

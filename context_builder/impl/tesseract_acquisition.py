@@ -1,8 +1,6 @@
 """Tesseract OCR implementation for data acquisition."""
 
-import hashlib
 import logging
-import mimetypes
 import os
 import platform
 from pathlib import Path
@@ -15,6 +13,7 @@ from context_builder.acquisition import (
     AcquisitionError,
     AcquisitionFactory,
 )
+from context_builder.utils.file_utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -133,31 +132,6 @@ class TesseractAcquisition(DataAcquisition):
 
         return False
 
-    def _calculate_md5(self, file_path: Path) -> str:
-        """Calculate MD5 hash of a file."""
-        hash_md5 = hashlib.md5()
-        try:
-            with open(file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    hash_md5.update(chunk)
-            return hash_md5.hexdigest()
-        except Exception as e:
-            logger.warning(f"Failed to calculate MD5: {e}")
-            return ""
-
-    def _get_file_metadata(self, filepath: Path) -> Dict[str, Any]:
-        """Get file metadata."""
-        absolute_path = filepath.resolve()
-        mime_type, _ = mimetypes.guess_type(str(filepath))
-
-        return {
-            "file_name": filepath.name,
-            "file_path": str(absolute_path),
-            "file_extension": filepath.suffix.lower(),
-            "file_size_bytes": filepath.stat().st_size,
-            "mime_type": mime_type or "application/octet-stream",
-            "md5": self._calculate_md5(filepath),
-        }
 
     def _preprocess_image(self, image) -> Any:
         """
@@ -376,7 +350,7 @@ class TesseractAcquisition(DataAcquisition):
         logger.info(f"Processing with Tesseract OCR: {filepath}")
 
         # Get file metadata
-        result = self._get_file_metadata(filepath)
+        result = get_file_metadata(filepath)
 
         try:
             if filepath.suffix.lower() == '.pdf':
