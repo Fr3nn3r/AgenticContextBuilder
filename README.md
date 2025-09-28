@@ -5,11 +5,10 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
-
-#  ,_,
-# (O,O)
-# (   )
-# -"-"-
+  ,_,
+ (O,O)
+ (   )
+ -"-"-
 
 ## ✨ Features
 
