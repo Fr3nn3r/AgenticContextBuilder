@@ -4,13 +4,16 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
+🦉 Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
+
+```
   ,_,
  (O,O)
  (   )
  -"-"-
+```
 
-## ✨ Features
+## ✨ Features 🦉
 
 - 🎯 **Multi-format support**: Process images (JPG, JPEG, PNG, GIF, BMP, TIFF, TIF) and PDF documents
 - 🔍 **Case-insensitive file discovery**: Automatically finds files regardless of extension case
@@ -22,7 +25,7 @@ Transforms documents into LLM consumable JSON using AI vision APIs to extract st
 - ⚙️ **Highly configurable**: Extensive CLI options for customizing behavior
 - 🎨 **Rich CLI output**: Beautiful colored logging and progress indicators
 
-## 🚀 Quick Start
+## 🚀 Quick Start 🦉
 
 ### Installation
 
@@ -46,7 +49,7 @@ Create a `.env` file in the project root:
 OPENAI_API_KEY=your-api-key-here
 ```
 
-## 📖 Usage Examples
+## 📖 Usage Examples 🦉
 
 ### 1. Simple Python API Usage
 
@@ -126,7 +129,7 @@ python -m context_builder.cli /batch/folder/ \
   -o ./output/
 ```
 
-## 🛠️ CLI Options
+## 🛠️ CLI Options 🦉
 
 ### Required Arguments
 - `input_path`: Path to file or folder to process
@@ -157,7 +160,7 @@ python -m context_builder.cli /batch/folder/ \
 - `-v, --verbose`: Enable verbose logging
 - `-q, --quiet`: Minimal console output
 
-## 📊 Output Format
+## 📊 Output Format 🦉
 
 The tool generates JSON files with extracted context. Each output file contains:
 
@@ -194,7 +197,7 @@ The tool generates JSON files with extracted context. Each output file contains:
 }
 ```
 
-## 🏗️ Architecture
+## 🏗️ Architecture 🦉
 
 ### Core Components
 
@@ -208,7 +211,7 @@ The tool generates JSON files with extracted context. Each output file contains:
 - **OpenAI Vision API**: Advanced AI-powered document analysis
 - **Tesseract OCR**: Open-source OCR engine for text extraction
 
-## ⚡ Performance Tips
+## ⚡ Performance Tips 🦉
 
 ### PDF Processing
 - Use `--max-pages` to limit processing for large PDFs
@@ -225,7 +228,7 @@ The tool generates JSON files with extracted context. Each output file contains:
 - PDFs are processed page-by-page to minimize memory usage
 - Large batches are processed file-by-file without accumulation
 
-## 🧪 Development
+## 🧪 Development 🦉
 
 ### Running Tests
 
@@ -262,7 +265,7 @@ tests/
 └── assets/                # Test files
 ```
 
-## 🔧 Error Handling
+## 🔧 Error Handling 🦉
 
 The tool includes robust error handling:
 - **Automatic retries** for rate limits (429) and server errors (5xx)
@@ -289,4 +292,4 @@ For issues or questions, please open an issue on GitHub.
 
 ---
 
-**Made with ❤️ for the AI community**
+**Made with ❤️ and 🦉 for the AI community**
