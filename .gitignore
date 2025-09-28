@@ -58,3 +58,5 @@ prompts/
 test_output/
 v1/
 test_folder/
+_deprecated_v1/
+_scripts/
