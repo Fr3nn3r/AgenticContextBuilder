@@ -1,0 +1,716 @@
+1. HVAC Contractor - Estimate
+I'm an HVAC contractor writing a professional estimate for a homeowner. I just completed a site inspection.
+
+Property Details:
+[Square footage, type, year built]
+
+Client's Main Concern:
+[Their pain point - comfort issues, high bills, etc.]
+
+Inspection Findings:
+[Current system specs, age, ductwork condition, sizing issues, code problems]
+
+Your Recommended Solution:
+[Equipment specs, repairs, timeline, investment, expected outcomes]
+
+Competing Quote Context:
+[Other quotes they mentioned, if any]
+
+Write a professional estimate in accessible language. Explain why proper sizing and addressing root causes matters. Educate without disparaging competitors.
+
+Tone: educational, reassuring, confident. Emphasize comfort and savings over specs. No jargon.
+
+Structure: problem summary, solution, why this approach, investment/timeline, next steps.
+
+​
+2. Attorney - Discovery Responses
+I'm a commercial litigation attorney drafting responses to interrogatories. Audience is opposing counsel and potentially a judge.
+
+Case Background:
+[Brief case description and your client's position]
+
+Strategic Objectives:
+[What you need to protect - privilege, admissions to avoid, facts to emphasize]
+
+Interrogatory Responses:
+[For each interrogatory, your strategic notes on what to admit, deny, object to, and why]
+
+Key Facts to Cite:
+[Specific facts, documents, or evidence supporting your responses]
+
+Write formal discovery responses using proper legal citation format. Protect attorney-client privilege and avoid unnecessary admissions while being responsive.
+
+Tone: formal, cautious, precise.
+
+Structure: standard interrogatory response format with objections listed first, then substantive responses.
+
+​
+I will note that protecting attorney-client privilege here is helpful for avoiding inappropriate admissions to opposing counsel, but is NOT the same as properly vetting your LLM to ensure it is compliant with your privacy requirements. That’s a separate process.
+3. Family Physician - SOAP Notes
+I'm a family physician documenting a patient visit. This needs SOAP note format for insurance purposes.
+
+Patient Information:
+[Age, gender, relevant medical history]
+
+Chief Complaint:
+[Why they came in today]
+
+Subjective Notes:
+[Patient's description of symptoms, timeline, what makes it better/worse]
+
+Objective Findings:
+[Vitals, exam findings, test results]
+
+Assessment:
+[Your diagnosis or differential]
+
+Plan:
+[Treatment, prescriptions, follow-up, patient education provided]
+
+Make this complete and insurance-friendly while staying clinically accurate. Include relevant ICD-10 codes.
+
+Tone: clinical, precise, thorough.
+
+Structure: standard SOAP format.
+
+​
+Make sure you are using a HIPAA-compliant system. Yes, they exist!
+4. General Contractor - Remodel Estimate
+I'm a general contractor writing an estimate for a remodeling project.
+
+Project Scope:
+[Type of remodel, square footage affected]
+
+Client Priorities:
+[What they value - budget, quality, timeline, specific features]
+
+Your Assessment:
+[Structural issues, code requirements, material recommendations, scope of work]
+
+Recommended Approach:
+[Phasing if applicable, key decisions, why certain choices matter]
+
+Investment and Timeline:
+[Total cost breakdown, payment schedule, project duration]
+
+Write an estimate that explains why certain choices—structural work, permits, quality materials—are necessary investments, not upsells. Build trust through transparency.
+
+Tone: educational, straightforward, builds confidence.
+
+Structure: project overview, scope of work, why this approach, investment/timeline, payment terms.
+
+​
+5. Real Estate Agent - Property Listing
+I'm a real estate agent writing a listing description.
+
+Property Details:
+[Bedrooms, baths, square footage, lot size, year built]
+
+Neighborhood:
+[Area name, key amenities, school district]
+
+Best Features:
+[What makes this property stand out]
+
+Target Buyer:
+[Who this home is perfect for and why]
+
+Comparable Sales:
+[Price range of similar homes]
+
+Write compelling listing copy that emphasizes lifestyle benefits without overselling. 150-200 words.
+
+Tone: appealing but honest, highlights value.
+
+Format: opening hook, key features, neighborhood benefits, call to action.
+
+​
+6. Amazon FBA Seller - Product Description
+I'm listing a product on Amazon.
+
+Product Category:
+[What you're selling]
+
+Target Customer:
+[Who buys this and why they need it]
+
+Key Features:
+[Specs, materials, dimensions, what's included]
+
+Main Benefits:
+[How this solves customer problems]
+
+Competitive Advantage:
+[What competitors emphasize vs. what makes yours better]
+
+Write an optimized product description emphasizing benefits over features. Include relevant keywords naturally.
+
+Tone: helpful, trustworthy, not hype-driven.
+
+Format: compelling opening, scannable benefit bullets, specs at end.
+
+​
+7. CPA - Tax Strategy Letter
+I'm a CPA writing a year-end tax planning letter to a business client.
+
+Client Business Type:
+[Entity type, industry, revenue range]
+
+Current Tax Situation:
+[Key numbers, tax position, changes from last year]
+
+Opportunities Identified:
+[Specific strategies you're recommending and why]
+
+Action Items:
+[What they need to do and by when]
+
+Write this in accessible language without dumbing it down. Help them understand why these strategies matter.
+
+Tone: advisory, confident, action-oriented.
+
+Structure: situation summary, recommendations with rationale, action items with deadlines.
+
+​
+8. Architect - Project Proposal
+I'm an architect responding to an RFP.
+
+Project Type:
+[Building type, square footage, key requirements]
+
+Client Priorities:
+[What they value - sustainability, budget, timeline, user experience]
+
+Your Design Approach:
+[Conceptual vision, how it meets functional needs]
+
+Relevant Experience:
+[Similar projects you've completed]
+
+Budget and Timeline:
+[How you'll deliver on their constraints]
+
+Explain how your design meets their needs while staying on budget. Emphasize ROI where applicable.
+
+Tone: confident, visionary but grounded in practicality.
+
+Structure: understanding of needs, design vision, approach, qualifications, timeline/budget.
+
+​
+9. Senior Software Engineer - RFC Document
+I'm a principal engineer writing an RFC. Audience is engineering team and product leadership.
+
+Problem Statement:
+[What's broken or limiting us now]
+
+Current System:
+[How things work today and why it's a problem]
+
+Proposed Solution:
+[Your technical approach]
+
+Tradeoffs:
+[What we gain, what we sacrifice, alternatives considered]
+
+Implementation Plan:
+[Migration approach, timeline, risks]
+
+Write this with technical depth but make the executive summary accessible to non-engineers.
+
+Tone: technical but clear, balanced on tradeoffs.
+
+Structure: problem, current state, proposal, tradeoffs, implementation, success metrics.
+
+Constraints: Do not over-specify. Include detail mentioned here in the prompt but do not infer additional technical detail not represented here.
+​
+Note you are not asking for magical technical depth here that the LLM hallucinates. You are asking for a representation of your thinking in a structured way. I have added an extra constraints section because of the heavy training around code for LLMs today.
+10. Insurance Agent - Policy Comparison
+I'm an insurance agent writing a policy comparison for a client.
+
+Client Situation:
+[Property type, coverage needs, risk factors]
+
+Client Priorities:
+[What matters most to them - coverage, price, deductible, claims service]
+
+Policy Options:
+[For each option: carrier, premium, deductible, coverage highlights, exclusions]
+
+Meaningful Differences:
+[What actually matters between these options for this client]
+
+Explain the real differences without industry jargon. Help them make an informed decision.
+
+Tone: educational, patient, unbiased.
+
+Format: side-by-side comparison focused on what matters to this client.
+
+​
+11. Financial Advisor - Quarterly Portfolio Report
+I'm a financial advisor writing a quarterly portfolio review for a client.
+
+Client Profile:
+[Age, goals, risk tolerance, time horizon]
+
+Portfolio Performance:
+[Returns this quarter, year-to-date, vs. benchmark]
+
+Market Context:
+[What happened in markets this quarter]
+
+Portfolio Positioning:
+[Why your strategy performed as it did, what you're doing]
+
+Looking Ahead:
+[Your outlook and any adjustments]
+
+Write this in accessible language focused on their specific goals. Be honest about performance.
+
+Tone: reassuring but honest, focused on long-term.
+
+Structure: performance summary, context, strategy rationale, outlook.
+
+​
+12. Plumber - Repiping Estimate
+I'm a plumber writing an estimate for a repiping project.
+
+Property Details:
+[House age, square footage, current pipe material]
+
+Client's Problem:
+[Why they called - leaks, water quality, pressure issues]
+
+Your Assessment:
+[Condition of current pipes, what you found, risks of not addressing]
+
+Recommended Solution:
+[Pipe material, scope of work, timeline, warranty]
+
+Investment:
+[Total cost, what's included]
+
+Explain why full repiping is better than patch repairs long-term. Address disruption honestly but emphasize value.
+
+Tone: straightforward, trustworthy, focused on long-term solution.
+
+Structure: current situation, why repiping, scope of work, timeline/disruption, investment, warranty.
+
+​
+13. Electrician - Panel Upgrade Proposal
+I'm an electrician writing a proposal for an electrical panel upgrade.
+
+Current Situation:
+[Current panel amperage, age, condition]
+
+Why Upgrade Is Needed:
+[New loads being added - EV charger, heat pump, etc., or code/safety issues]
+
+Safety Concerns:
+[Any code violations or hazards you identified]
+
+Recommended Solution:
+[New panel specs, scope of work, permits needed]
+
+Timeline and Investment:
+[How long, how much, what's included]
+
+Explain why this upgrade is necessary for safety and future capacity. Be safety-focused without fearmongering.
+
+Tone: informative, safety-conscious, practical.
+
+Structure: current state, why upgrade needed, solution, permits/timeline, investment.
+
+​
+14. Management Consultant - Executive Summary
+I'm a strategy consultant writing an executive summary for a detailed analysis. Audience is C-suite.
+
+Analysis Scope:
+[What question you were answering]
+
+Key Findings:
+[3-4 most important insights from your analysis]
+
+Recommendation:
+[Clear go/no-go or specific action with rationale]
+
+Supporting Evidence:
+[Brief data points that support recommendation]
+
+Implementation Considerations:
+[Key factors for success if they proceed]
+
+This needs to be readable in 5 minutes. Lead with the recommendation, then support it.
+
+Tone: decisive, confident, evidence-based.
+
+Structure: recommendation first, then key findings, then "why this matters."
+
+​
+15. Dentist - Treatment Plan Letter
+I'm a dentist writing a treatment plan letter to a patient.
+
+Patient Situation:
+[Current oral health status]
+
+Issues Identified:
+[Cavities, gum disease, other problems and their severity]
+
+Recommended Treatment Sequence:
+[What needs to happen, in what order, and why]
+
+What Happens If Untreated:
+[Consequences of delaying care]
+
+Investment and Options:
+[Cost, insurance coverage, payment plans if applicable]
+
+Explain the sequence and why each step matters. Address cost concerns by explaining outcomes.
+
+Tone: caring, educational, not judgmental.
+
+Structure: current situation, recommended treatment with rationale, timeline, investment, next steps.
+
+​
+16. Veterinarian - Surgery Recommendation
+I'm a veterinarian writing a surgery recommendation letter for a pet owner.
+
+Pet Information:
+[Species, breed, age, relevant history]
+
+Diagnosis:
+[What's wrong, how you diagnosed it]
+
+Recommended Treatment:
+[Surgery type, why you recommend it over alternatives]
+
+Recovery Timeline:
+[What to expect post-surgery, restrictions, follow-up]
+
+Prognosis:
+[Expected outcome with vs. without surgery]
+
+Investment:
+[Cost range, what's included]
+
+Explain this honestly including risks. Address cost concerns by explaining long-term outcomes.
+
+Tone: compassionate, thorough, realistic.
+
+Structure: diagnosis, recommendation with rationale, recovery, prognosis, alternatives, investment.
+
+​
+17. Marketing Consultant - Campaign Strategy
+I'm a marketing consultant presenting a campaign strategy.
+
+Client Business:
+[Company type, product/service, target market]
+
+Campaign Goal:
+[What success looks like - leads, awareness, sales]
+
+Recommended Strategy:
+[Channels, messaging, budget allocation, timeline]
+
+Expected Outcomes:
+[Specific metrics and targets]
+
+Why This Approach:
+[How it fits their buyer journey, why these channels]
+
+Write this focused on strategy and expected metrics. Include clear success criteria.
+
+Tone: strategic, metrics-focused, confident.
+
+Structure: goal, strategy, budget allocation, expected outcomes, success metrics, timeline.
+
+​
+18. Wedding Planner - Client Proposal
+I'm a wedding planner writing a proposal for a couple.
+
+Wedding Details:
+[Date, venue, guest count, budget]
+
+Couple's Vision:
+[Style, priorities, what matters most to them]
+
+Your Approach:
+[How you'll bring their vision to life]
+
+Services Included:
+[What you handle - vendor management, timeline, day-of coordination]
+
+Investment:
+[Your fee, what's included, payment terms]
+
+Show you understand their vision. Explain how you'll manage vendors, timeline, and logistics.
+
+Tone: warm, organized, professional.
+
+Structure: their vision, your approach, services, timeline, investment.
+
+​
+19. Landscaper - Backyard Renovation Proposal
+I'm a landscaper writing a proposal for a backyard renovation.
+
+Current Situation:
+[Current condition, problems to solve]
+
+Client's Goals:
+[What they want to use the space for]
+
+Your Design:
+[Hardscape elements, plantings, features]
+
+Material Choices:
+[What you're recommending and why]
+
+Phasing Options:
+[If applicable - what can be done now vs. later]
+
+Timeline and Investment:
+[When work happens, total cost, maintenance requirements]
+
+Explain material choices and address drainage, maintenance. Include seasonal considerations.
+
+Tone: practical, creative, focused on usability.
+
+Structure: current state, design vision, materials/approach, timeline, investment, maintenance.
+
+​
+20. College Counselor - Student Recommendation Letter
+I'm a high school counselor writing a college recommendation letter.
+
+Student Information:
+[Name, applying to which programs/schools]
+
+Key Strengths:
+[Academic abilities, personal qualities, what makes them stand out]
+
+Specific Examples:
+[Concrete moments, achievements, or projects that demonstrate these strengths]
+
+Growth or Challenges:
+[How they've grown or overcome obstacles, if relevant]
+
+Why They'll Succeed:
+[What makes you confident they'll thrive in college/this program]
+
+Write 400-500 words. Be enthusiastic but credible - highlight genuine strengths with specific evidence.
+
+Tone: supportive, specific, credible.
+
+Structure: introduction of student, key strengths with examples, growth/context, strong closing endorsement.
+
+​
+21. Vibe Coder - Technical Spec
+I'm a developer writing a technical spec for a feature or project. This is for the engineering team and needs to balance speed with clarity.
+
+Project/Feature:
+[What you're building]
+
+The Vibe:
+[The overall approach/philosophy - quick MVP, experimental, production-ready, etc.]
+
+Technical Approach:
+[Stack, key libraries, architecture decisions, why this approach]
+
+What We're NOT Doing:
+[Scope boundaries, what's out of scope for now]
+
+Key Decisions & Tradeoffs:
+[Important choices you made and why, what you're optimizing for]
+
+Open Questions:
+[What you're still figuring out or need input on]
+
+Write this conversationally but with enough technical detail that someone can implement it. Focus on the "why" behind decisions.
+
+Tone: casual but technical, pragmatic, collaborative.
+
+Structure: context, approach, key decisions, open questions, next steps.
+
+​
+22. Product Manager - PRD (Product Requirements Document)
+I'm a product manager writing a PRD for a new feature or product. Audience is engineering, design, and leadership.
+
+Problem Statement:
+[What user problem are we solving, why does it matter]
+
+Success Metrics:
+[How we'll measure if this worked]
+
+User Stories:
+[Key use cases and user flows]
+
+Requirements:
+[Must-haves, should-haves, nice-to-haves]
+
+Technical Considerations:
+[Known constraints, dependencies, integrations]
+
+Open Questions:
+[What we still need to figure out]
+
+Timeline & Scope:
+[Launch target, phasing if applicable]
+
+Write this to align the team around the "why" and "what" while leaving room for engineering to solve the "how."
+
+Tone: clear, user-focused, collaborative.
+
+Structure: problem, success metrics, requirements, considerations, timeline.
+
+​
+23. Entrepreneur - Investor Update
+I'm a founder writing a monthly/quarterly update to investors.
+
+Headline Metrics:
+[Revenue, growth rate, key KPIs, runway]
+
+Wins This Period:
+[What went well - product, customers, team, fundraising]
+
+Challenges:
+[What's hard right now, what you're working through]
+
+Key Learnings:
+[Insights from the trenches, what you've discovered]
+
+Asks:
+[How investors can help - intros, advice, specific expertise]
+
+Next 30/90 Days:
+[What you're focused on, key milestones]
+
+Be honest about challenges while showing momentum and learning. Investors want transparency and a clear plan.
+
+Tone: confident but honest, data-driven, forward-looking.
+
+Structure: metrics, wins, challenges, learnings, asks, what's next.
+
+​
+24. Engineer - Technical Design Doc
+I'm a software engineer writing a design doc for a significant technical project. Audience is the engineering team and tech leads.
+
+Problem:
+[What we're solving, why current approach doesn't work]
+
+Proposed Solution:
+[Your technical design at a high level]
+
+Architecture:
+[System components, data flow, key technologies]
+
+Alternatives Considered:
+[Other approaches and why you didn't choose them]
+
+Migration/Implementation Plan:
+[How we roll this out, phases, risk mitigation]
+
+Testing Strategy:
+[How we validate this works]
+
+Success Criteria:
+[How we know this solved the problem]
+
+Write with enough technical depth for engineers to evaluate the approach. Be clear about tradeoffs.
+
+Tone: technical, thorough, balanced on tradeoffs.
+
+Structure: problem, solution, architecture, alternatives, implementation, testing, success criteria.
+
+​
+25. CTO - Engineering Strategy Memo
+I'm a CTO writing a strategic memo. Audience is engineering leadership and executive team.
+
+Context:
+[Current state - what's working, what's not, where we are as an org]
+
+Strategic Goal:
+[What we need to accomplish and why it matters for the business]
+
+Technical Vision:
+[Where we're taking the architecture/platform/stack]
+
+Organizational Changes:
+[Team structure, hiring plan, process improvements]
+
+Investment Required:
+[Time, headcount, tools, tradeoffs with feature work]
+
+Timeline & Milestones:
+[Key checkpoints, how we'll measure progress]
+
+Risks:
+[What could go wrong, mitigation strategies]
+
+Connect technical decisions to business outcomes. Make the case for why this investment matters.
+
+Tone: strategic, business-aware, decisive.
+
+Structure: context, goal, vision, org plan, investment, timeline, risks.
+
+​
+26. Head of Sales - Sales Strategy Document
+I'm a Head of Sales writing a strategy document for the sales organization. Audience is sales team and executive leadership.
+
+Current State:
+[Performance metrics, what's working, what's not]
+
+Market Context:
+[Customer landscape, competitive dynamics, opportunities]
+
+Strategic Priorities:
+[Where we're focusing - segments, verticals, deal sizes, etc.]
+
+Go-to-Market Approach:
+[Sales motion, pricing strategy, packaging]
+
+Team Structure & Capacity:
+[Territories, specialization, hiring plan, quotas]
+
+Enablement & Tools:
+[What the team needs to execute - training, collateral, systems]
+
+Success Metrics:
+[How we measure progress - pipeline, conversion, ASP, etc.]
+
+Make this actionable. Sales teams need clarity on targets, territories, and what they're accountable for.
+
+Tone: motivating, clear, metrics-driven.
+
+Structure: current state, market context, priorities, GTM approach, team plan, enablement, metrics.
+
+​
+27. Customer Success Manager - Account Plan
+I'm a Customer Success Manager writing an account plan for a strategic customer. Audience is internal CS team and leadership.
+
+Account Overview:
+[Company size, what they use our product for, contract value, renewal date]
+
+Health Status:
+[Green/yellow/red and why - usage, sentiment, engagement]
+
+Strategic Objectives:
+[What this customer is trying to achieve with our product]
+
+Success Metrics:
+[How they measure success, KPIs we're tracking]
+
+Engagement Plan:
+[Touchpoint cadence, QBRs, training, executive alignment]
+
+Growth Opportunities:
+[Expansion potential - seats, products, use cases]
+
+Risks & Mitigation:
+[What could cause churn, competitive threats, how we address]
+
+Next 90 Days:
+[Specific actions and milestones]
+
+Be proactive about risks while identifying expansion opportunities. Show you understand their business.
+
+Tone: customer-focused, strategic, proactive.
+
+Structure: overview, health, objectives, metrics, engagement, growth, risks, next steps.

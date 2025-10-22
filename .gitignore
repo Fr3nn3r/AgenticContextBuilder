@@ -54,7 +54,7 @@ data/
 output/
 htmlcov/
 .pytest_cache/
-prompts/
+prompts/tmp/
 test_output/
 v1/
 test_folder/
