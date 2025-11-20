@@ -117,7 +117,8 @@ Examples:
     # Provider options
     provider_group = parser.add_argument_group("Provider Options")
     available_providers = [
-        "openai"
+        "openai",
+        "tesseract",
     ]  # Default list, will be extended if more are registered
     provider_group.add_argument(
         "-p",
@@ -362,7 +363,9 @@ def process_folder(
                 console.print(result)
             else:
                 # Save individual result
-                output_path = save_single_result(result, filepath, output_dir, session_id)
+                output_path = save_single_result(
+                    result, filepath, output_dir, session_id
+                )
                 output_files.append(output_path)
 
             success_count += 1
@@ -378,7 +381,9 @@ def process_folder(
             error_count += 1
 
     if not rich_output:
-        logger.info(f"Processed {success_count} files successfully, {error_count} failed")
+        logger.info(
+            f"Processed {success_count} files successfully, {error_count} failed"
+        )
         logger.info(f"Output files saved to: {output_dir}")
 
     return success_count
@@ -475,7 +480,9 @@ def main():
                 # Simply print the result to stdout
                 console.print(result)
             else:
-                output_path = save_single_result(result, input_path, output_dir, session_id)
+                output_path = save_single_result(
+                    result, input_path, output_dir, session_id
+                )
                 logger.info(
                     f"[Session {session_id}] Successfully processed file. Output: {output_path}"
                 )
@@ -507,7 +514,9 @@ def main():
                 if not args.quiet and not args.rich_output:
                     print(f"[X] No supported files found in {input_path}")
                 elif args.rich_output:
-                    console.print(f"[red][X] No supported files found in {input_path}[/red]")
+                    console.print(
+                        f"[red][X] No supported files found in {input_path}[/red]"
+                    )
                 sys.exit(1)
         else:
             logger.error(f"Invalid input path: {input_path}")

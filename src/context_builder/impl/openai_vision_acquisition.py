@@ -1,12 +1,15 @@
 """OpenAI Vision API implementation for data acquisition."""
 
 import base64
+import json
 import logging
 import os
 import time
 from pathlib import Path
 from typing import Dict, Any, List
 from io import BytesIO
+
+from pydantic import ValidationError
 
 from context_builder.acquisition import (
     DataAcquisition,
@@ -15,34 +18,24 @@ from context_builder.acquisition import (
     AcquisitionFactory,
 )
 from context_builder.utils.file_utils import get_file_metadata
+from context_builder.utils.prompt_loader import load_prompt
+from context_builder.schemas.document_analysis import DocumentAnalysis
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAIVisionAcquisition(DataAcquisition):
-    """OpenAI Vision API implementation for document context extraction."""
+    """
+    OpenAI Vision API implementation for document context extraction.
 
-    DEFAULT_PROMPT = """Analyze this document/page and extract structured information.
+    This implementation follows the "Schemas in Python, Prompts in Markdown" pattern:
+    - Schema: DocumentAnalysis Pydantic model defines output structure
+    - Prompt: document_analysis.md defines instructions and configuration
+    - Runner: This class orchestrates the API calls
 
-Your task is to:
-1. Extract all visible text content
-2. Identify the document/page type (invoice, report, form, letter, etc.)
-3. Extract key information and metadata
-4. Note any important visual elements
-
-Respond with a JSON structure containing:
-{
-  "document_type": "type of page/document",
-  "language": "primary language of the document",
-  "summary": "brief summary of the page content",
-  "key_information": {
-    // Relevant key-value pairs based on document type
-  },
-  "visual_elements": [
-    // List of notable visual elements (logos, charts, signatures, etc.)
-  ],
-  "text_content": "all extracted text from the page"
-}"""
+    NOTE: We use json_object mode (not .parse() API) to allow dynamic
+    key_information structures based on document type.
+    """
 
     def __init__(self):
         """Initialize OpenAI Vision acquisition."""
@@ -79,17 +72,27 @@ Respond with a JSON structure containing:
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize OpenAI client: {e}")
 
-        # Configuration with default values (can be modified after instantiation)
-        self.model = "gpt-4o"
-        self.max_tokens = 4096
-        self.temperature = 0.2
+        # Load prompt configuration
+        # This demonstrates separation of concerns: config lives in .md file
+        try:
+            prompt_data = load_prompt("document_analysis")
+            self.prompt_config = prompt_data["config"]
+            logger.debug(f"Loaded prompt: {self.prompt_config.get('name', 'unnamed')}")
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load prompt configuration: {e}")
+
+        # Extract configuration from prompt file
+        self.model = self.prompt_config.get("model", "gpt-4o")
+        self.max_tokens = self.prompt_config.get("max_tokens", 4096)
+        self.temperature = self.prompt_config.get("temperature", 0.2)
+
+        # Additional configuration
         self.max_pages = 20  # Limit pages to prevent excessive API calls
         self.render_scale = 2.0  # Higher quality rendering for PDFs
 
         logger.debug(
             f"Using model: {self.model}, max_tokens: {self.max_tokens}, max_pages: {self.max_pages}"
         )
-
 
     def _encode_image(self, image_path: Path) -> str:
         """
@@ -129,7 +132,129 @@ Respond with a JSON structure containing:
             logger.error(f"Failed to encode PIL image: {e}")
             raise IOError(f"Cannot encode image: {e}")
 
-    def _process_pdf_pages(self, pdf_path: Path) -> List[Dict[str, Any]]:
+    def _build_vision_messages(
+        self,
+        base64_image: str,
+        mime_type: str,
+        page_number: int = None,
+        total_pages: int = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Build OpenAI API messages with image and prompt.
+
+        Args:
+            base64_image: Base64 encoded image
+            mime_type: MIME type of image
+            page_number: Optional page number for multi-page documents
+            total_pages: Optional total pages for multi-page documents
+
+        Returns:
+            List of message dictionaries for OpenAI API
+        """
+        # Load prompt with optional page context
+        prompt_kwargs = {}
+        if page_number is not None and total_pages is not None:
+            prompt_kwargs["page_number"] = page_number
+            prompt_kwargs["total_pages"] = total_pages
+
+        prompt_data = load_prompt("document_analysis", **prompt_kwargs)
+        text_messages = prompt_data["messages"]
+
+        # Build vision messages by adding image to user message
+        vision_messages = []
+        for msg in text_messages:
+            if msg["role"] == "user":
+                # Add image to user message
+                vision_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": msg["content"]},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            },
+                        },
+                    ],
+                })
+            else:
+                # Pass through system message as-is
+                vision_messages.append(msg)
+
+        return vision_messages
+
+    def _parse_response(self, response_text: str) -> Dict[str, Any]:
+        """
+        Parse API response to extract JSON.
+
+        Handles markdown code blocks and extracts valid JSON.
+
+        Args:
+            response_text: Raw response text from API
+
+        Returns:
+            Parsed JSON dictionary
+
+        Raises:
+            APIError: If response cannot be parsed
+        """
+        # Try to parse as JSON
+        try:
+            # Handle potential markdown code blocks
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                if end > start:
+                    response_text = response_text[start:end].strip()
+            elif "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.find("```", start)
+                if end > start:
+                    response_text = response_text[start:end].strip()
+
+            return json.loads(response_text)
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Raw response: {response_text}")
+
+            # Return fallback structure with text content
+            return {
+                "document_type": "unknown",
+                "language": "unknown",
+                "summary": "Failed to parse structured response",
+                "key_information": {},
+                "visual_elements": [],
+                "text_content": response_text,
+                "_parse_error": str(e),
+            }
+
+    def _validate_with_schema(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate parsed JSON with Pydantic schema.
+
+        Args:
+            data: Parsed JSON data
+
+        Returns:
+            Validated data as dictionary
+
+        Raises:
+            APIError: If validation fails critically
+        """
+        try:
+            # Validate with Pydantic model
+            validated = DocumentAnalysis(**data)
+            return validated.model_dump()
+        except ValidationError as e:
+            logger.warning(f"Pydantic validation failed: {e}")
+            logger.warning("Returning data with validation errors marked")
+
+            # Return data with validation error marker
+            data["_validation_errors"] = str(e)
+            return data
+
+    def _process_pdf_pages(self, pdf_path: Path) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
         """
         Process PDF pages one by one to minimize memory usage.
 
@@ -137,7 +262,7 @@ Respond with a JSON structure containing:
             pdf_path: Path to PDF file
 
         Returns:
-            List of extracted content dictionaries for each page
+            Tuple of (list of page results, total usage statistics)
 
         Raises:
             IOError: If PDF cannot be processed
@@ -182,29 +307,20 @@ Respond with a JSON structure containing:
                     del img
                     del mat
 
-                    page_messages = [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Page {page_index + 1} of {pages_to_process}\n\n{self.DEFAULT_PROMPT}",
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{base64_image}"
-                                    },
-                                },
-                            ],
-                        }
-                    ]
+                    # Build messages with page context
+                    page_messages = self._build_vision_messages(
+                        base64_image=base64_image,
+                        mime_type="image/png",
+                        page_number=page_index + 1,
+                        total_pages=pages_to_process
+                    )
 
                     # Call API with retry logic
                     response = self._call_api_with_retry(page_messages)
 
-                    # Parse and store result
-                    page_result = self._parse_response(response.choices[0].message.content)
+                    # Parse and validate response
+                    parsed_data = self._parse_response(response.choices[0].message.content)
+                    page_result = self._validate_with_schema(parsed_data)
                     page_result["page_number"] = page_index + 1
                     all_results.append(page_result)
 
@@ -231,9 +347,9 @@ Respond with a JSON structure containing:
             logger.error(f"Failed to process PDF pages: {e}")
             raise IOError(f"Cannot process PDF file: {e}")
 
-    def _prepare_messages(self, file_path: Path) -> list:
+    def _prepare_image_messages(self, file_path: Path) -> List[Dict[str, Any]]:
         """
-        Prepare messages for OpenAI API call (for image files only).
+        Prepare messages for OpenAI API call for image files.
 
         Args:
             file_path: Path to image file
@@ -243,7 +359,7 @@ Respond with a JSON structure containing:
         """
         extension = file_path.suffix.lower()
 
-        # For image files, encode and prepare message
+        # Encode image
         base64_image = self._encode_image(file_path)
 
         # Determine MIME type
@@ -259,38 +375,32 @@ Respond with a JSON structure containing:
         }
         mime_type = mime_types.get(extension, "image/jpeg")
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": self.DEFAULT_PROMPT},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{base64_image}"
-                        },
-                    },
-                ],
-            }
-        ]
+        # Build messages with image
+        return self._build_vision_messages(
+            base64_image=base64_image,
+            mime_type=mime_type
+        )
 
-        return messages
-
-    def _call_api_with_retry(self, messages: list, attempt: int = 0) -> Any:
+    def _call_api_with_retry(self, messages: List[Dict[str, Any]], attempt: int = 0) -> Any:
         """
-        Call OpenAI API with retry logic and exponential backoff.
+        Call OpenAI API with retry logic, exponential backoff, and JSON object mode.
+
+        Uses json_object mode (not .parse() API) to allow flexible key_information
+        structures that adapt to different document types.
 
         Args:
             messages: Messages to send to API
             attempt: Current retry attempt number
 
         Returns:
-            API response object
+            API response object with content
 
         Raises:
             APIError: If all retries exhausted
         """
         try:
+            # Use json_object mode for flexibility
+            # We validate with Pydantic afterward
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -328,55 +438,9 @@ Respond with a JSON structure containing:
                 else:
                     raise APIError(f"API call failed after {self.retries} retries: {e}")
 
-    def _parse_response(self, response_text: str) -> Dict[str, Any]:
-        """
-        Parse API response to extract JSON.
-
-        Args:
-            response_text: Raw response text from API
-
-        Returns:
-            Parsed JSON dictionary
-
-        Raises:
-            APIError: If response cannot be parsed
-        """
-        import json
-
-        # Try to parse as JSON
-        try:
-            # Handle potential markdown code blocks
-            if "```json" in response_text:
-                start = response_text.find("```json") + 7
-                end = response_text.find("```", start)
-                if end > start:
-                    response_text = response_text[start:end].strip()
-            elif "```" in response_text:
-                start = response_text.find("```") + 3
-                end = response_text.find("```", start)
-                if end > start:
-                    response_text = response_text[start:end].strip()
-
-            return json.loads(response_text)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            logger.debug(f"Raw response: {response_text}")
-
-            # Return as text content if JSON parsing fails
-            return {
-                "document_type": "unknown",
-                "language": "unknown",
-                "summary": "Failed to parse structured response",
-                "key_information": {},
-                "visual_elements": [],
-                "text_content": response_text,
-                "_parse_error": str(e),
-            }
-
     def _process_implementation(self, filepath: Path) -> Dict[str, Any]:
         """
-        Process file using OpenAI Vision API.
+        Process file using OpenAI Vision API with JSON object mode.
 
         Args:
             filepath: Path to file to process
@@ -396,14 +460,15 @@ Respond with a JSON structure containing:
             # For non-PDF files, process directly
             if filepath.suffix.lower() != ".pdf":
                 # Prepare messages
-                messages = self._prepare_messages(filepath)
+                messages = self._prepare_image_messages(filepath)
 
                 # Call OpenAI API with retry logic
                 logger.debug(f"Calling OpenAI API with model: {self.model}")
                 response = self._call_api_with_retry(messages)
 
-                # Parse response
-                page_content = self._parse_response(response.choices[0].message.content)
+                # Parse and validate response
+                parsed_data = self._parse_response(response.choices[0].message.content)
+                page_content = self._validate_with_schema(parsed_data)
 
                 # Structure result
                 result["total_pages"] = 1

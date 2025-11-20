@@ -12,10 +12,24 @@ from context_builder.acquisition import (
     AcquisitionError,
 )
 
+# Check if optional dependencies are available
+try:
+    import pytesseract
+    PYTESSERACT_AVAILABLE = True
+except ImportError:
+    PYTESSERACT_AVAILABLE = False
+
+try:
+    import numpy
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
 
 class TestTesseractAcquisitionInit:
     """Test TesseractAcquisition initialization and setup."""
 
+    @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
     @patch('pytesseract.get_tesseract_version')
     @patch('pypdfium2.PdfDocument')
     def test_init_success_with_all_dependencies(self, mock_pdfium, mock_get_version):
@@ -34,6 +48,7 @@ class TestTesseractAcquisitionInit:
         assert acquisition.remove_noise is False
         assert acquisition.enhance_contrast is True
 
+    @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
     @patch('pytesseract.get_tesseract_version')
     def test_init_without_opencv(self, mock_get_version, caplog):
         """Test initialization without OpenCV."""
@@ -49,6 +64,7 @@ class TestTesseractAcquisitionInit:
                 assert acquisition.cv2 is None
                 assert acquisition.np is None
 
+    @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
     @patch('pytesseract.get_tesseract_version')
     def test_init_without_pdf_support(self, mock_get_version, caplog):
         """Test initialization without PDF support."""
@@ -70,6 +86,7 @@ class TestTesseractAcquisitionInit:
                 from context_builder.impl.tesseract_acquisition import TesseractAcquisition
                 TesseractAcquisition()
 
+    @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
     @patch('pytesseract.get_tesseract_version')
     @patch('pytesseract.TesseractNotFoundError', Exception)
     def test_init_tesseract_not_found(self, mock_get_version):
@@ -197,6 +214,7 @@ class TestTesseractAcquisitionPreprocessing:
         mock_acquisition.ImageEnhance.Contrast.assert_called_once_with(mock_image)
         mock_enhancer.enhance.assert_called_once_with(1.5)
 
+    @pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed")
     def test_preprocess_with_opencv_deskew(self, mock_acquisition):
         """Test deskewing with OpenCV."""
         # Test that deskewing code path is triggered when OpenCV is available
@@ -617,6 +635,7 @@ class TestTesseractAcquisitionProcessImplementation:
 class TestTesseractAcquisitionFactory:
     """Test factory registration."""
 
+    @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
     def test_factory_registration(self):
         """Test TesseractAcquisition is registered with factory."""
         from context_builder.acquisition import AcquisitionFactory

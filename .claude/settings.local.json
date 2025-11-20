@@ -46,7 +46,14 @@
       "Bash(C:UsersfbrunAppDataLocalMicrosoftWinGetLinks)",
       "Bash(del test-context.json)",
       "Bash(mkdir:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(test:*)",
+      "Bash(pip show:*)",
+      "Bash(uv pip list:*)",
+      "Bash(uv pip uninstall:*)",
+      "Bash(uv pip install:*)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_openai_impl_process.py::TestOpenAIVisionAcquisitionRetry::test_retry_on_rate_limit -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest:*)"
     ],
     "deny": [],
     "ask": []
