@@ -17,7 +17,7 @@
 
 - 🎯 **Multi-format support**: Process images (JPG, JPEG, PNG, GIF, BMP, TIFF, TIF) and PDF documents
 - 🔍 **Case-insensitive file discovery**: Automatically finds files regardless of extension case
-- 🤖 **AI-powered extraction**: Uses OpenAI Vision API and Tesseract OCR for text extraction
+- 🤖 **AI-powered extraction**: Uses OpenAI Vision API, Azure Document Intelligence, and Tesseract OCR for text extraction
 - 📁 **Batch processing**: Process entire directories recursively
 - 🔄 **Resilient API calls**: Built-in retry logic with exponential backoff for rate limits and timeouts
 - 💾 **Memory-efficient PDF processing**: Streams pages one-by-one to minimize memory usage
@@ -46,7 +46,12 @@ pip install -e .
 Create a `.env` file in the project root:
 
 ```env
+# For OpenAI Vision API
 OPENAI_API_KEY=your-api-key-here
+
+# For Azure Document Intelligence (optional)
+AZURE_DI_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
+AZURE_DI_API_KEY=your-api-key-here
 ```
 
 ## 📖 Usage Examples 🦉
@@ -76,6 +81,33 @@ console = Console()
 console.print(result)
 ```
 
+#### Using Azure Document Intelligence
+
+```python
+import os
+from pathlib import Path
+from context_builder.acquisition import AcquisitionFactory
+from rich.console import Console
+
+# Set your Azure credentials
+os.environ["AZURE_DI_ENDPOINT"] = "https://your-resource.cognitiveservices.azure.com/"
+os.environ["AZURE_DI_API_KEY"] = "your-key-here"
+
+# Create Azure DI processor
+azure_di = AcquisitionFactory.create("azure-di")
+azure_di.output_dir = Path("./output")  # Set output directory for markdown files
+
+# Process a document
+file_path = Path("document.pdf")
+result = azure_di.process(file_path)
+
+# Display results (JSON metadata + separate .md file created)
+console = Console()
+console.print(result)
+```
+
+> **Note**: Azure Document Intelligence free tier only processes the first 2 pages. Upgrade to a paid tier to process full documents (up to 2000 pages).
+
 #### Using Tesseract OCR
 
 ```python
@@ -83,7 +115,7 @@ from pathlib import Path
 from context_builder.acquisition import AcquisitionFactory
 from rich.console import Console
 
-# Create Tesseract processor
+# Create Tesseract processor (default provider)
 tesseract = AcquisitionFactory.create("tesseract")
 tesseract.languages = ["eng"]  # Set language(s)
 
@@ -101,8 +133,14 @@ console.print(result)
 #### Basic Usage
 
 ```bash
-# Process a single file
+# Process a single file (uses tesseract by default)
 python -m context_builder.cli document.pdf
+
+# Process with Azure Document Intelligence
+python -m context_builder.cli document.pdf -p azure-di -o ./output/
+
+# Process with OpenAI Vision API
+python -m context_builder.cli document.pdf -p openai
 
 # Process a directory
 python -m context_builder.cli /path/to/documents/
@@ -141,7 +179,10 @@ python -m context_builder.cli /batch/folder/ \
 - `-r, --recursive`: Process folders recursively
 
 #### Provider Options
-- `-p, --provider NAME`: Vision API provider to use (default: openai)
+- `-p, --provider NAME`: Vision API provider to use (default: tesseract)
+  - `tesseract`: Local OCR with Tesseract (no API key required)
+  - `openai`: OpenAI Vision API (requires `OPENAI_API_KEY`)
+  - `azure-di`: Azure Document Intelligence (requires `AZURE_DI_ENDPOINT` and `AZURE_DI_API_KEY`)
 
 #### Model Configuration
 - `--model MODEL`: Model name to use (e.g., 'gpt-4o' for OpenAI)
@@ -162,7 +203,9 @@ python -m context_builder.cli /batch/folder/ \
 
 ## 📊 Output Format 🦉
 
-The tool generates JSON files with extracted context. Each output file contains:
+The tool generates JSON files with extracted context. Output format varies by provider.
+
+### OpenAI Vision Output
 
 ```json
 {
@@ -197,6 +240,44 @@ The tool generates JSON files with extracted context. Each output file contains:
 }
 ```
 
+### Azure Document Intelligence Output
+
+Azure DI creates two files: a JSON metadata file and a separate markdown file with the extracted text.
+
+**JSON Metadata (`document-context.json`):**
+```json
+{
+  "file_name": "document.pdf",
+  "file_path": "/absolute/path/to/document.pdf",
+  "file_extension": ".pdf",
+  "file_size_bytes": 1024000,
+  "mime_type": "application/pdf",
+  "md5": "abc123...",
+  "session_id": "a1b2c3d4",
+  "markdown_file": "document_extracted.md",
+  "model_id": "prebuilt-layout",
+  "processing_time_ms": 5432,
+  "total_pages": 10,
+  "language": "en",
+  "paragraph_count": 45,
+  "table_count": 2,
+  "tables": [
+    {"table_index": 0, "row_count": 5, "column_count": 3},
+    {"table_index": 1, "row_count": 8, "column_count": 4}
+  ]
+}
+```
+
+**Markdown Content (`document_extracted.md`):**
+```markdown
+# Document Title
+
+Extracted text content in markdown format with:
+- Preserved document structure
+- Tables rendered as markdown tables
+- Headers and paragraphs maintained
+```
+
 ## 🏗️ Architecture 🦉
 
 ### Core Components
@@ -208,8 +289,13 @@ The tool generates JSON files with extracted context. Each output file contains:
 
 ### Supported Providers
 
-- **OpenAI Vision API**: Advanced AI-powered document analysis
-- **Tesseract OCR**: Open-source OCR engine for text extraction
+- **OpenAI Vision API**: Advanced AI-powered document analysis with structured JSON output
+- **Azure Document Intelligence**: Microsoft's cloud-based document processing with markdown output
+- **Tesseract OCR**: Open-source OCR engine for local text extraction (no API key required)
+
+### Roadmap
+
+- **Extraction Validator**: Internal tool for validating extraction quality, comparing methods, and building ground truth datasets
 
 ## ⚡ Performance Tips 🦉
 
@@ -251,11 +337,17 @@ context_builder/
 ├── acquisition.py          # Base classes and factory
 ├── cli.py                 # Command-line interface
 ├── impl/
-│   ├── openai_vision_acquisition.py  # OpenAI implementation
-│   └── tesseract_acquisition.py     # Tesseract implementation
+│   ├── openai_vision_acquisition.py    # OpenAI implementation
+│   ├── azure_di_acquisition.py         # Azure Document Intelligence implementation
+│   └── tesseract_acquisition.py        # Tesseract implementation
+├── schemas/
+│   └── document_analysis.py  # Pydantic output schemas
+├── prompts/
+│   └── document_analysis.md  # Prompt templates
 ├── utils/
 │   ├── file_utils.py      # File operations
-│   └── hashing.py         # Hashing utilities
+│   ├── hashing.py         # Hashing utilities
+│   └── prompt_loader.py   # Prompt template loader
 examples/
 ├── simple_openai_vision.py  # OpenAI example
 └── simple_tesseract.py      # Tesseract example

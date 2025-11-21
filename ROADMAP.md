@@ -27,7 +27,7 @@ ContextBuilder is a modular document processing pipeline designed to extract str
 
 ---
 
-### **Epic B: Accuracy Evaluation & Feedback Loop** ✅
+### **Epic B: Accuracy Evaluation & Feedback Loop** 🎯
 **Business Value:** Ensure extracted data is accurate and continuously improve through user feedback
 
 **What it does:** Build a comprehensive accuracy and learning system:

@@ -24,6 +24,7 @@
 
 #### 2. **Implementation Layer** (`context_builder/impl/`)
 - **OpenAI Vision Acquisition**: AI-powered content extraction using GPT-4 Vision
+- **Azure Document Intelligence**: Cloud-based document extraction with markdown output
 - **Tesseract Acquisition**: OCR-based text extraction for local processing
 - **Memory Management**: Efficient streaming for large documents
 - **API Resilience**: Retry logic, rate limiting, and timeout handling
@@ -38,6 +39,16 @@
 - **File Operations**: Cross-platform file handling and validation
 - **Hashing**: Content integrity verification
 - **Path Management**: Robust file system operations
+
+### Planned Modules
+
+#### **Extraction Validator** (Phase 3)
+Internal tool for validating and improving extraction quality:
+- Ingest documents and run multiple extraction methods
+- Display extraction results alongside source document
+- Human correction/validation of extracted content
+- Evaluate extraction quality using structured metrics
+- Store ground truth for future use and benchmarking
 
 ## Supported File Types
 
@@ -76,8 +87,9 @@ JSON Serialization → File Storage → Session Tracking → Result Reporting
 ## Key Features
 
 ### **Multi-Provider Support**
-- **OpenAI Vision**: GPT-4 powered analysis with structured output
-- **Tesseract OCR**: Local processing for privacy-sensitive documents
+- **OpenAI Vision**: GPT-4 powered analysis with structured JSON output
+- **Azure Document Intelligence**: Microsoft cloud service with markdown output (paid tier: up to 2000 pages)
+- **Tesseract OCR**: Local processing for privacy-sensitive documents (default provider)
 - **Extensible**: Easy addition of new providers (Claude, Gemini, etc.)
 
 ### **Robust Error Handling**
@@ -99,7 +111,7 @@ JSON Serialization → File Storage → Session Tracking → Result Reporting
 
 ## Configuration Options
 
-### **API Configuration**
+### **OpenAI Configuration**
 ```python
 {
     "model": "gpt-4o",           # AI model selection
@@ -110,7 +122,18 @@ JSON Serialization → File Storage → Session Tracking → Result Reporting
 }
 ```
 
-### **Processing Options**
+### **Azure Document Intelligence Configuration**
+```python
+{
+    "model_id": "prebuilt-layout",  # Azure DI model
+    "timeout": 300,                  # 5 min for large docs
+    "retries": 3,                    # Retry attempts
+    "output_dir": "./output",        # Markdown output directory
+    "features": ["ocrHighResolution", "languages", "styleFont"]
+}
+```
+
+### **Tesseract OCR Configuration**
 ```python
 {
     "max_pages": 20,             # PDF page limit
@@ -122,9 +145,19 @@ JSON Serialization → File Storage → Session Tracking → Result Reporting
 
 ## Usage Patterns
 
-### **Single File Processing**
+### **Single File Processing (Tesseract - Default)**
 ```bash
 python -m context_builder.cli document.pdf
+```
+
+### **Azure Document Intelligence Processing**
+```bash
+python -m context_builder.cli document.pdf -p azure-di -o ./output/
+```
+
+### **OpenAI Vision Processing**
+```bash
+python -m context_builder.cli document.pdf -p openai
 ```
 
 ### **Batch Directory Processing**
@@ -163,19 +196,27 @@ python -m context_builder.cli document.pdf -v
 - [x] CLI interface
 - [x] Error handling
 
-### **Phase 2: Enhanced Processing** 🚧
-- [ ] Tesseract OCR integration
-- [ ] Multi-language support
-- [ ] Image preprocessing
-- [ ] Quality assessment
+### **Phase 2: Enhanced Processing** ✅
+- [x] Tesseract OCR integration
+- [x] Azure Document Intelligence integration
+- [x] Multi-language support
+- [x] Image preprocessing
 
-### **Phase 3: Advanced Features** 📋
+### **Phase 3: Extraction Validation & QA** 📋
+- [ ] Domain-specific extraction schemas (insurance policies, invoices)
+- [ ] Ground truth management (store/edit validated extractions)
+- [ ] Evaluation engine (compare extractions vs ground truth)
+- [ ] Extraction comparison UI (side-by-side PDF + extracted data)
+- [ ] Multi-method comparison (Tesseract vs GPT-4o vs Azure DI)
+- [ ] Quality metrics and pass/fail thresholds
+
+### **Phase 4: Advanced Features** 📋
 - [ ] Additional AI providers (Claude, Gemini)
 - [ ] Custom extraction schemas
 - [ ] Batch optimization
 - [ ] Web interface
 
-### **Phase 4: Enterprise Features** 📋
+### **Phase 5: Enterprise Features** 📋
 - [ ] Database integration
 - [ ] API endpoints
 - [ ] Authentication
@@ -185,16 +226,24 @@ python -m context_builder.cli document.pdf -v
 
 ### **Dependencies**
 - **Core**: Python 3.9+
-- **AI**: OpenAI API, Tesseract OCR
+- **AI**: OpenAI API, Azure Document Intelligence, Tesseract OCR
 - **Processing**: pypdfium2, Pillow
+- **Validation**: Pydantic
 - **CLI**: Rich, colorlog, argparse
-- **Utilities**: python-dotenv, pathlib
+- **Utilities**: python-dotenv, pathlib, jinja2
 
 ### **Performance Characteristics**
 - **Memory Usage**: ~50MB base + 10MB per concurrent document
-- **Processing Speed**: 2-5 seconds per page (OpenAI Vision)
+- **Processing Speed**:
+  - OpenAI Vision: 2-5 seconds per page
+  - Azure DI: 3-10 seconds per document (full document processing)
+  - Tesseract: 1-3 seconds per page (local)
 - **Throughput**: 10-20 documents per minute (batch processing)
 - **Accuracy**: 95%+ for structured documents
+- **Page Limits**:
+  - Azure DI Free Tier: 2 pages max
+  - Azure DI Paid Tier: 2000 pages max
+  - OpenAI/Tesseract: Configurable via `--max-pages`
 
 ### **Error Handling Strategy**
 - **Transient Failures**: Automatic retry with exponential backoff
