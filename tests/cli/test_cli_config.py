@@ -28,7 +28,7 @@ class TestCLIArguments:
 
         assert args.input_path == 'input.jpg'
         assert args.output_dir == '.'
-        assert args.provider == 'openai'
+        assert args.provider == 'tesseract'  # Updated default
         assert not args.recursive
         assert not args.verbose
         assert not args.quiet
@@ -92,6 +92,20 @@ class TestCLIArguments:
         args = parser.parse_args(['test.jpg', '-q'])
         assert args.verbose is False
         assert args.quiet is True
+
+    def test_argparser_azure_di_provider(self):
+        """Test azure-di provider option."""
+        parser = setup_argparser()
+        args = parser.parse_args(['test.pdf', '-p', 'azure-di'])
+
+        assert args.provider == 'azure-di'
+
+    def test_argparser_default_provider_tesseract(self):
+        """Test default provider is tesseract."""
+        parser = setup_argparser()
+        args = parser.parse_args(['test.pdf'])
+
+        assert args.provider == 'tesseract'
 
 
 class TestCLIConfiguration:

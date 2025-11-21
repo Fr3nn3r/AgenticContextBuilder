@@ -4,6 +4,7 @@
 import argparse
 import json
 import logging
+import shutil
 import signal
 import sys
 import uuid
@@ -20,6 +21,12 @@ from context_builder.acquisition import (
     AcquisitionError,
     DataAcquisition,
 )
+
+# Ensure Azure DI implementation is imported so it auto-registers
+try:
+    from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
+except ImportError:
+    pass  # Azure DI dependencies not installed
 
 
 # Configure colored logging
@@ -119,13 +126,22 @@ Examples:
     available_providers = [
         "openai",
         "tesseract",
+        "azure-di",
     ]  # Default list, will be extended if more are registered
     provider_group.add_argument(
         "-p",
         "--provider",
         choices=available_providers,
-        default="openai",
-        help="Vision API provider to use (default: openai)",
+        default="tesseract",
+        help="""Data acquisition provider (default: tesseract)
+        - openai: OpenAI Vision API (structured JSON with LLM analysis)
+          Requires: OPENAI_API_KEY in .env
+        - tesseract: Local OCR with Tesseract (text extraction)
+          Requires: tesseract binary installed
+        - azure-di: Azure Document Intelligence (markdown + metadata)
+          Requires: AZURE_DI_ENDPOINT and AZURE_DI_API_KEY in .env
+          Output: JSON metadata file + separate .md file with extracted text
+        """,
     )
 
     # Model configuration
@@ -224,7 +240,7 @@ def get_supported_files(folder: Path, recursive: bool = False) -> list[Path]:
 def process_file(
     filepath: Path,
     output_dir: Path,
-    provider: str = "openai",
+    provider: str = "tesseract",
     acquisition: Optional[DataAcquisition] = None,
     config: Optional[dict] = None,
 ) -> dict:
@@ -250,6 +266,11 @@ def process_file(
     if acquisition is None:
         acquisition = AcquisitionFactory.create(provider)
 
+        # Set output directory if supported (for providers like Azure DI that save additional files)
+        if hasattr(acquisition, 'output_dir'):
+            acquisition.output_dir = output_dir
+            logger.debug(f"Set output_dir={output_dir} on acquisition instance")
+
         # Apply configuration if provided
         if config:
             for key, value in config.items():
@@ -270,6 +291,8 @@ def save_single_result(
     """
     Save a single file processing result.
 
+    For Azure DI provider, also saves the markdown file alongside the JSON.
+
     Args:
         result: Processing result dictionary
         filepath: Original file path
@@ -277,7 +300,7 @@ def save_single_result(
         session_id: Optional session ID to include in results
 
     Returns:
-        Path to saved file
+        Path to saved JSON file
     """
     # Add session ID if provided
     if session_id:
@@ -287,7 +310,7 @@ def save_single_result(
     output_filename = f"{filepath.stem}-context.json"
     output_path = output_dir / output_filename
 
-    # Save result
+    # Save JSON result
     logger.info(
         f"[Session {session_id}] Saving results to: {output_path}"
         if session_id
@@ -296,13 +319,31 @@ def save_single_result(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
+    # Check if there's a markdown file to save (Azure DI specific)
+    if "markdown_file" in result:
+        # Get the markdown source path (should be next to the original file)
+        md_filename = result["markdown_file"]
+        md_source = Path(result.get("file_path", filepath)).parent / md_filename
+
+        if md_source.exists():
+            # Copy markdown file to output directory
+            md_dest = output_dir / md_filename
+            shutil.copy2(md_source, md_dest)
+            logger.info(
+                f"[Session {session_id}] Saved markdown: {md_dest}"
+                if session_id
+                else f"Saved markdown: {md_dest}"
+            )
+        else:
+            logger.warning(f"Markdown file not found: {md_source}")
+
     return output_path
 
 
 def process_folder(
     folder: Path,
     output_dir: Path,
-    provider: str = "openai",
+    provider: str = "tesseract",
     recursive: bool = False,
     config: Optional[dict] = None,
     session_id: str = None,
@@ -334,6 +375,11 @@ def process_folder(
 
     # Create acquisition instance once
     acquisition = AcquisitionFactory.create(provider)
+
+    # Set output directory if supported (for providers like Azure DI that save additional files)
+    if hasattr(acquisition, 'output_dir'):
+        acquisition.output_dir = output_dir
+        logger.debug(f"Set output_dir={output_dir} on acquisition instance")
 
     # Apply configuration if provided
     if config:
