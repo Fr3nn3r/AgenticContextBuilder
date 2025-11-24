@@ -13,6 +13,10 @@
  -"-"-
 ```
 
+<p align="center">
+  <img src="media/Overview.jpg" alt="ContextBuilder High level overview" width="800">
+</p>
+
 ## ✨ Features 🦉
 
 - 🎯 **Multi-format support**: Process images (JPG, JPEG, PNG, GIF, BMP, TIFF, TIF) and PDF documents
