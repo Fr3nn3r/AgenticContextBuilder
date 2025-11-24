@@ -138,10 +138,21 @@ Examples:
           Requires: OPENAI_API_KEY in .env
         - tesseract: Local OCR with Tesseract (text extraction)
           Requires: tesseract binary installed
-        - azure-di: Azure Document Intelligence (markdown + metadata)
+        - azure-di: Azure Document Intelligence (full JSON + optional markdown)
           Requires: AZURE_DI_ENDPOINT and AZURE_DI_API_KEY in .env
-          Output: JSON metadata file + separate .md file with extracted text
+          Output: JSON with raw_azure_di_output + optional .md file
         """,
+    )
+    provider_group.add_argument(
+        "--save-markdown",
+        action="store_true",
+        default=True,
+        help="Save markdown file alongside JSON (azure-di only, default: True)",
+    )
+    provider_group.add_argument(
+        "--no-save-markdown",
+        action="store_true",
+        help="Disable saving markdown file (azure-di only)",
     )
 
     # Model configuration
@@ -510,6 +521,13 @@ def main():
         config["timeout"] = args.timeout
     if args.retries is not None:
         config["retries"] = args.retries
+
+    # Azure DI specific: handle save_markdown option
+    # --no-save-markdown overrides --save-markdown
+    if args.no_save_markdown:
+        config["save_markdown"] = False
+    elif args.save_markdown:
+        config["save_markdown"] = True
 
     # Process based on input type
     try:

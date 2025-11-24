@@ -76,6 +76,7 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
         self.retries = 3
         self.features = ["ocrHighResolution", "languages", "styleFont"]
         self.output_dir = None  # Output directory for markdown files (set by caller)
+        self.save_markdown = True  # Save markdown file alongside JSON (default: True)
 
         logger.debug(
             f"Using model: {self.model_id}, features: {self.features}"
@@ -176,23 +177,26 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
             logger.error(f"Failed to save markdown file: {e}")
             raise IOError(f"Cannot write markdown file: {e}")
 
-    def _extract_metadata(self, result: Any, markdown_path: str, processing_time_ms: int) -> Dict[str, Any]:
+    def _extract_metadata(self, result: Any, markdown_path: str | None, processing_time_ms: int) -> Dict[str, Any]:
         """
         Extract meaningful metadata from Azure DI result.
 
         Args:
             result: Azure DI analysis result
-            markdown_path: Path to saved markdown file
+            markdown_path: Path to saved markdown file (None if not saved)
             processing_time_ms: Processing time in milliseconds
 
         Returns:
             Dictionary with extracted metadata
         """
         metadata = {
-            "markdown_file": markdown_path,
             "model_id": self.model_id,
             "processing_time_ms": processing_time_ms,
         }
+
+        # Only include markdown_file if it was saved
+        if markdown_path:
+            metadata["markdown_file"] = markdown_path
 
         # Extract page count
         if hasattr(result, 'pages') and result.pages:
@@ -261,18 +265,22 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
                 logger.warning("No markdown content returned from Azure DI")
                 markdown_content = "# No content extracted\n\nThe document processing completed but no text content was extracted."
 
-            # Determine output directory
-            # Use self.output_dir if set by caller, otherwise use source file directory
-            output_dir = self.output_dir if self.output_dir else filepath.parent
-
-            # Save markdown to file
-            markdown_filename = self._save_markdown(markdown_content, filepath, output_dir)
+            # Save markdown to file if enabled
+            markdown_filename = None
+            if self.save_markdown:
+                # Determine output directory
+                # Use self.output_dir if set by caller, otherwise use source file directory
+                output_dir = self.output_dir if self.output_dir else filepath.parent
+                markdown_filename = self._save_markdown(markdown_content, filepath, output_dir)
 
             # Extract metadata
             di_metadata = self._extract_metadata(di_result, markdown_filename, processing_time_ms)
 
             # Merge with file metadata
             result.update(di_metadata)
+
+            # Add full Azure DI JSON output
+            result["raw_azure_di_output"] = di_result.as_dict()
 
             pages_processed = result.get('total_pages', 0)
             logger.info(
