@@ -6,13 +6,6 @@
 
 🦉 Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
 
-```
-  ,_,
- (O,O)
- (   )
- -"-"-
-```
-
 <p align="center">
   <img src="media/Overview.jpg" alt="ContextBuilder High level overview" width="800">
 </p>
@@ -387,5 +380,12 @@ Contributions are welcome! Please ensure:
 For issues or questions, please open an issue on GitHub.
 
 ---
+
+```
+  ,_,
+ (O,O)
+ (   )
+ -"-"-
+```
 
 **Made with ❤️ and 🦉 for the AI community**
