@@ -86,9 +86,20 @@ def setup_signal_handlers():
 
 
 def setup_argparser() -> argparse.ArgumentParser:
-    """Set up command-line argument parser."""
+    """Set up command-line argument parser with subcommands."""
     parser = argparse.ArgumentParser(
-        description="Extract structured context from documents using AI vision APIs",
+        description="Extract structured context and data from documents using AI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Create subparsers for commands
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    subparsers.required = True
+
+    # ========== ACQUIRE SUBCOMMAND ==========
+    acquire_parser = subparsers.add_parser(
+        "acquire",
+        help="Acquire document content using vision APIs (OCR, Azure DI, OpenAI Vision)",
         epilog="""
 Examples:
   %(prog)s document.pdf                    # Process a single PDF
@@ -100,13 +111,13 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Required arguments
-    parser.add_argument(
+    # Required arguments for acquire
+    acquire_parser.add_argument(
         "input_path", metavar="PATH", help="Path to the file or folder to process"
     )
 
-    # Output options
-    output_group = parser.add_argument_group("Output Options")
+    # Output options for acquire
+    output_group = acquire_parser.add_argument_group("Output Options")
     output_group.add_argument(
         "-o",
         "--output-dir",
@@ -121,8 +132,8 @@ Examples:
         help="Process folder recursively (when input is a folder)",
     )
 
-    # Provider options
-    provider_group = parser.add_argument_group("Provider Options")
+    # Provider options for acquire
+    provider_group = acquire_parser.add_argument_group("Provider Options")
     available_providers = [
         "openai",
         "tesseract",
@@ -155,8 +166,8 @@ Examples:
         help="Disable saving markdown file (azure-di only)",
     )
 
-    # Model configuration
-    model_group = parser.add_argument_group("Model Configuration")
+    # Model configuration for acquire
+    model_group = acquire_parser.add_argument_group("Model Configuration")
     model_group.add_argument(
         "--model", metavar="MODEL", help="Model name to use (e.g., 'gpt-4o' for OpenAI)"
     )
@@ -173,8 +184,8 @@ Examples:
         help="Temperature for response generation (0.0-2.0, default: provider-specific)",
     )
 
-    # PDF processing options
-    pdf_group = parser.add_argument_group("PDF Processing")
+    # PDF processing options for acquire
+    pdf_group = acquire_parser.add_argument_group("PDF Processing")
     pdf_group.add_argument(
         "--max-pages",
         type=int,
@@ -188,8 +199,8 @@ Examples:
         help="Render scale for PDF to image conversion (default: 2.0)",
     )
 
-    # API options
-    api_group = parser.add_argument_group("API Options")
+    # API options for acquire
+    api_group = acquire_parser.add_argument_group("API Options")
     api_group.add_argument(
         "--timeout",
         type=int,
@@ -203,8 +214,8 @@ Examples:
         help="Maximum number of retries for API calls (default: 3)",
     )
 
-    # Logging options
-    logging_group = parser.add_argument_group("Logging Options")
+    # Logging options for acquire
+    logging_group = acquire_parser.add_argument_group("Logging Options")
     logging_group.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
@@ -215,6 +226,173 @@ Examples:
         "--rich-output",
         action="store_true",
         help="Display results in rich format to stdout only (no files saved, all logs suppressed, incompatible with -v)",
+    )
+
+    # ========== EXTRACT SUBCOMMAND ==========
+    extract_parser = subparsers.add_parser(
+        "extract",
+        help="Extract structured data from markdown files using AI",
+        epilog="""
+Examples:
+  %(prog)s input.md -o output.json                          # Extract from markdown
+  %(prog)s doc.md -o result.json --prompt custom_prompt.md  # Use custom prompt
+  %(prog)s input.md -o out.json --model gpt-4o-mini         # Use different model
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Required arguments for extract
+    extract_parser.add_argument(
+        "input_path",
+        metavar="INPUT",
+        help="Path to markdown file to extract from"
+    )
+    extract_parser.add_argument(
+        "-o",
+        "--output",
+        metavar="OUTPUT",
+        required=True,
+        help="Path to output JSON file"
+    )
+
+    # Prompt and schema options for extract
+    extract_config_group = extract_parser.add_argument_group("Extraction Configuration")
+    extract_config_group.add_argument(
+        "--prompt",
+        metavar="PATH",
+        help="Absolute path to custom prompt markdown file (default: policy_symbol_extraction.md)"
+    )
+    extract_config_group.add_argument(
+        "--schema",
+        metavar="PATH",
+        help="Absolute path to custom schema Python file (default: policy_symbol_extraction.py)"
+    )
+
+    # Model configuration for extract
+    extract_model_group = extract_parser.add_argument_group("Model Configuration")
+    extract_model_group.add_argument(
+        "--model",
+        metavar="MODEL",
+        help="Model name to use (default: from prompt config, typically gpt-4o)"
+    )
+    extract_model_group.add_argument(
+        "--max-tokens",
+        type=int,
+        metavar="N",
+        help="Maximum tokens for response (default: from prompt config)"
+    )
+    extract_model_group.add_argument(
+        "--temperature",
+        type=float,
+        metavar="FLOAT",
+        help="Temperature for response generation (default: from prompt config)"
+    )
+    extract_model_group.add_argument(
+        "--timeout",
+        type=int,
+        metavar="SECONDS",
+        help="API request timeout in seconds (default: 120)"
+    )
+    extract_model_group.add_argument(
+        "--retries",
+        type=int,
+        metavar="N",
+        help="Maximum number of retries for API calls (default: 3)"
+    )
+
+    # Logging options for extract
+    extract_logging_group = extract_parser.add_argument_group("Logging Options")
+    extract_logging_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    extract_logging_group.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # ========== EXTRACT_LOGIC SUBCOMMAND ==========
+    extract_logic_parser = subparsers.add_parser(
+        "extract_logic",
+        help="Extract policy logic as normalized JSON Logic from markdown files",
+        epilog="""
+Examples:
+  %(prog)s input.md -o output/                             # Extract to directory (generates two files)
+  %(prog)s doc.md -o result --symbol-table symbols.json    # Include symbol table
+  %(prog)s input.md -o custom_name                         # Custom base name for outputs
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Required arguments for extract_logic
+    extract_logic_parser.add_argument(
+        "input_path",
+        metavar="INPUT",
+        help="Path to markdown file to extract logic from"
+    )
+    extract_logic_parser.add_argument(
+        "-o",
+        "--output",
+        metavar="OUTPUT",
+        required=True,
+        help="Path to output JSON file"
+    )
+
+    # Logic extraction options
+    extract_logic_config_group = extract_logic_parser.add_argument_group("Logic Extraction Configuration")
+    extract_logic_config_group.add_argument(
+        "--symbol-table",
+        metavar="PATH",
+        help="Path to symbol table JSON file (from symbol extraction step)"
+    )
+    extract_logic_config_group.add_argument(
+        "--prompt",
+        metavar="PATH",
+        help="Absolute path to custom prompt markdown file (default: policy_logic_extraction.md)"
+    )
+    extract_logic_config_group.add_argument(
+        "--schema",
+        metavar="PATH",
+        help="Absolute path to custom schema Python file (default: policy_logic_extraction.py)"
+    )
+
+    # Model configuration for extract_logic
+    extract_logic_model_group = extract_logic_parser.add_argument_group("Model Configuration")
+    extract_logic_model_group.add_argument(
+        "--model",
+        metavar="MODEL",
+        help="Model name to use (default: from prompt config, typically gpt-4o)"
+    )
+    extract_logic_model_group.add_argument(
+        "--max-tokens",
+        type=int,
+        metavar="N",
+        help="Maximum tokens for response (default: from prompt config)"
+    )
+    extract_logic_model_group.add_argument(
+        "--temperature",
+        type=float,
+        metavar="FLOAT",
+        help="Temperature for response generation (default: from prompt config)"
+    )
+    extract_logic_model_group.add_argument(
+        "--timeout",
+        type=int,
+        metavar="SECONDS",
+        help="API request timeout in seconds (default: 120)"
+    )
+    extract_logic_model_group.add_argument(
+        "--retries",
+        type=int,
+        metavar="N",
+        help="Maximum number of retries for API calls (default: 3)"
+    )
+
+    # Logging options for extract_logic
+    extract_logic_logging_group = extract_logic_parser.add_argument_group("Logging Options")
+    extract_logic_logging_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    extract_logic_logging_group.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
     return parser
@@ -446,6 +624,153 @@ def process_folder(
     return success_count
 
 
+def process_extraction(
+    input_path: Path,
+    output_path: Path,
+    prompt_path: Optional[str] = None,
+    schema_path: Optional[str] = None,
+    config: Optional[dict] = None,
+) -> dict:
+    """
+    Process markdown file and extract symbol table.
+
+    Generates two output files:
+    - {output_path} (JSON): Full structured symbol table
+    - {output_path.replace('.json', '.md')} (Markdown): Token-efficient format
+
+    Args:
+        input_path: Path to input markdown file
+        output_path: Path to output JSON file (e.g., 'policy_symbol_table.json')
+        prompt_path: Optional absolute path to custom prompt file
+        schema_path: Optional absolute path to custom schema file
+        config: Optional configuration dictionary for model settings
+
+    Returns:
+        Dictionary with the extraction result including file paths
+
+    Raises:
+        ExtractionError: If extraction fails
+    """
+    from context_builder.extraction.openai_symbol_extraction import (
+        OpenAISymbolExtraction,
+        ExtractionError,
+    )
+
+    logger.info(f"Extracting symbol table from markdown file: {input_path}")
+
+    try:
+        # Create extraction instance
+        extractor = OpenAISymbolExtraction(
+            prompt_path=prompt_path,
+            schema_path=schema_path
+        )
+
+        # Apply configuration if provided
+        if config:
+            for key, value in config.items():
+                if value is not None and hasattr(extractor, key):
+                    setattr(extractor, key, value)
+                    logger.debug(f"Set {key}={value} on extractor instance")
+
+        # Process the file (saves both JSON and MD)
+        result = extractor.process(str(input_path), str(output_path))
+
+        return result
+
+    except ExtractionError as e:
+        logger.error(f"Symbol extraction failed: {e}")
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error during symbol extraction: {e}")
+        raise
+
+
+def process_logic_extraction(
+    input_path: Path,
+    output_base_path: Path,
+    symbol_table_path: Optional[str] = None,
+    prompt_path: Optional[str] = None,
+    schema_path: Optional[str] = None,
+    config: Optional[dict] = None,
+) -> dict:
+    """
+    Process markdown file and extract policy logic as normalized JSON Logic.
+
+    Generates two output files:
+    - {output_base_path}_normalized_logic.json: LLM output with normalized format
+    - {output_base_path}_logic.json: Transpiled standard JSON Logic format
+
+    Args:
+        input_path: Path to input markdown file
+        output_base_path: Base path for output files (without extension)
+        symbol_table_path: Optional path to symbol table JSON file
+        prompt_path: Optional absolute path to custom prompt file
+        schema_path: Optional absolute path to custom schema file
+        config: Optional configuration dictionary for model settings
+
+    Returns:
+        Dictionary with the extraction result including file paths
+
+    Raises:
+        ExtractionError: If extraction fails
+        FileNotFoundError: If symbol_table.md file not found
+    """
+    from context_builder.extraction.openai_logic_extraction import (
+        OpenAILogicExtraction,
+        ExtractionError,
+    )
+
+    logger.info(f"Extracting logic from markdown file: {input_path}")
+
+    try:
+        # Create logic extraction instance
+        extractor = OpenAILogicExtraction(
+            prompt_path=prompt_path,
+            schema_path=schema_path
+        )
+
+        # Apply configuration if provided
+        if config:
+            for key, value in config.items():
+                if value is not None and hasattr(extractor, key):
+                    setattr(extractor, key, value)
+                    logger.debug(f"Set {key}={value} on extractor instance")
+
+        # Load symbol table if provided
+        kwargs = {}
+        if symbol_table_path:
+            # Derive the markdown path from JSON path
+            json_path = Path(symbol_table_path)
+            md_path = json_path.with_suffix(".md")
+
+            # Validate markdown file exists
+            if not md_path.exists():
+                raise FileNotFoundError(
+                    f"Symbol table markdown file not found: {md_path}\n"
+                    f"Expected to find {md_path.name} alongside {json_path.name}"
+                )
+
+            logger.info(f"Loading symbol table from: {md_path}")
+            with open(md_path, "r", encoding="utf-8") as f:
+                symbol_table_markdown = f.read()
+                kwargs["symbol_table"] = symbol_table_markdown
+
+        # Process the file (saves both normalized and transpiled files)
+        result = extractor.process(str(input_path), str(output_base_path), **kwargs)
+
+        return result
+
+    except ExtractionError as e:
+        logger.error(f"Logic extraction failed: {e}")
+        raise
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error during logic extraction: {e}")
+        raise
+
+
 def main():
     """Main entry point for CLI."""
     # Set up signal handlers for graceful shutdown
@@ -458,133 +783,284 @@ def main():
     parser = setup_argparser()
     args = parser.parse_args()
 
-    # Check for mutually exclusive options
-    if args.rich_output and args.verbose:
+    # Check for mutually exclusive options (acquire only)
+    if args.command == "acquire" and hasattr(args, "rich_output") and args.rich_output and args.verbose:
         print("[X] Error: --rich-output and -v/--verbose are mutually exclusive")
         sys.exit(1)
 
-    # Initialize Rich console if needed
+    # Initialize Rich console if needed (acquire only)
     console = None
-    if args.rich_output:
+    if args.command == "acquire" and hasattr(args, "rich_output") and args.rich_output:
         console = Console()
         # Suppress all logging when using rich output
         logging.disable(logging.CRITICAL)
     else:
-        # Set up colored logging only if not using rich output
+        # Set up colored logging
         setup_colored_logging(verbose=args.verbose)
 
-    # Set logging level (only if not using rich output)
-    if not args.rich_output:
-        if args.verbose:
-            logging.getLogger().setLevel(logging.DEBUG)
-        elif args.quiet:
-            logging.getLogger().setLevel(logging.WARNING)
+    # Set logging level
+    if args.command == "acquire" and hasattr(args, "rich_output") and args.rich_output:
+        pass  # Logging already disabled
+    elif args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+    elif args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
 
-    # Validate input path
-    input_path = Path(args.input_path)
-    if not input_path.exists():
-        logger.error(f"Path not found: {input_path}")
-        sys.exit(1)
-
-    # Validate output directory (skip if using rich output since no files are saved)
-    output_dir = Path(args.output_dir)
-    if not args.rich_output:
-        if not output_dir.exists():
-            logger.info(f"Creating output directory: {output_dir}")
-            try:
-                output_dir.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                logger.error(f"Failed to create output directory: {e}")
+    # Route to appropriate command handler
+    try:
+        if args.command == "acquire":
+            # ========== ACQUIRE COMMAND ==========
+            # Validate input path
+            input_path = Path(args.input_path)
+            if not input_path.exists():
+                logger.error(f"Path not found: {input_path}")
                 sys.exit(1)
 
-        if not output_dir.is_dir():
-            logger.error(f"Output path is not a directory: {output_dir}")
-            sys.exit(1)
+            # Validate output directory (skip if using rich output since no files are saved)
+            output_dir = Path(args.output_dir)
+            if not args.rich_output:
+                if not output_dir.exists():
+                    logger.info(f"Creating output directory: {output_dir}")
+                    try:
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        logger.error(f"Failed to create output directory: {e}")
+                        sys.exit(1)
 
-    # Generate session ID for tracking
-    session_id = str(uuid.uuid4())[:8]
-    logger.info(f"Starting session: {session_id}")
+                if not output_dir.is_dir():
+                    logger.error(f"Output path is not a directory: {output_dir}")
+                    sys.exit(1)
 
-    # Build configuration dictionary from CLI args
-    config = {}
-    if args.model is not None:
-        config["model"] = args.model
-    if args.max_tokens is not None:
-        config["max_tokens"] = args.max_tokens
-    if args.temperature is not None:
-        config["temperature"] = args.temperature
-    if args.max_pages is not None:
-        config["max_pages"] = args.max_pages
-    if args.render_scale is not None:
-        config["render_scale"] = args.render_scale
-    if args.timeout is not None:
-        config["timeout"] = args.timeout
-    if args.retries is not None:
-        config["retries"] = args.retries
+            # Generate session ID for tracking
+            session_id = str(uuid.uuid4())[:8]
+            logger.info(f"Starting session: {session_id}")
 
-    # Azure DI specific: handle save_markdown option
-    # --no-save-markdown overrides --save-markdown
-    if args.no_save_markdown:
-        config["save_markdown"] = False
-    elif args.save_markdown:
-        config["save_markdown"] = True
+            # Build configuration dictionary from CLI args
+            config = {}
+            if args.model is not None:
+                config["model"] = args.model
+            if args.max_tokens is not None:
+                config["max_tokens"] = args.max_tokens
+            if args.temperature is not None:
+                config["temperature"] = args.temperature
+            if args.max_pages is not None:
+                config["max_pages"] = args.max_pages
+            if args.render_scale is not None:
+                config["render_scale"] = args.render_scale
+            if args.timeout is not None:
+                config["timeout"] = args.timeout
+            if args.retries is not None:
+                config["retries"] = args.retries
 
-    # Process based on input type
-    try:
-        if input_path.is_file():
-            # Process single file
-            result = process_file(
-                filepath=input_path,
-                output_dir=output_dir,
-                provider=args.provider,
-                config=config,
-            )
+            # Azure DI specific: handle save_markdown option
+            # --no-save-markdown overrides --save-markdown
+            if args.no_save_markdown:
+                config["save_markdown"] = False
+            elif args.save_markdown:
+                config["save_markdown"] = True
 
-            if args.rich_output:
-                # Simply print the result to stdout
-                console.print(result)
-            else:
-                output_path = save_single_result(
-                    result, input_path, output_dir, session_id
+            # Process based on input type
+            if input_path.is_file():
+                # Process single file
+                result = process_file(
+                    filepath=input_path,
+                    output_dir=output_dir,
+                    provider=args.provider,
+                    config=config,
                 )
-                logger.info(
-                    f"[Session {session_id}] Successfully processed file. Output: {output_path}"
-                )
-                if not args.quiet:
-                    print(f"[OK] Context extracted to: {output_path}")
 
-        elif input_path.is_dir():
-            # Process folder
-            success_count = process_folder(
-                folder=input_path,
-                output_dir=output_dir,
-                provider=args.provider,
-                recursive=args.recursive,
-                config=config,
-                session_id=session_id,
-                rich_output=args.rich_output,
-                console=console,
-            )
-            if success_count > 0:
-                if not args.rich_output:
+                if args.rich_output:
+                    # Simply print the result to stdout
+                    console.print(result)
+                else:
+                    output_path = save_single_result(
+                        result, input_path, output_dir, session_id
+                    )
                     logger.info(
-                        f"[Session {session_id}] Successfully processed {success_count} files"
+                        f"[Session {session_id}] Successfully processed file. Output: {output_path}"
                     )
                     if not args.quiet:
-                        print(
-                            f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}"
+                        print(f"[OK] Context extracted to: {output_path}")
+
+            elif input_path.is_dir():
+                # Process folder
+                success_count = process_folder(
+                    folder=input_path,
+                    output_dir=output_dir,
+                    provider=args.provider,
+                    recursive=args.recursive,
+                    config=config,
+                    session_id=session_id,
+                    rich_output=args.rich_output,
+                    console=console,
+                )
+                if success_count > 0:
+                    if not args.rich_output:
+                        logger.info(
+                            f"[Session {session_id}] Successfully processed {success_count} files"
                         )
+                        if not args.quiet:
+                            print(
+                                f"[OK] Processed {success_count} files. Contexts saved to: {output_dir}"
+                            )
+                else:
+                    if not args.quiet and not args.rich_output:
+                        print(f"[X] No supported files found in {input_path}")
+                    elif args.rich_output:
+                        console.print(
+                            f"[red][X] No supported files found in {input_path}[/red]"
+                        )
+                    sys.exit(1)
             else:
-                if not args.quiet and not args.rich_output:
-                    print(f"[X] No supported files found in {input_path}")
-                elif args.rich_output:
-                    console.print(
-                        f"[red][X] No supported files found in {input_path}[/red]"
-                    )
+                logger.error(f"Invalid input path: {input_path}")
                 sys.exit(1)
-        else:
-            logger.error(f"Invalid input path: {input_path}")
-            sys.exit(1)
+
+        elif args.command == "extract":
+            # ========== EXTRACT COMMAND ==========
+            # Validate input path
+            input_path = Path(args.input_path)
+            if not input_path.exists():
+                logger.error(f"Markdown file not found: {input_path}")
+                sys.exit(1)
+
+            if not input_path.is_file():
+                logger.error(f"Input path is not a file: {input_path}")
+                sys.exit(1)
+
+            # Handle output path
+            output_path = Path(args.output)
+
+            # If output path is an existing directory, generate filename
+            if output_path.exists() and output_path.is_dir():
+                output_filename = f"{input_path.stem}_symbol_table.json"
+                output_path = output_path / output_filename
+                logger.info(f"Output is a directory, saving to: {output_path}")
+
+            # Validate/create output directory
+            output_dir = output_path.parent
+            if output_dir != Path(".") and not output_dir.exists():
+                logger.info(f"Creating output directory: {output_dir}")
+                try:
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    logger.error(f"Failed to create output directory: {e}")
+                    sys.exit(1)
+
+            # Build configuration dictionary from CLI args
+            config = {}
+            if args.model is not None:
+                config["model"] = args.model
+            if args.max_tokens is not None:
+                config["max_tokens"] = args.max_tokens
+            if args.temperature is not None:
+                config["temperature"] = args.temperature
+            if args.timeout is not None:
+                config["timeout"] = args.timeout
+            if args.retries is not None:
+                config["retries"] = args.retries
+
+            # Get prompt and schema paths
+            prompt_path = args.prompt if hasattr(args, "prompt") else None
+            schema_path = args.schema if hasattr(args, "schema") else None
+
+            # Process extraction
+            result = process_extraction(
+                input_path=input_path,
+                output_path=output_path,
+                prompt_path=prompt_path,
+                schema_path=schema_path,
+                config=config,
+            )
+
+            logger.info(f"Successfully extracted symbol table from {input_path}")
+            if not args.quiet:
+                # Show both output files
+                md_path = output_path.with_suffix(".md")
+                print(f"[OK] Symbol extraction complete.")
+                print(f"    JSON: {output_path}")
+                print(f"    Markdown: {md_path}")
+
+        elif args.command == "extract_logic":
+            # ========== EXTRACT_LOGIC COMMAND ==========
+            # Validate input path
+            input_path = Path(args.input_path)
+            if not input_path.exists():
+                logger.error(f"Markdown file not found: {input_path}")
+                sys.exit(1)
+
+            if not input_path.is_file():
+                logger.error(f"Input path is not a file: {input_path}")
+                sys.exit(1)
+
+            # Handle output path - derive base path for file naming
+            output_arg = Path(args.output)
+
+            # If output path is an existing directory, use input stem as base
+            if output_arg.exists() and output_arg.is_dir():
+                output_base_path = output_arg / input_path.stem
+                logger.info(f"Output is a directory, using base name: {output_base_path}")
+            else:
+                # If explicit path, strip .json extension if present and use as base
+                if output_arg.suffix == ".json":
+                    output_base_path = output_arg.with_suffix("")
+                else:
+                    output_base_path = output_arg
+                logger.info(f"Using base path: {output_base_path}")
+
+            # Validate/create output directory
+            output_dir = output_base_path.parent
+            if output_dir != Path(".") and not output_dir.exists():
+                logger.info(f"Creating output directory: {output_dir}")
+                try:
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    logger.error(f"Failed to create output directory: {e}")
+                    sys.exit(1)
+
+            # Validate symbol table if provided
+            symbol_table_path = None
+            if hasattr(args, "symbol_table") and args.symbol_table:
+                symbol_table_path = Path(args.symbol_table)
+                if not symbol_table_path.exists():
+                    logger.error(f"Symbol table file not found: {symbol_table_path}")
+                    sys.exit(1)
+                symbol_table_path = str(symbol_table_path)
+
+            # Build configuration dictionary from CLI args
+            config = {}
+            if args.model is not None:
+                config["model"] = args.model
+            if args.max_tokens is not None:
+                config["max_tokens"] = args.max_tokens
+            if args.temperature is not None:
+                config["temperature"] = args.temperature
+            if args.timeout is not None:
+                config["timeout"] = args.timeout
+            if args.retries is not None:
+                config["retries"] = args.retries
+
+            # Get prompt and schema paths
+            prompt_path = args.prompt if hasattr(args, "prompt") else None
+            schema_path = args.schema if hasattr(args, "schema") else None
+
+            # Process logic extraction
+            result = process_logic_extraction(
+                input_path=input_path,
+                output_base_path=output_base_path,
+                symbol_table_path=symbol_table_path,
+                prompt_path=prompt_path,
+                schema_path=schema_path,
+                config=config,
+            )
+
+            logger.info(f"Successfully extracted logic from {input_path}")
+            if not args.quiet:
+                # Show both output files
+                normalized_path = Path(f"{output_base_path}_normalized_logic.json")
+                transpiled_path = Path(f"{output_base_path}_logic.json")
+                print(f"[OK] Logic extraction complete.")
+                print(f"    Normalized: {normalized_path}")
+                print(f"    Transpiled: {transpiled_path}")
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")
