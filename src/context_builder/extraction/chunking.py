@@ -336,7 +336,8 @@ def chunk_markdown_with_symbols(
         max_tokens: Maximum tokens per chunk (default: 8000)
 
     Returns:
-        List of (chunk_text, filtered_symbol_md, chunk_tokens) tuples
+        List of (chunk_text, filtered_symbol_md, chunk_tokens, symbol_keys) tuples
+        where symbol_keys is a set of lowercase symbol keys mentioned in chunk
     """
     # Get encoder
     encoder = get_token_encoder(model_name)
@@ -417,7 +418,7 @@ def chunk_markdown_with_symbols(
                     + count_tokens(chunk_text, encoder)
                     + count_tokens(chunk_symbol_md, encoder)
                 )
-                chunks.append((chunk_text, chunk_symbol_md, chunk_tokens))
+                chunks.append((chunk_text, chunk_symbol_md, chunk_tokens, current_symbols))
 
                 # Reset with rejected block
                 current_blocks = [block]
@@ -436,7 +437,7 @@ def chunk_markdown_with_symbols(
                     f"Block at line {block.line_start} exceeds max tokens "
                     f"({total_block_tokens} > {max_tokens}). Processing as oversized chunk."
                 )
-                chunks.append((block.content, block_symbol_md, total_block_tokens))
+                chunks.append((block.content, block_symbol_md, total_block_tokens, block_symbols))
 
                 # Continue with empty state
                 current_blocks = []
@@ -462,14 +463,14 @@ def chunk_markdown_with_symbols(
             + count_tokens(chunk_text, encoder)
             + count_tokens(chunk_symbol_md, encoder)
         )
-        chunks.append((chunk_text, chunk_symbol_md, chunk_tokens))
+        chunks.append((chunk_text, chunk_symbol_md, chunk_tokens, current_symbols))
 
     logger.info(f"Created {len(chunks)} chunks")
     return chunks
 
 
 def save_chunks(
-    chunks: List[Tuple[str, str, int]], base_path: Path
+    chunks: List[Tuple[str, str, int, Set[str]]], base_path: Path
 ) -> List[Tuple[Path, Path]]:
     """
     Save chunks with zero-padded numbering.
@@ -492,7 +493,7 @@ def save_chunks(
     chunk_files = []
     num_digits = len(str(len(chunks)))
 
-    for i, (chunk_text, symbol_md, tokens) in enumerate(chunks, 1):
+    for i, (chunk_text, symbol_md, tokens, symbol_keys) in enumerate(chunks, 1):
         # Zero-padded numbering
         chunk_num = str(i).zfill(num_digits)
 

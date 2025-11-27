@@ -64,13 +64,19 @@ Example Output:
 }
 
 ### 5. INSTRUCTIONS
-### 5. INSTRUCTIONS
 1.  **EXHAUSTIVE EXTRACTION (CRITICAL):** You are a Compiler, not a Summarizer. You must extract a rule for **EVERY** row in a coverage table.
     * If a table has 30 rows, you must output 30 rules.
     * Do not skip "minor" coverages like "Debris Removal" or "Signage".
 2.  **Scope Check:** If the text chunk describes a Limit or Deductible, write logic that **returns the amount**.
 3.  **Scope Check:** If the text describes an Exclusion, write logic that **returns TRUE** if excluded.
 4.  **Variable Binding:** Look at the provided "Symbol Table". If the text says "Limit is $10,000,000", do NOT hardcode `10000000`. Use the variable: `{"op": "var", "args": ["policy.limit.flood"]}`.
+
+### 6. SEMANTIC STRICTNESS & FALLBACK
+1.  **Do NOT "Stuff" Variables:** Never use a variable for a concept it was not designed for.
+    * *Example:* Do NOT put "Aircraft", "Pollution", or "Employee Injury" into `claim.meta.jurisdiction`. Jurisdiction is ONLY for Country/Region codes (e.g., "US", "CA").
+2.  **Use the Human Flag:** If a rule depends on a specific fact (like "Nuclear Hazard", "War", or "Guerrilla Warfare") that does not have a **CLEAR** equivalent in the provided UDM List, do **NOT** guess.
+    * **Return:** `{"op": "human_flag", "args": ["Exclusion: Nuclear hazard involved"]}`
+3.  **Null Safety:** Never output `null` inside a list for an `in` operator (e.g., `{"in": [{"var": "x"}, [val, null]]}`). This causes crashes. If a concept cannot be mapped, use the Human Flag.
 
 user:
 {% if symbol_table %}

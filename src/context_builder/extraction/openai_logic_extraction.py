@@ -172,9 +172,10 @@ class OpenAILogicExtraction:
             raise ConfigurationError(f"Failed to load schema: {e}")
 
     def _load_udm_context(self):
-        """Load UDM context from standard claim schema."""
+        """Load static UDM context from standard claim schema and extract paths."""
         try:
             from context_builder.utils.schema_renderer import load_schema, render_udm_context
+            from context_builder.utils.udm_bridge import extract_static_paths
 
             # Determine schema path (hardcoded to standard claim schema)
             # This is the contract between LLM and execution engine
@@ -183,15 +184,65 @@ class OpenAILogicExtraction:
             if not schema_file.exists():
                 raise ConfigurationError(f"Standard claim schema not found: {schema_file}")
 
-            # Load and render schema as UDM context
+            # Load and render schema as static UDM context
             schema_dict = load_schema(str(schema_file))
-            self.udm_context_md = render_udm_context(schema_dict)
+            self.static_udm_md = render_udm_context(schema_dict)
 
-            logger.debug(f"Generated UDM context from schema: {schema_file.name}")
-            logger.debug(f"UDM context size: {len(self.udm_context_md)} characters")
+            # Extract static paths for conflict validation
+            self.static_udm_paths = extract_static_paths(schema_dict)
+
+            logger.debug(f"Generated static UDM context from schema: {schema_file.name}")
+            logger.debug(f"Static UDM size: {len(self.static_udm_md)} characters")
+            logger.debug(f"Extracted {len(self.static_udm_paths)} static UDM paths")
 
         except Exception as e:
             raise ConfigurationError(f"Failed to load UDM context: {e}")
+
+    def _generate_dynamic_udm_map(
+        self,
+        symbol_table_json: Dict[str, Any]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate dynamic UDM map from symbol table explicit_variables.
+
+        Creates lookup map keyed by lowercase variable name for symbol-based filtering.
+
+        Args:
+            symbol_table_json: Symbol table dict with extracted_data.explicit_variables
+
+        Returns:
+            Dict mapping lowercase variable name to variable data with UDM path
+        """
+        from context_builder.utils.udm_bridge import (
+            build_dynamic_udm_map,
+            generate_udm_path,
+            validate_no_conflicts
+        )
+
+        # Extract explicit variables
+        explicit_variables = symbol_table_json.get("extracted_data", {}).get("explicit_variables", [])
+
+        if not explicit_variables:
+            logger.warning("No explicit variables found in symbol table")
+            return {}
+
+        # Build dynamic UDM map
+        udm_map = build_dynamic_udm_map(explicit_variables)
+
+        # Validate no conflicts with static schema paths
+        dynamic_paths = {var_data["udm_path"] for var_data in udm_map.values()}
+        try:
+            validate_no_conflicts(dynamic_paths, self.static_udm_paths)
+        except ValueError as e:
+            logger.error(f"Dynamic UDM conflict validation failed: {e}")
+            raise ConfigurationError(str(e))
+
+        logger.info(
+            f"Generated {len(udm_map)} dynamic UDM variables "
+            f"from {len(explicit_variables)} explicit variables"
+        )
+
+        return udm_map
 
     def _build_json_schema(self) -> Dict[str, Any]:
         """
@@ -210,19 +261,30 @@ class OpenAILogicExtraction:
             "schema": pydantic_schema
         }
 
-    def _build_messages(self, markdown_content: str, **kwargs) -> List[Dict[str, Any]]:
+    def _build_messages(
+        self,
+        markdown_content: str,
+        dynamic_udm_md: str = "",
+        **kwargs
+    ) -> List[Dict[str, Any]]:
         """
-        Build messages for OpenAI API call.
+        Build messages for OpenAI API call with composite UDM context.
 
         Args:
             markdown_content: Content of the markdown file
+            dynamic_udm_md: Rendered dynamic UDM variables markdown (filtered per chunk)
             **kwargs: Additional template variables (e.g., symbol_table)
 
         Returns:
             List of message dictionaries for OpenAI API
         """
-        # Load prompt with optional template kwargs
-        prompt_data = load_prompt(self.prompt_name, **kwargs)
+        # Build composite UDM context: static + dynamic
+        composite_udm = self.static_udm_md
+        if dynamic_udm_md:
+            composite_udm = f"{self.static_udm_md}\n\n{dynamic_udm_md}"
+
+        # Load prompt with composite UDM and other template kwargs
+        prompt_data = load_prompt(self.prompt_name, udm_context=composite_udm, **kwargs)
         messages = prompt_data["messages"]
 
         # Add markdown content to user message
@@ -452,10 +514,11 @@ class OpenAILogicExtraction:
         chunk_symbol_md: str,
         chunk_index: int,
         total_chunks: int,
-        chunk_file_path: Optional[Path] = None
+        chunk_file_path: Optional[Path] = None,
+        dynamic_udm_md: str = ""
     ) -> Dict[str, Any]:
         """
-        Process single chunk with its filtered symbols.
+        Process single chunk with its filtered symbols and dynamic UDM variables.
 
         Args:
             chunk_text: Text content of chunk
@@ -463,17 +526,18 @@ class OpenAILogicExtraction:
             chunk_index: Index of this chunk (1-based)
             total_chunks: Total number of chunks
             chunk_file_path: Optional path to chunk text file (for saving rendered prompt)
+            dynamic_udm_md: Filtered dynamic UDM variables markdown for this chunk
 
         Returns:
             PolicyAnalysis dict (not saved to file)
         """
         logger.info(f"Processing chunk {chunk_index}/{total_chunks}")
 
-        # Build messages with chunk content, filtered symbols, and UDM context
+        # Build messages with chunk content, filtered symbols, and composite UDM
         messages = self._build_messages(
             chunk_text,
-            symbol_table=chunk_symbol_md,
-            udm_context=self.udm_context_md
+            dynamic_udm_md=dynamic_udm_md,
+            symbol_table=chunk_symbol_md
         )
 
         # Save rendered prompt for debugging (if chunk file path provided)
@@ -627,11 +691,14 @@ class OpenAILogicExtraction:
         with open(symbol_table_json_path, 'r', encoding='utf-8') as f:
             symbol_table_json = json.load(f)
 
+        # Generate dynamic UDM map from symbol table
+        dynamic_udm_map = self._generate_dynamic_udm_map(symbol_table_json)
+
         # Get encoder and count tokens
         encoder = get_token_encoder(self.model)
 
-        # Load prompt with UDM context to count system overhead accurately
-        prompt_data = load_prompt(self.prompt_name, udm_context=self.udm_context_md)
+        # Load prompt with static UDM context to count system overhead accurately
+        prompt_data = load_prompt(self.prompt_name, udm_context=self.static_udm_md)
         system_message = next((m["content"] for m in prompt_data["messages"] if m["role"] == "system"), "")
         system_tokens = count_tokens(system_message, encoder)
 
@@ -680,16 +747,28 @@ class OpenAILogicExtraction:
             # Save chunk files
             chunk_files = save_chunks(chunks, base_path)
 
-            # Process each chunk
+            # Process each chunk with filtered dynamic UDM
             chunk_results = []
-            for i, ((chunk_text, chunk_symbol_md, chunk_tokens), (text_path, symbol_path)) in enumerate(zip(chunks, chunk_files), 1):
+            for i, ((chunk_text, chunk_symbol_md, chunk_tokens, symbol_keys), (text_path, symbol_path)) in enumerate(zip(chunks, chunk_files), 1):
                 try:
+                    # Filter dynamic UDM variables based on symbols mentioned in chunk
+                    chunk_dynamic_vars = [
+                        dynamic_udm_map[key]["original_data"]
+                        for key in symbol_keys
+                        if key in dynamic_udm_map
+                    ]
+
+                    # Render filtered dynamic UDM
+                    from context_builder.utils.udm_bridge import render_dynamic_udm
+                    chunk_dynamic_udm_md = render_dynamic_udm(chunk_dynamic_vars)
+
                     chunk_result = self.process_chunk(
                         chunk_text=chunk_text,
                         chunk_symbol_md=chunk_symbol_md,
                         chunk_index=i,
                         total_chunks=len(chunks),
-                        chunk_file_path=text_path
+                        chunk_file_path=text_path,
+                        dynamic_udm_md=chunk_dynamic_udm_md
                     )
                     chunk_results.append(chunk_result)
                 except Exception as e:
@@ -708,11 +787,19 @@ class OpenAILogicExtraction:
             # NORMAL PATH (no chunking)
             logger.info("Processing without chunking")
 
-            # Build messages with full symbol table and UDM context
+            # Render all dynamic UDM variables (no filtering needed)
+            from context_builder.utils.udm_bridge import render_dynamic_udm
+            all_dynamic_vars = [
+                var_data["original_data"]
+                for var_data in dynamic_udm_map.values()
+            ]
+            full_dynamic_udm_md = render_dynamic_udm(all_dynamic_vars)
+
+            # Build messages with full symbol table and composite UDM context
             messages = self._build_messages(
                 markdown_content,
-                symbol_table=full_symbol_md,
-                udm_context=self.udm_context_md
+                dynamic_udm_md=full_dynamic_udm_md,
+                symbol_table=full_symbol_md
             )
 
             # Call API with retry logic
@@ -772,4 +859,28 @@ class OpenAILogicExtraction:
 
         logger.info(f"Successfully extracted logic from {markdown_path}")
         logger.info(f"Outputs: {normalized_path}, {transpiled_path}")
+
+        # Run audit on extracted logic
+        try:
+            from context_builder.extraction.logic_auditor import LogicAuditor
+
+            logger.info("Running semantic audit on extracted logic...")
+            auditor = LogicAuditor()  # Auto-detects schema path
+            auditor.audit_files([str(normalized_path)])
+
+            # Generate report in same directory as output files
+            report_path = normalized_path.parent / "semantic_audit_report.txt"
+            auditor.generate_report(str(report_path))
+
+            # Add audit summary to result
+            audit_summary = auditor.get_summary()
+            result["_audit_summary"] = audit_summary
+            result["_audit_report"] = str(report_path)
+
+            logger.info(f"Audit complete: {report_path}")
+
+        except Exception as e:
+            logger.warning(f"Audit failed (non-fatal): {e}")
+            # Audit failure is non-blocking
+
         return result

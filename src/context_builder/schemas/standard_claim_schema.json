@@ -90,6 +90,31 @@
                         }
                     }
                 }
+            },
+            "risk": {
+                "involved_object": {
+                    "type": "string",
+                    "enum": [
+                        "aircraft",
+                        "watercraft",
+                        "automobile",
+                        "none"
+                    ],
+                    "description": "Any vehicle or high-risk object involved in the loss."
+                }
+            },
+            "loss": {
+                "context_type": {
+                    "type": "string",
+                    "enum": [
+                        "employee_injury",
+                        "professional_service",
+                        "pollution",
+                        "criminal_act",
+                        "none"
+                    ],
+                    "description": "Specific context for liability exclusions."
+                }
             }
         },
         "policy_snapshot": {

@@ -1072,6 +1072,18 @@ def main():
                 print(f"    Normalized: {normalized_path}")
                 print(f"    Transpiled: {transpiled_path}")
 
+                # Display audit summary if available
+                if "_audit_summary" in result:
+                    summary = result["_audit_summary"]
+                    print(f"\nAudit Summary:")
+                    print(f"  Variables analyzed: {summary['variables_analyzed']}")
+                    print(f"  Orphan concepts found: {summary['orphan_concepts']}")
+                    print(f"  NULL bugs detected: {summary['null_bugs']}")
+                    if summary["has_issues"]:
+                        print(f"  [!] Review semantic_audit_report.txt for details")
+                    else:
+                        print(f"  [OK] No semantic hallucinations detected")
+
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")
         sys.exit(0)
