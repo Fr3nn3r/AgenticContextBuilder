@@ -3,6 +3,8 @@
 This implementation uses the normalized recursive LogicNode schema to prevent
 hallucinated operators while still producing standard JSON Logic output via
 transpilation.
+
+Supports automatic chunking for large documents with dynamic symbol filtering.
 """
 
 import json
@@ -16,6 +18,12 @@ from pydantic import ValidationError
 from context_builder.utils.file_utils import get_file_metadata
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.utils.json_logic_transpiler import transpile_policy_analysis
+from context_builder.extraction.chunking import (
+    chunk_markdown_with_symbols,
+    save_chunks,
+    count_tokens,
+    get_token_encoder
+)
 
 logger = logging.getLogger(__name__)
 
@@ -307,14 +315,109 @@ class OpenAILogicExtraction:
                 else:
                     raise APIError(f"API call failed after {self.retries} retries: {e}")
 
+    def process_chunk(
+        self,
+        chunk_text: str,
+        chunk_symbol_md: str,
+        chunk_index: int,
+        total_chunks: int
+    ) -> Dict[str, Any]:
+        """
+        Process single chunk with its filtered symbols.
+
+        Args:
+            chunk_text: Text content of chunk
+            chunk_symbol_md: Filtered symbol table markdown for this chunk
+            chunk_index: Index of this chunk (1-based)
+            total_chunks: Total number of chunks
+
+        Returns:
+            PolicyAnalysis dict (not saved to file)
+        """
+        logger.info(f"Processing chunk {chunk_index}/{total_chunks}")
+
+        # Build messages with chunk content and filtered symbols
+        messages = self._build_messages(chunk_text, symbol_table=chunk_symbol_md)
+
+        # Call API
+        response = self._call_api_with_retry(messages)
+
+        # Parse and validate
+        parsed_data = self._parse_response(response.choices[0].message.content)
+        validated_data = self._validate_with_schema(parsed_data)
+
+        # Add usage statistics
+        if hasattr(response, "usage"):
+            validated_data["_chunk_usage"] = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens
+            }
+
+        validated_data["_chunk_index"] = chunk_index
+        return validated_data
+
+    def consolidate_chunk_results(
+        self,
+        chunk_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Consolidate multiple PolicyAnalysis results from chunks.
+
+        Merges rules arrays, discards individual chain_of_thought fields.
+
+        Args:
+            chunk_results: List of PolicyAnalysis dicts from each chunk
+
+        Returns:
+            Consolidated PolicyAnalysis dict
+        """
+        logger.info(f"Consolidating {len(chunk_results)} chunk results")
+
+        # Collect all rules
+        all_rules = []
+        total_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
+
+        for chunk_data in chunk_results:
+            # Extract rules
+            if "rules" in chunk_data:
+                all_rules.extend(chunk_data["rules"])
+
+            # Accumulate usage stats
+            if "_chunk_usage" in chunk_data:
+                usage = chunk_data["_chunk_usage"]
+                total_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                total_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                total_usage["total_tokens"] += usage.get("total_tokens", 0)
+
+        logger.info(f"Consolidated {len(all_rules)} rules from {len(chunk_results)} chunks")
+
+        # Build consolidated result
+        consolidated = {
+            "rules": all_rules,
+            "_consolidated_from": [f"chunk_{i+1:03d}" for i in range(len(chunk_results))],
+            "_total_rules": len(all_rules),
+            "_total_chunks": len(chunk_results),
+            "_usage": total_usage
+        }
+
+        return consolidated
+
     def process(
         self,
         markdown_path: str,
         output_base_path: str,
+        symbol_table_json_path: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
         Process markdown file and extract policy logic.
+
+        Automatically chunks large files with symbol filtering if symbol table provided.
 
         Generates two output files:
         - {output_base_path}_normalized_logic.json: LLM output with normalized format
@@ -323,7 +426,8 @@ class OpenAILogicExtraction:
         Args:
             markdown_path: Path to markdown file to process
             output_base_path: Base path for output files (without extension)
-            **kwargs: Additional template variables (e.g., symbol_table)
+            symbol_table_json_path: Optional path to symbol table JSON for chunking
+            **kwargs: Additional template variables (deprecated, use symbol_table_json_path)
 
         Returns:
             Dictionary containing:
@@ -353,26 +457,127 @@ class OpenAILogicExtraction:
         except Exception as e:
             raise APIError(f"Failed to read markdown file: {e}")
 
-        # Build messages with optional template kwargs (e.g., symbol_table)
-        messages = self._build_messages(markdown_content, **kwargs)
+        # Auto-detect symbol table if not provided
+        if not symbol_table_json_path:
+            # Try to find symbol table JSON based on markdown filename
+            # Expected pattern: {input_name}_symbol_table.json
+            potential_symbol_path = markdown_file.with_name(
+                f"{markdown_file.stem}_symbol_table.json"
+            )
+            if potential_symbol_path.exists():
+                symbol_table_json_path = str(potential_symbol_path)
+                logger.info(f"Auto-detected symbol table: {symbol_table_json_path}")
+            else:
+                raise FileNotFoundError(
+                    f"Symbol table not found: {potential_symbol_path}. "
+                    f"Please run symbol extraction first with: "
+                    f"extract {markdown_path} -o <output_dir>"
+                )
 
-        # Call API with retry logic
-        response = self._call_api_with_retry(messages)
+        # Load symbol table
+        with open(symbol_table_json_path, 'r', encoding='utf-8') as f:
+            symbol_table_json = json.load(f)
 
-        # Parse and validate response
-        parsed_data = self._parse_response(response.choices[0].message.content)
-        validated_data = self._validate_with_schema(parsed_data)
+        # Get encoder and count tokens
+        encoder = get_token_encoder(self.model)
+
+        # Load prompt to count system overhead
+        prompt_data = load_prompt(self.prompt_name)
+        system_message = next((m["content"] for m in prompt_data["messages"] if m["role"] == "system"), "")
+        system_tokens = count_tokens(system_message, encoder)
+
+        # Count markdown tokens
+        markdown_tokens = count_tokens(markdown_content, encoder)
+
+        # Render full symbol table to count its tokens
+        from context_builder.utils.symbol_table_renderer import render_symbol_context
+        full_symbol_md = render_symbol_context(symbol_table_json['extracted_data'])
+        symbol_tokens = count_tokens(full_symbol_md, encoder)
+
+        # Check if chunking needed (8000 token target)
+        total_tokens = system_tokens + markdown_tokens + symbol_tokens
+        needs_chunking = total_tokens > 8000
+
+        logger.info(
+            f"Token counts - Markdown: {markdown_tokens}, "
+            f"Symbols: {symbol_tokens}, "
+            f"System: {system_tokens}, "
+            f"Total: {total_tokens}"
+        )
+
+        if needs_chunking:
+            logger.info(f"Total {total_tokens} tokens exceeds 8000 budget, enabling chunking")
+
+        # Process with or without chunking
+        if needs_chunking:
+            # CHUNKING PATH
+            logger.info("Chunking markdown with symbol filtering")
+
+            # Chunk the markdown
+            chunks = chunk_markdown_with_symbols(
+                markdown_path=str(markdown_file),
+                symbol_table_json=symbol_table_json,
+                model_name=self.model,
+                system_prompt_text=system_message,
+                max_tokens=8000
+            )
+
+            # Save chunk files
+            chunk_files = save_chunks(chunks, base_path)
+
+            # Process each chunk
+            chunk_results = []
+            for i, ((chunk_text, chunk_symbol_md, chunk_tokens), (text_path, symbol_path)) in enumerate(zip(chunks, chunk_files), 1):
+                try:
+                    chunk_result = self.process_chunk(
+                        chunk_text=chunk_text,
+                        chunk_symbol_md=chunk_symbol_md,
+                        chunk_index=i,
+                        total_chunks=len(chunks)
+                    )
+                    chunk_results.append(chunk_result)
+                except Exception as e:
+                    logger.error(f"Failed to process chunk {i}/{len(chunks)}: {e}")
+                    # Continue with remaining chunks
+
+            # Consolidate results
+            validated_data = self.consolidate_chunk_results(chunk_results)
+
+            # Add chunking metadata
+            result["_chunked"] = True
+            result["_chunk_count"] = len(chunks)
+            result["_chunks_dir"] = str(base_path.parent / f"{base_path.name}_chunks")
+
+        else:
+            # NORMAL PATH (no chunking)
+            logger.info("Processing without chunking")
+
+            # Build messages with full symbol table
+            messages = self._build_messages(markdown_content, symbol_table=full_symbol_md)
+
+            # Call API with retry logic
+            response = self._call_api_with_retry(messages)
+
+            # Parse and validate response
+            parsed_data = self._parse_response(response.choices[0].message.content)
+            validated_data = self._validate_with_schema(parsed_data)
+
+            # Add usage statistics
+            if hasattr(response, "usage"):
+                validated_data["_usage"] = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                }
+
+            result["_chunked"] = False
 
         # Transpile to standard JSON Logic
         transpiled_data = transpile_policy_analysis(validated_data)
 
-        # Add usage statistics
-        if hasattr(response, "usage"):
-            result["_usage"] = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
+        # Copy usage stats to result
+        if "_usage" in validated_data:
+            result["_usage"] = validated_data["_usage"]
 
         # Generate output file paths
         normalized_path = Path(f"{base_path}_normalized_logic.json")

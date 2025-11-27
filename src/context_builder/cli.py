@@ -341,7 +341,7 @@ Examples:
     extract_logic_config_group.add_argument(
         "--symbol-table",
         metavar="PATH",
-        help="Path to symbol table JSON file (from symbol extraction step)"
+        help="Path to symbol table JSON file (optional - auto-detects {input_name}_symbol_table.json if not provided)"
     )
     extract_logic_config_group.add_argument(
         "--prompt",
@@ -736,27 +736,13 @@ def process_logic_extraction(
                     setattr(extractor, key, value)
                     logger.debug(f"Set {key}={value} on extractor instance")
 
-        # Load symbol table if provided
-        kwargs = {}
-        if symbol_table_path:
-            # Derive the markdown path from JSON path
-            json_path = Path(symbol_table_path)
-            md_path = json_path.with_suffix(".md")
-
-            # Validate markdown file exists
-            if not md_path.exists():
-                raise FileNotFoundError(
-                    f"Symbol table markdown file not found: {md_path}\n"
-                    f"Expected to find {md_path.name} alongside {json_path.name}"
-                )
-
-            logger.info(f"Loading symbol table from: {md_path}")
-            with open(md_path, "r", encoding="utf-8") as f:
-                symbol_table_markdown = f.read()
-                kwargs["symbol_table"] = symbol_table_markdown
-
-        # Process the file (saves both normalized and transpiled files)
-        result = extractor.process(str(input_path), str(output_base_path), **kwargs)
+        # Pass symbol table JSON path for chunking
+        # The extractor will handle chunking if file is large
+        result = extractor.process(
+            str(input_path),
+            str(output_base_path),
+            symbol_table_json_path=symbol_table_path
+        )
 
         return result
 
@@ -1017,7 +1003,7 @@ def main():
                     logger.error(f"Failed to create output directory: {e}")
                     sys.exit(1)
 
-            # Validate symbol table if provided
+            # Validate symbol table if provided (otherwise will auto-detect)
             symbol_table_path = None
             if hasattr(args, "symbol_table") and args.symbol_table:
                 symbol_table_path = Path(args.symbol_table)
@@ -1025,6 +1011,9 @@ def main():
                     logger.error(f"Symbol table file not found: {symbol_table_path}")
                     sys.exit(1)
                 symbol_table_path = str(symbol_table_path)
+                logger.info(f"Using provided symbol table: {symbol_table_path}")
+            else:
+                logger.info("Symbol table not provided, will auto-detect from input filename")
 
             # Build configuration dictionary from CLI args
             config = {}
