@@ -22,9 +22,9 @@ from context_builder.utils.symbol_table_renderer import render_symbol_context
 logger = logging.getLogger(__name__)
 
 # Constants
-MAX_TOKENS = 8000  # Sweet spot for reasoning density
-HEADER_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$')
-LIST_ITEM_PATTERN = re.compile(r'^[\s]*[-*+]|\d+\.')
+MAX_TOKENS = 4000  # Reduced chunk size for more granular processing
+HEADER_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
+LIST_ITEM_PATTERN = re.compile(r"^[\s]*[-*+]|\d+\.")
 
 
 @dataclass
@@ -38,6 +38,7 @@ class Block:
         parent_headers: Hierarchical list of parent headers
         line_start: Starting line number (for debugging)
     """
+
     content: str
     block_type: str
     parent_headers: List[str]
@@ -105,21 +106,25 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
         if header_match:
             # Flush any accumulated content
             if current_list:
-                blocks.append(Block(
-                    content="\n".join(current_list),
-                    block_type="list",
-                    parent_headers=current_headers.copy(),
-                    line_start=line_num
-                ))
+                blocks.append(
+                    Block(
+                        content="\n".join(current_list),
+                        block_type="list",
+                        parent_headers=current_headers.copy(),
+                        line_start=line_num,
+                    )
+                )
                 current_list = []
 
             if current_paragraph:
-                blocks.append(Block(
-                    content="\n".join(current_paragraph),
-                    block_type="paragraph",
-                    parent_headers=current_headers.copy(),
-                    line_start=line_num
-                ))
+                blocks.append(
+                    Block(
+                        content="\n".join(current_paragraph),
+                        block_type="paragraph",
+                        parent_headers=current_headers.copy(),
+                        line_start=line_num,
+                    )
+                )
                 current_paragraph = []
 
             # Update header stack
@@ -131,12 +136,14 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
             current_headers.append((level, header_text))
 
             # Add header as block
-            blocks.append(Block(
-                content=line,
-                block_type="header",
-                parent_headers=current_headers.copy(),
-                line_start=i
-            ))
+            blocks.append(
+                Block(
+                    content=line,
+                    block_type="header",
+                    parent_headers=current_headers.copy(),
+                    line_start=i,
+                )
+            )
             line_num = i
             continue
 
@@ -144,12 +151,14 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
         if LIST_ITEM_PATTERN.match(line):
             # Flush paragraph if exists
             if current_paragraph:
-                blocks.append(Block(
-                    content="\n".join(current_paragraph),
-                    block_type="paragraph",
-                    parent_headers=current_headers.copy(),
-                    line_start=line_num
-                ))
+                blocks.append(
+                    Block(
+                        content="\n".join(current_paragraph),
+                        block_type="paragraph",
+                        parent_headers=current_headers.copy(),
+                        line_start=line_num,
+                    )
+                )
                 current_paragraph = []
                 line_num = i
 
@@ -161,12 +170,14 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
         if not line.strip():
             # End list if active
             if current_list:
-                blocks.append(Block(
-                    content="\n".join(current_list),
-                    block_type="list",
-                    parent_headers=current_headers.copy(),
-                    line_start=line_num
-                ))
+                blocks.append(
+                    Block(
+                        content="\n".join(current_list),
+                        block_type="list",
+                        parent_headers=current_headers.copy(),
+                        line_start=line_num,
+                    )
+                )
                 current_list = []
                 line_num = i
             continue
@@ -174,12 +185,14 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
         # Regular paragraph line
         if current_list:
             # List ended, flush it
-            blocks.append(Block(
-                content="\n".join(current_list),
-                block_type="list",
-                parent_headers=current_headers.copy(),
-                line_start=line_num
-            ))
+            blocks.append(
+                Block(
+                    content="\n".join(current_list),
+                    block_type="list",
+                    parent_headers=current_headers.copy(),
+                    line_start=line_num,
+                )
+            )
             current_list = []
             line_num = i
 
@@ -187,20 +200,24 @@ def parse_blocks(markdown_lines: List[str]) -> List[Block]:
 
     # Flush remaining content
     if current_list:
-        blocks.append(Block(
-            content="\n".join(current_list),
-            block_type="list",
-            parent_headers=current_headers.copy(),
-            line_start=line_num
-        ))
+        blocks.append(
+            Block(
+                content="\n".join(current_list),
+                block_type="list",
+                parent_headers=current_headers.copy(),
+                line_start=line_num,
+            )
+        )
 
     if current_paragraph:
-        blocks.append(Block(
-            content="\n".join(current_paragraph),
-            block_type="paragraph",
-            parent_headers=current_headers.copy(),
-            line_start=line_num
-        ))
+        blocks.append(
+            Block(
+                content="\n".join(current_paragraph),
+                block_type="paragraph",
+                parent_headers=current_headers.copy(),
+                line_start=line_num,
+            )
+        )
 
     return blocks
 
@@ -218,27 +235,33 @@ def build_symbol_trigger_map(symbol_table: Dict[str, Any]) -> Dict[str, Dict[str
     trigger_map = {}
 
     # Add defined terms
-    for item in symbol_table.get('defined_terms', []):
-        key = item['term'].lower()
+    for item in symbol_table.get("defined_terms", []):
+        key = item["term"].lower()
         trigger_map[key] = {
-            'type': 'term',
-            'data': item,
-            'pattern': re.compile(r'\b' + re.escape(item['term']) + r'(?:s|es)?\b', re.IGNORECASE)
+            "type": "term",
+            "data": item,
+            "pattern": re.compile(
+                r"\b" + re.escape(item["term"]) + r"(?:s|es)?\b", re.IGNORECASE
+            ),
         }
 
     # Add explicit variables
-    for item in symbol_table.get('explicit_variables', []):
-        key = item['name'].lower()
+    for item in symbol_table.get("explicit_variables", []):
+        key = item["name"].lower()
         trigger_map[key] = {
-            'type': 'variable',
-            'data': item,
-            'pattern': re.compile(r'\b' + re.escape(item['name']) + r'(?:s|es)?\b', re.IGNORECASE)
+            "type": "variable",
+            "data": item,
+            "pattern": re.compile(
+                r"\b" + re.escape(item["name"]) + r"(?:s|es)?\b", re.IGNORECASE
+            ),
         }
 
     return trigger_map
 
 
-def find_mentioned_symbols(text: str, trigger_map: Dict[str, Dict[str, Any]]) -> Set[str]:
+def find_mentioned_symbols(
+    text: str, trigger_map: Dict[str, Dict[str, Any]]
+) -> Set[str]:
     """
     Find which symbols are mentioned in text using regex matching.
 
@@ -252,15 +275,14 @@ def find_mentioned_symbols(text: str, trigger_map: Dict[str, Dict[str, Any]]) ->
     mentioned = set()
 
     for key, symbol_info in trigger_map.items():
-        if symbol_info['pattern'].search(text):
+        if symbol_info["pattern"].search(text):
             mentioned.add(key)
 
     return mentioned
 
 
 def render_filtered_symbols(
-    symbol_keys: Set[str],
-    trigger_map: Dict[str, Dict[str, Any]]
+    symbol_keys: Set[str], trigger_map: Dict[str, Dict[str, Any]]
 ) -> str:
     """
     Render markdown for filtered subset of symbols.
@@ -273,17 +295,14 @@ def render_filtered_symbols(
         Markdown-formatted symbol table
     """
     # Build filtered symbol table
-    filtered = {
-        'defined_terms': [],
-        'explicit_variables': []
-    }
+    filtered = {"defined_terms": [], "explicit_variables": []}
 
     for key in symbol_keys:
         symbol_info = trigger_map[key]
-        if symbol_info['type'] == 'term':
-            filtered['defined_terms'].append(symbol_info['data'])
-        elif symbol_info['type'] == 'variable':
-            filtered['explicit_variables'].append(symbol_info['data'])
+        if symbol_info["type"] == "term":
+            filtered["defined_terms"].append(symbol_info["data"])
+        elif symbol_info["type"] == "variable":
+            filtered["explicit_variables"].append(symbol_info["data"])
 
     # Use existing renderer
     return render_symbol_context(filtered)
@@ -294,7 +313,7 @@ def chunk_markdown_with_symbols(
     symbol_table_json: Dict[str, Any],
     model_name: str,
     system_prompt_text: str,
-    max_tokens: int = MAX_TOKENS
+    max_tokens: int = MAX_TOKENS,
 ) -> List[Tuple[str, str, int]]:
     """
     Chunk markdown with dynamic symbol filtering using greedy builder algorithm.
@@ -327,14 +346,14 @@ def chunk_markdown_with_symbols(
     logger.info(f"System prompt overhead: {system_prompt_tokens} tokens")
 
     # Read and parse markdown
-    with open(markdown_path, 'r', encoding='utf-8') as f:
+    with open(markdown_path, "r", encoding="utf-8") as f:
         markdown_lines = f.readlines()
 
     blocks = parse_blocks(markdown_lines)
     logger.info(f"Parsed {len(blocks)} blocks from markdown")
 
     # Build symbol trigger map
-    trigger_map = build_symbol_trigger_map(symbol_table_json['extracted_data'])
+    trigger_map = build_symbol_trigger_map(symbol_table_json["extracted_data"])
     logger.info(f"Built trigger map with {len(trigger_map)} symbols")
 
     # Greedy chunking loop
@@ -353,10 +372,9 @@ def chunk_markdown_with_symbols(
         first_block = potential_text_blocks[0]
 
         # Prepend parent header hierarchy if chunk starts with non-header block
-        if first_block.block_type != 'header' and first_block.parent_headers:
+        if first_block.block_type != "header" and first_block.parent_headers:
             header_context = "\n".join(
-                f"{'#' * level} {text}"
-                for level, text in first_block.parent_headers
+                f"{'#' * level} {text}" for level, text in first_block.parent_headers
             )
             chunk_content_parts.append(header_context)
 
@@ -384,7 +402,7 @@ def chunk_markdown_with_symbols(
                 first_block = current_blocks[0]
 
                 # Prepend parent header hierarchy if chunk starts with non-header block
-                if first_block.block_type != 'header' and first_block.parent_headers:
+                if first_block.block_type != "header" and first_block.parent_headers:
                     header_context = "\n".join(
                         f"{'#' * level} {text}"
                         for level, text in first_block.parent_headers
@@ -394,9 +412,11 @@ def chunk_markdown_with_symbols(
                 chunk_content_parts.extend(b.content for b in current_blocks)
                 chunk_text = "\n\n".join(chunk_content_parts)
                 chunk_symbol_md = render_filtered_symbols(current_symbols, trigger_map)
-                chunk_tokens = (system_prompt_tokens +
-                              count_tokens(chunk_text, encoder) +
-                              count_tokens(chunk_symbol_md, encoder))
+                chunk_tokens = (
+                    system_prompt_tokens
+                    + count_tokens(chunk_text, encoder)
+                    + count_tokens(chunk_symbol_md, encoder)
+                )
                 chunks.append((chunk_text, chunk_symbol_md, chunk_tokens))
 
                 # Reset with rejected block
@@ -406,7 +426,11 @@ def chunk_markdown_with_symbols(
                 # Oversized single block - process alone with warning
                 block_tokens = count_tokens(block.content, encoder)
                 block_symbol_md = render_filtered_symbols(block_symbols, trigger_map)
-                total_block_tokens = system_prompt_tokens + block_tokens + count_tokens(block_symbol_md, encoder)
+                total_block_tokens = (
+                    system_prompt_tokens
+                    + block_tokens
+                    + count_tokens(block_symbol_md, encoder)
+                )
 
                 logger.warning(
                     f"Block at line {block.line_start} exceeds max tokens "
@@ -424,19 +448,20 @@ def chunk_markdown_with_symbols(
         first_block = current_blocks[0]
 
         # Prepend parent header hierarchy if chunk starts with non-header block
-        if first_block.block_type != 'header' and first_block.parent_headers:
+        if first_block.block_type != "header" and first_block.parent_headers:
             header_context = "\n".join(
-                f"{'#' * level} {text}"
-                for level, text in first_block.parent_headers
+                f"{'#' * level} {text}" for level, text in first_block.parent_headers
             )
             chunk_content_parts.append(header_context)
 
         chunk_content_parts.extend(b.content for b in current_blocks)
         chunk_text = "\n\n".join(chunk_content_parts)
         chunk_symbol_md = render_filtered_symbols(current_symbols, trigger_map)
-        chunk_tokens = (system_prompt_tokens +
-                      count_tokens(chunk_text, encoder) +
-                      count_tokens(chunk_symbol_md, encoder))
+        chunk_tokens = (
+            system_prompt_tokens
+            + count_tokens(chunk_text, encoder)
+            + count_tokens(chunk_symbol_md, encoder)
+        )
         chunks.append((chunk_text, chunk_symbol_md, chunk_tokens))
 
     logger.info(f"Created {len(chunks)} chunks")
@@ -444,15 +469,14 @@ def chunk_markdown_with_symbols(
 
 
 def save_chunks(
-    chunks: List[Tuple[str, str, int]],
-    base_path: Path
+    chunks: List[Tuple[str, str, int]], base_path: Path
 ) -> List[Tuple[Path, Path]]:
     """
     Save chunks with zero-padded numbering.
 
     Creates:
-    - {base}_chunk_001.md (text chunk)
-    - {base}_chunk_001_symbol.md (filtered symbols)
+    - output_chunks/{base}_chunk_001.md (text chunk)
+    - output_chunks/{base}_chunk_001_symbol.md (filtered symbols)
 
     Args:
         chunks: List of (chunk_text, symbol_md, tokens) tuples
@@ -461,8 +485,8 @@ def save_chunks(
     Returns:
         List of (text_path, symbol_path) tuples
     """
-    # Create chunks directory
-    chunks_dir = base_path.parent / f"{base_path.name}_chunks"
+    # Create chunks directory as 'output_chunks' subfolder
+    chunks_dir = base_path.parent / "output_chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
 
     chunk_files = []
@@ -474,15 +498,17 @@ def save_chunks(
 
         # Save text chunk
         text_path = chunks_dir / f"{base_path.name}_chunk_{chunk_num}.md"
-        with open(text_path, 'w', encoding='utf-8') as f:
+        with open(text_path, "w", encoding="utf-8") as f:
             f.write(chunk_text)
 
         # Save symbol chunk
         symbol_path = chunks_dir / f"{base_path.name}_chunk_{chunk_num}_symbol.md"
-        with open(symbol_path, 'w', encoding='utf-8') as f:
+        with open(symbol_path, "w", encoding="utf-8") as f:
             f.write(symbol_md)
 
-        logger.info(f"Saved chunk {i}/{len(chunks)}: {tokens} tokens → {text_path.name}")
+        logger.info(
+            f"Saved chunk {i}/{len(chunks)}: {tokens} tokens → {text_path.name}"
+        )
         chunk_files.append((text_path, symbol_path))
 
     return chunk_files

@@ -1,9 +1,6 @@
 """
-Pydantic schema for policy logic extraction with normalized recursive structure.
-
-This schema uses a normalized format with fixed 'op' and 'args' fields instead of
-dynamic keys, preventing hallucinated operators and enabling strict validation.
-The chain-of-thought pattern forces reasoning before logic generation.
+Pydantic schema for policy logic extraction - Phase 1 (v2.0)
+Updated for 'Assignment Logic' and 'Micro-Chain-of-Thought'.
 """
 
 from __future__ import annotations
@@ -31,80 +28,79 @@ class LogicOp(str, Enum):
     SUB = "-"
     MULT = "*"
     DIV = "/"
+    # Special operator for flagging ambiguous terms requiring human review
+    HUMAN_FLAG = "human_flag"
+
+
+class RuleType(str, Enum):
+    """Categorizes the intent of the rule for downstream processing."""
+
+    LIMIT = "limit"  # Returns a number (the limit amount)
+    DEDUCTIBLE = "deductible"  # Returns a number (the deductible amount)
+    EXCLUSION = "exclusion"  # Returns a boolean (True = excluded)
+    CONDITION = "condition"  # Returns a boolean (True = condition met)
+    CALCULATION = "calculation"  # Returns a number (complex math)
 
 
 class LogicNode(BaseModel):
     """
     Normalized recursive node for JSON Logic trees.
 
-    Uses fixed 'op' and 'args' fields instead of dynamic keys like {"==": [...]}
-    to prevent hallucinated operators and enable strict schema validation.
+    CRITICAL:
+    - For 'LIMIT' or 'DEDUCTIBLE' rules, the logic must RETURN A VALUE (Number), not a Boolean.
+    - Use 'if' operators to assign values based on conditions.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # Note: No description on enum field to avoid $ref + description conflict in OpenAI strict mode
     op: LogicOp = Field(...)
     args: List[Union[LogicNode, str, int, float, bool, None]] = Field(
         ...,
-        description="List of arguments. Can be primitive values or nested LogicNode instances."
+        description=(
+            "Arguments for the operator. "
+            "Variables MUST use the Standard UDM paths (e.g., 'claim.loss.cause_primary', 'policy.limit.flood')."
+        ),
     )
 
 
 class RuleDefinition(BaseModel):
-    """A single extracted policy rule with normalized logic representation."""
+    """
+    A single extracted policy rule with Micro-CoT reasoning.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(
         ...,
-        description="Unique identifier for the rule (e.g., 'rule_001', 'coverage_jewelry')"
+        description="Unique identifier (e.g., 'rule_flood_limit', 'exclusion_war').",
     )
-    description: str = Field(
+    name: str = Field(..., description="Short, human-readable name for the rule.")
+    type: RuleType = Field(...)
+    # Micro-CoT: Reasoning stays with the rule
+    reasoning: str = Field(
         ...,
-        description="Human-readable summary of what the rule does"
+        description=(
+            "Micro-Chain-of-Thought: Explain WHY you constructed the logic this way. "
+            "Identify the specific text triggers and why you chose specific UDM variables. "
+            "Explain how the logic handles assignment (e.g., 'If Cause is Flood, return 10M')."
+        ),
     )
     source_ref: str = Field(
         ...,
-        description="Reference to paragraph/section where the rule was found"
+        description="Verbatim or near-verbatim quote from the text that justifies this rule.",
     )
-    # Note: No description on LogicNode field to avoid $ref + description conflict in OpenAI strict mode
     logic: LogicNode = Field(...)
 
 
 class PolicyAnalysis(BaseModel):
     """
-    Complete policy logic extraction with enforced chain-of-thought reasoning.
-
-    CRITICAL ORDERING: The chain_of_thought field comes FIRST to force the model
-    to reason through the logic before generating the formal logic trees.
-    This significantly improves the quality and accuracy of extracted logic.
+    Container for the extraction output.
+    Note: Global CoT is removed in favor of Rule-level 'reasoning'.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # FIRST: Chain of thought - forces reasoning before logic generation
-    chain_of_thought: str = Field(
-        ...,
-        description=(
-            "Step-by-step legal analysis of the policy text. "
-            "Break down each clause by identifying: "
-            "1) Triggers (what events activate the rule), "
-            "2) Conditions (what must be true), "
-            "3) Actions (what happens), "
-            "4) Limits (caps or constraints), "
-            "5) Exclusions (what invalidates the rule). "
-            "This reasoning must happen BEFORE generating the normalized logic."
-        )
-    )
-
-    # SECOND: The extracted logic rules
     rules: List[RuleDefinition] = Field(
         ...,
-        description=(
-            "List of policy rules extracted as normalized logic trees. "
-            "Each rule represents a distinct logical statement from the policy. "
-            "Uses LogicOp enum for operators and nested LogicNode structure. "
-            "Variables use prefixes: 'claim.' for dynamic facts, 'policy.' for static values."
-        )
+        description="List of extracted rules, each with its own reasoning and logic.",
     )

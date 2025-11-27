@@ -1,0 +1,116 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Universal Claim Model",
+    "description": "Standardized input variables for Policy Execution Engine",
+    "type": "object",
+    "properties": {
+        "claim": {
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string"
+                        },
+                        "loss_date": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "discovery_date": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "report_date": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "jurisdiction": {
+                            "type": "string",
+                            "description": "ISO Country/Region code"
+                        }
+                    }
+                },
+                "loss": {
+                    "type": "object",
+                    "properties": {
+                        "cause_primary": {
+                            "type": "string",
+                            "enum": [
+                                "fire",
+                                "flood",
+                                "earth_movement",
+                                "equipment_breakdown",
+                                "theft",
+                                "windstorm",
+                                "liability_bodily_injury",
+                                "liability_property_damage"
+                            ]
+                        },
+                        "cause_secondary": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        },
+                        "is_occurrence": {
+                            "type": "boolean",
+                            "description": "Is this a distinct occurrence?"
+                        }
+                    }
+                },
+                "financials": {
+                    "type": "object",
+                    "properties": {
+                        "amount_claimed": {
+                            "type": "number"
+                        },
+                        "mitigation_costs": {
+                            "type": "number"
+                        },
+                        "business_interruption_loss": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "compliance": {
+                    "type": "object",
+                    "properties": {
+                        "notice_timely": {
+                            "type": "boolean"
+                        },
+                        "proof_of_loss_submitted": {
+                            "type": "boolean"
+                        },
+                        "fraud_detected": {
+                            "type": "boolean"
+                        },
+                        "police_report_filed": {
+                            "type": "boolean"
+                        }
+                    }
+                }
+            }
+        },
+        "policy_snapshot": {
+            "type": "object",
+            "description": "Values extracted from the Policy Symbol Table",
+            "properties": {
+                "limits": {
+                    "type": "object",
+                    "description": "Dynamic keys derived from Symbol Table (e.g., limit.flood)",
+                    "additionalProperties": {
+                        "type": "number"
+                    }
+                },
+                "deductibles": {
+                    "type": "object",
+                    "description": "Dynamic keys derived from Symbol Table (e.g., deductible.wind)",
+                    "additionalProperties": {
+                        "type": "number"
+                    }
+                }
+            }
+        }
+    }
+}

@@ -115,6 +115,9 @@ class OpenAILogicExtraction:
         # Load schema
         self._load_schema()
 
+        # Load and generate UDM context from schema (single render for efficiency)
+        self._load_udm_context()
+
         logger.debug(
             f"Using model: {self.model}, max_tokens: {self.max_tokens}, "
             f"temperature: {self.temperature}"
@@ -168,6 +171,28 @@ class OpenAILogicExtraction:
         except Exception as e:
             raise ConfigurationError(f"Failed to load schema: {e}")
 
+    def _load_udm_context(self):
+        """Load UDM context from standard claim schema."""
+        try:
+            from context_builder.utils.schema_renderer import load_schema, render_udm_context
+
+            # Determine schema path (hardcoded to standard claim schema)
+            # This is the contract between LLM and execution engine
+            schema_file = Path(__file__).parent.parent / "schemas" / "standard_claim_schema.json"
+
+            if not schema_file.exists():
+                raise ConfigurationError(f"Standard claim schema not found: {schema_file}")
+
+            # Load and render schema as UDM context
+            schema_dict = load_schema(str(schema_file))
+            self.udm_context_md = render_udm_context(schema_dict)
+
+            logger.debug(f"Generated UDM context from schema: {schema_file.name}")
+            logger.debug(f"UDM context size: {len(self.udm_context_md)} characters")
+
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load UDM context: {e}")
+
     def _build_json_schema(self) -> Dict[str, Any]:
         """
         Build OpenAI-compatible JSON schema from Pydantic model.
@@ -208,6 +233,75 @@ class OpenAILogicExtraction:
                 break
 
         return messages
+
+    def _save_rendered_prompt(
+        self,
+        messages: List[Dict[str, Any]],
+        chunk_file_path: Path,
+        chunk_index: int
+    ) -> None:
+        """
+        Save rendered prompt to file for debugging.
+
+        Args:
+            messages: Built messages list (system + user)
+            chunk_file_path: Path to chunk text file
+            chunk_index: Chunk index for filename
+        """
+        try:
+            # Build output path: {base}_chunk_{num}_rendered_prompt.md
+            # Example: policy_chunk_001.md -> policy_chunk_001_rendered_prompt.md
+            prompt_path = chunk_file_path.with_name(
+                chunk_file_path.stem + "_rendered_prompt.md"
+            )
+
+            # Format messages as readable markdown
+            content_parts = [f"# Rendered Prompt for Chunk {chunk_index}\n"]
+
+            for msg in messages:
+                role = msg["role"].upper()
+                content_parts.append(f"## {role} Message\n")
+                content_parts.append(msg["content"])
+                content_parts.append("\n")
+
+            # Write to file
+            with open(prompt_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(content_parts))
+
+            logger.info(f"Saved rendered prompt to: {prompt_path.name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to save rendered prompt for chunk {chunk_index}: {e}")
+
+    def _save_chunk_result(
+        self,
+        validated_data: Dict[str, Any],
+        chunk_file_path: Path,
+        chunk_index: int
+    ) -> None:
+        """
+        Save chunk extraction result to file for debugging.
+
+        Args:
+            validated_data: Validated PolicyAnalysis dict from chunk
+            chunk_file_path: Path to chunk text file
+            chunk_index: Chunk index for filename
+        """
+        try:
+            # Build output path: {base}_chunk_{num}_normalized_logic.json
+            # Example: policy_chunk_001.md -> policy_chunk_001_normalized_logic.json
+            result_path = chunk_file_path.with_name(
+                chunk_file_path.stem + "_normalized_logic.json"
+            )
+
+            # Write to file
+            with open(result_path, 'w', encoding='utf-8') as f:
+                json.dump(validated_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"Saved chunk result to: {result_path.name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to save chunk result for chunk {chunk_index}: {e}")
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """
@@ -251,6 +345,43 @@ class OpenAILogicExtraction:
         except ValidationError as e:
             logger.error(f"Schema validation failed: {e}")
             raise APIError(f"Schema validation failed: {e}")
+
+    def _check_lazy_reader(self, response: Any) -> None:
+        """
+        Check if model produced suspiciously short output (lazy reading).
+
+        Detects cases where the model fails to properly process the input
+        by checking the completion/prompt token ratio. Logs error but continues
+        processing to allow partial results.
+
+        Args:
+            response: OpenAI API response object with usage statistics
+        """
+        if not hasattr(response, "usage"):
+            logger.warning("Response missing usage statistics, skipping lazy reader check")
+            return
+
+        prompt_tokens = response.usage.prompt_tokens
+        completion_tokens = response.usage.completion_tokens
+
+        if prompt_tokens == 0:
+            logger.warning("Prompt tokens is 0, skipping lazy reader check")
+            return
+
+        ratio = completion_tokens / prompt_tokens
+
+        logger.debug(
+            f"Token ratio check: {completion_tokens} completion / {prompt_tokens} prompt = {ratio:.4f}"
+        )
+
+        # Threshold: 10% allows legitimate short responses while catching lazy reading (<1%)
+        if ratio < 0.10:
+            logger.error(
+                f"LAZY READING DETECTED: Model produced suspiciously short output. "
+                f"Token ratio: {ratio:.4f} ({completion_tokens}/{prompt_tokens}). "
+                f"Expected ratio >= 0.10 for thorough processing. "
+                f"Results may be incomplete or low quality."
+            )
 
     def _call_api_with_retry(
         self, messages: List[Dict[str, Any]], attempt: int = 0
@@ -320,7 +451,8 @@ class OpenAILogicExtraction:
         chunk_text: str,
         chunk_symbol_md: str,
         chunk_index: int,
-        total_chunks: int
+        total_chunks: int,
+        chunk_file_path: Optional[Path] = None
     ) -> Dict[str, Any]:
         """
         Process single chunk with its filtered symbols.
@@ -330,17 +462,29 @@ class OpenAILogicExtraction:
             chunk_symbol_md: Filtered symbol table markdown for this chunk
             chunk_index: Index of this chunk (1-based)
             total_chunks: Total number of chunks
+            chunk_file_path: Optional path to chunk text file (for saving rendered prompt)
 
         Returns:
             PolicyAnalysis dict (not saved to file)
         """
         logger.info(f"Processing chunk {chunk_index}/{total_chunks}")
 
-        # Build messages with chunk content and filtered symbols
-        messages = self._build_messages(chunk_text, symbol_table=chunk_symbol_md)
+        # Build messages with chunk content, filtered symbols, and UDM context
+        messages = self._build_messages(
+            chunk_text,
+            symbol_table=chunk_symbol_md,
+            udm_context=self.udm_context_md
+        )
+
+        # Save rendered prompt for debugging (if chunk file path provided)
+        if chunk_file_path:
+            self._save_rendered_prompt(messages, chunk_file_path, chunk_index)
 
         # Call API
         response = self._call_api_with_retry(messages)
+
+        # Check for lazy reading before parsing
+        self._check_lazy_reader(response)
 
         # Parse and validate
         parsed_data = self._parse_response(response.choices[0].message.content)
@@ -355,6 +499,11 @@ class OpenAILogicExtraction:
             }
 
         validated_data["_chunk_index"] = chunk_index
+
+        # Save chunk result to file for debugging (if chunk file path provided)
+        if chunk_file_path:
+            self._save_chunk_result(validated_data, chunk_file_path, chunk_index)
+
         return validated_data
 
     def consolidate_chunk_results(
@@ -481,8 +630,8 @@ class OpenAILogicExtraction:
         # Get encoder and count tokens
         encoder = get_token_encoder(self.model)
 
-        # Load prompt to count system overhead
-        prompt_data = load_prompt(self.prompt_name)
+        # Load prompt with UDM context to count system overhead accurately
+        prompt_data = load_prompt(self.prompt_name, udm_context=self.udm_context_md)
         system_message = next((m["content"] for m in prompt_data["messages"] if m["role"] == "system"), "")
         system_tokens = count_tokens(system_message, encoder)
 
@@ -494,19 +643,25 @@ class OpenAILogicExtraction:
         full_symbol_md = render_symbol_context(symbol_table_json['extracted_data'])
         symbol_tokens = count_tokens(full_symbol_md, encoder)
 
-        # Check if chunking needed (8000 token target)
-        total_tokens = system_tokens + markdown_tokens + symbol_tokens
-        needs_chunking = total_tokens > 8000
+        # Reserve buffer for LLM response (complex policy logic can be large)
+        RESPONSE_BUFFER = 2000
+        MODEL_CONTEXT_LIMIT = 8000
+
+        # Check if chunking needed
+        total_input_tokens = system_tokens + markdown_tokens + symbol_tokens
+        effective_limit = MODEL_CONTEXT_LIMIT - RESPONSE_BUFFER
+        needs_chunking = total_input_tokens > effective_limit
 
         logger.info(
             f"Token counts - Markdown: {markdown_tokens}, "
             f"Symbols: {symbol_tokens}, "
-            f"System: {system_tokens}, "
-            f"Total: {total_tokens}"
+            f"System (with UDM): {system_tokens}, "
+            f"Total: {total_input_tokens}, "
+            f"Limit: {effective_limit} (8000 - {RESPONSE_BUFFER} buffer)"
         )
 
         if needs_chunking:
-            logger.info(f"Total {total_tokens} tokens exceeds 8000 budget, enabling chunking")
+            logger.info(f"Total {total_input_tokens} tokens exceeds {effective_limit} budget, enabling chunking")
 
         # Process with or without chunking
         if needs_chunking:
@@ -518,8 +673,8 @@ class OpenAILogicExtraction:
                 markdown_path=str(markdown_file),
                 symbol_table_json=symbol_table_json,
                 model_name=self.model,
-                system_prompt_text=system_message,
-                max_tokens=8000
+                system_prompt_text=system_message
+                # max_tokens uses default from chunking.MAX_TOKENS (4000)
             )
 
             # Save chunk files
@@ -533,7 +688,8 @@ class OpenAILogicExtraction:
                         chunk_text=chunk_text,
                         chunk_symbol_md=chunk_symbol_md,
                         chunk_index=i,
-                        total_chunks=len(chunks)
+                        total_chunks=len(chunks),
+                        chunk_file_path=text_path
                     )
                     chunk_results.append(chunk_result)
                 except Exception as e:
@@ -552,11 +708,18 @@ class OpenAILogicExtraction:
             # NORMAL PATH (no chunking)
             logger.info("Processing without chunking")
 
-            # Build messages with full symbol table
-            messages = self._build_messages(markdown_content, symbol_table=full_symbol_md)
+            # Build messages with full symbol table and UDM context
+            messages = self._build_messages(
+                markdown_content,
+                symbol_table=full_symbol_md,
+                udm_context=self.udm_context_md
+            )
 
             # Call API with retry logic
             response = self._call_api_with_retry(messages)
+
+            # Check for lazy reading before parsing
+            self._check_lazy_reader(response)
 
             # Parse and validate response
             parsed_data = self._parse_response(response.choices[0].message.content)

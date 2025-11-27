@@ -913,24 +913,32 @@ def main():
                 logger.error(f"Input path is not a file: {input_path}")
                 sys.exit(1)
 
-            # Handle output path
-            output_path = Path(args.output)
+            # Create timestamped output folder
+            from context_builder.utils.file_utils import create_timestamped_output_folder
 
-            # If output path is an existing directory, generate filename
-            if output_path.exists() and output_path.is_dir():
-                output_filename = f"{input_path.stem}_symbol_table.json"
-                output_path = output_path / output_filename
-                logger.info(f"Output is a directory, saving to: {output_path}")
+            base_output_dir = Path(args.output)
+            try:
+                timestamped_folder = create_timestamped_output_folder(base_output_dir, prefix="ACB")
+                logger.info(f"Created timestamped output folder: {timestamped_folder}")
+            except FileExistsError as e:
+                logger.error(str(e))
+                sys.exit(1)
+            except Exception as e:
+                logger.error(f"Failed to create timestamped output folder: {e}")
+                sys.exit(1)
 
-            # Validate/create output directory
-            output_dir = output_path.parent
-            if output_dir != Path(".") and not output_dir.exists():
-                logger.info(f"Creating output directory: {output_dir}")
-                try:
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    logger.error(f"Failed to create output directory: {e}")
-                    sys.exit(1)
+            # Copy input file to timestamped folder
+            try:
+                input_copy = timestamped_folder / input_path.name
+                shutil.copy2(input_path, input_copy)
+                logger.info(f"Copied input file to: {input_copy}")
+            except Exception as e:
+                logger.error(f"Failed to copy input file: {e}")
+                sys.exit(1)
+
+            # Set output path within timestamped folder
+            output_filename = f"{input_path.stem}_symbol_table.json"
+            output_path = timestamped_folder / output_filename
 
             # Build configuration dictionary from CLI args
             config = {}
@@ -960,9 +968,10 @@ def main():
 
             logger.info(f"Successfully extracted symbol table from {input_path}")
             if not args.quiet:
-                # Show both output files
+                # Show timestamped folder and output files
                 md_path = output_path.with_suffix(".md")
                 print(f"[OK] Symbol extraction complete.")
+                print(f"    Output folder: {timestamped_folder}")
                 print(f"    JSON: {output_path}")
                 print(f"    Markdown: {md_path}")
 
@@ -978,30 +987,41 @@ def main():
                 logger.error(f"Input path is not a file: {input_path}")
                 sys.exit(1)
 
-            # Handle output path - derive base path for file naming
-            output_arg = Path(args.output)
+            # Detect if input is already in a timestamped folder (ACB-YYYYMMDD-HHMMSS pattern)
+            import re
+            from context_builder.utils.file_utils import create_timestamped_output_folder
 
-            # If output path is an existing directory, use input stem as base
-            if output_arg.exists() and output_arg.is_dir():
-                output_base_path = output_arg / input_path.stem
-                logger.info(f"Output is a directory, using base name: {output_base_path}")
+            acb_folder_pattern = re.compile(r"^ACB-\d{8}-\d{6}$")
+            parent_folder = input_path.parent
+
+            if acb_folder_pattern.match(parent_folder.name):
+                # Input is in existing timestamped folder - reuse it
+                timestamped_folder = parent_folder
+                logger.info(f"Detected existing timestamped folder: {timestamped_folder}")
             else:
-                # If explicit path, strip .json extension if present and use as base
-                if output_arg.suffix == ".json":
-                    output_base_path = output_arg.with_suffix("")
-                else:
-                    output_base_path = output_arg
-                logger.info(f"Using base path: {output_base_path}")
-
-            # Validate/create output directory
-            output_dir = output_base_path.parent
-            if output_dir != Path(".") and not output_dir.exists():
-                logger.info(f"Creating output directory: {output_dir}")
+                # Create new timestamped folder under specified output directory
+                base_output_dir = Path(args.output)
                 try:
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    logger.error(f"Failed to create output directory: {e}")
+                    timestamped_folder = create_timestamped_output_folder(base_output_dir, prefix="ACB")
+                    logger.info(f"Created timestamped output folder: {timestamped_folder}")
+                except FileExistsError as e:
+                    logger.error(str(e))
                     sys.exit(1)
+                except Exception as e:
+                    logger.error(f"Failed to create timestamped output folder: {e}")
+                    sys.exit(1)
+
+                # Copy input file to timestamped folder
+                try:
+                    input_copy = timestamped_folder / input_path.name
+                    shutil.copy2(input_path, input_copy)
+                    logger.info(f"Copied input file to: {input_copy}")
+                except Exception as e:
+                    logger.error(f"Failed to copy input file: {e}")
+                    sys.exit(1)
+
+            # Set output base path within timestamped folder
+            output_base_path = timestamped_folder / input_path.stem
 
             # Validate symbol table if provided (otherwise will auto-detect)
             symbol_table_path = None
@@ -1044,10 +1064,11 @@ def main():
 
             logger.info(f"Successfully extracted logic from {input_path}")
             if not args.quiet:
-                # Show both output files
+                # Show timestamped folder and output files
                 normalized_path = Path(f"{output_base_path}_normalized_logic.json")
                 transpiled_path = Path(f"{output_base_path}_logic.json")
                 print(f"[OK] Logic extraction complete.")
+                print(f"    Output folder: {timestamped_folder}")
                 print(f"    Normalized: {normalized_path}")
                 print(f"    Transpiled: {transpiled_path}")
 
