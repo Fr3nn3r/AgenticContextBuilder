@@ -237,19 +237,7 @@ class ChunkRefinementOrchestrator:
                 # Keep extraction_result as-is (original rules)
                 break
 
-        # STEP 4: Save chunk audit report
-        if chunk_file_path:
-            chunk_report_filename = f"chunk_{chunk_index:03d}_audit_report.json"
-            logger.info(
-                f"[Chunk {chunk_index}/{total_chunks}] Saving audit report: {chunk_report_filename}"
-            )
-            save_report_func(
-                validation_report,
-                str(chunk_file_path),
-                filename=chunk_report_filename
-            )
-
-        # STEP 5: Return refined result + final validation report
+        # STEP 4: Return refined result + final validation report
         logger.info(
             f"[Chunk {chunk_index}/{total_chunks}] Refinement flow complete. "
             f"Final violations: {violations_count}"

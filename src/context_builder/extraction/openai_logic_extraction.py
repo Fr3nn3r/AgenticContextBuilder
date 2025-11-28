@@ -780,7 +780,7 @@ class OpenAILogicExtraction:
             )
 
             # Count tokens in markdown content for accurate lazy reader detection
-            content_tokens = count_tokens(markdown_content, model=self.model)
+            content_tokens = count_tokens(markdown_content, encoder)
 
             # Call API with retry logic
             response = self._call_api_with_retry(messages)

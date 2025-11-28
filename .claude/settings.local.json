@@ -54,7 +54,9 @@
       "Bash(uv pip install:*)",
       "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_openai_impl_process.py::TestOpenAIVisionAcquisitionRetry::test_retry_on_rate_limit -v)",
       "Bash(.venv/Scripts/python.exe -m pytest:*)",
-      "Bash(set PYTHONPATH=src:*)"
+      "Bash(set PYTHONPATH=src:*)",
+      "Bash(timeout:*)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

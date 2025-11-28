@@ -22,6 +22,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "azure-ai-documentintelligence>=1.0.0",
     "tiktoken>=0.5.0",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]
