@@ -791,27 +791,44 @@ class OpenAILogicExtraction:
         logger.info(f"Successfully extracted logic from {markdown_path}")
         logger.info(f"Outputs: {normalized_path}, {transpiled_path}")
 
-        # Run audit on extracted logic
+        # Run PolicyLinter validation on extracted logic
         try:
-            from context_builder.extraction.logic_auditor import LogicAuditor
+            from context_builder.extraction.policy_logic_linter import (
+                validate_rules,
+                save_validation_report
+            )
 
-            logger.info("Running semantic audit on extracted logic...")
-            auditor = LogicAuditor()  # Auto-detects schema path
-            auditor.audit_files([str(normalized_path)])
+            logger.info("Running PolicyLinter validation on extracted logic...")
 
-            # Generate report in same directory as output files
-            report_path = normalized_path.parent / "semantic_audit_report.txt"
-            auditor.generate_report(str(report_path))
+            # Validate rules (in-memory, exhaustive)
+            validation_report = validate_rules(validated_data)
 
-            # Add audit summary to result
-            audit_summary = auditor.get_summary()
-            result["_audit_summary"] = audit_summary
-            result["_audit_report"] = str(report_path)
+            # Save JSON report
+            save_validation_report(
+                validation_report,
+                str(normalized_path),
+                retry_count=0
+            )
 
-            logger.info(f"Audit complete: {report_path}")
+            # Add validation summary to result
+            result["_validation_summary"] = validation_report.summary
+            result["_validation_report"] = str(
+                normalized_path.parent / "policy_logic_audit_report_retry_0.json"
+            )
+
+            # Log warning if violations found (non-blocking)
+            if validation_report.summary["violations"] > 0:
+                logger.warning(
+                    f"PolicyLinter found {validation_report.summary['violations']} violations "
+                    f"({validation_report.summary['critical_violations']} critical, "
+                    f"{validation_report.summary['warnings']} warnings). "
+                    f"See report for details."
+                )
+            else:
+                logger.info("PolicyLinter validation passed: No violations found")
 
         except Exception as e:
-            logger.warning(f"Audit failed (non-fatal): {e}")
-            # Audit failure is non-blocking
+            logger.warning(f"PolicyLinter validation failed (non-fatal): {e}")
+            # Validation failure is non-blocking
 
         return result

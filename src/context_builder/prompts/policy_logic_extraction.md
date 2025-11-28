@@ -100,10 +100,13 @@ Return a JSON object containing a list of rules.
 Each rule MUST include a "reasoning" field (Micro-CoT) explaining your variable selection.
 
 ### 6. INSTRUCTIONS
-1.  **EXHAUSTIVE EXTRACTION (CRITICAL):**
-    * **For Lists/Tables:** Extract a rule for **EVERY** row/item.
-    * **For Narrative Text:** Extract a separate rule for **EVERY** Heading and Sub-Heading (e.g., "3.3 Medical Expenses", "3.4 Tenants Liability").
-    * **For Exclusions:** Extract a separate rule for **EVERY** roman numeral item (i, ii, iii...).
+1.  **THE "ATOMIC SCAN" STRATEGY (CRITICAL):**
+    * Do NOT summarize sections.
+    * Scan the text **Paragraph by Paragraph**.
+    * If a paragraph describes a **Benefit Trigger**, write a Rule.
+    * If a paragraph describes a **Valuation Method** (e.g. "Actual Cash Value"), write a Rule (Calculation).
+    * If a paragraph describes a **Condition** (e.g. "Must report within 24 hours"), write a Rule (Gatekeeper).
+    * *Target:* You should extract at least 3-5 rules per section (e.g., Baggage Benefit, Valuation, continuation, Duties).
 2.  **NO NULLS:** Never output `null` for a variable. If the concept is missing from the Standard UDM, use Tier 3 (Custom) to define it.
 3.  **CONSISTENCY:** If you create `claim.custom.tenants_liability` in Rule 1, use exactly that same string in Rule 50.
 
