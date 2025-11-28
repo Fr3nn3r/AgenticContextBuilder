@@ -126,7 +126,8 @@ class ChunkRefinementOrchestrator:
         refiner: Any,  # PolicyLogicRefiner instance
         linter_func: Callable,  # validate_rules function
         save_report_func: Callable,  # save_validation_report function
-        max_refinement_attempts: int = 1
+        max_refinement_attempts: int = 1,
+        chunk_tokens: Optional[int] = None
     ) -> Tuple[Dict[str, Any], Any]:
         """
         Process chunk with Extract → Lint → Refine loop.
@@ -143,6 +144,7 @@ class ChunkRefinementOrchestrator:
             linter_func: Validation function (validate_rules)
             save_report_func: Report save function (save_validation_report)
             max_refinement_attempts: Maximum refinement attempts (default: 1)
+            chunk_tokens: Optional token count of chunk text (for lazy reader detection)
 
         Returns:
             Tuple of (refined_chunk_result, final_validation_report)
@@ -159,7 +161,8 @@ class ChunkRefinementOrchestrator:
             chunk_symbol_md=chunk_symbol_md,
             chunk_index=chunk_index,
             total_chunks=total_chunks,
-            chunk_file_path=chunk_file_path
+            chunk_file_path=chunk_file_path,
+            chunk_tokens=chunk_tokens
         )
 
         # STEP 2: Lint extracted rules

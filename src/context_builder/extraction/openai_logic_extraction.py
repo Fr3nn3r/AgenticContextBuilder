@@ -357,42 +357,68 @@ class OpenAILogicExtraction:
             logger.error(f"Schema validation failed: {e}")
             raise APIError(f"Schema validation failed: {e}")
 
-    def _check_lazy_reader(self, response: Any) -> None:
+    def _check_lazy_reader(self, response: Any, content_tokens: Optional[int] = None) -> None:
         """
         Check if model produced suspiciously short output (lazy reading).
 
         Detects cases where the model fails to properly process the input
-        by checking the completion/prompt token ratio. Logs error but continues
+        by checking the completion/content token ratio. Logs error but continues
         processing to allow partial results.
 
         Args:
             response: OpenAI API response object with usage statistics
+            content_tokens: Optional token count of actual content (chunk/markdown text only,
+                           excluding system prompts). If provided, ratio is calculated as
+                           completion_tokens / content_tokens instead of completion_tokens / prompt_tokens.
+                           This eliminates false positives from small chunks with large system prompts.
         """
         if not hasattr(response, "usage"):
             logger.warning("Response missing usage statistics, skipping lazy reader check")
             return
 
-        prompt_tokens = response.usage.prompt_tokens
         completion_tokens = response.usage.completion_tokens
 
-        if prompt_tokens == 0:
-            logger.warning("Prompt tokens is 0, skipping lazy reader check")
-            return
+        # Use content-based ratio if content_tokens provided, else fall back to prompt-based
+        if content_tokens is not None and content_tokens > 0:
+            # Content-based ratio: measures output vs. actual input content
+            ratio = completion_tokens / content_tokens
+            threshold = 0.05  # 5% - more lenient since we're measuring actual content
+            ratio_description = f"{completion_tokens} completion / {content_tokens} content"
 
-        ratio = completion_tokens / prompt_tokens
-
-        logger.debug(
-            f"Token ratio check: {completion_tokens} completion / {prompt_tokens} prompt = {ratio:.4f}"
-        )
-
-        # Threshold: 10% allows legitimate short responses while catching lazy reading (<1%)
-        if ratio < 0.10:
-            logger.error(
-                f"LAZY READING DETECTED: Model produced suspiciously short output. "
-                f"Token ratio: {ratio:.4f} ({completion_tokens}/{prompt_tokens}). "
-                f"Expected ratio >= 0.10 for thorough processing. "
-                f"Results may be incomplete or low quality."
+            logger.debug(
+                f"Token ratio check (content-based): {ratio_description} = {ratio:.4f}"
             )
+
+            if ratio < threshold:
+                logger.error(
+                    f"LAZY READING DETECTED: Model produced suspiciously short output. "
+                    f"Token ratio: {ratio:.4f} ({ratio_description}). "
+                    f"Expected ratio >= {threshold:.2f} for thorough processing. "
+                    f"Results may be incomplete or low quality."
+                )
+        else:
+            # Fallback to prompt-based ratio (backward compatibility)
+            prompt_tokens = response.usage.prompt_tokens
+
+            if prompt_tokens == 0:
+                logger.warning("Prompt tokens is 0, skipping lazy reader check")
+                return
+
+            ratio = completion_tokens / prompt_tokens
+            threshold = 0.10  # 10% - original threshold
+            ratio_description = f"{completion_tokens} completion / {prompt_tokens} prompt"
+
+            logger.debug(
+                f"Token ratio check (prompt-based): {ratio_description} = {ratio:.4f}"
+            )
+
+            if ratio < threshold:
+                logger.error(
+                    f"LAZY READING DETECTED: Model produced suspiciously short output. "
+                    f"Token ratio: {ratio:.4f} ({ratio_description}). "
+                    f"Expected ratio >= {threshold:.2f} for thorough processing. "
+                    f"Results may be incomplete or low quality."
+                )
 
     def _call_api_with_retry(
         self, messages: List[Dict[str, Any]], attempt: int = 0
@@ -463,7 +489,8 @@ class OpenAILogicExtraction:
         chunk_symbol_md: str,
         chunk_index: int,
         total_chunks: int,
-        chunk_file_path: Optional[Path] = None
+        chunk_file_path: Optional[Path] = None,
+        chunk_tokens: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Process single chunk with its filtered symbols.
@@ -474,6 +501,7 @@ class OpenAILogicExtraction:
             chunk_index: Index of this chunk (1-based)
             total_chunks: Total number of chunks
             chunk_file_path: Optional path to chunk text file (for saving rendered prompt)
+            chunk_tokens: Optional token count of chunk text (for accurate lazy reader detection)
 
         Returns:
             PolicyAnalysis dict (not saved to file)
@@ -493,8 +521,8 @@ class OpenAILogicExtraction:
         # Call API
         response = self._call_api_with_retry(messages)
 
-        # Check for lazy reading before parsing
-        self._check_lazy_reader(response)
+        # Check for lazy reading before parsing (pass chunk_tokens for accurate ratio)
+        self._check_lazy_reader(response, content_tokens=chunk_tokens)
 
         # Parse and validate
         parsed_data = self._parse_response(response.choices[0].message.content)
@@ -721,7 +749,8 @@ class OpenAILogicExtraction:
                         refiner=refiner,
                         linter_func=validate_rules,
                         save_report_func=save_validation_report,
-                        max_refinement_attempts=1
+                        max_refinement_attempts=1,
+                        chunk_tokens=chunk_tokens
                     )
                     chunk_results.append(chunk_result)
                 except Exception as e:
@@ -750,11 +779,14 @@ class OpenAILogicExtraction:
                 symbol_table=full_symbol_md
             )
 
+            # Count tokens in markdown content for accurate lazy reader detection
+            content_tokens = count_tokens(markdown_content, model=self.model)
+
             # Call API with retry logic
             response = self._call_api_with_retry(messages)
 
-            # Check for lazy reading before parsing
-            self._check_lazy_reader(response)
+            # Check for lazy reading before parsing (pass content_tokens for accurate ratio)
+            self._check_lazy_reader(response, content_tokens=content_tokens)
 
             # Parse and validate response
             parsed_data = self._parse_response(response.choices[0].message.content)
