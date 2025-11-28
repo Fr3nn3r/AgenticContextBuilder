@@ -1,0 +1,330 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://example.com/schemas/core-claim-intake.schema.json",
+    "title": "Core Claim Intake Schema",
+    "description": "Line-of-business-agnostic core claim intake schema with extension points for LoB-specific data.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "claim": {
+            "$ref": "#/definitions/claim"
+        },
+        "policy_snapshot": {
+            "$ref": "#/definitions/policy_snapshot"
+        },
+        "extensions": {
+            "type": "object",
+            "description": "Optional LoB- or client-specific extensions. Keys are extension namespaces (e.g. 'Property', 'Motor', 'Life').",
+            "additionalProperties": {
+                "type": "object",
+                "description": "Extension payload; schema is defined outside of the core schema."
+            }
+        }
+    },
+    "required": [
+        "claim"
+    ],
+    "definitions": {
+        "claim": {
+            "type": "object",
+            "description": "Core claim object.",
+            "additionalProperties": false,
+            "properties": {
+                "header": {
+                    "$ref": "#/definitions/claim_header"
+                },
+                "policy": {
+                    "$ref": "#/definitions/claim_policy_reference"
+                },
+                "parties": {
+                    "$ref": "#/definitions/claim_parties"
+                },
+                "incident": {
+                    "$ref": "#/definitions/claim_incident"
+                },
+                "financials": {
+                    "$ref": "#/definitions/claim_financials"
+                },
+                "flags": {
+                    "$ref": "#/definitions/claim_flags"
+                }
+            },
+            "required": [
+                "header",
+                "incident"
+            ]
+        },
+        "claim_header": {
+            "type": "object",
+            "description": "Universal claim header fields.",
+            "additionalProperties": false,
+            "properties": {
+                "claim_id": {
+                    "type": "string",
+                    "description": "Unique identifier for the claim in the source or hub system."
+                },
+                "policy_number": {
+                    "type": "string",
+                    "description": "Identifier of the associated policy."
+                },
+                "line_of_business": {
+                    "type": "string",
+                    "description": "Canonical line of business (e.g., 'Property', 'Motor', 'Liability', 'Life', 'Health', 'Travel', 'Cyber')."
+                },
+                "claim_type": {
+                    "type": "string",
+                    "description": "High-level claim type; e.g., 'first_party', 'third_party', 'benefit', 'liability'."
+                },
+                "reported_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Date/time when the claim was reported (FNOL)."
+                },
+                "loss_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Date/time when the loss/event occurred."
+                },
+                "discovered_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Date/time when the loss was discovered, if different from loss_at."
+                },
+                "jurisdiction": {
+                    "type": "string",
+                    "description": "Applicable jurisdiction; typically an ISO 3166 country/region code, or internal code."
+                },
+                "reporting_channel": {
+                    "type": "string",
+                    "description": "Channel through which the claim was reported; e.g., 'phone', 'email', 'portal', 'broker_system', 'api', 'other'."
+                },
+                "source_system": {
+                    "type": "string",
+                    "description": "Identifier of the originating system for this claim (e.g., 'Guidewire', 'SAP', 'BrokerPortal')."
+                }
+            },
+            "required": [
+                "claim_id",
+                "reported_at",
+                "loss_at"
+            ]
+        },
+        "claim_policy_reference": {
+            "type": "object",
+            "description": "Minimal, LoB-agnostic reference to the policy in force.",
+            "additionalProperties": false,
+            "properties": {
+                "policy_number": {
+                    "type": "string",
+                    "description": "Identifier of the policy as used in the policy administration system."
+                },
+                "insurer_code": {
+                    "type": "string",
+                    "description": "Identifier for the insurer/carrier entity."
+                },
+                "product_code": {
+                    "type": "string",
+                    "description": "Internal product or program code."
+                },
+                "effective_from": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Policy effective date."
+                },
+                "effective_to": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Policy expiry date."
+                },
+                "claims_basis": {
+                    "type": "string",
+                    "enum": [
+                        "occurrence",
+                        "claims_made",
+                        "unknown"
+                    ],
+                    "description": "Policy trigger basis."
+                }
+            },
+            "required": [
+                "policy_number",
+                "effective_from",
+                "effective_to"
+            ]
+        },
+        "claim_parties": {
+            "type": "object",
+            "description": "Universally applicable party structure for claims.",
+            "additionalProperties": false,
+            "properties": {
+                "insured": {
+                    "$ref": "#/definitions/party"
+                },
+                "claimants": {
+                    "type": "array",
+                    "description": "List of parties asserting a claim or benefit.",
+                    "items": {
+                        "$ref": "#/definitions/claimant"
+                    }
+                }
+            }
+        },
+        "party": {
+            "type": "object",
+            "description": "Generic party representation.",
+            "additionalProperties": false,
+            "properties": {
+                "party_id": {
+                    "type": "string",
+                    "description": "Unique identifier for this party in the system (if available)."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable name of the party (person or organization)."
+                }
+            },
+            "required": [
+                "name"
+            ]
+        },
+        "claimant": {
+            "type": "object",
+            "description": "Party involved in the claim as a claimant/beneficiary/third party.",
+            "additionalProperties": false,
+            "properties": {
+                "party_id": {
+                    "type": "string",
+                    "description": "Unique identifier for this party in the system (if available)."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name of the claimant."
+                },
+                "role": {
+                    "type": "string",
+                    "description": "Role in the claim; e.g., 'primary_claimant', 'beneficiary', 'third_party', 'witness'."
+                }
+            },
+            "required": [
+                "name"
+            ]
+        },
+        "claim_incident": {
+            "type": "object",
+            "description": "LoB-agnostic description of the loss/incident.",
+            "additionalProperties": false,
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "Free-text description of what happened."
+                },
+                "primary_cause_code": {
+                    "type": "string",
+                    "description": "Primary cause-of-loss code. Interpretation and valid values are defined in LoB-specific configuration."
+                },
+                "secondary_cause_code": {
+                    "type": "string",
+                    "description": "Secondary or contributing cause-of-loss code."
+                },
+                "location_country": {
+                    "type": "string",
+                    "description": "Country where the incident occurred, typically ISO 3166-1 alpha-2 code."
+                },
+                "location_description": {
+                    "type": "string",
+                    "description": "Free-text description of the location (address, facility, route, etc.)."
+                }
+            },
+            "required": [
+                "description"
+            ]
+        },
+        "claim_financials": {
+            "type": "object",
+            "description": "Generic financial summary for the claim.",
+            "additionalProperties": false,
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "description": "Currency of all financial amounts, ISO 4217 code (e.g., 'USD', 'EUR', 'CHF')."
+                },
+                "amounts": {
+                    "type": "array",
+                    "description": "Generic breakdown of financial components. Types are configured per LoB.",
+                    "items": {
+                        "$ref": "#/definitions/financial_amount"
+                    }
+                }
+            },
+            "required": [
+                "currency"
+            ]
+        },
+        "financial_amount": {
+            "type": "object",
+            "description": "Single financial component in the claim.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Type/category of amount; e.g., 'claimed_total', 'reserve_total', 'paid_total', 'deductible_applied'."
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Monetary amount in the claim currency."
+                }
+            },
+            "required": [
+                "type",
+                "amount"
+            ]
+        },
+        "claim_flags": {
+            "type": "object",
+            "description": "Universal administrative/compliance flags. LoB-specific flags should live in extensions.",
+            "additionalProperties": false,
+            "properties": {
+                "fraud_indicator": {
+                    "type": "boolean",
+                    "description": "Indicates if there is any suspicion or detection of fraud (from human or automated sources)."
+                },
+                "external_report_indicator": {
+                    "type": "boolean",
+                    "description": "Indicates if any external authority (police, regulator, etc.) has been or must be notified."
+                },
+                "notice_timeliness": {
+                    "type": "string",
+                    "description": "Assessment of whether notice was timely.",
+                    "enum": [
+                        "on_time",
+                        "late",
+                        "unknown"
+                    ]
+                }
+            }
+        },
+        "policy_snapshot": {
+            "type": "object",
+            "description": "LoB- and product-specific policy values relevant to this claim, typically derived from a policy symbol table.",
+            "additionalProperties": false,
+            "properties": {
+                "limits": {
+                    "type": "object",
+                    "description": "Key-value pairs for coverage limits; keys are product-/LoB-specific.",
+                    "additionalProperties": {
+                        "type": "number",
+                        "description": "Limit amount in claim currency or as defined by product configuration."
+                    }
+                },
+                "deductibles": {
+                    "type": "object",
+                    "description": "Key-value pairs for deductibles; keys are product-/LoB-specific.",
+                    "additionalProperties": {
+                        "type": "number",
+                        "description": "Deductible amount in claim currency or as defined by product configuration."
+                    }
+                }
+            }
+        }
+    }
+}
