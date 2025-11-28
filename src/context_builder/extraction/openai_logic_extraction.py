@@ -22,10 +22,12 @@ from context_builder.extraction.chunking import (
     chunk_markdown_with_symbols,
     save_chunks,
     count_tokens,
-    get_token_encoder
+    get_token_encoder,
 )
 from context_builder.extraction.policy_logic_refiner import PolicyLogicRefiner
-from context_builder.extraction.chunk_refinement_orchestrator import ChunkRefinementOrchestrator
+from context_builder.extraction.chunk_refinement_orchestrator import (
+    ChunkRefinementOrchestrator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +65,7 @@ class OpenAILogicExtraction:
     """
 
     def __init__(
-        self,
-        prompt_path: Optional[str] = None,
-        schema_path: Optional[str] = None
+        self, prompt_path: Optional[str] = None, schema_path: Optional[str] = None
     ):
         """
         Initialize OpenAI logic extraction.
@@ -96,7 +96,7 @@ class OpenAILogicExtraction:
             self.client = OpenAI(
                 api_key=self.api_key,
                 timeout=self.timeout,
-                max_retries=0  # We handle retries ourselves for better control
+                max_retries=0,  # We handle retries ourselves for better control
             )
             logger.debug("OpenAI client initialized successfully")
         except ImportError:
@@ -180,7 +180,9 @@ class OpenAILogicExtraction:
             udm_schema_path = Path(__file__).parent.parent / "schemas" / "udm_schema.md"
 
             if not udm_schema_path.exists():
-                raise ConfigurationError(f"UDM schema markdown not found: {udm_schema_path}")
+                raise ConfigurationError(
+                    f"UDM schema markdown not found: {udm_schema_path}"
+                )
 
             # Read markdown file directly
             self.static_udm_md = udm_schema_path.read_text(encoding="utf-8")
@@ -214,14 +216,10 @@ class OpenAILogicExtraction:
         return {
             "name": self.schema_class.__name__,
             "strict": True,
-            "schema": pydantic_schema
+            "schema": pydantic_schema,
         }
 
-    def _build_messages(
-        self,
-        markdown_content: str,
-        **kwargs
-    ) -> List[Dict[str, Any]]:
+    def _build_messages(self, markdown_content: str, **kwargs) -> List[Dict[str, Any]]:
         """
         Build messages for OpenAI API call with static UDM context.
 
@@ -233,7 +231,9 @@ class OpenAILogicExtraction:
             List of message dictionaries for OpenAI API
         """
         # Load prompt with static UDM and other template kwargs
-        prompt_data = load_prompt(self.prompt_name, udm_context=self.static_udm_md, **kwargs)
+        prompt_data = load_prompt(
+            self.prompt_name, udm_context=self.static_udm_md, **kwargs
+        )
         messages = prompt_data["messages"]
 
         # Add markdown content to user message
@@ -246,10 +246,7 @@ class OpenAILogicExtraction:
         return messages
 
     def _save_rendered_prompt(
-        self,
-        messages: List[Dict[str, Any]],
-        chunk_file_path: Path,
-        chunk_index: int
+        self, messages: List[Dict[str, Any]], chunk_file_path: Path, chunk_index: int
     ) -> None:
         """
         Save rendered prompt to file for debugging.
@@ -276,19 +273,18 @@ class OpenAILogicExtraction:
                 content_parts.append("\n")
 
             # Write to file
-            with open(prompt_path, 'w', encoding='utf-8') as f:
+            with open(prompt_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(content_parts))
 
             logger.info(f"Saved rendered prompt to: {prompt_path.name}")
 
         except Exception as e:
-            logger.warning(f"Failed to save rendered prompt for chunk {chunk_index}: {e}")
+            logger.warning(
+                f"Failed to save rendered prompt for chunk {chunk_index}: {e}"
+            )
 
     def _save_chunk_result(
-        self,
-        validated_data: Dict[str, Any],
-        chunk_file_path: Path,
-        chunk_index: int
+        self, validated_data: Dict[str, Any], chunk_file_path: Path, chunk_index: int
     ) -> None:
         """
         Save chunk extraction result to file for debugging.
@@ -306,7 +302,7 @@ class OpenAILogicExtraction:
             )
 
             # Write to file
-            with open(result_path, 'w', encoding='utf-8') as f:
+            with open(result_path, "w", encoding="utf-8") as f:
                 json.dump(validated_data, f, indent=2, ensure_ascii=False)
 
             logger.info(f"Saved chunk result to: {result_path.name}")
@@ -357,7 +353,9 @@ class OpenAILogicExtraction:
             logger.error(f"Schema validation failed: {e}")
             raise APIError(f"Schema validation failed: {e}")
 
-    def _check_lazy_reader(self, response: Any, content_tokens: Optional[int] = None) -> None:
+    def _check_lazy_reader(
+        self, response: Any, content_tokens: Optional[int] = None
+    ) -> None:
         """
         Check if model produced suspiciously short output (lazy reading).
 
@@ -373,7 +371,9 @@ class OpenAILogicExtraction:
                            This eliminates false positives from small chunks with large system prompts.
         """
         if not hasattr(response, "usage"):
-            logger.warning("Response missing usage statistics, skipping lazy reader check")
+            logger.warning(
+                "Response missing usage statistics, skipping lazy reader check"
+            )
             return
 
         completion_tokens = response.usage.completion_tokens
@@ -383,7 +383,9 @@ class OpenAILogicExtraction:
             # Content-based ratio: measures output vs. actual input content
             ratio = completion_tokens / content_tokens
             threshold = 0.05  # 5% - more lenient since we're measuring actual content
-            ratio_description = f"{completion_tokens} completion / {content_tokens} content"
+            ratio_description = (
+                f"{completion_tokens} completion / {content_tokens} content"
+            )
 
             logger.debug(
                 f"Token ratio check (content-based): {ratio_description} = {ratio:.4f}"
@@ -406,7 +408,9 @@ class OpenAILogicExtraction:
 
             ratio = completion_tokens / prompt_tokens
             threshold = 0.10  # 10% - original threshold
-            ratio_description = f"{completion_tokens} completion / {prompt_tokens} prompt"
+            ratio_description = (
+                f"{completion_tokens} completion / {prompt_tokens} prompt"
+            )
 
             logger.debug(
                 f"Token ratio check (prompt-based): {ratio_description} = {ratio:.4f}"
@@ -448,11 +452,8 @@ class OpenAILogicExtraction:
                 messages=messages,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": json_schema
-                },
-                timeout=self.timeout
+                response_format={"type": "json_schema", "json_schema": json_schema},
+                timeout=self.timeout,
             )
             return response
 
@@ -465,7 +466,7 @@ class OpenAILogicExtraction:
 
             if is_retryable and attempt < self.retries - 1:
                 # Exponential backoff: 2^attempt * base_delay
-                wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                wait_time = (2**attempt) * 2  # 2, 4, 8 seconds
                 logger.warning(
                     f"API call failed (attempt {attempt + 1}/{self.retries}): {e}. "
                     f"Retrying in {wait_time} seconds..."
@@ -477,9 +478,13 @@ class OpenAILogicExtraction:
                 if "api_key" in error_str or "authentication" in error_str:
                     raise ConfigurationError(f"Invalid API key: {e}")
                 elif "rate" in error_str or "429" in error_str:
-                    raise APIError(f"Rate limit exceeded after {self.retries} retries: {e}")
+                    raise APIError(
+                        f"Rate limit exceeded after {self.retries} retries: {e}"
+                    )
                 elif "timeout" in error_str:
-                    raise APIError(f"Request timed out after {self.retries} retries: {e}")
+                    raise APIError(
+                        f"Request timed out after {self.retries} retries: {e}"
+                    )
                 else:
                     raise APIError(f"API call failed after {self.retries} retries: {e}")
 
@@ -490,7 +495,7 @@ class OpenAILogicExtraction:
         chunk_index: int,
         total_chunks: int,
         chunk_file_path: Optional[Path] = None,
-        chunk_tokens: Optional[int] = None
+        chunk_tokens: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Process single chunk with its filtered symbols.
@@ -509,10 +514,7 @@ class OpenAILogicExtraction:
         logger.info(f"Processing chunk {chunk_index}/{total_chunks}")
 
         # Build messages with chunk content and filtered symbols
-        messages = self._build_messages(
-            chunk_text,
-            symbol_table=chunk_symbol_md
-        )
+        messages = self._build_messages(chunk_text, symbol_table=chunk_symbol_md)
 
         # Save rendered prompt for debugging (if chunk file path provided)
         if chunk_file_path:
@@ -533,7 +535,7 @@ class OpenAILogicExtraction:
             validated_data["_chunk_usage"] = {
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
+                "total_tokens": response.usage.total_tokens,
             }
 
         validated_data["_chunk_index"] = chunk_index
@@ -545,8 +547,7 @@ class OpenAILogicExtraction:
         return validated_data
 
     def consolidate_chunk_results(
-        self,
-        chunk_results: List[Dict[str, Any]]
+        self, chunk_results: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Consolidate multiple PolicyAnalysis results from chunks.
@@ -563,11 +564,7 @@ class OpenAILogicExtraction:
 
         # Collect all rules
         all_rules = []
-        total_usage = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0
-        }
+        total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         for chunk_data in chunk_results:
             # Extract rules
@@ -581,15 +578,19 @@ class OpenAILogicExtraction:
                 total_usage["completion_tokens"] += usage.get("completion_tokens", 0)
                 total_usage["total_tokens"] += usage.get("total_tokens", 0)
 
-        logger.info(f"Consolidated {len(all_rules)} rules from {len(chunk_results)} chunks")
+        logger.info(
+            f"Consolidated {len(all_rules)} rules from {len(chunk_results)} chunks"
+        )
 
         # Build consolidated result
         consolidated = {
             "rules": all_rules,
-            "_consolidated_from": [f"chunk_{i+1:03d}" for i in range(len(chunk_results))],
+            "_consolidated_from": [
+                f"chunk_{i+1:03d}" for i in range(len(chunk_results))
+            ],
             "_total_rules": len(all_rules),
             "_total_chunks": len(chunk_results),
-            "_usage": total_usage
+            "_usage": total_usage,
         }
 
         return consolidated
@@ -599,7 +600,7 @@ class OpenAILogicExtraction:
         markdown_path: str,
         output_base_path: str,
         symbol_table_json_path: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Process markdown file and extract policy logic.
@@ -662,7 +663,7 @@ class OpenAILogicExtraction:
                 )
 
         # Load symbol table
-        with open(symbol_table_json_path, 'r', encoding='utf-8') as f:
+        with open(symbol_table_json_path, "r", encoding="utf-8") as f:
             symbol_table_json = json.load(f)
 
         # DISABLED: Dynamic UDM generation
@@ -673,7 +674,9 @@ class OpenAILogicExtraction:
 
         # Load prompt with static UDM context to count system overhead accurately
         prompt_data = load_prompt(self.prompt_name, udm_context=self.static_udm_md)
-        system_message = next((m["content"] for m in prompt_data["messages"] if m["role"] == "system"), "")
+        system_message = next(
+            (m["content"] for m in prompt_data["messages"] if m["role"] == "system"), ""
+        )
         system_tokens = count_tokens(system_message, encoder)
 
         # Count markdown tokens
@@ -681,7 +684,8 @@ class OpenAILogicExtraction:
 
         # Render full symbol table to count its tokens
         from context_builder.utils.symbol_table_renderer import render_symbol_context
-        full_symbol_md = render_symbol_context(symbol_table_json['extracted_data'])
+
+        full_symbol_md = render_symbol_context(symbol_table_json["extracted_data"])
         symbol_tokens = count_tokens(full_symbol_md, encoder)
 
         # Reserve buffer for LLM response (complex policy logic can be large)
@@ -702,7 +706,9 @@ class OpenAILogicExtraction:
         )
 
         if needs_chunking:
-            logger.info(f"Total {total_input_tokens} tokens exceeds {effective_limit} budget, enabling chunking")
+            logger.info(
+                f"Total {total_input_tokens} tokens exceeds {effective_limit} budget, enabling chunking"
+            )
 
         # Process with or without chunking
         if needs_chunking:
@@ -714,7 +720,7 @@ class OpenAILogicExtraction:
                 markdown_path=str(markdown_file),
                 symbol_table_json=symbol_table_json,
                 model_name=self.model,
-                system_prompt_text=system_message
+                system_prompt_text=system_message,
                 # max_tokens uses default from chunking.MAX_TOKENS (4000)
             )
 
@@ -724,33 +730,39 @@ class OpenAILogicExtraction:
             # Initialize refinement services
             from context_builder.extraction.policy_logic_linter import (
                 validate_rules,
-                save_validation_report
+                save_validation_report,
             )
+
             orchestrator = ChunkRefinementOrchestrator()
             refiner = PolicyLogicRefiner()
 
             # Process each chunk with Extract → Lint → Refine flow
             chunk_results = []
-            for i, ((chunk_text, chunk_symbol_md, chunk_tokens, symbol_keys), (text_path, symbol_path)) in enumerate(zip(chunks, chunk_files), 1):
+            for i, (
+                (chunk_text, chunk_symbol_md, chunk_tokens, symbol_keys),
+                (text_path, symbol_path),
+            ) in enumerate(zip(chunks, chunk_files), 1):
                 try:
                     # DISABLED: Dynamic UDM filtering
                     # chunk_dynamic_vars = [...]
                     # chunk_dynamic_udm_md = render_dynamic_udm(chunk_dynamic_vars)
 
                     # Use orchestrator to coordinate Extract → Lint → Refine
-                    chunk_result, chunk_validation_report = orchestrator.process_chunk_with_refinement(
-                        chunk_text=chunk_text,
-                        chunk_symbol_md=chunk_symbol_md,
-                        udm_context=self.static_udm_md,
-                        chunk_index=i,
-                        total_chunks=len(chunks),
-                        chunk_file_path=text_path,
-                        extractor=self,
-                        refiner=refiner,
-                        linter_func=validate_rules,
-                        save_report_func=save_validation_report,
-                        max_refinement_attempts=1,
-                        chunk_tokens=chunk_tokens
+                    chunk_result, chunk_validation_report = (
+                        orchestrator.process_chunk_with_refinement(
+                            chunk_text=chunk_text,
+                            chunk_symbol_md=chunk_symbol_md,
+                            udm_context=self.static_udm_md,
+                            chunk_index=i,
+                            total_chunks=len(chunks),
+                            chunk_file_path=text_path,
+                            extractor=self,
+                            refiner=refiner,
+                            linter_func=validate_rules,
+                            save_report_func=save_validation_report,
+                            max_refinement_attempts=1,
+                            chunk_tokens=chunk_tokens,
+                        )
                     )
                     chunk_results.append(chunk_result)
                 except Exception as e:
@@ -775,12 +787,11 @@ class OpenAILogicExtraction:
 
             # Build messages with full symbol table and static UDM context
             messages = self._build_messages(
-                markdown_content,
-                symbol_table=full_symbol_md
+                markdown_content, symbol_table=full_symbol_md
             )
 
             # Count tokens in markdown content for accurate lazy reader detection
-            content_tokens = count_tokens(markdown_content, encoder)
+            content_tokens = count_tokens(markdown_content, model=self.model)
 
             # Call API with retry logic
             response = self._call_api_with_retry(messages)
@@ -797,7 +808,7 @@ class OpenAILogicExtraction:
                 validated_data["_usage"] = {
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "total_tokens": response.usage.total_tokens,
                 }
 
             result["_chunked"] = False
@@ -844,19 +855,19 @@ class OpenAILogicExtraction:
         try:
             from context_builder.extraction.policy_logic_linter import (
                 validate_rules,
-                save_validation_report
+                save_validation_report,
             )
 
-            logger.info("Running final PolicyLinter validation on consolidated result...")
+            logger.info(
+                "Running final PolicyLinter validation on consolidated result..."
+            )
 
             # Validate consolidated rules (in-memory, exhaustive, no refinement)
             validation_report = validate_rules(validated_data)
 
             # Save final JSON report with standard name
             save_validation_report(
-                validation_report,
-                str(normalized_path),
-                filename="audit_report.json"
+                validation_report, str(normalized_path), filename="audit_report.json"
             )
 
             # Add validation summary to result
