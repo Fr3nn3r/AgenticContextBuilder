@@ -24,6 +24,8 @@ from context_builder.extraction.chunking import (
     count_tokens,
     get_token_encoder
 )
+from context_builder.extraction.policy_logic_refiner import PolicyLogicRefiner
+from context_builder.extraction.chunk_refinement_orchestrator import ChunkRefinementOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -691,7 +693,15 @@ class OpenAILogicExtraction:
             # Save chunk files
             chunk_files = save_chunks(chunks, base_path)
 
-            # Process each chunk
+            # Initialize refinement services
+            from context_builder.extraction.policy_logic_linter import (
+                validate_rules,
+                save_validation_report
+            )
+            orchestrator = ChunkRefinementOrchestrator()
+            refiner = PolicyLogicRefiner()
+
+            # Process each chunk with Extract → Lint → Refine flow
             chunk_results = []
             for i, ((chunk_text, chunk_symbol_md, chunk_tokens, symbol_keys), (text_path, symbol_path)) in enumerate(zip(chunks, chunk_files), 1):
                 try:
@@ -699,12 +709,19 @@ class OpenAILogicExtraction:
                     # chunk_dynamic_vars = [...]
                     # chunk_dynamic_udm_md = render_dynamic_udm(chunk_dynamic_vars)
 
-                    chunk_result = self.process_chunk(
+                    # Use orchestrator to coordinate Extract → Lint → Refine
+                    chunk_result, chunk_validation_report = orchestrator.process_chunk_with_refinement(
                         chunk_text=chunk_text,
                         chunk_symbol_md=chunk_symbol_md,
+                        udm_context=self.static_udm_md,
                         chunk_index=i,
                         total_chunks=len(chunks),
-                        chunk_file_path=text_path
+                        chunk_file_path=text_path,
+                        extractor=self,
+                        refiner=refiner,
+                        linter_func=validate_rules,
+                        save_report_func=save_validation_report,
+                        max_refinement_attempts=1
                     )
                     chunk_results.append(chunk_result)
                 except Exception as e:
@@ -791,29 +808,29 @@ class OpenAILogicExtraction:
         logger.info(f"Successfully extracted logic from {markdown_path}")
         logger.info(f"Outputs: {normalized_path}, {transpiled_path}")
 
-        # Run PolicyLinter validation on extracted logic
+        # Run final PolicyLinter validation on consolidated result
         try:
             from context_builder.extraction.policy_logic_linter import (
                 validate_rules,
                 save_validation_report
             )
 
-            logger.info("Running PolicyLinter validation on extracted logic...")
+            logger.info("Running final PolicyLinter validation on consolidated result...")
 
-            # Validate rules (in-memory, exhaustive)
+            # Validate consolidated rules (in-memory, exhaustive, no refinement)
             validation_report = validate_rules(validated_data)
 
-            # Save JSON report
+            # Save final JSON report with standard name
             save_validation_report(
                 validation_report,
                 str(normalized_path),
-                retry_count=0
+                filename="audit_report.json"
             )
 
             # Add validation summary to result
             result["_validation_summary"] = validation_report.summary
             result["_validation_report"] = str(
-                normalized_path.parent / "policy_logic_audit_report_retry_0.json"
+                normalized_path.parent / "audit_report.json"
             )
 
             # Log warning if violations found (non-blocking)

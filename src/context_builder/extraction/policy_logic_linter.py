@@ -183,12 +183,14 @@ def _get_var_name(node: Dict) -> str:
 
 def _is_valid_vocab(var_path: str, valid_paths: Set[str]) -> bool:
     """
-    Check if variable path is valid according to schema + attributes.* pattern.
+    Check if variable path is valid according to tiered validation rules.
 
-    Hybrid approach:
-    - Allows exact schema paths (e.g., claim.header.jurisdiction)
-    - Allows attributes.* pattern (e.g., claim.header.attributes.trip_type)
-    - Rejects custom.* or any unrecognized paths
+    Validation hierarchy (case-sensitive):
+    1. Exact UDM match: Standard schema paths (e.g., claim.header.jurisdiction)
+    2. Wildcard match: Schema paths with .* (e.g., claim.header.attributes.*)
+    3. Array notation: Paths with [] (e.g., claim.parties.claimants[].role)
+    4. Custom variables: Tier 3 custom concepts (claim.custom.*)
+    5. Attributes pattern: Policy-specific attributes anywhere (*.attributes.*)
 
     Args:
         var_path: Variable path to validate (e.g., "claim.header.jurisdiction")
@@ -197,26 +199,41 @@ def _is_valid_vocab(var_path: str, valid_paths: Set[str]) -> bool:
     Returns:
         True if path is valid, False otherwise
     """
-    # Check exact match
+    # Check 1: Exact UDM match
     if var_path in valid_paths:
+        logger.debug(f"Variable '{var_path}' passed validation: exact UDM match")
         return True
 
-    # Check wildcard match for attributes.*
+    # Check 2: Wildcard match for schema-defined dynamic attributes
     # Example: claim.header.attributes.trip_type matches claim.header.attributes.*
     path_parts = var_path.split(".")
     for i in range(len(path_parts)):
         prefix = ".".join(path_parts[:i+1])
         if f"{prefix}.*" in valid_paths:
+            logger.debug(f"Variable '{var_path}' passed validation: wildcard match ({prefix}.*)")
             return True
 
-    # Check array notation (e.g., claim.parties.claimants[].role)
+    # Check 3: Array notation (e.g., claim.parties.claimants[].role)
     # Replace [] with exact match
     if "[]" not in var_path:
         # Try adding [] at different positions
         for i in range(len(path_parts)):
             test_path = ".".join(path_parts[:i]) + "[]." + ".".join(path_parts[i:])
             if test_path in valid_paths or _is_valid_vocab(test_path, valid_paths):
+                logger.debug(f"Variable '{var_path}' passed validation: array notation match")
                 return True
+
+    # Check 4: Tier 3 Custom Variables (claim.custom.*)
+    # Allows policy-specific concepts not in standard schema
+    if var_path.startswith("claim.custom."):
+        logger.debug(f"Variable '{var_path}' passed validation: claim.custom.* pattern (Tier 3)")
+        return True
+
+    # Check 5: Attributes pattern anywhere in path (*.attributes.*)
+    # Allows policy-specific attributes in any context (incident, coverage, claimant, etc.)
+    if ".attributes." in var_path:
+        logger.debug(f"Variable '{var_path}' passed validation: .attributes.* pattern (policy-specific)")
+        return True
 
     return False
 
@@ -246,6 +263,64 @@ def _is_tautology(op: str, args: List[Any]) -> bool:
             return True
 
     return False
+
+
+def _detect_common_patterns(node: Dict, rule_id: str, rule_name: str, location: str) -> List[ValidationError]:
+    """
+    Detect common LLM failure patterns and provide specific remediation.
+
+    Patterns detected:
+    - Operator as string value (e.g., comparing to ">=" instead of using >= operator)
+    - Double variable nesting (e.g., {"op": "var", "args": [{"op": "var", ...}]})
+
+    Args:
+        node: Logic node to check
+        rule_id: ID of rule being validated
+        rule_name: Name of rule being validated
+        location: JSON path location in tree
+
+    Returns:
+        List of ValidationError objects for detected patterns
+    """
+    violations = []
+
+    if not isinstance(node, dict) or "op" not in node:
+        return violations
+
+    op = node.get("op")
+    args = node.get("args", [])
+
+    # Pattern 1: Operator as string value
+    if op in ["==", "!=", "in"]:
+        operator_strings = {">=", "<=", ">", "<", "==", "!=", "if", "and", "or", "in", "not"}
+        for arg in args:
+            if isinstance(arg, str) and arg in operator_strings:
+                violations.append(ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.SYNTAX_ERROR,
+                    severity=Severity.CRITICAL,
+                    message=f"TYPE ERROR: You are using an operator ('{arg}') as a string value. You likely meant to use the operator itself, not compare against it. Example: Instead of {{'op': '==', 'args': [var, '>=']}} (comparing to string '>='), use {{'op': '>=', 'args': [var, value]}} (actual comparison).",
+                    operator=op,
+                    location=location,
+                    invalid_value=arg
+                ))
+
+    # Pattern 2: Double variable nesting
+    if op == "var" and len(args) > 0:
+        first_arg = args[0]
+        if isinstance(first_arg, dict) and first_arg.get("op") == "var":
+            violations.append(ValidationError(
+                rule_id=rule_id,
+                rule_name=rule_name,
+                type=ViolationType.SYNTAX_ERROR,
+                severity=Severity.CRITICAL,
+                message=f"SYNTAX ERROR: Double-nested variables detected at {location}. You don't need to wrap a 'var' operator inside another 'var' operator. Simplify: Instead of {{'op': 'var', 'args': [{{'op': 'var', 'args': ['name']}}]}}, use {{'op': 'var', 'args': ['name']}}.",
+                operator=op,
+                location=location
+            ))
+
+    return violations
 
 
 def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "root") -> List[ValidationError]:
@@ -284,7 +359,7 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
                 rule_name=rule_name,
                 type=ViolationType.NULL_BUG,
                 severity=Severity.CRITICAL,
-                message="NULL value in 'in' operator (should be array)",
+                message="CRITICAL ERROR: You output 'null' as the list argument in an 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit list of Custom Strings describing the missing concept (e.g., ['claim.custom.unspecified_cause']).",
                 operator=op,
                 location=location,
                 invalid_value=None
@@ -295,7 +370,7 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
                 rule_name=rule_name,
                 type=ViolationType.NULL_BUG,
                 severity=Severity.CRITICAL,
-                message="NULL value in 'in' array",
+                message="CRITICAL ERROR: You included 'null' inside a list for the 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit Custom String describing the missing concept (e.g., 'claim.custom.unspecified_cause').",
                 operator=op,
                 location=location,
                 invalid_value=None
@@ -309,22 +384,38 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
         # Handle callable validators (variadic operators)
         if callable(expected):
             if not expected(actual):
+                # Provide operator-specific instructions
+                if op in ["and", "or"]:
+                    message = f"SYNTAX ERROR: The '{op}' operator requires at least 2 arguments. You provided {actual}. This may indicate incorrect nesting or missing arguments."
+                else:
+                    message = f"SYNTAX ERROR: The '{op}' operator is malformed. It requires at least 2 arguments. You provided {actual}. Check for nesting errors or missing arguments."
+
                 violations.append(ValidationError(
                     rule_id=rule_id,
                     rule_name=rule_name,
                     type=ViolationType.SYNTAX_ERROR,
                     severity=Severity.CRITICAL,
-                    message=f"Operator '{op}' has invalid argument count: {actual}",
+                    message=message,
                     operator=op,
                     location=location
                 ))
         elif expected != actual:
+            # Provide operator-specific prescriptive instructions
+            if op == "if":
+                message = f"SYNTAX ERROR: The 'if' operator strictly requires exactly 3 arguments: [condition, true_value, false_value]. You provided {actual}. Common mistake: You likely flattened multiple conditions directly into the 'if' args. Wrap multiple conditions in an 'and' or 'or' operator. Example: {{'op': 'if', 'args': [{{'op': 'and', 'args': [cond1, cond2]}}, true_val, false_val]}}"
+            elif op == "in":
+                message = f"SYNTAX ERROR: The 'in' operator requires exactly 2 arguments: [element, list_of_values]. You provided {actual}. Ensure the second argument is a list, not individual values."
+            elif op in ["==", "!=", ">", ">=", "<", "<="]:
+                message = f"SYNTAX ERROR: The comparison operator '{op}' requires exactly 2 arguments: [left, right]. You provided {actual}."
+            else:
+                message = f"SYNTAX ERROR: The '{op}' operator expects exactly {expected} arguments, got {actual}. Check your logic tree structure for nesting errors."
+
             violations.append(ValidationError(
                 rule_id=rule_id,
                 rule_name=rule_name,
                 type=ViolationType.SYNTAX_ERROR,
                 severity=Severity.CRITICAL,
-                message=f"Operator '{op}' expects {expected} arguments, got {actual}",
+                message=message,
                 operator=op,
                 location=location
             ))
@@ -336,10 +427,14 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
             rule_name=rule_name,
             type=ViolationType.SYNTAX_ERROR,
             severity=Severity.WARNING,
-            message=f"Tautological comparison detected: always evaluates to same value",
+            message=f"LOGIC WARNING: This rule compares constant values that always produce the same result (e.g., true == true or 'x' in []). This creates an 'Always True' or 'Always False' rule. If you meant to flag a concept you can't test programmatically, use the 'human_flag' operator instead. Otherwise, replace with actual variable comparisons.",
             operator=op,
             location=location
         ))
+
+    # Check for common LLM failure patterns
+    pattern_violations = _detect_common_patterns(node, rule_id, rule_name, location)
+    violations.extend(pattern_violations)
 
     return violations
 
@@ -381,12 +476,15 @@ def _validate_vocabulary(
 
         # Validate against schema vocabulary
         if not _is_valid_vocab(var_name, valid_paths):
+            # Extract the last part of the variable name for suggestions
+            var_suffix = var_name.split('.')[-1] if '.' in var_name else var_name
+
             violations.append(ValidationError(
                 rule_id=rule_id,
                 rule_name=rule_name,
                 type=ViolationType.VOCAB_ERROR,
                 severity=Severity.CRITICAL,
-                message=f"Variable path not found in UDM schema: {var_name}",
+                message=f"UNKNOWN VARIABLE: '{var_name}' does not exist in the Standard UDM. OPTIONS: (1) Check for spelling errors against the UDM Context. (2) If this is a policy-specific attribute (e.g., trip type, equipment type), rename it to 'incident.attributes.{var_suffix}'. (3) If it is a completely new insurance concept not in the standard schema, rename it to 'claim.custom.{var_suffix}'.",
                 variable=var_name,
                 location=location
             ))
@@ -428,7 +526,7 @@ def _validate_vocabulary(
                                 rule_name=rule_name,
                                 type=ViolationType.ENUM_ERROR,
                                 severity=Severity.CRITICAL,
-                                message=f"Value '{val}' not in schema enum for {var_name}. Valid: {sorted(valid_values)}",
+                                message=f"INVALID ENUM VALUE: '{val}' is not allowed for '{var_name}'. Valid options are: {sorted(valid_values)}. INSTRUCTIONS: Select the closest semantic match from the valid list OR use a Tier 3 Custom Variable (e.g., 'claim.custom.{val}') if this concept is legally distinct and cannot be mapped to existing values.",
                                 variable=var_name,
                                 invalid_value=val,
                                 location=location
@@ -575,7 +673,8 @@ def validate_rules(
 def save_validation_report(
     report: ValidationReport,
     output_path: str,
-    retry_count: int = 0
+    retry_count: int = 0,
+    filename: Optional[str] = None
 ) -> None:
     """
     Save validation report to JSON file.
@@ -583,13 +682,19 @@ def save_validation_report(
     Args:
         report: ValidationReport to save
         output_path: Path to output JSON file
-        retry_count: Retry attempt number (for filename)
+        retry_count: Retry attempt number (for filename, ignored if filename provided)
+        filename: Optional custom filename. If None, uses default pattern.
 
-    Example filename: policy_logic_audit_report_retry_0.json
+    Example filenames:
+        - Default: policy_logic_audit_report_retry_0.json
+        - Custom: audit_report.json, chunk_001_audit_report.json
     """
-    # Build filename with retry count
+    # Build filename
     output_path_obj = Path(output_path)
-    filename = f"policy_logic_audit_report_retry_{retry_count}.json"
+    if filename is None:
+        # Default pattern with retry count
+        filename = f"policy_logic_audit_report_retry_{retry_count}.json"
+
     full_path = output_path_obj.parent / filename
 
     try:
