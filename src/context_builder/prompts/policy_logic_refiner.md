@@ -53,8 +53,12 @@ Analyze the specific **ERROR MESSAGE** for each rule and apply the matching stra
     * *Fixing IF:* Ensure it is `[condition, true_val, false_val]`. Wrap multiple conditions in `and`.
     * *Fixing IN:* Ensure it is `[element, list]`.
 
+* **SPECIAL CASE: PLACEHOLDER IN OUTPUT:**
+    * If `__REWRITE_WITH_OR_LOGIC__` appears as a **Result Value** (not a condition), you must replace it with the correct Limit Variable or Amount.
+    * *Text:* "Increased to the amount shown in Declarations."
+
 user:
-### FAILED RULES REPORT
+### FAILED RULES REPORT (TOTAL: {{ error_count }})
 {{ linter_error_report }}
 
 ### OUTPUT INSTRUCTIONS

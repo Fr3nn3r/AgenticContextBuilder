@@ -11,6 +11,7 @@ Runs after Pydantic validation as an in-memory quality gate.
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, asdict
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class ViolationType(str, Enum):
     """Types of validation violations."""
+
     NULL_BUG = "NULL_BUG"
     SYNTAX_ERROR = "SYNTAX_ERROR"
     VOCAB_ERROR = "VOCAB_ERROR"
@@ -29,6 +31,7 @@ class ViolationType(str, Enum):
 
 class Severity(str, Enum):
     """Violation severity levels."""
+
     CRITICAL = "CRITICAL"
     WARNING = "WARNING"
 
@@ -36,6 +39,7 @@ class Severity(str, Enum):
 @dataclass
 class ValidationError:
     """Structured validation error."""
+
     rule_id: str
     rule_name: str
     type: ViolationType
@@ -50,6 +54,7 @@ class ValidationError:
 @dataclass
 class ValidationReport:
     """Complete validation report with summary and violations."""
+
     summary: Dict[str, int]
     violations: List[Dict[str, Any]]
 
@@ -57,7 +62,13 @@ class ValidationReport:
         """Convert to dictionary for JSON serialization."""
         return {
             "summary": self.summary,
-            "violations": [asdict(v) for v in self.violations] if isinstance(self.violations[0] if self.violations else None, ValidationError) else self.violations
+            "violations": (
+                [asdict(v) for v in self.violations]
+                if isinstance(
+                    self.violations[0] if self.violations else None, ValidationError
+                )
+                else self.violations
+            ),
         }
 
 
@@ -70,15 +81,12 @@ OPERATOR_ARG_COUNTS = {
     ">=": 2,
     "<": 2,
     "<=": 2,
-
     # Logical operators
     "and": lambda n: n >= 2,  # Variadic: at least 2 args
-    "or": lambda n: n >= 2,   # Variadic: at least 2 args
+    "or": lambda n: n >= 2,  # Variadic: at least 2 args
     "not": 1,
-
     # Membership
     "in": 2,  # [value, list]
-
     # Arithmetic (for limit/deductible calculations)
     "+": lambda n: n >= 2,
     "-": lambda n: n >= 2,
@@ -86,13 +94,14 @@ OPERATOR_ARG_COUNTS = {
     "/": 2,
     "min": lambda n: n >= 1,
     "max": lambda n: n >= 1,
-
     # Conditional
     "if": 3,  # [condition, then_value, else_value]
 }
 
 
-def _load_schema_enums(schema_path: Optional[str] = None) -> Tuple[Dict[str, Set[str]], Set[str]]:
+def _load_schema_enums(
+    schema_path: Optional[str] = None,
+) -> Tuple[Dict[str, Set[str]], Set[str]]:
     """
     Load enum definitions and valid UDM paths from extended schema.
 
@@ -104,14 +113,18 @@ def _load_schema_enums(schema_path: Optional[str] = None) -> Tuple[Dict[str, Set
         Tuple of (schema_enums dict, valid_paths set)
     """
     if schema_path is None:
-        schema_path = str(Path(__file__).parent.parent / "schemas" / "extended_standard_claim_schema.json")
+        schema_path = str(
+            Path(__file__).parent.parent
+            / "schemas"
+            / "extended_standard_claim_schema.json"
+        )
 
     if not Path(schema_path).exists():
         logger.warning(f"Schema file not found: {schema_path}")
         return {}, set()
 
     try:
-        with open(schema_path, 'r', encoding='utf-8') as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
 
         schema_enums = {}
@@ -131,7 +144,9 @@ def _load_schema_enums(schema_path: Optional[str] = None) -> Tuple[Dict[str, Set
                 schema_enums[path] = set(obj["enum"])
 
             # Handle additionalProperties (dynamic attributes namespace)
-            if "additionalProperties" in obj and isinstance(obj["additionalProperties"], dict):
+            if "additionalProperties" in obj and isinstance(
+                obj["additionalProperties"], dict
+            ):
                 # Allow any key under this path (e.g., claim.header.attributes.*)
                 valid_paths.add(f"{path}.*")
 
@@ -156,7 +171,9 @@ def _load_schema_enums(schema_path: Optional[str] = None) -> Tuple[Dict[str, Set
 
         extract_schema_info(schema)
 
-        logger.debug(f"Loaded {len(schema_enums)} enum definitions and {len(valid_paths)} valid paths from schema")
+        logger.debug(
+            f"Loaded {len(schema_enums)} enum definitions and {len(valid_paths)} valid paths from schema"
+        )
         return schema_enums, valid_paths
 
     except Exception as e:
@@ -188,9 +205,10 @@ def _is_valid_vocab(var_path: str, valid_paths: Set[str]) -> bool:
     Validation hierarchy (case-sensitive):
     1. Exact UDM match: Standard schema paths (e.g., claim.header.jurisdiction)
     2. Wildcard match: Schema paths with .* (e.g., claim.header.attributes.*)
-    3. Array notation: Paths with [] (e.g., claim.parties.claimants[].role)
+    3. Array notation: Paths with [] or [N] (e.g., claim.parties.claimants[].role, claim.amounts[0].total)
     4. Custom variables: Tier 3 custom concepts (claim.custom.*)
     5. Attributes pattern: Policy-specific attributes anywhere (*.attributes.*)
+    6. JMESPath Array Filtering: claim.financials.amounts[?(@.type=='...')]...
 
     Args:
         var_path: Variable path to validate (e.g., "claim.header.jurisdiction")
@@ -199,41 +217,71 @@ def _is_valid_vocab(var_path: str, valid_paths: Set[str]) -> bool:
     Returns:
         True if path is valid, False otherwise
     """
-    # Check 1: Exact UDM match
-    if var_path in valid_paths:
+    # Normalize numeric array indices to empty brackets for validation
+    # Skip normalization for JMESPath filter syntax (contains [?)
+    normalized_path = var_path
+    if "[?" not in var_path:
+        # Replace [0], [1], [99], etc. with [] for schema validation
+        # Example: claim.amounts[0].total -> claim.amounts[].total
+        normalized_path = re.sub(r'\[\d+\]', '[]', var_path)
+        if normalized_path != var_path:
+            logger.debug(f"Normalized '{var_path}' to '{normalized_path}' for validation")
+
+    # Check 1: Exact UDM match (using normalized path)
+    if normalized_path in valid_paths:
         logger.debug(f"Variable '{var_path}' passed validation: exact UDM match")
         return True
 
     # Check 2: Wildcard match for schema-defined dynamic attributes
     # Example: claim.header.attributes.trip_type matches claim.header.attributes.*
-    path_parts = var_path.split(".")
-    for i in range(len(path_parts)):
-        prefix = ".".join(path_parts[:i+1])
+    # Use normalized_path for validation (handles [0] -> [])
+    normalized_parts = normalized_path.split(".")
+    for i in range(len(normalized_parts)):
+        prefix = ".".join(normalized_parts[: i + 1])
         if f"{prefix}.*" in valid_paths:
-            logger.debug(f"Variable '{var_path}' passed validation: wildcard match ({prefix}.*)")
+            logger.debug(
+                f"Variable '{var_path}' passed validation: wildcard match ({prefix}.*)"
+            )
             return True
 
     # Check 3: Array notation (e.g., claim.parties.claimants[].role)
-    # Replace [] with exact match
-    if "[]" not in var_path:
+    # Try adding [] at different positions if not already present
+    if "[]" not in normalized_path:
         # Try adding [] at different positions
-        for i in range(len(path_parts)):
-            test_path = ".".join(path_parts[:i]) + "[]." + ".".join(path_parts[i:])
+        for i in range(len(normalized_parts)):
+            test_path = ".".join(normalized_parts[:i]) + "[]." + ".".join(normalized_parts[i:])
             if test_path in valid_paths or _is_valid_vocab(test_path, valid_paths):
-                logger.debug(f"Variable '{var_path}' passed validation: array notation match")
+                logger.debug(
+                    f"Variable '{var_path}' passed validation: array notation match"
+                )
                 return True
 
     # Check 4: Tier 3 Custom Variables (claim.custom.*)
     # Allows policy-specific concepts not in standard schema
     if var_path.startswith("claim.custom."):
-        logger.debug(f"Variable '{var_path}' passed validation: claim.custom.* pattern (Tier 3)")
+        logger.debug(
+            f"Variable '{var_path}' passed validation: claim.custom.* pattern (Tier 3)"
+        )
         return True
 
     # Check 5: Attributes pattern anywhere in path (*.attributes.*)
     # Allows policy-specific attributes in any context (incident, coverage, claimant, etc.)
     if ".attributes." in var_path:
-        logger.debug(f"Variable '{var_path}' passed validation: .attributes.* pattern (policy-specific)")
+        logger.debug(
+            f"Variable '{var_path}' passed validation: .attributes.* pattern (policy-specific)"
+        )
         return True
+
+    # Check 6: JMESPath Array Filtering (Advanced)
+    # Pattern: claim.financials.amounts[?(@.type=='...')]...
+    if "[?(@." in var_path:
+        # 1. Extract the base path (e.g. claim.financials.amounts)
+        base_path = var_path.split("[?")[0]
+
+        # 2. Check if base path is valid
+        if _is_valid_vocab(base_path, valid_paths):
+            logger.debug(f"Validating '{var_path}' via JMESPath rule.")
+            return True
 
     return False
 
@@ -265,7 +313,9 @@ def _is_tautology(op: str, args: List[Any]) -> bool:
     return False
 
 
-def _detect_common_patterns(node: Dict, rule_id: str, rule_name: str, location: str) -> List[ValidationError]:
+def _detect_common_patterns(
+    node: Dict, rule_id: str, rule_name: str, location: str
+) -> List[ValidationError]:
     """
     Detect common LLM failure patterns and provide specific remediation.
 
@@ -292,38 +342,56 @@ def _detect_common_patterns(node: Dict, rule_id: str, rule_name: str, location: 
 
     # Pattern 1: Operator as string value
     if op in ["==", "!=", "in"]:
-        operator_strings = {">=", "<=", ">", "<", "==", "!=", "if", "and", "or", "in", "not"}
+        operator_strings = {
+            ">=",
+            "<=",
+            ">",
+            "<",
+            "==",
+            "!=",
+            "if",
+            "and",
+            "or",
+            "in",
+            "not",
+        }
         for arg in args:
             if isinstance(arg, str) and arg in operator_strings:
-                violations.append(ValidationError(
-                    rule_id=rule_id,
-                    rule_name=rule_name,
-                    type=ViolationType.SYNTAX_ERROR,
-                    severity=Severity.CRITICAL,
-                    message=f"TYPE ERROR: You are using an operator ('{arg}') as a string value. You likely meant to use the operator itself, not compare against it. Example: Instead of {{'op': '==', 'args': [var, '>=']}} (comparing to string '>='), use {{'op': '>=', 'args': [var, value]}} (actual comparison).",
-                    operator=op,
-                    location=location,
-                    invalid_value=arg
-                ))
+                violations.append(
+                    ValidationError(
+                        rule_id=rule_id,
+                        rule_name=rule_name,
+                        type=ViolationType.SYNTAX_ERROR,
+                        severity=Severity.CRITICAL,
+                        message=f"TYPE ERROR: You are using an operator ('{arg}') as a string value. You likely meant to use the operator itself, not compare against it. Example: Instead of {{'op': '==', 'args': [var, '>=']}} (comparing to string '>='), use {{'op': '>=', 'args': [var, value]}} (actual comparison).",
+                        operator=op,
+                        location=location,
+                        invalid_value=arg,
+                    )
+                )
 
     # Pattern 2: Double variable nesting
     if op == "var" and len(args) > 0:
         first_arg = args[0]
         if isinstance(first_arg, dict) and first_arg.get("op") == "var":
-            violations.append(ValidationError(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                type=ViolationType.SYNTAX_ERROR,
-                severity=Severity.CRITICAL,
-                message=f"SYNTAX ERROR: Double-nested variables detected at {location}. You don't need to wrap a 'var' operator inside another 'var' operator. Simplify: Instead of {{'op': 'var', 'args': [{{'op': 'var', 'args': ['name']}}]}}, use {{'op': 'var', 'args': ['name']}}.",
-                operator=op,
-                location=location
-            ))
+            violations.append(
+                ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.SYNTAX_ERROR,
+                    severity=Severity.CRITICAL,
+                    message=f"SYNTAX ERROR: Double-nested variables detected at {location}. You don't need to wrap a 'var' operator inside another 'var' operator. Simplify: Instead of {{'op': 'var', 'args': [{{'op': 'var', 'args': ['name']}}]}}, use {{'op': 'var', 'args': ['name']}}.",
+                    operator=op,
+                    location=location,
+                )
+            )
 
     return violations
 
 
-def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "root") -> List[ValidationError]:
+def _validate_syntax(
+    node: Dict, rule_id: str, rule_name: str, location: str = "root"
+) -> List[ValidationError]:
     """
     Validate syntax of a single logic node.
 
@@ -354,27 +422,31 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
         second_arg = args[1]
         # Check if second arg IS null or CONTAINS null
         if second_arg is None:
-            violations.append(ValidationError(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                type=ViolationType.NULL_BUG,
-                severity=Severity.CRITICAL,
-                message="CRITICAL ERROR: You output 'null' as the list argument in an 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit list of Custom Strings describing the missing concept (e.g., ['claim.custom.unspecified_cause']).",
-                operator=op,
-                location=location,
-                invalid_value=None
-            ))
+            violations.append(
+                ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.NULL_BUG,
+                    severity=Severity.CRITICAL,
+                    message="CRITICAL ERROR: You output 'null' as the list argument in an 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit list of Custom Strings describing the missing concept (e.g., ['claim.custom.unspecified_cause']).",
+                    operator=op,
+                    location=location,
+                    invalid_value=None,
+                )
+            )
         elif isinstance(second_arg, list) and None in second_arg:
-            violations.append(ValidationError(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                type=ViolationType.NULL_BUG,
-                severity=Severity.CRITICAL,
-                message="CRITICAL ERROR: You included 'null' inside a list for the 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit Custom String describing the missing concept (e.g., 'claim.custom.unspecified_cause').",
-                operator=op,
-                location=location,
-                invalid_value=None
-            ))
+            violations.append(
+                ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.NULL_BUG,
+                    severity=Severity.CRITICAL,
+                    message="CRITICAL ERROR: You included 'null' inside a list for the 'in' operator. This crashes the execution engine. You MUST replace 'null' with an explicit Custom String describing the missing concept (e.g., 'claim.custom.unspecified_cause').",
+                    operator=op,
+                    location=location,
+                    invalid_value=None,
+                )
+            )
 
     # Check operator argument counts
     if op in OPERATOR_ARG_COUNTS:
@@ -390,15 +462,17 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
                 else:
                     message = f"SYNTAX ERROR: The '{op}' operator is malformed. It requires at least 2 arguments. You provided {actual}. Check for nesting errors or missing arguments."
 
-                violations.append(ValidationError(
-                    rule_id=rule_id,
-                    rule_name=rule_name,
-                    type=ViolationType.SYNTAX_ERROR,
-                    severity=Severity.CRITICAL,
-                    message=message,
-                    operator=op,
-                    location=location
-                ))
+                violations.append(
+                    ValidationError(
+                        rule_id=rule_id,
+                        rule_name=rule_name,
+                        type=ViolationType.SYNTAX_ERROR,
+                        severity=Severity.CRITICAL,
+                        message=message,
+                        operator=op,
+                        location=location,
+                    )
+                )
         elif expected != actual:
             # Provide operator-specific prescriptive instructions
             if op == "if":
@@ -410,27 +484,31 @@ def _validate_syntax(node: Dict, rule_id: str, rule_name: str, location: str = "
             else:
                 message = f"SYNTAX ERROR: The '{op}' operator expects exactly {expected} arguments, got {actual}. Check your logic tree structure for nesting errors."
 
-            violations.append(ValidationError(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                type=ViolationType.SYNTAX_ERROR,
-                severity=Severity.CRITICAL,
-                message=message,
-                operator=op,
-                location=location
-            ))
+            violations.append(
+                ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.SYNTAX_ERROR,
+                    severity=Severity.CRITICAL,
+                    message=message,
+                    operator=op,
+                    location=location,
+                )
+            )
 
     # Check tautologies
     if _is_tautology(op, args):
-        violations.append(ValidationError(
-            rule_id=rule_id,
-            rule_name=rule_name,
-            type=ViolationType.SYNTAX_ERROR,
-            severity=Severity.WARNING,
-            message=f"LOGIC WARNING: This rule compares constant values that always produce the same result (e.g., true == true or 'x' in []). This creates an 'Always True' or 'Always False' rule. If you meant to flag a concept you can't test programmatically, use the 'human_flag' operator instead. Otherwise, replace with actual variable comparisons.",
-            operator=op,
-            location=location
-        ))
+        violations.append(
+            ValidationError(
+                rule_id=rule_id,
+                rule_name=rule_name,
+                type=ViolationType.SYNTAX_ERROR,
+                severity=Severity.WARNING,
+                message=f"LOGIC WARNING: This rule compares constant values that always produce the same result (e.g., true == true or 'x' in []). This creates an 'Always True' or 'Always False' rule. If you meant to flag a concept you can't test programmatically, use the 'human_flag' operator instead. Otherwise, replace with actual variable comparisons.",
+                operator=op,
+                location=location,
+            )
+        )
 
     # Check for common LLM failure patterns
     pattern_violations = _detect_common_patterns(node, rule_id, rule_name, location)
@@ -445,7 +523,7 @@ def _validate_vocabulary(
     rule_name: str,
     valid_paths: Set[str],
     schema_enums: Dict[str, Set[str]],
-    location: str = "root"
+    location: str = "root",
 ) -> List[ValidationError]:
     """
     Validate UDM vocabulary and enum constraints.
@@ -477,17 +555,19 @@ def _validate_vocabulary(
         # Validate against schema vocabulary
         if not _is_valid_vocab(var_name, valid_paths):
             # Extract the last part of the variable name for suggestions
-            var_suffix = var_name.split('.')[-1] if '.' in var_name else var_name
+            var_suffix = var_name.split(".")[-1] if "." in var_name else var_name
 
-            violations.append(ValidationError(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                type=ViolationType.VOCAB_ERROR,
-                severity=Severity.CRITICAL,
-                message=f"UNKNOWN VARIABLE: '{var_name}' does not exist in the Standard UDM. OPTIONS: (1) Check for spelling errors against the UDM Context. (2) If this is a policy-specific attribute (e.g., trip type, equipment type), rename it to 'incident.attributes.{var_suffix}'. (3) If it is a completely new insurance concept not in the standard schema, rename it to 'claim.custom.{var_suffix}'.",
-                variable=var_name,
-                location=location
-            ))
+            violations.append(
+                ValidationError(
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    type=ViolationType.VOCAB_ERROR,
+                    severity=Severity.CRITICAL,
+                    message=f"UNKNOWN VARIABLE: '{var_name}' does not exist in the Standard UDM. OPTIONS: (1) Check for spelling errors against the UDM Context. (2) If this is a policy-specific attribute (e.g., trip type, equipment type), rename it to 'incident.attributes.{var_suffix}'. (3) If it is a completely new insurance concept not in the standard schema, rename it to 'claim.custom.{var_suffix}'.",
+                    variable=var_name,
+                    location=location,
+                )
+            )
 
     # Check enum values in comparison operators
     if "op" in node:
@@ -521,16 +601,18 @@ def _validate_vocabulary(
                             continue  # NULL bugs caught by syntax validation
 
                         if val not in valid_values:
-                            violations.append(ValidationError(
-                                rule_id=rule_id,
-                                rule_name=rule_name,
-                                type=ViolationType.ENUM_ERROR,
-                                severity=Severity.CRITICAL,
-                                message=f"INVALID ENUM VALUE: '{val}' is not allowed for '{var_name}'. Valid options are: {sorted(valid_values)}. INSTRUCTIONS: Select the closest semantic match from the valid list OR use a Tier 3 Custom Variable (e.g., 'claim.custom.{val}') if this concept is legally distinct and cannot be mapped to existing values.",
-                                variable=var_name,
-                                invalid_value=val,
-                                location=location
-                            ))
+                            violations.append(
+                                ValidationError(
+                                    rule_id=rule_id,
+                                    rule_name=rule_name,
+                                    type=ViolationType.ENUM_ERROR,
+                                    severity=Severity.CRITICAL,
+                                    message=f"INVALID ENUM VALUE: '{val}' is not allowed for '{var_name}'. Valid options are: {sorted(valid_values)}. INSTRUCTIONS: Select the closest semantic match from the valid list OR use a Tier 3 Custom Variable (e.g., 'claim.custom.{val}') if this concept is legally distinct and cannot be mapped to existing values.",
+                                    variable=var_name,
+                                    invalid_value=val,
+                                    location=location,
+                                )
+                            )
 
     return violations
 
@@ -541,7 +623,7 @@ def _traverse_and_validate(
     rule_name: str,
     valid_paths: Set[str],
     schema_enums: Dict[str, Set[str]],
-    location: str = "root"
+    location: str = "root",
 ) -> List[ValidationError]:
     """
     Recursively traverse logic tree and collect all violations.
@@ -562,9 +644,16 @@ def _traverse_and_validate(
     # Handle lists
     if isinstance(node, list):
         for i, item in enumerate(node):
-            violations.extend(_traverse_and_validate(
-                item, rule_id, rule_name, valid_paths, schema_enums, f"{location}[{i}]"
-            ))
+            violations.extend(
+                _traverse_and_validate(
+                    item,
+                    rule_id,
+                    rule_name,
+                    valid_paths,
+                    schema_enums,
+                    f"{location}[{i}]",
+                )
+            )
         return violations
 
     # Handle non-dict nodes
@@ -575,22 +664,32 @@ def _traverse_and_validate(
     violations.extend(_validate_syntax(node, rule_id, rule_name, location))
 
     # Validate current node (vocabulary)
-    violations.extend(_validate_vocabulary(node, rule_id, rule_name, valid_paths, schema_enums, location))
+    violations.extend(
+        _validate_vocabulary(
+            node, rule_id, rule_name, valid_paths, schema_enums, location
+        )
+    )
 
     # Recurse into args
     if "op" in node and "args" in node:
         args = node["args"]
         for i, arg in enumerate(args):
-            violations.extend(_traverse_and_validate(
-                arg, rule_id, rule_name, valid_paths, schema_enums, f"{location}.args[{i}]"
-            ))
+            violations.extend(
+                _traverse_and_validate(
+                    arg,
+                    rule_id,
+                    rule_name,
+                    valid_paths,
+                    schema_enums,
+                    f"{location}.args[{i}]",
+                )
+            )
 
     return violations
 
 
 def validate_rules(
-    rules_data: Dict[str, Any],
-    schema_path: Optional[str] = None
+    rules_data: Dict[str, Any], schema_path: Optional[str] = None
 ) -> ValidationReport:
     """
     Validate extracted policy rules (in-memory, exhaustive).
@@ -639,7 +738,7 @@ def validate_rules(
             rule_name,
             valid_paths,
             schema_enums,
-            location=f"rule[{rule_id}].logic"
+            location=f"rule[{rule_id}].logic",
         )
 
         all_violations.extend(rule_violations)
@@ -649,18 +748,17 @@ def validate_rules(
         "total_rules": len(rules),
         "violations": len(all_violations),
         "clean_rules": len(rules) - len(set(v.rule_id for v in all_violations)),
-        "critical_violations": sum(1 for v in all_violations if v.severity == Severity.CRITICAL),
-        "warnings": sum(1 for v in all_violations if v.severity == Severity.WARNING)
+        "critical_violations": sum(
+            1 for v in all_violations if v.severity == Severity.CRITICAL
+        ),
+        "warnings": sum(1 for v in all_violations if v.severity == Severity.WARNING),
     }
 
     # Convert violations to dicts for JSON serialization
     violation_dicts = [asdict(v) for v in all_violations]
 
     # Create report
-    report = ValidationReport(
-        summary=summary,
-        violations=violation_dicts
-    )
+    report = ValidationReport(summary=summary, violations=violation_dicts)
 
     logger.info(
         f"Validation complete: {summary['violations']} violations found "
@@ -670,11 +768,148 @@ def validate_rules(
     return report
 
 
+def format_linter_report_for_refiner(
+    validation_report: ValidationReport,
+    rules_list: List[Dict[str, Any]],
+    max_rules: int = 20,
+) -> Tuple[str, int]:
+    """
+    Format PolicyLinter validation report for refiner prompt.
+
+    Creates a numbered, separated list of failing rules with their violations,
+    current logic, and source references for LLM refinement.
+
+    Args:
+        validation_report: ValidationReport from PolicyLinter.validate_rules()
+        rules_list: List of rule dicts from rules_data["rules"]
+        max_rules: Maximum number of rules to include (token budget)
+
+    Returns:
+        Tuple of (formatted_report: str, error_count: int)
+
+    Example Output:
+        1. Rule ID: rule_flood_limit
+           Name: Flood Coverage Limit
+
+           Current Logic:
+           {
+             "op": "in",
+             "args": [...]
+           }
+
+           Violations (2):
+           - [NULL_BUG] CRITICAL: You output 'null'...
+           - [VOCAB_ERROR] CRITICAL: Unknown variable...
+
+           Source Reference:
+           "Coverage applies to flood damage..."
+
+        ---
+
+        2. Rule ID: rule_fire_exclusion
+        ...
+    """
+    # Group violations by rule_id
+    violations_by_rule = {}
+    for violation_dict in validation_report.violations:
+        rule_id = violation_dict["rule_id"]
+        if rule_id not in violations_by_rule:
+            violations_by_rule[rule_id] = []
+        violations_by_rule[rule_id].append(violation_dict)
+
+    # Create rule lookup map
+    rules_by_id = {rule["id"]: rule for rule in rules_list}
+
+    # Sort rules by violation count (worst first)
+    sorted_rule_ids = sorted(
+        violations_by_rule.keys(), key=lambda rid: len(violations_by_rule[rid]), reverse=True
+    )
+
+    # Truncate if exceeds max_rules
+    truncated = len(sorted_rule_ids) > max_rules
+    rules_to_format = sorted_rule_ids[:max_rules]
+    error_count = len(sorted_rule_ids)
+
+    # Format each rule
+    report_parts = []
+
+    for idx, rule_id in enumerate(rules_to_format, 1):
+        rule = rules_by_id.get(rule_id)
+        if not rule:
+            continue  # Skip if rule not found
+
+        violations = violations_by_rule[rule_id]
+
+        # Build rule section
+        section = []
+        section.append(f"{idx}. Rule ID: {rule_id}")
+        section.append(f"   Name: {rule.get('name', 'Unknown')}")
+        section.append("")
+
+        # Current Logic (pretty-printed JSON)
+        section.append("   Current Logic:")
+        logic_json = json.dumps(rule.get("logic", {}), indent=2, ensure_ascii=False)
+        # Indent logic for alignment
+        indented_logic = "\n".join(f"   {line}" for line in logic_json.split("\n"))
+        section.append(indented_logic)
+        section.append("")
+
+        # Violations
+        section.append(f"   Violations ({len(violations)}):")
+        for v in violations:
+            # Extract enum values if they are enums, otherwise use strings directly
+            v_type = v['type'].value if hasattr(v['type'], 'value') else v['type']
+            v_severity = v['severity'].value if hasattr(v['severity'], 'value') else v['severity']
+            violation_line = f"   - [{v_type}] {v_severity}: {v['message']}"
+            section.append(violation_line)
+
+            # Add variable/value context if present
+            if v.get("variable"):
+                section.append(f"     Variable: {v['variable']}")
+            if v.get("invalid_value") is not None:
+                section.append(f"     Invalid Value: {v['invalid_value']}")
+            if v.get("location"):
+                section.append(f"     Location: {v['location']}")
+
+        section.append("")
+
+        # Source Reference
+        source_ref = rule.get("source_ref", "")
+        if source_ref:
+            # Truncate very long source refs
+            if len(source_ref) > 300:
+                source_ref = source_ref[:297] + "..."
+            section.append("   Source Reference:")
+            section.append(f'   "{source_ref}"')
+            section.append("")
+
+        # Reasoning (helps LLM understand intent)
+        reasoning = rule.get("reasoning", "")
+        if reasoning:
+            # Truncate very long reasoning
+            if len(reasoning) > 300:
+                reasoning = reasoning[:297] + "..."
+            section.append("   Original Reasoning:")
+            section.append(f"   {reasoning}")
+            section.append("")
+
+        report_parts.append("\n".join(section))
+
+    # Join with separators
+    formatted_report = "\n---\n\n".join(report_parts)
+
+    # Add truncation note if applicable
+    if truncated:
+        formatted_report += f"\n\n(Showing {max_rules} of {error_count} failing rules. Worst violations shown first.)"
+
+    return formatted_report, error_count
+
+
 def save_validation_report(
     report: ValidationReport,
     output_path: str,
     retry_count: int = 0,
-    filename: Optional[str] = None
+    filename: Optional[str] = None,
 ) -> None:
     """
     Save validation report to JSON file.
@@ -698,7 +933,7 @@ def save_validation_report(
     full_path = output_path_obj.parent / filename
 
     try:
-        with open(full_path, 'w', encoding='utf-8') as f:
+        with open(full_path, "w", encoding="utf-8") as f:
             json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
 
         logger.info(f"Saved validation report to: {full_path}")

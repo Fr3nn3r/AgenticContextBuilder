@@ -32,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from context_builder.extraction.openai_symbol_extraction import OpenAISymbolExtraction
 from context_builder.extraction.openai_logic_extraction import OpenAILogicExtraction
+from context_builder.extraction.progress_callback import NoOpProgressCallback
+from context_builder.extraction.tqdm_progress_callback import TqdmProgressCallback
 
 try:
     from tqdm import tqdm
@@ -46,63 +48,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-class ChunkProgressTracker:
-    """Track chunk-level progress by monitoring log output."""
-
-    def __init__(self):
-        self.current_chunk = 0
-        self.total_chunks = 0
-        self.chunk_desc = ""
-        self.enabled = False
-        self.pbar = None
-
-    def parse_log_message(self, message: str):
-        """Parse chunk progress from log messages."""
-        # Match patterns like "Processing chunk 5/24" or "[Chunk 5/24]"
-        chunk_match = re.search(r'(?:Processing chunk|Chunk)\s+(\d+)/(\d+)', message)
-        if chunk_match:
-            self.current_chunk = int(chunk_match.group(1))
-            self.total_chunks = int(chunk_match.group(2))
-
-            # Extract description
-            if "Extracting rules" in message:
-                self.chunk_desc = "Extracting rules"
-            elif "Linting" in message:
-                self.chunk_desc = "Linting"
-            elif "Refinement" in message:
-                self.chunk_desc = "Refining"
-            elif "Step 1" in message:
-                self.chunk_desc = "Extracting"
-            elif "Step 2" in message:
-                self.chunk_desc = "Linting"
-
-            if self.enabled and self.pbar:
-                self.pbar.update(1)
-                self.pbar.set_description(f"  Chunk {self.current_chunk}/{self.total_chunks}: {self.chunk_desc}")
-
-    def start_tracking(self, total_chunks: int):
-        """Start tracking chunks with progress bar."""
-        self.enabled = True
-        self.total_chunks = total_chunks
-        self.current_chunk = 0
-
-        if HAS_TQDM:
-            self.pbar = tqdm(
-                total=total_chunks,
-                desc=f"  Chunks",
-                leave=False,
-                ncols=80,
-                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
-            )
-
-    def stop_tracking(self):
-        """Stop tracking and close progress bar."""
-        self.enabled = False
-        if self.pbar:
-            self.pbar.close()
-            self.pbar = None
 
 
 def find_markdown_files(input_dir: Path) -> List[Path]:
@@ -277,16 +222,19 @@ def process_batch(
 
     # Create file progress bar
     file_iterator = enumerate(markdown_files, 1)
+    file_pbar = None
     if HAS_TQDM:
-        file_iterator = tqdm(
+        file_pbar = tqdm(
             file_iterator,
             total=len(markdown_files),
             desc="Policies",
             ncols=100,
             bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
         )
+        file_iterator = file_pbar
 
-    chunk_tracker = ChunkProgressTracker()
+    # Create progress callback for chunk-level progress
+    progress_callback = TqdmProgressCallback(file_pbar) if HAS_TQDM else NoOpProgressCallback()
 
     for idx, md_path in file_iterator:
         policy_stem = md_path.stem.replace("_extracted", "")
@@ -321,7 +269,7 @@ def process_batch(
 
             symbol_result = symbol_extractor.process(
                 markdown_path=str(md_path),
-                output_path=str(file_output_dir / f"{md_path.stem}_symbol_table.json")
+                output_path=str(file_output_dir / f"{policy_stem}_symbol_table.json")
             )
 
             symbol_table_path = symbol_result.get('symbol_table_json')
@@ -332,8 +280,9 @@ def process_batch(
 
             result = logic_extractor.process(
                 markdown_path=str(md_path),
-                output_base_path=str(file_output_dir / md_path.stem.replace("_extracted", "")),
-                symbol_table_json_path=symbol_table_path
+                output_base_path=str(file_output_dir / policy_stem),
+                symbol_table_json_path=symbol_table_path,
+                progress_callback=progress_callback
             )
 
             # Display summary

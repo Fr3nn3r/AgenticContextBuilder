@@ -28,6 +28,7 @@ from context_builder.extraction.policy_logic_refiner import PolicyLogicRefiner
 from context_builder.extraction.chunk_refinement_orchestrator import (
     ChunkRefinementOrchestrator,
 )
+from context_builder.extraction.progress_callback import NoOpProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -600,6 +601,7 @@ class OpenAILogicExtraction:
         markdown_path: str,
         output_base_path: str,
         symbol_table_json_path: Optional[str] = None,
+        progress_callback: Optional[Any] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -615,6 +617,7 @@ class OpenAILogicExtraction:
             markdown_path: Path to markdown file to process
             output_base_path: Base path for output files (without extension)
             symbol_table_json_path: Optional path to symbol table JSON for chunking
+            progress_callback: Optional ProgressCallback for reporting chunk progress
             **kwargs: Additional template variables (deprecated, use symbol_table_json_path)
 
         Returns:
@@ -629,6 +632,10 @@ class OpenAILogicExtraction:
         """
         markdown_file = Path(markdown_path)
         base_path = Path(output_base_path)
+
+        # Use NoOpProgressCallback if none provided
+        if progress_callback is None:
+            progress_callback = NoOpProgressCallback()
 
         # Validate file exists
         if not markdown_file.exists():
@@ -736,6 +743,10 @@ class OpenAILogicExtraction:
             orchestrator = ChunkRefinementOrchestrator()
             refiner = PolicyLogicRefiner()
 
+            # Notify callback that chunked processing is starting
+            policy_name = markdown_file.stem.replace("_extracted", "")
+            progress_callback.on_processing_start(len(chunks), policy_name)
+
             # Process each chunk with Extract → Lint → Refine flow
             chunk_results = []
             for i, (
@@ -762,15 +773,28 @@ class OpenAILogicExtraction:
                             save_report_func=save_validation_report,
                             max_refinement_attempts=1,
                             chunk_tokens=chunk_tokens,
+                            progress_callback=progress_callback,
+                            policy_name=policy_name,
                         )
                     )
                     chunk_results.append(chunk_result)
+
+                    # Notify callback that chunk completed successfully
+                    progress_callback.on_chunk_complete(i, len(chunks), policy_name)
+
                 except Exception as e:
                     logger.error(f"Failed to process chunk {i}/{len(chunks)}: {e}")
+
+                    # Notify callback of chunk error
+                    progress_callback.on_chunk_error(i, len(chunks), policy_name, e)
+
                     # Continue with remaining chunks
 
             # Consolidate results
             validated_data = self.consolidate_chunk_results(chunk_results)
+
+            # Notify callback that all chunks are processed
+            progress_callback.on_processing_complete(policy_name)
 
             # Add chunking metadata
             result["_chunked"] = True

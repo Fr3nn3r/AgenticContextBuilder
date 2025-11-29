@@ -11,8 +11,11 @@ Single Responsibility: Coordinate the refinement workflow.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Callable, Optional
+
+from context_builder.extraction.progress_callback import NoOpProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +130,9 @@ class ChunkRefinementOrchestrator:
         linter_func: Callable,  # validate_rules function
         save_report_func: Callable,  # save_validation_report function
         max_refinement_attempts: int = 1,
-        chunk_tokens: Optional[int] = None
+        chunk_tokens: Optional[int] = None,
+        progress_callback: Optional[Any] = None,
+        policy_name: str = ""
     ) -> Tuple[Dict[str, Any], Any]:
         """
         Process chunk with Extract → Lint → Refine loop.
@@ -145,6 +150,8 @@ class ChunkRefinementOrchestrator:
             save_report_func: Report save function (save_validation_report)
             max_refinement_attempts: Maximum refinement attempts (default: 1)
             chunk_tokens: Optional token count of chunk text (for lazy reader detection)
+            progress_callback: Optional ProgressCallback for reporting progress
+            policy_name: Name of policy being processed (for progress reporting)
 
         Returns:
             Tuple of (refined_chunk_result, final_validation_report)
@@ -152,10 +159,15 @@ class ChunkRefinementOrchestrator:
         Raises:
             Exception: If extraction fails (propagated from extractor)
         """
+        # Use NoOpProgressCallback if none provided
+        if progress_callback is None:
+            progress_callback = NoOpProgressCallback()
+
         logger.info(f"[Chunk {chunk_index}/{total_chunks}] Starting Extract → Lint → Refine flow")
 
         # STEP 1: Extract rules
         logger.info(f"[Chunk {chunk_index}/{total_chunks}] Step 1: Extracting rules...")
+        progress_callback.on_chunk_start(chunk_index, total_chunks, policy_name, step="Extracting")
         extraction_result = extractor.process_chunk(
             chunk_text=chunk_text,
             chunk_symbol_md=chunk_symbol_md,
@@ -167,6 +179,7 @@ class ChunkRefinementOrchestrator:
 
         # STEP 2: Lint extracted rules
         logger.info(f"[Chunk {chunk_index}/{total_chunks}] Step 2: Linting extracted rules...")
+        progress_callback.on_chunk_start(chunk_index, total_chunks, policy_name, step="Linting")
         validation_report = linter_func(extraction_result)
 
         violations_count = validation_report.summary["violations"]
@@ -183,6 +196,7 @@ class ChunkRefinementOrchestrator:
                 f"[Chunk {chunk_index}/{total_chunks}] Step 3: Refinement attempt "
                 f"{refinement_attempt}/{max_refinement_attempts}"
             )
+            progress_callback.on_chunk_start(chunk_index, total_chunks, policy_name, step="Refining")
 
             try:
                 # Extract failed rules
@@ -237,7 +251,33 @@ class ChunkRefinementOrchestrator:
                 # Keep extraction_result as-is (original rules)
                 break
 
-        # STEP 4: Return refined result + final validation report
+        # STEP 4: Save chunk-level audit report if violations remain after refinement
+        violations_count = validation_report.summary.get("violations", 0)
+        if violations_count > 0 and chunk_file_path:
+            try:
+                # Extract chunk number from filename (e.g., "policy_chunk_001.md" -> "001")
+                # Handle both "chunk_1" and "chunk_001" patterns
+                match = re.search(r'chunk_(\d+)', chunk_file_path.stem)
+                chunk_num = match.group(1) if match else str(chunk_index).zfill(2)
+
+                audit_filename = f"audit_report_chunk_{chunk_num}.json"
+
+                logger.info(
+                    f"[Chunk {chunk_index}/{total_chunks}] Saving post-refinement audit report "
+                    f"({violations_count} violations) to {audit_filename}..."
+                )
+
+                save_report_func(
+                    validation_report,
+                    str(chunk_file_path),
+                    filename=audit_filename
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[Chunk {chunk_index}/{total_chunks}] Failed to save audit report: {e}"
+                )
+
+        # STEP 5: Return refined result + final validation report
         logger.info(
             f"[Chunk {chunk_index}/{total_chunks}] Refinement flow complete. "
             f"Final violations: {violations_count}"
