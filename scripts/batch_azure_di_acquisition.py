@@ -80,7 +80,7 @@ def save_result_json(result: Dict[str, Any], output_dir: Path, source_file: Path
         Path to saved JSON file
     """
     # Create JSON filename based on source file
-    json_filename = source_file.stem + "_metadata.json"
+    json_filename = source_file.stem + "_acquired_metadata.json"
     json_path = output_dir / json_filename
 
     # Make Path objects JSON serializable

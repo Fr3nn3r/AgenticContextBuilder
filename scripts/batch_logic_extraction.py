@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 def find_markdown_files(input_dir: Path) -> List[Path]:
     """
-    Find all extracted markdown files in directory (non-recursive).
+    Find all acquired markdown files in directory (non-recursive).
 
     Args:
         input_dir: Input directory path
@@ -66,8 +66,8 @@ def find_markdown_files(input_dir: Path) -> List[Path]:
     if not input_dir.is_dir():
         raise ValueError(f"Path is not a directory: {input_dir}")
 
-    # Get all *_extracted.md files
-    files = list(input_dir.glob("*_extracted.md"))
+    # Get all *_acquired.md files
+    files = list(input_dir.glob("*_acquired.md"))
     files.sort()
 
     return files
@@ -79,7 +79,7 @@ def is_policy_processed(output_dir: Path, policy_stem: str) -> bool:
 
     Args:
         output_dir: Base output directory
-        policy_stem: Policy stem name (without _extracted suffix)
+        policy_stem: Policy stem name (without _acquired suffix)
 
     Returns:
         True if policy is already processed
@@ -237,7 +237,7 @@ def process_batch(
     progress_callback = TqdmProgressCallback(file_pbar) if HAS_TQDM else NoOpProgressCallback()
 
     for idx, md_path in file_iterator:
-        policy_stem = md_path.stem.replace("_extracted", "")
+        policy_stem = md_path.stem.replace("_acquired", "")
         file_output_dir = output_dir / policy_stem
         file_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -361,7 +361,7 @@ def main():
 Examples:
   python scripts/batch_logic_extraction.py
   python scripts/batch_logic_extraction.py --no-resume --force
-  python scripts/batch_logic_extraction.py --start-from policy_001_extracted.md
+  python scripts/batch_logic_extraction.py --start-from policy_001_acquired.md
         """
     )
     parser.add_argument(

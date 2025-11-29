@@ -97,6 +97,40 @@ class ProgressCallback(ABC):
         """
         pass
 
+    @abstractmethod
+    def on_stage_start(
+        self,
+        stage_index: int,
+        total_stages: int,
+        stage_name: str
+    ) -> None:
+        """
+        Called when a pipeline stage starts.
+
+        Args:
+            stage_index: Current stage number (1-based)
+            total_stages: Total number of stages
+            stage_name: Name of the stage (e.g., "Copying PDF", "Azure DI Acquisition")
+        """
+        pass
+
+    @abstractmethod
+    def on_stage_complete(
+        self,
+        stage_index: int,
+        total_stages: int,
+        stage_name: str
+    ) -> None:
+        """
+        Called when a pipeline stage completes.
+
+        Args:
+            stage_index: Current stage number (1-based)
+            total_stages: Total number of stages
+            stage_name: Name of the stage
+        """
+        pass
+
 
 class NoOpProgressCallback(ProgressCallback):
     """
@@ -139,5 +173,23 @@ class NoOpProgressCallback(ProgressCallback):
         pass
 
     def on_processing_complete(self, policy_name: str) -> None:
+        """Do nothing."""
+        pass
+
+    def on_stage_start(
+        self,
+        stage_index: int,
+        total_stages: int,
+        stage_name: str
+    ) -> None:
+        """Do nothing."""
+        pass
+
+    def on_stage_complete(
+        self,
+        stage_index: int,
+        total_stages: int,
+        stage_name: str
+    ) -> None:
         """Do nothing."""
         pass

@@ -160,7 +160,7 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
         """
         try:
             # Create markdown filename based on source file
-            md_filename = source_path.stem + "_extracted.md"
+            md_filename = source_path.stem + "_acquired.md"
             md_path = output_dir / md_filename
 
             # Ensure output directory exists
