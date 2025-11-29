@@ -23,6 +23,8 @@ dependencies = [
     "azure-ai-documentintelligence>=1.0.0",
     "tiktoken>=0.5.0",
     "tqdm>=4.67.1",
+    "streamlit>=1.50.0",
+    "json-logic>=0.6.3",
 ]
 
 [dependency-groups]

@@ -57,7 +57,9 @@
       "Bash(set PYTHONPATH=src:*)",
       "Bash(timeout:*)",
       "Bash(nul)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(streamlit run:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []
