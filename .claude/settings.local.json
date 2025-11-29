@@ -56,7 +56,8 @@
       "Bash(.venv/Scripts/python.exe -m pytest:*)",
       "Bash(set PYTHONPATH=src:*)",
       "Bash(timeout:*)",
-      "Bash(nul)"
+      "Bash(nul)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "ask": []
