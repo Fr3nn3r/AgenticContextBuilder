@@ -20,7 +20,7 @@ from pathlib import Path
 import json
 
 from context_builder.runtime.schema_loader import load_schema, load_logic, SchemaLoadError
-from context_builder.runtime.widget_factory import render_section
+from context_builder.runtime.widget_factory import render_section, WidgetFactory
 from context_builder.runtime.claim_mapper import SchemaBasedClaimMapper
 from context_builder.runtime.evaluator import NeuroSymbolicEvaluator
 from context_builder.runtime.result_interpreter import ResultInterpreter
@@ -40,57 +40,102 @@ st.markdown("---")
 
 # Sidebar: File Selection
 st.sidebar.header("Policy Configuration")
-st.sidebar.markdown("Load the schema and logic files for any insurance policy.")
+st.sidebar.markdown("Select a policy to load its configuration automatically.")
 
 # Initialize session state
 if "schema" not in st.session_state:
     st.session_state.schema = None
 if "logic" not in st.session_state:
     st.session_state.logic = None
+if "symbol_table" not in st.session_state:
+    st.session_state.symbol_table = None
 if "flat_claim_data" not in st.session_state:
     st.session_state.flat_claim_data = {}
 if "result" not in st.session_state:
     st.session_state.result = None
 
 
-# File paths (with sensible defaults)
-default_schema_path = Path("output/output_schemas/insurance policy_form_schema.json")
-default_logic_path = Path("output/processing/20251129-114118-insurance p/insurance policy_logic.json")
+# Scan output/ui-data for available policies
+ui_data_dir = Path("output/ui-data")
+available_policies = []
 
-schema_path = st.sidebar.text_input(
-    "Schema File Path",
-    value=str(default_schema_path) if default_schema_path.exists() else ""
-)
+if ui_data_dir.exists():
+    # Find all *_logic.json files (excluding *_normalized_logic.json)
+    logic_files = sorted([
+        f for f in ui_data_dir.glob("*_logic.json")
+        if not f.name.endswith("_normalized_logic.json")
+    ])
 
-logic_path = st.sidebar.text_input(
-    "Logic File Path",
-    value=str(default_logic_path) if default_logic_path.exists() else ""
-)
+    # Extract policy names (remove _logic.json suffix)
+    available_policies = [f.stem.replace("_logic", "") for f in logic_files]
 
-# Load button
-if st.sidebar.button("Load Policy Configuration"):
-    try:
-        st.session_state.schema = load_schema(schema_path)
-        st.session_state.logic = load_logic(logic_path)
-        st.session_state.flat_claim_data = {}  # Reset claim data
-        st.session_state.result = None  # Reset result
-        st.sidebar.success("Policy loaded successfully!")
+# Policy selection dropdown
+if available_policies:
+    # Add empty option at the beginning
+    policy_options = ["Select a policy..."] + available_policies
 
-        # Display policy info
-        policy_id = st.session_state.schema.get("policy_id", "Unknown")
-        total_fields = st.session_state.schema.get("statistics", {}).get("total_fields", 0)
-        total_rules = st.session_state.logic.get("transpiled_data", {}).get("_total_rules", 0)
+    selected_policy = st.sidebar.selectbox(
+        "Available Policies",
+        options=policy_options,
+        index=0
+    )
 
-        st.sidebar.info(f"""
+    # Load button (only enabled if a policy is selected)
+    if selected_policy != "Select a policy...":
+        if st.sidebar.button("Load Selected Policy", type="primary", use_container_width=True):
+            try:
+                # Construct file paths
+                policy_base = selected_policy
+                logic_path = ui_data_dir / f"{policy_base}_logic.json"
+                schema_path = ui_data_dir / f"{policy_base}_form_schema.json"
+                symbol_table_path = ui_data_dir / f"{policy_base}_symbol_table.json"
+
+                # Load logic file
+                st.session_state.logic = load_logic(str(logic_path))
+
+                # Load schema file
+                if schema_path.exists():
+                    st.session_state.schema = load_schema(str(schema_path))
+                else:
+                    st.sidebar.error(f"Schema file not found: {schema_path.name}")
+                    st.stop()
+
+                # Load symbol table file (optional)
+                if symbol_table_path.exists():
+                    try:
+                        with open(symbol_table_path, "r", encoding="utf-8") as f:
+                            st.session_state.symbol_table = json.load(f)
+                        st.sidebar.success(f"Symbol table loaded")
+                    except Exception as e:
+                        st.sidebar.warning(f"Symbol table found but failed to load: {e}")
+                        st.session_state.symbol_table = None
+                else:
+                    st.sidebar.warning(f"Symbol table not found (optional)")
+                    st.session_state.symbol_table = None
+
+                # Reset claim data and result
+                st.session_state.flat_claim_data = {}
+                st.session_state.result = None
+
+                # Display policy info
+                policy_id = st.session_state.schema.get("policy_id", "Unknown")
+                total_fields = st.session_state.schema.get("statistics", {}).get("total_fields", 0)
+                total_rules = st.session_state.logic.get("transpiled_data", {}).get("_total_rules", 0)
+
+                st.sidebar.success("Policy loaded successfully!")
+                st.sidebar.info(f"""
 **Policy:** {policy_id}
 **Fields:** {total_fields}
 **Rules:** {total_rules}
-        """)
+                """)
 
-    except SchemaLoadError as e:
-        st.sidebar.error(f"Error loading files: {e}")
-    except Exception as e:
-        st.sidebar.error(f"Unexpected error: {e}")
+            except SchemaLoadError as e:
+                st.sidebar.error(f"Error loading files: {e}")
+            except Exception as e:
+                st.sidebar.error(f"Unexpected error: {e}")
+else:
+    st.sidebar.warning(f"No policies found in {ui_data_dir}")
+    st.sidebar.info("Please ensure policy files are in output/ui-data/")
 
 
 # Main content
@@ -109,6 +154,12 @@ st.markdown("Fill out the form below. Fields marked with * are required.")
 
 sections = st.session_state.schema.get("sections", {})
 
+# Extract currency from policy
+currency = WidgetFactory.extract_currency_from_policy(
+    st.session_state.schema,
+    st.session_state.logic
+)
+
 # Render sections in order
 sorted_sections = sorted(
     sections.items(),
@@ -116,7 +167,13 @@ sorted_sections = sorted(
 )
 
 for section_name, section_data in sorted_sections:
-    render_section(section_name, section_data, st.session_state.flat_claim_data)
+    render_section(
+        section_name,
+        section_data,
+        st.session_state.flat_claim_data,
+        currency=currency,
+        symbol_table=st.session_state.symbol_table
+    )
 
 
 # Validation and submission

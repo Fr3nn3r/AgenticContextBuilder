@@ -22,12 +22,31 @@ If Policy Rules change (e.g., watercraft limit changes from 8m to 10m), the appl
 - `streamlit_app.py` - Main application that renders forms dynamically
 
 **Type Mappings**:
-- `type == "enum"` → Dropdown
-- `type == "boolean"` → Checkbox
+
+**Basic Widgets:**
+- `type == "enum"` → Dropdown (with "Select..." placeholder)
+- `type == "boolean"` → Toggle switch
 - `type == "integer"` → Number input (step=1)
 - `type == "number"` → Number input (step=0.01)
 - `type == "string"` → Text input
 - `repeatable == true` → List manager with Add/Remove buttons
+
+**Semantic Widgets** (auto-detected from field names):
+- Currency fields (e.g., "claim_amount", "premium") → Number input with currency symbol
+- Date fields (e.g., "incident_date", "birth_date") → Date picker with custom format ("29-Nov-2025")
+- Duration fields (e.g., "policy_period", "coverage_days") → Number input with unit label
+- Percentage fields (e.g., "liability_percentage") → Slider (0-100%)
+- Length fields (e.g., "watercraft_length") → Number input with "(meters)" label
+- Long text fields (e.g., "description", "notes") → Text area
+- Country fields → Dropdown with common countries
+- Phone fields → Text input with placeholder "+1 (555) 123-4567"
+- Email fields → Text input with placeholder "user@example.com"
+- Short code fields → Text input with max length 10
+
+**Context-Aware Help Text** (auto-injected from Symbol Table):
+- **Priority 1**: Policy definitions (e.g., "Named Insured: A person or organization...")
+- **Priority 2**: Limit/variable info (e.g., "Bodily Injury: 2,000,000 CAD")
+- **Priority 3**: Schema description (fallback if no symbol table match)
 
 ### 2. Claim Data Model (Data Layer)
 **Responsibility**: "Inflation" - Transform flat key-value pairs from UI into nested JSON structure for the logic engine.
@@ -135,21 +154,40 @@ If Policy Rules change (e.g., watercraft limit changes from 8m to 10m), the appl
 ### Step 1: Fetch Policy Configuration
 ```python
 from context_builder.runtime import load_schema, load_logic
+import json
+from pathlib import Path
 
 schema = load_schema("output/output_schemas/insurance policy_form_schema.json")
 logic = load_logic("output/processing/20251129-114118-insurance p/insurance policy_logic.json")
+
+# Load symbol table (optional, for context-aware help text)
+symbol_table_path = Path("output/processing/20251129-114118-insurance p/insurance policy_symbol_table.json")
+if symbol_table_path.exists():
+    with open(symbol_table_path, "r", encoding="utf-8") as f:
+        symbol_table = json.load(f)
+else:
+    symbol_table = None
 ```
 
 ### Step 2: Render Dynamic Form
 ```python
-from context_builder.runtime.widget_factory import render_section
+from context_builder.runtime.widget_factory import render_section, WidgetFactory
 
 # Flat state dictionary (managed by Streamlit)
 flat_claim_data = {}
 
+# Extract currency from policy
+currency = WidgetFactory.extract_currency_from_policy(schema, logic)
+
 # Render all sections from schema
 for section_name, section_data in schema["sections"].items():
-    render_section(section_name, section_data, flat_claim_data)
+    render_section(
+        section_name,
+        section_data,
+        flat_claim_data,
+        currency=currency,
+        symbol_table=symbol_table  # Context-aware help text
+    )
 ```
 
 ### Step 3: Validate and Inflate
@@ -300,9 +338,34 @@ tests/runtime/
 
 **Alternative Considered**: Custom rule engine (rejected due to maintenance burden).
 
+### Why Symbol Table Integration (Context Injection)?
+**Decision**: Fuse policy definitions from symbol table into widget help text.
+
+**Rationale**:
+- Original schema alone produces "dumb" UI (generic labels, no policy context)
+- Symbol table contains the "brain" of policy definitions and limits
+- Users need to understand insurance terminology while filling forms
+- Help text provides just-in-time learning
+
+**Implementation**:
+3-tier priority system for help text generation:
+1. **Priority 1**: Policy definitions from symbol table (e.g., "Named Insured: A person or organization...")
+2. **Priority 2**: Limit/variable info from symbol table (e.g., "Bodily Injury: 2,000,000 CAD")
+3. **Priority 3**: Generic description from schema (fallback)
+
+**Impact**:
+- Insurance Policy (22 fields): ~40% coverage with policy context
+- Auto Policy (81 fields): ~6% coverage (symbol table has fewer terms)
+- Coverage varies by policy richness and symbol table quality
+
+**Future**: Consider LLM-based definition generation for fields without symbol table matches.
+
 ## Future Enhancements
 
 ### Phase 2 (Short-term)
+- [X] Semantic widget inference (currency, date, duration, percentage, etc.)
+- [X] Symbol table integration for context-aware help text
+- [X] Smart currency detection from policy rules
 - [ ] Add conditional display logic to schema (show/hide fields based on other values)
 - [ ] Implement enum registry (aggregate common enums across policies)
 - [ ] Add required field detection from logic analysis
