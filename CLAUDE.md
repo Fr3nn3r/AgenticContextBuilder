@@ -3,8 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 # IMPORTANT
-- never EVER take action unless the User explicitly tells you to.
-- never EVER make assumptions -> ask questions.
+- In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake of concision
+- At the end of each plan, provide a list of unresolved questions to answer if any,
 - Read PROJECT_CONTEXT.md for project context.
 
 ## Development Guidelines
