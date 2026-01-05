@@ -5,9 +5,11 @@ Processes insurance claim folders to inventory, extract, and classify documents.
 
 For each claim folder:
 1. Scan files and build inventory
-2. Extract text (use companion .txt if available, else Azure DI/OpenAI Vision)
+2. Extract text (Azure DI for PDFs, OpenAI Vision for images)
 3. Classify each document
 4. Write outputs: inventory.json, process-summary.json, {filename}-context.json
+
+Extracted files are saved to output/{claim}/extraction/ folder.
 
 Usage:
     python scripts/batch_claims_processing.py --input-dir data/04-Claims-Motor-Ecuador
@@ -16,7 +18,7 @@ Usage:
 
 Requirements:
     - OPENAI_API_KEY environment variable
-    - AZURE_DI_ENDPOINT and AZURE_DI_API_KEY (for PDF extraction without companion .txt)
+    - AZURE_DI_ENDPOINT and AZURE_DI_API_KEY (for PDF extraction)
 """
 
 import sys
@@ -73,8 +75,6 @@ class FileInventoryItem:
     document_type: Optional[str] = None
     language: Optional[str] = None
     summary: Optional[str] = None
-    # Pre-existing text extraction (e.g., foo.pdf has foo.pdf.txt already)
-    preextracted_txt_path: Optional[str] = None
 
 
 @dataclass
@@ -82,7 +82,8 @@ class FileProcessingResult:
     """Result of processing a single file."""
     filename: str
     status: str  # "success", "error", "skipped"
-    source: Optional[str] = None  # "companion_txt", "azure_di", "openai_vision"
+    source: Optional[str] = None  # "azure_di", "openai_vision", "text_file"
+    extraction_file: Optional[str] = None  # Relative path to extracted content file
     classification: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     processing_time_ms: int = 0
@@ -119,15 +120,6 @@ def should_skip_file(filename: str) -> bool:
     return filename in SKIP_FILES or filename.startswith('.')
 
 
-def find_companion_txt(file_path: Path) -> Optional[Path]:
-    """
-    Find companion .txt file for a given file.
-    e.g., POLIZA.pdf -> POLIZA.pdf.txt
-    """
-    txt_path = file_path.parent / f"{file_path.name}.txt"
-    return txt_path if txt_path.exists() else None
-
-
 def discover_claim_folders(base_dir: Path) -> List[Path]:
     """Find all claim folders (immediate subdirectories)."""
     if not base_dir.exists():
@@ -150,22 +142,8 @@ def scan_folder_files(folder: Path) -> List[FileInventoryItem]:
 
         file_type = get_file_type(filepath)
 
-        # Skip .txt files that are companions (they'll be used with their source)
-        if file_type == "txt":
-            # Check if this is a companion to another file (e.g., foo.pdf.txt)
-            # Pattern: original.pdf.txt is companion to original.pdf
-            if filepath.suffix == ".txt" and len(filepath.suffixes) > 1:
-                # e.g., "file.pdf.txt" -> check if "file.pdf" exists
-                base_name = filepath.stem  # "file.pdf" (removes last .txt)
-                potential_source = folder / base_name
-                if potential_source.exists():
-                    continue  # Skip companion .txt files
-
         # Get metadata
         metadata = get_file_metadata(filepath)
-
-        # Check for pre-existing .txt extraction
-        preextracted = find_companion_txt(filepath)
 
         item = FileInventoryItem(
             filename=filepath.name,
@@ -173,7 +151,6 @@ def scan_folder_files(folder: Path) -> List[FileInventoryItem]:
             file_type=file_type,
             file_size_bytes=metadata["file_size_bytes"],
             md5=metadata["md5"],
-            preextracted_txt_path=str(preextracted) if preextracted else None,
         )
         inventory.append(item)
 
@@ -194,47 +171,66 @@ def read_text_file(filepath: Path) -> str:
 
 def get_text_content(
     file_item: FileInventoryItem,
+    extraction_dir: Path,
     azure_di: Optional[Any] = None,
     openai_vision: Optional[Any] = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, Optional[str]]:
     """
     Get text content for a file.
 
+    Args:
+        file_item: File to extract text from
+        extraction_dir: Directory to write extracted files to
+        azure_di: Azure DI acquisition instance
+        openai_vision: OpenAI Vision acquisition instance
+
     Returns:
-        Tuple of (text_content, source) where source is one of:
-        "companion_txt", "azure_di", "openai_vision"
+        Tuple of (text_content, source, extraction_file) where:
+        - source: "azure_di", "openai_vision", "text_file"
+        - extraction_file: relative path to extracted file (None for text files)
     """
     filepath = Path(file_item.file_path)
 
-    # Priority 1: Use pre-existing .txt extraction if available
-    if file_item.preextracted_txt_path:
-        text = read_text_file(Path(file_item.preextracted_txt_path))
-        return text, "preextracted_txt"
-
-    # Priority 2: Read .txt files directly
+    # For .txt files, read directly (no extraction needed)
     if file_item.file_type == "txt":
         text = read_text_file(filepath)
-        return text, "text_file"
+        return text, "text_file", None
 
-    # Priority 3: For PDFs, use Azure DI
+    # For PDFs, use Azure DI
     if file_item.file_type == "pdf" and azure_di:
-        result = azure_di.process(filepath)
-        # Azure DI returns markdown in a separate file
-        markdown_path = result.get("markdown_file")
-        if markdown_path:
-            md_path = filepath.parent / markdown_path
-            if md_path.exists():
-                return read_text_file(md_path), "azure_di"
-        # Fallback to any text content in result
-        return result.get("text_content", ""), "azure_di"
+        # Configure Azure DI to write to extraction folder
+        extraction_dir.mkdir(parents=True, exist_ok=True)
+        azure_di.output_dir = extraction_dir
 
-    # Priority 3: For images, use OpenAI Vision
+        result = azure_di.process(filepath)
+
+        # Azure DI returns markdown filename
+        markdown_filename = result.get("markdown_file")
+        if markdown_filename:
+            md_path = extraction_dir / markdown_filename
+            if md_path.exists():
+                text = read_text_file(md_path)
+                extraction_file = f"extraction/{markdown_filename}"
+                return text, "azure_di", extraction_file
+
+        # Fallback if no markdown file
+        return result.get("text_content", ""), "azure_di", None
+
+    # For images, use OpenAI Vision
     if file_item.file_type == "image" and openai_vision:
         result = openai_vision.process(filepath)
         # Extract text from pages
         pages = result.get("pages", [])
         text_parts = [p.get("text_content", "") for p in pages]
-        return "\n\n".join(text_parts), "openai_vision"
+        text = "\n\n".join(text_parts)
+
+        # Save extracted text to extraction folder
+        extraction_dir.mkdir(parents=True, exist_ok=True)
+        extraction_filename = filepath.stem + "_extracted.txt"
+        extraction_path = extraction_dir / extraction_filename
+        extraction_path.write_text(text, encoding="utf-8")
+
+        return text, "openai_vision", f"extraction/{extraction_filename}"
 
     raise ValueError(f"Cannot extract text from {file_item.filename}: no suitable method")
 
@@ -242,6 +238,7 @@ def get_text_content(
 def process_file(
     file_item: FileInventoryItem,
     classifier: Any,
+    extraction_dir: Path,
     azure_di: Optional[Any] = None,
     openai_vision: Optional[Any] = None,
 ) -> FileProcessingResult:
@@ -258,8 +255,8 @@ def process_file(
             )
 
         # Get text content
-        text_content, source = get_text_content(
-            file_item, azure_di, openai_vision
+        text_content, source, extraction_file = get_text_content(
+            file_item, extraction_dir, azure_di, openai_vision
         )
 
         if not text_content.strip():
@@ -267,6 +264,7 @@ def process_file(
                 filename=file_item.filename,
                 status="error",
                 source=source,
+                extraction_file=extraction_file,
                 error_message="Empty text content",
                 processing_time_ms=int((time.time() - start_time) * 1000),
             )
@@ -278,6 +276,7 @@ def process_file(
             filename=file_item.filename,
             status="success",
             source=source,
+            extraction_file=extraction_file,
             classification=classification,
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
@@ -301,6 +300,7 @@ def process_file(
 
 def process_claim_folder(
     folder: Path,
+    output_dir: Path,
     classifier: Any,
     azure_di: Optional[Any] = None,
     openai_vision: Optional[Any] = None,
@@ -309,6 +309,14 @@ def process_claim_folder(
     """
     Process all files in a claim folder.
 
+    Args:
+        folder: Input claim folder
+        output_dir: Output directory for this claim (extraction subfolder will be created)
+        classifier: Document classifier instance
+        azure_di: Azure DI acquisition instance
+        openai_vision: OpenAI Vision acquisition instance
+        progress_bar: Optional tqdm progress bar
+
     Returns:
         Tuple of (summary_result, inventory, file_results)
     """
@@ -316,6 +324,9 @@ def process_claim_folder(
 
     # Scan folder
     inventory = scan_folder_files(folder)
+
+    # Extraction folder for this claim
+    extraction_dir = output_dir / "extraction"
 
     result = ClaimProcessingResult(
         folder_name=folder.name,
@@ -331,7 +342,7 @@ def process_claim_folder(
         if progress_bar:
             progress_bar.set_postfix_str(file_item.filename[:30])
 
-        file_result = process_file(file_item, classifier, azure_di, openai_vision)
+        file_result = process_file(file_item, classifier, extraction_dir, azure_di, openai_vision)
         file_results.append(file_result)
 
         if file_result.status == "success":
@@ -423,13 +434,18 @@ def write_outputs(
             (i for i in inventory if i.filename == file_result.filename), None
         )
 
+        extraction_data = {
+            "source": file_result.source,
+            "processed_at": datetime.now().isoformat(),
+            "processing_time_ms": file_result.processing_time_ms,
+        }
+        # Add extraction file reference if available
+        if file_result.extraction_file:
+            extraction_data["extracted_file"] = file_result.extraction_file
+
         context_data = {
             "source_file": asdict(inv_item) if inv_item else {"filename": file_result.filename},
-            "extraction": {
-                "source": file_result.source,
-                "processed_at": datetime.now().isoformat(),
-                "processing_time_ms": file_result.processing_time_ms,
-            },
+            "extraction": extraction_data,
             "classification": file_result.classification,
             "status": file_result.status,
             "error": file_result.error_message,
@@ -591,9 +607,13 @@ def main():
             file_pbar = None
             print(f"  Processing: {folder.name} ({file_count} files)")
 
+        # Output folder for this claim (extraction subfolder created inside)
+        output_folder = output_dir / folder.name
+
         # Process folder
         result, inventory, file_results = process_claim_folder(
             folder,
+            output_folder,
             classifier,
             azure_di,
             openai_vision,
@@ -604,7 +624,6 @@ def main():
             file_pbar.close()
 
         # Write outputs
-        output_folder = output_dir / folder.name
         write_outputs(output_folder, result, inventory, file_results)
 
         # Update totals
