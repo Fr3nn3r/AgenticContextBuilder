@@ -1,0 +1,72 @@
+doc_type: insurance_policy
+version: v0
+
+required_fields:
+  - policy_number
+
+optional_fields:
+  - insured_name
+  - coverage_start
+  - coverage_end
+  - vehicle_plate
+
+field_rules:
+  policy_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "póliza"
+      - "número"
+      - "no."
+      - "policy"
+      - "#póliza"
+      - "contrato"
+
+  insured_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "asegurado"
+      - "contratante"
+      - "nombre"
+      - "titular"
+      - "cliente"
+
+  coverage_start:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "vigencia"
+      - "inicio"
+      - "desde"
+      - "inicio vigencia"
+      - "fecha inicio"
+
+  coverage_end:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "vencimiento"
+      - "hasta"
+      - "fin"
+      - "fin vigencia"
+      - "fecha fin"
+      - "termina"
+
+  vehicle_plate:
+    normalize: plate_normalize
+    validate: plate_like
+    hints:
+      - "placa"
+      - "matrícula"
+      - "placas"
+      - "vehículo"
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.7
+  warn_if:
+    - evidence_rate < 0.7
+  fail_if:
+    - required_present_ratio < 1.0

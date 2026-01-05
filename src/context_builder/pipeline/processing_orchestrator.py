@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from context_builder.acquisition import AcquisitionFactory, AcquisitionError
+from context_builder.ingestion import IngestionFactory, IngestionError
 from context_builder.extraction.openai_symbol_extraction import OpenAISymbolExtraction
 from context_builder.extraction.openai_logic_extraction import OpenAILogicExtraction
 from context_builder.extraction.progress_callback import NoOpProgressCallback
@@ -56,7 +56,7 @@ class PolicyProcessingOrchestrator:
         """
         if self.azure_di is None:
             logger.info("Initializing Azure DI acquisition...")
-            self.azure_di = AcquisitionFactory.create("azure-di")
+            self.azure_di = IngestionFactory.create("azure-di")
 
         if self.symbol_extractor is None:
             logger.info("Initializing symbol extractor...")
@@ -132,7 +132,7 @@ class PolicyProcessingOrchestrator:
             Acquisition result dictionary
 
         Raises:
-            AcquisitionError: If acquisition fails
+            IngestionError: If ingestion fails
         """
         logger.info(f"[1/4] Running Azure DI acquisition on {pdf_path.name}...")
 
