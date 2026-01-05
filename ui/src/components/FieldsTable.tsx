@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ExtractedField, FieldLabel } from "../types";
 import { cn } from "../lib/utils";
 

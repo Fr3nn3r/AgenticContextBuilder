@@ -36,3 +36,10 @@
 **Context**
 
 * If domain rules missing, consult `PROJECT_CONTEXT.md`. If still unclear, state assumptions. 
+
+## Naming & Self-Documenting Code
+**Goal:** Code must explain *how* and *what*. Comments explain *why*.
+
+- **Variable/Func Names:** Optimize for semantic density.
+  - ❌ `data`, `list`, `flag`, `process()`
+  - ✅ `pendingClaims`, `activePolicyList`, `shouldRetry`, `calculateRiskScore()`

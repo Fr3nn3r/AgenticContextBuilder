@@ -126,14 +126,25 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
   const qualityStatus = extraction?.quality_gate.status;
 
   return (
-    <div className="space-y-4">
+    <div className="p-6 space-y-4">
+      {/* Back button */}
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Back to Claims
+      </button>
+
       {/* Document header */}
-      <div className="bg-card rounded-lg border p-4">
+      <div className="bg-white rounded-lg border p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">{doc.filename}</h2>
-            <div className="text-sm text-muted-foreground">
-              {doc.doc_type} &middot; {doc.language} &middot; {doc.pages.length} pages
+            <h2 className="text-lg font-semibold text-gray-900">{doc.filename}</h2>
+            <div className="text-sm text-gray-500">
+              {doc.claim_id} &middot; {doc.doc_type} &middot; {doc.language.toUpperCase()} &middot; {doc.pages.length} pages
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -146,8 +157,8 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
               className={cn(
                 "px-4 py-2 rounded-md font-medium transition-colors",
                 saving
-                  ? "bg-secondary text-muted-foreground"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                  : "bg-gray-900 text-white hover:bg-gray-800"
               )}
             >
               {saving ? "Saving..." : "Save Labels"}
@@ -157,13 +168,13 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
       </div>
 
       {/* Main content: split view */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ height: "calc(100vh - 280px)" }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ height: "calc(100vh - 320px)" }}>
         {/* Left: Page viewer */}
-        <div className="bg-card rounded-lg border overflow-hidden">
-          <div className="p-2 border-b bg-secondary/30">
-            <h3 className="font-medium">Document Text</h3>
+        <div className="bg-white rounded-lg border overflow-hidden">
+          <div className="p-3 border-b bg-gray-50">
+            <h3 className="font-medium text-gray-900">Document Text</h3>
           </div>
-          <div className="h-full overflow-hidden" style={{ height: "calc(100% - 40px)" }}>
+          <div className="h-full overflow-hidden" style={{ height: "calc(100% - 48px)" }}>
             <PageViewer
               pages={doc.pages}
               highlightQuote={highlightQuote}
@@ -173,9 +184,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         </div>
 
         {/* Right: Fields + Labels */}
-        <div className="bg-card rounded-lg border overflow-hidden flex flex-col">
-          <div className="p-2 border-b bg-secondary/30">
-            <h3 className="font-medium">Extracted Fields</h3>
+        <div className="bg-white rounded-lg border overflow-hidden flex flex-col">
+          <div className="p-3 border-b bg-gray-50">
+            <h3 className="font-medium text-gray-900">Extracted Fields</h3>
           </div>
 
           {/* Fields */}
@@ -188,14 +199,14 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 onQuoteClick={handleQuoteClick}
               />
             ) : (
-              <div className="p-4 text-muted-foreground">
+              <div className="p-4 text-gray-500">
                 No extraction results available
               </div>
             )}
           </div>
 
           {/* Doc-level labels & reviewer */}
-          <div className="border-t p-4 space-y-3">
+          <div className="border-t p-4 space-y-3 bg-gray-50">
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
                 <input
@@ -207,9 +218,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                       doc_type_correct: e.target.checked,
                     }))
                   }
-                  className="rounded"
+                  className="rounded border-gray-300"
                 />
-                <span className="text-sm">Doc type correct</span>
+                <span className="text-sm text-gray-700">Doc type correct</span>
               </label>
 
               <select
@@ -220,7 +231,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                     text_readable: e.target.value as "good" | "warn" | "poor",
                   }))
                 }
-                className="text-sm border rounded px-2 py-1"
+                className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
               >
                 <option value="good">Text: Good</option>
                 <option value="warn">Text: Warn</option>
@@ -234,14 +245,14 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 placeholder="Reviewer name"
                 value={reviewer}
                 onChange={(e) => setReviewer(e.target.value)}
-                className="flex-1 border rounded px-2 py-1 text-sm"
+                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
               />
               <input
                 type="text"
                 placeholder="Notes (optional)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="flex-1 border rounded px-2 py-1 text-sm"
+                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
               />
             </div>
           </div>

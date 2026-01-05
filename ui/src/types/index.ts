@@ -7,6 +7,15 @@ export interface ClaimSummary {
   doc_types: string[];
   extracted_count: number;
   labeled_count: number;
+  // ClaimEval-style fields
+  lob: string;
+  risk_score: number;
+  loss_type: string;
+  amount: number | null;
+  currency: string;
+  flags_count: number;
+  status: string;
+  closed_date: string | null;
 }
 
 export interface DocSummary {
@@ -17,6 +26,7 @@ export interface DocSummary {
   has_extraction: boolean;
   has_labels: boolean;
   quality_status: string | null;
+  confidence: number;
 }
 
 export interface PageContent {
