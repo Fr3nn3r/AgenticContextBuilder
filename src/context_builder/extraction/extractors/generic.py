@@ -20,6 +20,7 @@ from context_builder.extraction.base import (
 from context_builder.extraction.spec_loader import DocTypeSpec
 from context_builder.extraction.page_parser import find_text_position
 from context_builder.extraction.normalizers import get_normalizer, get_validator
+from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.extraction_result import (
     ExtractionResult,
     ExtractedField,
@@ -41,16 +42,25 @@ class GenericFieldExtractor(FieldExtractor):
     """
 
     EXTRACTOR_VERSION = "v1.0.0"
-    PROMPT_VERSION = "generic_extraction_v1"
+    PROMPT_NAME = "generic_extraction"
 
     def __init__(
         self,
         spec: DocTypeSpec,
-        model: str = "gpt-4o",
-        temperature: float = 0.1,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
     ):
-        super().__init__(spec, model)
-        self.temperature = temperature
+        # Load prompt config to get model defaults
+        prompt_data = load_prompt(self.PROMPT_NAME)
+        prompt_config = prompt_data["config"]
+
+        # Use provided values or fall back to prompt config
+        resolved_model = model or prompt_config.get("model", "gpt-4o")
+        resolved_temperature = temperature if temperature is not None else prompt_config.get("temperature", 0.1)
+
+        super().__init__(spec, resolved_model)
+        self.temperature = resolved_temperature
+        self.max_tokens = prompt_config.get("max_tokens", 2048)
         self.client = OpenAI()
 
     def extract(
@@ -138,19 +148,25 @@ class GenericFieldExtractor(FieldExtractor):
 
         Returns dict with field extractions including quotes for provenance.
         """
-        system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(context)
+        # Build fields description for prompt
+        fields_desc = self._build_fields_desc()
+
+        # Load and render prompt template
+        prompt_data = load_prompt(
+            self.PROMPT_NAME,
+            doc_type=self.spec.doc_type,
+            fields_desc=fields_desc,
+            context=context,
+        )
+        messages = prompt_data["messages"]
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                max_tokens=2048,
+                max_tokens=self.max_tokens,
                 response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                messages=messages,
             )
 
             content = response.choices[0].message.content
@@ -160,50 +176,13 @@ class GenericFieldExtractor(FieldExtractor):
             # Return empty extractions on error
             return {"fields": [], "error": str(e)}
 
-    def _build_system_prompt(self) -> str:
-        """Build system prompt for extraction."""
-        fields_desc = []
+    def _build_fields_desc(self) -> str:
+        """Build formatted field descriptions for prompt template."""
+        lines = []
         for field_name in self.spec.all_fields:
             required = "required" if self.spec.is_required(field_name) else "optional"
-            fields_desc.append(f"- {field_name} ({required})")
-
-        return f"""You are a precise document field extractor for {self.spec.doc_type} documents.
-
-Extract these fields from the provided text snippets:
-{chr(10).join(fields_desc)}
-
-For EACH field you extract:
-1. Provide the exact value found in the document
-2. Quote the EXACT source text that contains the value (text_quote)
-3. Rate your confidence (0.0 to 1.0)
-
-If a field is not found or unclear, set value to null.
-If the value appears to be a redacted placeholder (like [NAME_1], PERSON_1, etc.), still extract it but note is_placeholder: true.
-
-Return JSON with this structure:
-{{
-  "fields": [
-    {{
-      "name": "field_name",
-      "value": "extracted value or null",
-      "text_quote": "exact text from document containing the value",
-      "confidence": 0.9,
-      "is_placeholder": false
-    }}
-  ]
-}}
-
-Be precise with text_quote - it must be findable in the original text."""
-
-    def _build_user_prompt(self, context: str) -> str:
-        """Build user prompt with document context."""
-        return f"""Document type: {self.spec.doc_type}
-
-Document snippets (with page and character position markers):
-
-{context}
-
-Extract all fields as JSON. Include text_quote for provenance."""
+            lines.append(f"- {field_name} ({required})")
+        return "\n".join(lines)
 
     def _build_extracted_fields(
         self,
