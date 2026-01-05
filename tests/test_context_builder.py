@@ -7,9 +7,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
 import pytest
 
-from context_builder.acquisition import (
-    DataAcquisition,
-    AcquisitionFactory,
+from context_builder.ingestion import (
+    DataIngestion,
+    IngestionFactory,
     FileNotSupportedError,
     ConfigurationError,
     APIError
@@ -22,8 +22,8 @@ class TestFileDiscovery:
 
     def test_supported_extensions_includes_tif(self):
         """Verify .tif is in supported extensions."""
-        assert '.tif' in DataAcquisition.SUPPORTED_EXTENSIONS
-        assert '.tiff' in DataAcquisition.SUPPORTED_EXTENSIONS
+        assert '.tif' in DataIngestion.SUPPORTED_EXTENSIONS
+        assert '.tiff' in DataIngestion.SUPPORTED_EXTENSIONS
 
     def test_case_insensitive_discovery(self, tmp_path):
         """Test that file discovery is case-insensitive."""
@@ -92,7 +92,7 @@ class TestCLIConfiguration:
     def test_cli_flags_present(self):
         """Test that all new CLI flags are present."""
         parser = setup_argparser()
-        args = parser.parse_args(["test.jpg"])
+        args = parser.parse_args(["acquire", "test.jpg"])
 
         # Check new configuration attributes exist
         assert hasattr(args, 'model')
@@ -107,7 +107,7 @@ class TestCLIConfiguration:
     def test_cli_flag_defaults(self):
         """Test CLI flag default values."""
         parser = setup_argparser()
-        args = parser.parse_args(["test.jpg"])
+        args = parser.parse_args(["acquire", "test.jpg"])
 
         assert args.model is None
         assert args.max_tokens is None
@@ -122,6 +122,7 @@ class TestCLIConfiguration:
         """Test CLI flag value parsing."""
         parser = setup_argparser()
         args = parser.parse_args([
+            "acquire",
             "test.jpg",
             "--model", "gpt-4-turbo",
             "--max-tokens", "2048",
@@ -143,20 +144,20 @@ class TestCLIConfiguration:
         assert args.quiet is True
 
 
-class TestDataAcquisition:
-    """Test DataAcquisition base functionality."""
+class TestDataIngestion:
+    """Test DataIngestion base functionality."""
 
     def test_validate_file_case_insensitive(self, tmp_path):
         """Test file validation is case-insensitive."""
         test_file = tmp_path / "IMAGE.JPG"
         test_file.touch()
 
-        acquisition = Mock(spec=DataAcquisition)
-        acquisition.SUPPORTED_EXTENSIONS = DataAcquisition.SUPPORTED_EXTENSIONS
-        acquisition.logger = Mock()
+        ingestion = Mock(spec=DataIngestion)
+        ingestion.SUPPORTED_EXTENSIONS = DataIngestion.SUPPORTED_EXTENSIONS
+        ingestion.logger = Mock()
 
         # Call the real validate_file method
-        DataAcquisition.validate_file(acquisition, test_file)
+        DataIngestion.validate_file(ingestion, test_file)
 
         # Should not raise an exception
 
@@ -165,24 +166,24 @@ class TestDataAcquisition:
         test_file = tmp_path / "scan.tif"
         test_file.touch()
 
-        acquisition = Mock(spec=DataAcquisition)
-        acquisition.SUPPORTED_EXTENSIONS = DataAcquisition.SUPPORTED_EXTENSIONS
-        acquisition.logger = Mock()
+        ingestion = Mock(spec=DataIngestion)
+        ingestion.SUPPORTED_EXTENSIONS = DataIngestion.SUPPORTED_EXTENSIONS
+        ingestion.logger = Mock()
 
         # Should not raise an exception
-        DataAcquisition.validate_file(acquisition, test_file)
+        DataIngestion.validate_file(ingestion, test_file)
 
     def test_validate_unsupported_file(self, tmp_path):
         """Test validation fails for unsupported file types."""
         test_file = tmp_path / "document.txt"
         test_file.touch()
 
-        acquisition = Mock(spec=DataAcquisition)
-        acquisition.SUPPORTED_EXTENSIONS = DataAcquisition.SUPPORTED_EXTENSIONS
-        acquisition.logger = Mock()
+        ingestion = Mock(spec=DataIngestion)
+        ingestion.SUPPORTED_EXTENSIONS = DataIngestion.SUPPORTED_EXTENSIONS
+        ingestion.logger = Mock()
 
         with pytest.raises(FileNotSupportedError):
-            DataAcquisition.validate_file(acquisition, test_file)
+            DataIngestion.validate_file(ingestion, test_file)
 
 
 class TestOpenAIResilience:
@@ -191,16 +192,16 @@ class TestOpenAIResilience:
     @patch('openai.OpenAI')
     def test_retry_on_rate_limit(self, mock_openai_class):
         """Test retry logic on rate limit errors."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             # Mock API to fail twice then succeed
             mock_response = Mock()
             mock_response.choices = [Mock(message=Mock(content='{"text": "success"}'))]
 
-            acquisition.client.chat.completions.create = Mock(
+            ingestion.client.chat.completions.create = Mock(
                 side_effect=[
                     Exception("Rate limit exceeded (429)"),
                     Exception("Rate limit exceeded (429)"),
@@ -209,23 +210,23 @@ class TestOpenAIResilience:
             )
 
             with patch('time.sleep'):  # Don't actually sleep in tests
-                result = acquisition._call_api_with_retry([])
+                result = ingestion._call_api_with_retry([])
 
             assert result == mock_response
-            assert acquisition.client.chat.completions.create.call_count == 3
+            assert ingestion.client.chat.completions.create.call_count == 3
 
     @patch('openai.OpenAI')
     def test_retry_on_timeout(self, mock_openai_class):
         """Test retry logic on timeout errors."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             mock_response = Mock()
             mock_response.choices = [Mock(message=Mock(content='{"text": "success"}'))]
 
-            acquisition.client.chat.completions.create = Mock(
+            ingestion.client.chat.completions.create = Mock(
                 side_effect=[
                     Exception("Request timeout"),
                     mock_response
@@ -233,41 +234,41 @@ class TestOpenAIResilience:
             )
 
             with patch('time.sleep'):
-                result = acquisition._call_api_with_retry([])
+                result = ingestion._call_api_with_retry([])
 
             assert result == mock_response
-            assert acquisition.client.chat.completions.create.call_count == 2
+            assert ingestion.client.chat.completions.create.call_count == 2
 
     @patch('openai.OpenAI')
     def test_no_retry_on_auth_error(self, mock_openai_class):
         """Test no retry on authentication errors."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
-            acquisition.client.chat.completions.create = Mock(
+            ingestion.client.chat.completions.create = Mock(
                 side_effect=Exception("Invalid api_key")
             )
 
             with pytest.raises(ConfigurationError):
-                acquisition._call_api_with_retry([])
+                ingestion._call_api_with_retry([])
 
             # Should only call once (no retry)
-            assert acquisition.client.chat.completions.create.call_count == 1
+            assert ingestion.client.chat.completions.create.call_count == 1
 
     @patch('openai.OpenAI')
     def test_exponential_backoff(self, mock_openai_class):
         """Test exponential backoff timing."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             mock_response = Mock()
             mock_response.choices = [Mock(message=Mock(content='{"text": "success"}'))]
 
-            acquisition.client.chat.completions.create = Mock(
+            ingestion.client.chat.completions.create = Mock(
                 side_effect=[
                     Exception("Rate limit (429)"),
                     Exception("Rate limit (429)"),
@@ -276,7 +277,7 @@ class TestOpenAIResilience:
             )
 
             with patch('time.sleep') as mock_sleep:
-                acquisition._call_api_with_retry([])
+                ingestion._call_api_with_retry([])
 
             # Check exponential backoff: 2^0 * 2 = 2, 2^1 * 2 = 4
             calls = mock_sleep.call_args_list
@@ -290,31 +291,31 @@ class TestJSONParsing:
     @patch('openai.OpenAI')
     def test_parse_json_with_markdown(self, mock_openai_class):
         """Test parsing JSON from markdown code blocks."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             # Test with ```json block
             response = '```json\n{"key": "value"}\n```'
-            result = acquisition._parse_response(response)
+            result = ingestion._parse_response(response)
             assert result == {"key": "value"}
 
             # Test with plain ``` block
             response = '```\n{"key": "value"}\n```'
-            result = acquisition._parse_response(response)
+            result = ingestion._parse_response(response)
             assert result == {"key": "value"}
 
     @patch('openai.OpenAI')
     def test_parse_json_fallback(self, mock_openai_class):
         """Test fallback when JSON parsing fails."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             response = "This is not valid JSON"
-            result = acquisition._parse_response(response)
+            result = ingestion._parse_response(response)
 
             assert result["document_type"] == "unknown"
             assert result["text_content"] == response
@@ -322,13 +323,13 @@ class TestJSONParsing:
 
 
 class TestConfigurationApplication:
-    """Test configuration application from CLI to acquisition."""
+    """Test configuration application from CLI to ingestion."""
 
-    @patch('context_builder.acquisition.AcquisitionFactory.create')
-    def test_config_applied_to_acquisition(self, mock_factory, tmp_path):
-        """Test that CLI config is applied to acquisition instance."""
-        mock_acquisition = Mock()
-        mock_factory.return_value = mock_acquisition
+    @patch('context_builder.ingestion.IngestionFactory.create')
+    def test_config_applied_to_ingestion(self, mock_factory, tmp_path):
+        """Test that CLI config is applied to ingestion instance."""
+        mock_ingestion = Mock()
+        mock_factory.return_value = mock_ingestion
 
         test_file = tmp_path / "test.jpg"
         test_file.touch()
@@ -341,15 +342,15 @@ class TestConfigurationApplication:
             'retries': 5
         }
 
-        with patch.object(mock_acquisition, 'process', return_value={}):
+        with patch.object(mock_ingestion, 'process', return_value={}):
             process_file(test_file, tmp_path, "openai", config=config)
 
         # Check that attributes were set
-        assert mock_acquisition.model == 'gpt-4-turbo'
-        assert mock_acquisition.max_tokens == 2048
-        assert mock_acquisition.temperature == 0.5
-        assert mock_acquisition.timeout == 60
-        assert mock_acquisition.retries == 5
+        assert mock_ingestion.model == 'gpt-4-turbo'
+        assert mock_ingestion.max_tokens == 2048
+        assert mock_ingestion.temperature == 0.5
+        assert mock_ingestion.timeout == 60
+        assert mock_ingestion.retries == 5
 
 
 class TestMemoryOptimization:
@@ -358,10 +359,10 @@ class TestMemoryOptimization:
     @patch('openai.OpenAI')
     def test_pdf_streaming_processing(self, mock_openai_class):
         """Test that PDFs are processed page by page without accumulation."""
-        from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
+        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
-            acquisition = OpenAIVisionAcquisition()
+            ingestion = OpenAIVisionIngestion()
 
             # Mock pypdfium2
             import sys
@@ -385,10 +386,10 @@ class TestMemoryOptimization:
                     completion_tokens=50,
                     total_tokens=150
                 )
-                acquisition.client.chat.completions.create = Mock(return_value=mock_response)
+                ingestion.client.chat.completions.create = Mock(return_value=mock_response)
 
                 # Process PDF
-                pages, usage = acquisition._process_pdf_pages(Path("test.pdf"))
+                pages, usage = ingestion._process_pdf_pages(Path("test.pdf"))
 
                 # Verify results
                 assert len(pages) == 3

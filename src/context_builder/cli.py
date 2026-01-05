@@ -16,15 +16,15 @@ import colorlog
 from dotenv import load_dotenv
 from rich.console import Console
 
-from context_builder.acquisition import (
-    AcquisitionFactory,
-    AcquisitionError,
-    DataAcquisition,
+from context_builder.ingestion import (
+    IngestionFactory,
+    IngestionError,
+    DataIngestion,
 )
 
 # Ensure Azure DI implementation is imported so it auto-registers
 try:
-    from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
+    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
 except ImportError:
     pass  # Azure DI dependencies not installed
 
@@ -144,7 +144,7 @@ Examples:
         "--provider",
         choices=available_providers,
         default="tesseract",
-        help="""Data acquisition provider (default: tesseract)
+        help="""Data ingestion provider (default: tesseract)
         - openai: OpenAI Vision API (structured JSON with LLM analysis)
           Requires: OPENAI_API_KEY in .env
         - tesseract: Local OCR with Tesseract (text extraction)
@@ -409,7 +409,7 @@ def get_supported_files(folder: Path, recursive: bool = False) -> list[Path]:
     Returns:
         List of file paths
     """
-    supported_extensions = DataAcquisition.SUPPORTED_EXTENSIONS
+    supported_extensions = DataIngestion.SUPPORTED_EXTENSIONS
     files = []
 
     if recursive:
@@ -430,7 +430,7 @@ def process_file(
     filepath: Path,
     output_dir: Path,
     provider: str = "tesseract",
-    acquisition: Optional[DataAcquisition] = None,
+    ingestion: Optional[DataIngestion] = None,
     config: Optional[dict] = None,
 ) -> dict:
     """
@@ -440,36 +440,36 @@ def process_file(
         filepath: Path to input file
         output_dir: Directory for output JSON
         provider: Vision API provider name
-        acquisition: Optional acquisition instance to reuse
+        ingestion: Optional ingestion instance to reuse
         config: Optional configuration dictionary
 
     Returns:
         Dictionary with the processing result
 
     Raises:
-        AcquisitionError: If processing fails
+        IngestionError: If processing fails
     """
     logger.info(f"Processing file: {filepath}")
 
-    # Get or create acquisition implementation
-    if acquisition is None:
-        acquisition = AcquisitionFactory.create(provider)
+    # Get or create ingestion implementation
+    if ingestion is None:
+        ingestion = IngestionFactory.create(provider)
 
         # Set output directory if supported (for providers like Azure DI that save additional files)
-        if hasattr(acquisition, 'output_dir'):
-            acquisition.output_dir = output_dir
-            logger.debug(f"Set output_dir={output_dir} on acquisition instance")
+        if hasattr(ingestion, 'output_dir'):
+            ingestion.output_dir = output_dir
+            logger.debug(f"Set output_dir={output_dir} on ingestion instance")
 
         # Apply configuration if provided
         if config:
             for key, value in config.items():
-                if value is not None and hasattr(acquisition, key):
-                    setattr(acquisition, key, value)
-                    logger.debug(f"Set {key}={value} on acquisition instance")
+                if value is not None and hasattr(ingestion, key):
+                    setattr(ingestion, key, value)
+                    logger.debug(f"Set {key}={value} on ingestion instance")
 
     # Process the file
     logger.info(f"Using {provider} vision API for processing")
-    result = acquisition.process(filepath)
+    result = ingestion.process(filepath)
 
     return result
 
@@ -562,20 +562,20 @@ def process_folder(
 
     logger.info(f"Found {len(files)} files to process")
 
-    # Create acquisition instance once
-    acquisition = AcquisitionFactory.create(provider)
+    # Create ingestion instance once
+    ingestion = IngestionFactory.create(provider)
 
     # Set output directory if supported (for providers like Azure DI that save additional files)
-    if hasattr(acquisition, 'output_dir'):
-        acquisition.output_dir = output_dir
-        logger.debug(f"Set output_dir={output_dir} on acquisition instance")
+    if hasattr(ingestion, 'output_dir'):
+        ingestion.output_dir = output_dir
+        logger.debug(f"Set output_dir={output_dir} on ingestion instance")
 
     # Apply configuration if provided
     if config:
         for key, value in config.items():
-            if value is not None and hasattr(acquisition, key):
-                setattr(acquisition, key, value)
-                logger.debug(f"Set {key}={value} on acquisition instance")
+            if value is not None and hasattr(ingestion, key):
+                setattr(ingestion, key, value)
+                logger.debug(f"Set {key}={value} on ingestion instance")
 
     success_count = 0
     error_count = 0
@@ -591,7 +591,7 @@ def process_folder(
 
         try:
             # Process the file
-            result = process_file(filepath, output_dir, provider, acquisition, config)
+            result = process_file(filepath, output_dir, provider, ingestion, config)
 
             if rich_output and console:
                 # Simply print the result to stdout
@@ -1088,7 +1088,7 @@ def main():
         print("\n[!] Process interrupted by user. Exiting gracefully...")
         sys.exit(0)
 
-    except AcquisitionError as e:
+    except IngestionError as e:
         logger.error(f"Acquisition failed: {e}")
         print(f"[X] Failed to process: {e}")
         sys.exit(1)

@@ -1,11 +1,11 @@
 """
-Batch Azure Document Intelligence acquisition script.
+Batch Azure Document Intelligence ingestion script.
 
 Processes all documents in a specified folder (non-recursively) using Azure DI
 and saves the outputs to a designated output folder.
 
 Usage:
-    python scripts/batch_azure_di_acquisition.py
+    python scripts/batch_azure_di_ingestion.py
 
 Requirements:
     - AZURE_DI_ENDPOINT environment variable
@@ -21,9 +21,9 @@ from typing import List, Dict, Any
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from context_builder.acquisition import AcquisitionFactory, AcquisitionError
+from context_builder.ingestion import IngestionFactory, IngestionError
 # Import Azure DI implementation to register it with factory
-from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
+from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
 
 # Configure logging
 logging.basicConfig(
@@ -137,7 +137,7 @@ def process_batch(
     # Initialize Azure DI acquisition
     logger.info("Initializing Azure Document Intelligence client...")
     try:
-        azure_di = AcquisitionFactory.create("azure-di")
+        azure_di = IngestionFactory.create("azure-di")
 
         # Configure to save markdown files in output directory
         azure_di.output_dir = output_dir
@@ -199,7 +199,7 @@ def process_batch(
             if result.get('total_pages') == 2:
                 print(f"  [WARNING] Free tier: Only 2 pages processed")
 
-        except AcquisitionError as e:
+        except IngestionError as e:
             error_msg = f"Acquisition error: {str(e)}"
             logger.error(f"Failed to process {doc_path.name}: {error_msg}")
 

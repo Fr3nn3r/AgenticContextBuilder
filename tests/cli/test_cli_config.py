@@ -11,8 +11,8 @@ from context_builder.cli import (
     main,
     signal_handler,
 )
-from context_builder.acquisition import (
-    AcquisitionError,
+from context_builder.ingestion import (
+    IngestionError,
     ConfigurationError,
     APIError,
 )
@@ -24,8 +24,9 @@ class TestCLIArguments:
     def test_argparser_basic_arguments(self):
         """Test basic argument structure."""
         parser = setup_argparser()
-        args = parser.parse_args(['input.jpg'])
+        args = parser.parse_args(['acquire', 'input.jpg'])
 
+        assert args.command == 'acquire'
         assert args.input_path == 'input.jpg'
         assert args.output_dir == '.'
         assert args.provider == 'tesseract'  # Updated default
@@ -37,6 +38,7 @@ class TestCLIArguments:
         """Test all CLI arguments."""
         parser = setup_argparser()
         args = parser.parse_args([
+            'acquire',
             'input.jpg',
             '-o', '/output',
             '-r',
@@ -68,6 +70,7 @@ class TestCLIArguments:
         """Test short flag versions."""
         parser = setup_argparser()
         args = parser.parse_args([
+            'acquire',
             'test.pdf',
             '-o', 'out',
             '-r',
@@ -85,25 +88,25 @@ class TestCLIArguments:
         parser = setup_argparser()
 
         # Both can be parsed (not mutually exclusive in argparse)
-        args = parser.parse_args(['test.jpg', '-v'])
+        args = parser.parse_args(['acquire', 'test.jpg', '-v'])
         assert args.verbose is True
         assert args.quiet is False
 
-        args = parser.parse_args(['test.jpg', '-q'])
+        args = parser.parse_args(['acquire', 'test.jpg', '-q'])
         assert args.verbose is False
         assert args.quiet is True
 
     def test_argparser_azure_di_provider(self):
         """Test azure-di provider option."""
         parser = setup_argparser()
-        args = parser.parse_args(['test.pdf', '-p', 'azure-di'])
+        args = parser.parse_args(['acquire', 'test.pdf', '-p', 'azure-di'])
 
         assert args.provider == 'azure-di'
 
     def test_argparser_default_provider_tesseract(self):
         """Test default provider is tesseract."""
         parser = setup_argparser()
-        args = parser.parse_args(['test.pdf'])
+        args = parser.parse_args(['acquire', 'test.pdf'])
 
         assert args.provider == 'tesseract'
 
@@ -122,6 +125,7 @@ class TestCLIConfiguration:
         """Test configuration dictionary is built correctly."""
         parser = setup_argparser()
         args = parser.parse_args([
+            'acquire',
             'test.jpg',
             '--model', 'gpt-4o',
             '--max-tokens', '1000',
@@ -163,6 +167,7 @@ class TestCLIConfiguration:
         """Test configuration with only some values set."""
         parser = setup_argparser()
         args = parser.parse_args([
+            'acquire',
             'test.jpg',
             '--model', 'gpt-4-turbo',
             '--temperature', '0.5'
@@ -190,7 +195,7 @@ class TestCLIConfiguration:
         # Test verbose
         with patch('context_builder.cli.process_file', return_value={}):
             with patch('context_builder.cli.save_single_result'):
-                test_args = ['cli.py', str(test_file), '--verbose']
+                test_args = ['cli.py', 'acquire', str(test_file), '--verbose']
                 monkeypatch.setattr(sys, 'argv', test_args)
 
                 # Should complete without error
@@ -201,7 +206,7 @@ class TestCLIConfiguration:
         # Test quiet
         with patch('context_builder.cli.process_file', return_value={}):
             with patch('context_builder.cli.save_single_result'):
-                test_args = ['cli.py', str(test_file), '--quiet']
+                test_args = ['cli.py', 'acquire', str(test_file), '--quiet']
                 monkeypatch.setattr(sys, 'argv', test_args)
 
                 # Should complete without error
@@ -222,7 +227,7 @@ class TestCLIErrorHandling:
 
     def test_file_not_found(self, mock_env, monkeypatch, caplog, capsys):
         """Test handling of non-existent file."""
-        test_args = ['cli.py', '/nonexistent/file.jpg']
+        test_args = ['cli.py', 'acquire', '/nonexistent/file.jpg']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         with pytest.raises(SystemExit) as exc:
@@ -242,7 +247,7 @@ class TestCLIErrorHandling:
         bad_dir = tmp_path / "notadir.txt"
         bad_dir.write_text("file")
 
-        test_args = ['cli.py', str(test_file), '-o', str(bad_dir)]
+        test_args = ['cli.py', 'acquire', str(test_file), '-o', str(bad_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         with pytest.raises(SystemExit) as exc:
@@ -250,17 +255,17 @@ class TestCLIErrorHandling:
 
         assert exc.value.code == 1
 
-    def test_acquisition_error(self, mock_env, tmp_path, monkeypatch, capsys):
-        """Test handling of AcquisitionError."""
+    def test_ingestion_error(self, mock_env, tmp_path, monkeypatch, capsys):
+        """Test handling of IngestionError."""
         test_file = tmp_path / "test.jpg"
         test_file.touch()
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
-            mock_process.side_effect = AcquisitionError("Processing failed")
+            mock_process.side_effect = IngestionError("Processing failed")
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -281,7 +286,7 @@ class TestCLIErrorHandling:
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = ConfigurationError("API key missing")
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -302,7 +307,7 @@ class TestCLIErrorHandling:
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = APIError("Rate limit exceeded")
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -323,7 +328,7 @@ class TestCLIErrorHandling:
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = RuntimeError("Unexpected error")
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -344,7 +349,7 @@ class TestCLIErrorHandling:
         with patch('context_builder.cli.process_file') as mock_process:
             mock_process.side_effect = KeyboardInterrupt()
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -373,7 +378,7 @@ class TestCLIErrorHandling:
         with patch('pathlib.Path.mkdir') as mock_mkdir:
             mock_mkdir.side_effect = PermissionError("Cannot create directory")
 
-            test_args = ['cli.py', str(test_file), '-o', '/newdir']
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', '/newdir']
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:
@@ -389,7 +394,7 @@ class TestCLIErrorHandling:
         with patch('pathlib.Path.exists', return_value=True):
             with patch('pathlib.Path.is_file', return_value=False):
                 with patch('pathlib.Path.is_dir', return_value=False):
-                    test_args = ['cli.py', '/dev/null']
+                    test_args = ['cli.py', 'acquire', '/dev/null']
                     monkeypatch.setattr(sys, 'argv', test_args)
 
                     with pytest.raises(SystemExit) as exc:
@@ -415,7 +420,7 @@ class TestSessionTracking:
 
         with patch('context_builder.cli.process_file', return_value={}):
             with patch('context_builder.cli.save_single_result'):
-                test_args = ['cli.py', str(test_file)]
+                test_args = ['cli.py', 'acquire', str(test_file)]
                 monkeypatch.setattr(sys, 'argv', test_args)
 
                 # Should complete without error
@@ -440,7 +445,7 @@ class TestSessionTracking:
 
         with patch('context_builder.cli.process_file', return_value={}):
             with patch('context_builder.cli.save_single_result', side_effect=capture_session):
-                test_args = ['cli.py', str(test_file)]
+                test_args = ['cli.py', 'acquire', str(test_file)]
                 monkeypatch.setattr(sys, 'argv', test_args)
 
                 # Should complete without error

@@ -1,4 +1,4 @@
-"""Unit tests for AzureDocumentIntelligenceAcquisition implementation."""
+"""Unit tests for AzureDocumentIntelligenceIngestion implementation."""
 
 import logging
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, mock_open
 import pytest
 
-from context_builder.acquisition import (
+from context_builder.ingestion import (
     ConfigurationError,
     APIError,
 )
@@ -28,50 +28,50 @@ class TestAzureDocumentIntelligenceInit:
     @patch('azure.ai.documentintelligence.DocumentIntelligenceClient')
     def test_init_success(self, mock_client):
         """Test successful initialization with valid credentials."""
-        from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
+        from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
 
-        acquisition = AzureDocumentIntelligenceAcquisition()
+        ingestion = AzureDocumentIntelligenceIngestion()
 
-        assert acquisition.endpoint == "https://test.cognitiveservices.azure.com/"
-        assert acquisition.api_key == "test_key"
-        assert acquisition.model_id == "prebuilt-layout"
-        assert acquisition.timeout == 300
-        assert acquisition.retries == 3
-        assert "ocrHighResolution" in acquisition.features
-        assert "languages" in acquisition.features
-        assert "styleFont" in acquisition.features
+        assert ingestion.endpoint == "https://test.cognitiveservices.azure.com/"
+        assert ingestion.api_key == "test_key"
+        assert ingestion.model_id == "prebuilt-layout"
+        assert ingestion.timeout == 300
+        assert ingestion.retries == 3
+        assert "ocrHighResolution" in ingestion.features
+        assert "languages" in ingestion.features
+        assert "styleFont" in ingestion.features
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
     @patch.dict(os.environ, {}, clear=True)
     def test_init_missing_endpoint(self):
         """Test initialization fails without endpoint."""
         with pytest.raises(ConfigurationError, match="AZURE_DI_ENDPOINT not found"):
-            from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-            AzureDocumentIntelligenceAcquisition()
+            from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+            AzureDocumentIntelligenceIngestion()
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
     @patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/"})
     def test_init_missing_api_key(self):
         """Test initialization fails without API key."""
         with pytest.raises(ConfigurationError, match="AZURE_DI_API_KEY not found"):
-            from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-            AzureDocumentIntelligenceAcquisition()
+            from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+            AzureDocumentIntelligenceIngestion()
 
 
 class TestAzureDocumentIntelligenceRetry:
     """Test retry logic for Azure DI API calls."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Create a mock Azure DI acquisition instance."""
+    def mock_ingestion(self):
+        """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-                acquisition = AzureDocumentIntelligenceAcquisition()
-                return acquisition
+                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                ingestion = AzureDocumentIntelligenceIngestion()
+                return ingestion
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_retry_on_rate_limit(self, mock_acquisition):
+    def test_retry_on_rate_limit(self, mock_ingestion):
         """Test retry on rate limit error."""
         mock_poller = Mock()
         mock_poller.result.side_effect = [
@@ -80,42 +80,42 @@ class TestAzureDocumentIntelligenceRetry:
             Mock(content="Test markdown")
         ]
 
-        mock_acquisition.client.begin_analyze_document = Mock(return_value=mock_poller)
+        mock_ingestion.client.begin_analyze_document = Mock(return_value=mock_poller)
 
         with patch('time.sleep'):  # Don't actually sleep
-            result = mock_acquisition._call_api_with_retry(b"test bytes")
+            result = mock_ingestion._call_api_with_retry(b"test bytes")
 
         assert result.content == "Test markdown"
-        assert mock_acquisition.client.begin_analyze_document.call_count == 3
+        assert mock_ingestion.client.begin_analyze_document.call_count == 3
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_retry_exhaustion(self, mock_acquisition):
+    def test_retry_exhaustion(self, mock_ingestion):
         """Test that retries are exhausted and error is raised."""
         mock_poller = Mock()
         mock_poller.result.side_effect = Exception("Rate limit exceeded (429)")
 
-        mock_acquisition.client.begin_analyze_document = Mock(return_value=mock_poller)
+        mock_ingestion.client.begin_analyze_document = Mock(return_value=mock_poller)
 
         with patch('time.sleep'):
             with pytest.raises(APIError, match="Rate limit exceeded after 3 retries"):
-                mock_acquisition._call_api_with_retry(b"test bytes")
+                mock_ingestion._call_api_with_retry(b"test bytes")
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_no_retry_on_auth_error(self, mock_acquisition):
+    def test_no_retry_on_auth_error(self, mock_ingestion):
         """Test no retry on authentication error."""
         mock_poller = Mock()
         mock_poller.result.side_effect = Exception("Unauthorized (403)")
 
-        mock_acquisition.client.begin_analyze_document = Mock(return_value=mock_poller)
+        mock_ingestion.client.begin_analyze_document = Mock(return_value=mock_poller)
 
         with pytest.raises(ConfigurationError, match="Invalid API key"):
-            mock_acquisition._call_api_with_retry(b"test bytes")
+            mock_ingestion._call_api_with_retry(b"test bytes")
 
         # Should only be called once, no retries
-        assert mock_acquisition.client.begin_analyze_document.call_count == 1
+        assert mock_ingestion.client.begin_analyze_document.call_count == 1
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_exponential_backoff_timing(self, mock_acquisition):
+    def test_exponential_backoff_timing(self, mock_ingestion):
         """Test exponential backoff wait times."""
         mock_poller = Mock()
         mock_poller.result.side_effect = [
@@ -124,10 +124,10 @@ class TestAzureDocumentIntelligenceRetry:
             Mock(content="Success")
         ]
 
-        mock_acquisition.client.begin_analyze_document = Mock(return_value=mock_poller)
+        mock_ingestion.client.begin_analyze_document = Mock(return_value=mock_poller)
 
         with patch('time.sleep') as mock_sleep:
-            mock_acquisition._call_api_with_retry(b"test bytes")
+            mock_ingestion._call_api_with_retry(b"test bytes")
 
         # Should sleep for 2, then 4 seconds (exponential backoff)
         assert mock_sleep.call_count == 2
@@ -139,46 +139,46 @@ class TestAzureDocumentIntelligenceMarkdownSaving:
     """Test markdown file saving functionality."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Create a mock Azure DI acquisition instance."""
+    def mock_ingestion(self):
+        """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-                acquisition = AzureDocumentIntelligenceAcquisition()
-                return acquisition
+                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                ingestion = AzureDocumentIntelligenceIngestion()
+                return ingestion
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_save_markdown_success(self, mock_acquisition, tmp_path):
+    def test_save_markdown_success(self, mock_ingestion, tmp_path):
         """Test successful markdown saving."""
         source_path = Path("test_document.pdf")
         markdown_content = "# Test Document\n\nThis is test content."
 
-        result = mock_acquisition._save_markdown(markdown_content, source_path, tmp_path)
+        result = mock_ingestion._save_markdown(markdown_content, source_path, tmp_path)
 
-        assert result == "test_document_extracted.md"
+        assert result == "test_document_acquired.md"
         saved_file = tmp_path / result
         assert saved_file.exists()
         assert saved_file.read_text(encoding="utf-8") == markdown_content
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_save_markdown_creates_directory(self, mock_acquisition, tmp_path):
+    def test_save_markdown_creates_directory(self, mock_ingestion, tmp_path):
         """Test that output directory is created if it doesn't exist."""
         source_path = Path("test.pdf")
         output_dir = tmp_path / "nested" / "output"
         markdown_content = "Test content"
 
-        result = mock_acquisition._save_markdown(markdown_content, source_path, output_dir)
+        result = mock_ingestion._save_markdown(markdown_content, source_path, output_dir)
 
         assert output_dir.exists()
         assert (output_dir / result).exists()
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_save_markdown_unicode_content(self, mock_acquisition, tmp_path):
+    def test_save_markdown_unicode_content(self, mock_ingestion, tmp_path):
         """Test saving markdown with unicode characters."""
         source_path = Path("test.pdf")
         markdown_content = "# Tëst Dòcümënt\n\n中文内容 • émojis 🎉"
 
-        result = mock_acquisition._save_markdown(markdown_content, source_path, tmp_path)
+        result = mock_ingestion._save_markdown(markdown_content, source_path, tmp_path)
 
         saved_content = (tmp_path / result).read_text(encoding="utf-8")
         assert saved_content == markdown_content
@@ -188,16 +188,16 @@ class TestAzureDocumentIntelligenceMetadataExtraction:
     """Test metadata extraction from Azure DI results."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Create a mock Azure DI acquisition instance."""
+    def mock_ingestion(self):
+        """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-                acquisition = AzureDocumentIntelligenceAcquisition()
-                return acquisition
+                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                ingestion = AzureDocumentIntelligenceIngestion()
+                return ingestion
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_extract_metadata_complete(self, mock_acquisition):
+    def test_extract_metadata_complete(self, mock_ingestion):
         """Test metadata extraction with all fields present."""
         mock_result = Mock()
         mock_result.pages = [Mock(), Mock(), Mock()]  # 3 pages
@@ -217,7 +217,7 @@ class TestAzureDocumentIntelligenceMetadataExtraction:
         mock_table2.column_count = 4
         mock_result.tables = [mock_table1, mock_table2]
 
-        metadata = mock_acquisition._extract_metadata(mock_result, "test.md", 1234)
+        metadata = mock_ingestion._extract_metadata(mock_result, "test.md", 1234)
 
         assert metadata["markdown_file"] == "test.md"
         assert metadata["model_id"] == "prebuilt-layout"
@@ -231,7 +231,7 @@ class TestAzureDocumentIntelligenceMetadataExtraction:
         assert metadata["tables"][0]["column_count"] == 3
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_extract_metadata_minimal(self, mock_acquisition):
+    def test_extract_metadata_minimal(self, mock_ingestion):
         """Test metadata extraction with minimal fields."""
         mock_result = Mock()
         mock_result.pages = None
@@ -239,7 +239,7 @@ class TestAzureDocumentIntelligenceMetadataExtraction:
         mock_result.paragraphs = None
         mock_result.tables = None
 
-        metadata = mock_acquisition._extract_metadata(mock_result, "test.md", 500)
+        metadata = mock_ingestion._extract_metadata(mock_result, "test.md", 500)
 
         assert metadata["markdown_file"] == "test.md"
         assert metadata["model_id"] == "prebuilt-layout"
@@ -254,16 +254,16 @@ class TestAzureDocumentIntelligenceProcessing:
     """Test end-to-end document processing."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Create a mock Azure DI acquisition instance."""
+    def mock_ingestion(self):
+        """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-                acquisition = AzureDocumentIntelligenceAcquisition()
-                return acquisition
+                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                ingestion = AzureDocumentIntelligenceIngestion()
+                return ingestion
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_process_implementation_success(self, mock_acquisition, tmp_path):
+    def test_process_implementation_success(self, mock_ingestion, tmp_path):
         """Test successful document processing."""
         # Create test file
         test_file = tmp_path / "test.pdf"
@@ -281,27 +281,27 @@ class TestAzureDocumentIntelligenceProcessing:
         mock_result.tables = []
 
         # Mock API call
-        mock_acquisition._call_api_with_retry = Mock(return_value=mock_result)
+        mock_ingestion._call_api_with_retry = Mock(return_value=mock_result)
 
-        result = mock_acquisition._process_implementation(test_file)
+        result = mock_ingestion._process_implementation(test_file)
 
         # Check result structure
         assert "file_path" in result
         assert "md5" in result
         assert "markdown_file" in result
-        assert result["markdown_file"] == "test_extracted.md"
+        assert result["markdown_file"] == "test_acquired.md"
         assert result["total_pages"] == 2
         assert result["language"] == "en"
         assert result["paragraph_count"] == 5
         assert "processing_time_ms" in result
 
         # Check markdown file was created
-        md_file = tmp_path / "test_extracted.md"
+        md_file = tmp_path / "test_acquired.md"
         assert md_file.exists()
         assert md_file.read_text(encoding="utf-8") == "# Test Document\n\nExtracted content"
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_process_implementation_empty_content(self, mock_acquisition, tmp_path):
+    def test_process_implementation_empty_content(self, mock_ingestion, tmp_path):
         """Test processing with empty content."""
         test_file = tmp_path / "empty.pdf"
         test_file.write_bytes(b"content")
@@ -313,26 +313,26 @@ class TestAzureDocumentIntelligenceProcessing:
         mock_result.paragraphs = None
         mock_result.tables = None
 
-        mock_acquisition._call_api_with_retry = Mock(return_value=mock_result)
+        mock_ingestion._call_api_with_retry = Mock(return_value=mock_result)
 
-        result = mock_acquisition._process_implementation(test_file)
+        result = mock_ingestion._process_implementation(test_file)
 
         # Should create markdown with fallback message
-        md_file = tmp_path / "empty_extracted.md"
+        md_file = tmp_path / "empty_acquired.md"
         assert md_file.exists()
         content = md_file.read_text(encoding="utf-8")
         assert "No content extracted" in content
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    def test_process_implementation_api_error(self, mock_acquisition, tmp_path):
+    def test_process_implementation_api_error(self, mock_ingestion, tmp_path):
         """Test processing with API error."""
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"content")
 
-        mock_acquisition._call_api_with_retry = Mock(side_effect=APIError("API failed"))
+        mock_ingestion._call_api_with_retry = Mock(side_effect=APIError("API failed"))
 
         with pytest.raises(APIError, match="API failed"):
-            mock_acquisition._process_implementation(test_file)
+            mock_ingestion._process_implementation(test_file)
 
 
 class TestAzureDocumentIntelligenceFactory:
@@ -341,13 +341,13 @@ class TestAzureDocumentIntelligenceFactory:
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
     def test_factory_registration(self):
         """Test Azure DI is registered with factory."""
-        from context_builder.acquisition import AcquisitionFactory
+        from context_builder.ingestion import IngestionFactory
 
         # Check that azure-di is in the registry
-        assert 'azure-di' in AcquisitionFactory._registry
+        assert 'azure-di' in IngestionFactory._registry
 
         # Should be able to create azure-di instance
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.com/", "AZURE_DI_API_KEY": "key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                instance = AcquisitionFactory.create('azure-di')
+                instance = IngestionFactory.create('azure-di')
                 assert instance is not None

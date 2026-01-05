@@ -125,8 +125,8 @@ class TestProcessFolder:
     """Test folder processing functionality."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Mock acquisition for folder tests."""
+    def mock_ingestion(self):
+        """Mock ingestion for folder tests."""
         mock = Mock()
         mock.process = Mock(return_value={
             "file_name": "test.jpg",
@@ -135,13 +135,13 @@ class TestProcessFolder:
         return mock
 
     @pytest.fixture
-    def mock_factory(self, mock_acquisition):
+    def mock_factory(self, mock_ingestion):
         """Mock factory."""
-        with patch('context_builder.cli.AcquisitionFactory') as factory:
-            factory.create = Mock(return_value=mock_acquisition)
+        with patch('context_builder.cli.IngestionFactory') as factory:
+            factory.create = Mock(return_value=mock_ingestion)
             yield factory
 
-    def test_process_folder_basic(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_folder_basic(self, tmp_path, mock_factory, mock_ingestion):
         """Test basic folder processing."""
         # Create test files
         (tmp_path / "file1.jpg").touch()
@@ -155,14 +155,14 @@ class TestProcessFolder:
 
         # Check all files processed
         assert success_count == 3
-        assert mock_acquisition.process.call_count == 3
+        assert mock_ingestion.process.call_count == 3
 
         # Check output files created
         assert (output_dir / "file1-context.json").exists()
         assert (output_dir / "file2-context.json").exists()
         assert (output_dir / "file3-context.json").exists()
 
-    def test_process_folder_with_session_id(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_folder_with_session_id(self, tmp_path, mock_factory, mock_ingestion):
         """Test folder processing with session ID."""
         (tmp_path / "test.jpg").touch()
         session_id = "test123"
@@ -175,7 +175,7 @@ class TestProcessFolder:
             data = json.load(f)
         assert data["session_id"] == session_id
 
-    def test_process_folder_recursive(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_folder_recursive(self, tmp_path, mock_factory, mock_ingestion):
         """Test recursive folder processing."""
         (tmp_path / "root.jpg").touch()
         subdir = tmp_path / "subdir"
@@ -185,9 +185,9 @@ class TestProcessFolder:
         success_count = process_folder(tmp_path, tmp_path, "openai", recursive=True)
 
         assert success_count == 2
-        assert mock_acquisition.process.call_count == 2
+        assert mock_ingestion.process.call_count == 2
 
-    def test_process_folder_with_config(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_folder_with_config(self, tmp_path, mock_factory, mock_ingestion):
         """Test folder processing with configuration."""
         (tmp_path / "test.jpg").touch()
 
@@ -200,9 +200,9 @@ class TestProcessFolder:
         process_folder(tmp_path, tmp_path, "openai", config=config)
 
         # Check config applied
-        assert mock_acquisition.model == "gpt-4o"
-        assert mock_acquisition.max_tokens == 1000
-        assert mock_acquisition.temperature == 0.2
+        assert mock_ingestion.model == "gpt-4o"
+        assert mock_ingestion.max_tokens == 1000
+        assert mock_ingestion.temperature == 0.2
 
     def test_process_folder_empty(self, tmp_path, mock_factory, caplog):
         """Test processing empty folder."""
@@ -218,7 +218,7 @@ class TestProcessFolder:
         (tmp_path / "file2.pdf").touch()
         (tmp_path / "file3.png").touch()
 
-        # Mock acquisition to fail on second file
+        # Mock ingestion to fail on second file
         mock_acq = Mock()
         mock_acq.process = Mock(side_effect=[
             {"result": "ok"},
@@ -250,7 +250,7 @@ class TestProcessFolder:
         # Only first file should be processed
         assert mock_acq.process.call_count == 2
 
-    def test_process_folder_logging(self, tmp_path, mock_factory, mock_acquisition, caplog):
+    def test_process_folder_logging(self, tmp_path, mock_factory, mock_ingestion, caplog):
         """Test folder processing logs appropriate messages."""
         (tmp_path / "file1.jpg").touch()
         (tmp_path / "file2.pdf").touch()
@@ -263,8 +263,8 @@ class TestProcessFolder:
         assert "[Session abc] [2/2] Processing:" in caplog.text
         assert "Processed 2 files successfully, 0 failed" in caplog.text
 
-    def test_process_folder_reuses_acquisition(self, tmp_path, mock_factory):
-        """Test folder processing reuses acquisition instance."""
+    def test_process_folder_reuses_ingestion(self, tmp_path, mock_factory):
+        """Test folder processing reuses ingestion instance."""
         (tmp_path / "file1.jpg").touch()
         (tmp_path / "file2.pdf").touch()
 
@@ -285,14 +285,14 @@ class TestMainFolderProcessing:
                 yield
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Mock acquisition."""
+    def mock_ingestion(self):
+        """Mock ingestion."""
         mock = Mock()
         mock.process = Mock(return_value={"file_name": "test", "data": "result"})
-        with patch('context_builder.cli.AcquisitionFactory.create', return_value=mock):
+        with patch('context_builder.cli.IngestionFactory.create', return_value=mock):
             yield mock
 
-    def test_main_folder_success(self, tmp_path, mock_env, mock_acquisition, monkeypatch, capsys):
+    def test_main_folder_success(self, tmp_path, mock_env, mock_ingestion, monkeypatch, capsys):
         """Test successful folder processing through main."""
         folder = tmp_path / "input"
         folder.mkdir()
@@ -301,7 +301,7 @@ class TestMainFolderProcessing:
 
         output_dir = tmp_path / "output"
 
-        test_args = ['cli.py', str(folder), '-o', str(output_dir)]
+        test_args = ['cli.py', 'acquire', str(folder), '-o', str(output_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error
@@ -311,7 +311,7 @@ class TestMainFolderProcessing:
         assert "[OK] Processed 2 files" in captured.out
         assert f"Contexts saved to: {output_dir}" in captured.out
 
-    def test_main_folder_recursive(self, tmp_path, mock_env, mock_acquisition, monkeypatch):
+    def test_main_folder_recursive(self, tmp_path, mock_env, mock_ingestion, monkeypatch):
         """Test recursive folder processing through main."""
         folder = tmp_path / "input"
         folder.mkdir()
@@ -323,12 +323,12 @@ class TestMainFolderProcessing:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        test_args = ['cli.py', str(folder), '-o', str(output_dir), '--recursive']
+        test_args = ['cli.py', 'acquire', str(folder), '-o', str(output_dir), '--recursive']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error
         main()
-        assert mock_acquisition.process.call_count == 2
+        assert mock_ingestion.process.call_count == 2
 
     def test_main_folder_no_files(self, tmp_path, mock_env, monkeypatch, capsys):
         """Test folder with no supported files."""
@@ -339,7 +339,7 @@ class TestMainFolderProcessing:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        test_args = ['cli.py', str(folder), '-o', str(output_dir)]
+        test_args = ['cli.py', 'acquire', str(folder), '-o', str(output_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         with pytest.raises(SystemExit) as exc:
@@ -350,7 +350,7 @@ class TestMainFolderProcessing:
         captured = capsys.readouterr()
         assert "[X] No supported files found" in captured.out
 
-    def test_main_folder_quiet_mode(self, tmp_path, mock_env, mock_acquisition, monkeypatch, capsys):
+    def test_main_folder_quiet_mode(self, tmp_path, mock_env, mock_ingestion, monkeypatch, capsys):
         """Test quiet mode for folder processing."""
         folder = tmp_path / "input"
         folder.mkdir()
@@ -359,7 +359,7 @@ class TestMainFolderProcessing:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        test_args = ['cli.py', str(folder), '-o', str(output_dir), '--quiet']
+        test_args = ['cli.py', 'acquire', str(folder), '-o', str(output_dir), '--quiet']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error

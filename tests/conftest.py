@@ -19,7 +19,7 @@ def cleanup_env():
 @pytest.fixture
 def mock_openai_client():
     """Mock OpenAI client for tests."""
-    with patch('context_builder.impl.openai_vision_acquisition.OpenAI') as mock:
+    with patch('context_builder.impl.openai_vision_ingestion.OpenAI') as mock:
         client = Mock()
         mock.return_value = client
         yield client

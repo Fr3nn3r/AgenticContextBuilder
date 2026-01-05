@@ -40,7 +40,7 @@ load_dotenv()
 
 from context_builder.utils.file_utils import get_file_metadata
 from context_builder.classification import ClassifierFactory, ClassificationError
-from context_builder.acquisition import AcquisitionFactory, AcquisitionError
+from context_builder.ingestion import IngestionFactory, IngestionError
 
 try:
     from tqdm import tqdm
@@ -281,7 +281,7 @@ def process_file(
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
 
-    except (ClassificationError, AcquisitionError) as e:
+    except (ClassificationError, IngestionError) as e:
         return FileProcessingResult(
             filename=file_item.filename,
             status="error",
@@ -565,13 +565,13 @@ def main():
 
     try:
         from context_builder.impl.azure_di_acquisition import AzureDocumentIntelligenceAcquisition
-        azure_di = AcquisitionFactory.create("azure-di")
+        azure_di = IngestionFactory.create("azure-di")
         print("[OK] Azure DI initialized")
     except Exception as e:
         print(f"[!] Azure DI not available: {e}")
 
     try:
-        openai_vision = AcquisitionFactory.create("openai")
+        openai_vision = IngestionFactory.create("openai")
         print("[OK] OpenAI Vision initialized")
     except Exception as e:
         print(f"[!] OpenAI Vision not available: {e}")

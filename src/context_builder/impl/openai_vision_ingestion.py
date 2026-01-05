@@ -1,4 +1,4 @@
-"""OpenAI Vision API implementation for data acquisition."""
+"""OpenAI Vision API implementation for data ingestion."""
 
 import base64
 import json
@@ -11,11 +11,11 @@ from io import BytesIO
 
 from pydantic import ValidationError
 
-from context_builder.acquisition import (
-    DataAcquisition,
+from context_builder.ingestion import (
+    DataIngestion,
     APIError,
     ConfigurationError,
-    AcquisitionFactory,
+    IngestionFactory,
 )
 from context_builder.utils.file_utils import get_file_metadata
 from context_builder.utils.prompt_loader import load_prompt
@@ -24,7 +24,7 @@ from context_builder.schemas.document_analysis import DocumentAnalysis
 logger = logging.getLogger(__name__)
 
 
-class OpenAIVisionAcquisition(DataAcquisition):
+class OpenAIVisionIngestion(DataIngestion):
     """
     OpenAI Vision API implementation for document context extraction.
 
@@ -38,7 +38,7 @@ class OpenAIVisionAcquisition(DataAcquisition):
     """
 
     def __init__(self):
-        """Initialize OpenAI Vision acquisition."""
+        """Initialize OpenAI Vision ingestion."""
         super().__init__()
 
         # Get API key from environment
@@ -517,4 +517,4 @@ class OpenAIVisionAcquisition(DataAcquisition):
 
 
 # Auto-register with factory
-AcquisitionFactory.register("openai", OpenAIVisionAcquisition)
+IngestionFactory.register("openai", OpenAIVisionIngestion)

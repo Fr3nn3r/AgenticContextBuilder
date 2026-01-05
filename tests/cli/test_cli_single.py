@@ -13,15 +13,15 @@ from context_builder.cli import (
     main,
     setup_argparser,
 )
-from context_builder.acquisition import AcquisitionError
+from context_builder.ingestion import IngestionError
 
 
 class TestCLISingleFileProcessing:
     """Test single file processing through CLI."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Mock acquisition instance."""
+    def mock_ingestion(self):
+        """Mock ingestion instance."""
         mock = Mock()
         mock.process = Mock(return_value={
             "file_name": "test.jpg",
@@ -31,13 +31,13 @@ class TestCLISingleFileProcessing:
         return mock
 
     @pytest.fixture
-    def mock_factory(self, mock_acquisition):
-        """Mock factory that returns our acquisition."""
-        with patch('context_builder.cli.AcquisitionFactory') as factory:
-            factory.create = Mock(return_value=mock_acquisition)
+    def mock_factory(self, mock_ingestion):
+        """Mock factory that returns our ingestion."""
+        with patch('context_builder.cli.IngestionFactory') as factory:
+            factory.create = Mock(return_value=mock_ingestion)
             yield factory
 
-    def test_process_file_basic(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_file_basic(self, tmp_path, mock_factory, mock_ingestion):
         """Test basic single file processing."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"image data")
@@ -50,13 +50,13 @@ class TestCLISingleFileProcessing:
         mock_factory.create.assert_called_once_with("openai")
 
         # Verify process was called
-        mock_acquisition.process.assert_called_once_with(test_file)
+        mock_ingestion.process.assert_called_once_with(test_file)
 
         # Verify result
         assert result["file_name"] == "test.jpg"
         assert result["pages"][0]["text"] == "content"
 
-    def test_process_file_with_config(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_file_with_config(self, tmp_path, mock_factory, mock_ingestion):
         """Test processing with configuration."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -74,15 +74,15 @@ class TestCLISingleFileProcessing:
         process_file(test_file, tmp_path, "openai", config=config)
 
         # Verify config was applied
-        assert mock_acquisition.model == "gpt-4-turbo"
-        assert mock_acquisition.max_tokens == 2048
-        assert mock_acquisition.temperature == 0.5
-        assert mock_acquisition.timeout == 60
-        assert mock_acquisition.retries == 5
-        assert mock_acquisition.max_pages == 10
-        assert mock_acquisition.render_scale == 2.5
+        assert mock_ingestion.model == "gpt-4-turbo"
+        assert mock_ingestion.max_tokens == 2048
+        assert mock_ingestion.temperature == 0.5
+        assert mock_ingestion.timeout == 60
+        assert mock_ingestion.retries == 5
+        assert mock_ingestion.max_pages == 10
+        assert mock_ingestion.render_scale == 2.5
 
-    def test_process_file_with_partial_config(self, tmp_path, mock_factory, mock_acquisition):
+    def test_process_file_with_partial_config(self, tmp_path, mock_factory, mock_ingestion):
         """Test processing with partial configuration."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -96,37 +96,37 @@ class TestCLISingleFileProcessing:
         }
 
         # Add attributes that might not exist
-        mock_acquisition.unknown_attr = None
+        mock_ingestion.unknown_attr = None
 
         process_file(test_file, tmp_path, "openai", config=config)
 
         # Only non-None values should be set
-        assert mock_acquisition.model == "gpt-4o"
-        assert mock_acquisition.temperature == 0.3
+        assert mock_ingestion.model == "gpt-4o"
+        assert mock_ingestion.temperature == 0.3
 
         # These shouldn't be set to None
-        if hasattr(mock_acquisition, 'max_tokens'):
-            assert mock_acquisition.max_tokens != None
-        if hasattr(mock_acquisition, 'timeout'):
-            assert mock_acquisition.timeout != None
+        if hasattr(mock_ingestion, 'max_tokens'):
+            assert mock_ingestion.max_tokens != None
+        if hasattr(mock_ingestion, 'timeout'):
+            assert mock_ingestion.timeout != None
 
-    def test_process_file_reuse_acquisition(self, tmp_path, mock_factory):
-        """Test processing with provided acquisition instance."""
+    def test_process_file_reuse_ingestion(self, tmp_path, mock_factory):
+        """Test processing with provided ingestion instance."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        existing_acquisition = Mock()
-        existing_acquisition.process = Mock(return_value={"result": "data"})
+        existing_ingestion = Mock()
+        existing_ingestion.process = Mock(return_value={"result": "data"})
 
-        process_file(test_file, tmp_path, "openai", acquisition=existing_acquisition)
+        process_file(test_file, tmp_path, "openai", ingestion=existing_ingestion)
 
-        # Factory should not be called when acquisition is provided
+        # Factory should not be called when ingestion is provided
         mock_factory.create.assert_not_called()
 
-        # Existing acquisition should be used
-        existing_acquisition.process.assert_called_once_with(test_file)
+        # Existing ingestion should be used
+        existing_ingestion.process.assert_called_once_with(test_file)
 
-    def test_process_file_logs_info(self, tmp_path, mock_factory, mock_acquisition, caplog):
+    def test_process_file_logs_info(self, tmp_path, mock_factory, mock_ingestion, caplog):
         """Test processing logs appropriate messages."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -137,7 +137,7 @@ class TestCLISingleFileProcessing:
         assert f"Processing file: {test_file}" in caplog.text
         assert "Using openai vision API for processing" in caplog.text
 
-    def test_process_file_logs_config_debug(self, tmp_path, mock_factory, mock_acquisition, caplog):
+    def test_process_file_logs_config_debug(self, tmp_path, mock_factory, mock_ingestion, caplog):
         """Test config application logs debug messages."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -147,7 +147,7 @@ class TestCLISingleFileProcessing:
         with caplog.at_level(logging.DEBUG):
             process_file(test_file, tmp_path, "openai", config=config)
 
-        assert "Set model=gpt-4o on acquisition instance" in caplog.text
+        assert "Set model=gpt-4o on ingestion instance" in caplog.text
 
 
 class TestCLISaveSingleResult:
@@ -244,17 +244,17 @@ class TestCLIMainSingleFile:
                 yield
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Mock acquisition for main tests."""
+    def mock_ingestion(self):
+        """Mock ingestion for main tests."""
         mock = Mock()
         mock.process = Mock(return_value={
             "file_name": "test.jpg",
             "pages": [{"text": "content"}]
         })
-        with patch('context_builder.cli.AcquisitionFactory.create', return_value=mock):
+        with patch('context_builder.cli.IngestionFactory.create', return_value=mock):
             yield mock
 
-    def test_main_single_file_success(self, tmp_path, mock_env, mock_acquisition, capsys, monkeypatch):
+    def test_main_single_file_success(self, tmp_path, mock_env, mock_ingestion, capsys, monkeypatch):
         """Test successful single file processing through main."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -262,7 +262,7 @@ class TestCLIMainSingleFile:
         output_dir.mkdir()
 
         # Mock command line args - use output dir to avoid creating files in cwd
-        test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+        test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Run main
@@ -277,13 +277,13 @@ class TestCLIMainSingleFile:
         output_file = output_dir / "test-context.json"
         assert output_file.exists()
 
-    def test_main_single_file_with_output_dir(self, tmp_path, mock_env, mock_acquisition, monkeypatch):
+    def test_main_single_file_with_output_dir(self, tmp_path, mock_env, mock_ingestion, monkeypatch):
         """Test single file with custom output directory."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
         output_dir = tmp_path / "output"
 
-        test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+        test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error
@@ -293,14 +293,14 @@ class TestCLIMainSingleFile:
         output_file = output_dir / "test-context.json"
         assert output_file.exists()
 
-    def test_main_single_file_verbose(self, tmp_path, mock_env, mock_acquisition, monkeypatch, caplog):
+    def test_main_single_file_verbose(self, tmp_path, mock_env, mock_ingestion, monkeypatch, caplog):
         """Test verbose logging mode."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        test_args = ['cli.py', str(test_file), '-o', str(output_dir), '--verbose']
+        test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir), '--verbose']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Save original level
@@ -320,14 +320,14 @@ class TestCLIMainSingleFile:
             # Restore original level
             logging.getLogger().setLevel(original_level)
 
-    def test_main_single_file_quiet(self, tmp_path, mock_env, mock_acquisition, monkeypatch, capsys):
+    def test_main_single_file_quiet(self, tmp_path, mock_env, mock_ingestion, monkeypatch, capsys):
         """Test quiet mode."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        test_args = ['cli.py', str(test_file), '-o', str(output_dir), '--quiet']
+        test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir), '--quiet']
         monkeypatch.setattr(sys, 'argv', test_args)
 
         # Should complete without error
@@ -339,7 +339,7 @@ class TestCLIMainSingleFile:
 
         # Files are in tmp_path, cleanup automatic
 
-    def test_main_single_file_all_config_flags(self, tmp_path, mock_env, mock_acquisition, monkeypatch):
+    def test_main_single_file_all_config_flags(self, tmp_path, mock_env, mock_ingestion, monkeypatch):
         """Test all configuration flags."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
@@ -347,7 +347,7 @@ class TestCLIMainSingleFile:
         output_dir.mkdir()
 
         test_args = [
-            'cli.py', str(test_file),
+            'cli.py', 'acquire', str(test_file),
             '-o', str(output_dir),
             '--model', 'gpt-4-turbo',
             '--max-tokens', '2048',
@@ -363,27 +363,27 @@ class TestCLIMainSingleFile:
         main()
 
         # Verify config was applied
-        assert mock_acquisition.model == 'gpt-4-turbo'
-        assert mock_acquisition.max_tokens == 2048
-        assert mock_acquisition.temperature == 0.5
-        assert mock_acquisition.max_pages == 10
-        assert mock_acquisition.render_scale == 2.5
-        assert mock_acquisition.timeout == 60
-        assert mock_acquisition.retries == 5
+        assert mock_ingestion.model == 'gpt-4-turbo'
+        assert mock_ingestion.max_tokens == 2048
+        assert mock_ingestion.temperature == 0.5
+        assert mock_ingestion.max_pages == 10
+        assert mock_ingestion.render_scale == 2.5
+        assert mock_ingestion.timeout == 60
+        assert mock_ingestion.retries == 5
 
         # Files are in tmp_path, cleanup automatic
 
-    def test_main_single_file_acquisition_error(self, tmp_path, mock_env, monkeypatch, capsys):
-        """Test handling of acquisition errors."""
+    def test_main_single_file_ingestion_error(self, tmp_path, mock_env, monkeypatch, capsys):
+        """Test handling of ingestion errors."""
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
         with patch('context_builder.cli.process_file') as mock_process:
-            mock_process.side_effect = AcquisitionError("API failed")
+            mock_process.side_effect = IngestionError("API failed")
 
-            test_args = ['cli.py', str(test_file), '-o', str(output_dir)]
+            test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
             monkeypatch.setattr(sys, 'argv', test_args)
 
             with pytest.raises(SystemExit) as exc:

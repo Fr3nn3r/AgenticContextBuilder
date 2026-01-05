@@ -1,4 +1,4 @@
-"""Tesseract OCR implementation for data acquisition."""
+"""Tesseract OCR implementation for data ingestion."""
 
 import logging
 import os
@@ -7,22 +7,22 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from io import BytesIO
 
-from context_builder.acquisition import (
-    DataAcquisition,
+from context_builder.ingestion import (
+    DataIngestion,
     ConfigurationError,
-    AcquisitionError,
-    AcquisitionFactory,
+    IngestionError,
+    IngestionFactory,
 )
 from context_builder.utils.file_utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
 
-class TesseractAcquisition(DataAcquisition):
+class TesseractIngestion(DataIngestion):
     """Tesseract OCR implementation for document text extraction."""
 
     def __init__(self):
-        """Initialize Tesseract acquisition."""
+        """Initialize Tesseract ingestion."""
         super().__init__()
 
         # Configuration
@@ -385,8 +385,8 @@ class TesseractAcquisition(DataAcquisition):
         except Exception as e:
             error_msg = f"Failed to process file: {str(e)}"
             logger.error(error_msg)
-            raise AcquisitionError(error_msg)
+            raise IngestionError(error_msg)
 
 
 # Auto-register with factory
-AcquisitionFactory.register("tesseract", TesseractAcquisition)
+IngestionFactory.register("tesseract", TesseractIngestion)

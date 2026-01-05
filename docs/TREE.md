@@ -1,9 +1,9 @@
 # src Directory Structure
 
 `src/`
-- `context_builder/` — Core Python package that orchestrates document acquisition, AI-driven extraction, and runtime evaluation utilities.
-  - `__init__.py` — Exposes package version plus the `DataAcquisition` base interface and factory helpers.
-  - `acquisition.py` — Defines acquisition exception hierarchy, the abstract `DataAcquisition` contract, and a registry-based factory for concrete providers.
+- `context_builder/` — Core Python package that orchestrates document ingestion, AI-driven extraction, and runtime evaluation utilities.
+  - `__init__.py` — Exposes package version plus the `DataIngestion` base interface and factory helpers.
+  - `ingestion.py` — Defines ingestion exception hierarchy, the abstract `DataIngestion` contract, and a registry-based factory for concrete providers.
   - `cli.py` — Implements the command-line interface for acquiring documents, extracting symbols or logic, and saving structured outputs with rich logging.
   - `execution/` — Components that turn extracted logic into executable forms and enriched metadata.
     - `__init__.py` — Re-exports the form generator, type inference engine, and UDM enricher utilities.
@@ -20,16 +20,16 @@
     - `policy_logic_refiner.py` — Calls OpenAI with linter feedback to automatically repair failing rules while preserving schema guarantees.
     - `progress_callback.py` — Declares the progress-reporting abstraction and a no-op implementation for extraction workflows.
     - `tqdm_progress_callback.py` — Concrete progress callback that feeds extraction status into `tqdm` progress bars.
-  - `impl/` — Concrete acquisition providers for different OCR and vision backends.
-    - `__init__.py` — Package marker for acquisition implementations.
-    - `azure_di_acquisition.py` — Integration with Azure Document Intelligence to produce markdown plus rich document metadata.
-    - `openai_vision_acquisition.py` — OpenAI Vision-based acquisition that renders pages, sends them to the API, and validates results with Pydantic schemas.
-    - `tesseract_acquisition.py` — Local Tesseract OCR adapter that extracts text and metadata without external APIs.
+  - `impl/` — Concrete ingestion providers for different OCR and vision backends.
+    - `__init__.py` — Package marker for ingestion implementations.
+    - `azure_di_ingestion.py` — Integration with Azure Document Intelligence to produce markdown plus rich document metadata.
+    - `openai_vision_ingestion.py` — OpenAI Vision-based ingestion that renders pages, sends them to the API, and validates results with Pydantic schemas.
+    - `tesseract_ingestion.py` — Local Tesseract OCR adapter that extracts text and metadata without external APIs.
   - `pipeline/` — Orchestration entry points for end-to-end PDF processing.
     - `__init__.py` — Re-exports the policy processing orchestrator.
-    - `processing_orchestrator.py` — Coordinates PDF copying, Azure acquisition, symbol extraction, logic extraction, and summary artifact generation.
+    - `processing_orchestrator.py` — Coordinates PDF copying, Azure ingestion, symbol extraction, logic extraction, and summary artifact generation.
   - `prompts/` — Markdown prompt templates with YAML frontmatter used by the extraction services.
-    - `document_analysis.md` — Prompt plus configuration for vision acquisition of general documents.
+    - `document_analysis.md` — Prompt plus configuration for vision ingestion of general documents.
     - `policy_logic_extraction.md` — Instructions for extracting normalized policy rules with micro chain-of-thought metadata.
     - `policy_logic_refiner.md` — Prompt that guides the refiner through fixing linter-detected issues in individual rules.
     - `policy_symbol_extraction.md` — Prompt template for pulling defined terms and explicit policy variables into a structured symbol table.

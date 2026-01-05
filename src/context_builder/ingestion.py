@@ -1,4 +1,4 @@
-"""Abstract base classes and factory for data acquisition implementations."""
+"""Abstract base classes and factory for data ingestion implementations."""
 
 import logging
 from abc import ABC, abstractmethod
@@ -8,33 +8,33 @@ from typing import Dict, Any, Type
 logger = logging.getLogger(__name__)
 
 
-class AcquisitionError(Exception):
-    """Base exception for acquisition-related errors."""
+class IngestionError(Exception):
+    """Base exception for ingestion-related errors."""
     pass
 
 
-class FileNotSupportedError(AcquisitionError):
+class FileNotSupportedError(IngestionError):
     """Exception raised when file type is not supported."""
     pass
 
 
-class APIError(AcquisitionError):
+class APIError(IngestionError):
     """Exception raised when API call fails."""
     pass
 
 
-class ConfigurationError(AcquisitionError):
+class ConfigurationError(IngestionError):
     """Exception raised when configuration is missing or invalid."""
     pass
 
 
-class DataAcquisition(ABC):
-    """Abstract base class for data acquisition implementations."""
+class DataIngestion(ABC):
+    """Abstract base class for data ingestion implementations."""
 
     SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.tiff', '.tif'}
 
     def __init__(self):
-        """Initialize the acquisition handler."""
+        """Initialize the ingestion handler."""
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
@@ -49,7 +49,7 @@ class DataAcquisition(ABC):
             Dictionary containing extracted context
 
         Raises:
-            AcquisitionError: If processing fails
+            IngestionError: If processing fails
         """
         pass
 
@@ -90,7 +90,7 @@ class DataAcquisition(ABC):
             Dictionary containing extracted context
 
         Raises:
-            AcquisitionError: If processing fails
+            IngestionError: If processing fails
         """
         # Convert to Path object if string
         if isinstance(filepath, str):
@@ -111,43 +111,43 @@ class DataAcquisition(ABC):
             self.logger.info(f"Successfully processed: {filepath}")
             return result
 
-        except AcquisitionError:
+        except IngestionError:
             raise
         except Exception as e:
             self.logger.exception(f"Unexpected error processing {filepath}")
-            raise AcquisitionError(f"Processing failed: {str(e)}") from e
+            raise IngestionError(f"Processing failed: {str(e)}") from e
 
 
-class AcquisitionFactory:
-    """Factory for creating data acquisition instances."""
+class IngestionFactory:
+    """Factory for creating data ingestion instances."""
 
-    _registry: Dict[str, Type[DataAcquisition]] = {}
+    _registry: Dict[str, Type[DataIngestion]] = {}
 
     @classmethod
-    def register(cls, name: str, acquisition_class: Type[DataAcquisition]) -> None:
+    def register(cls, name: str, ingestion_class: Type[DataIngestion]) -> None:
         """
-        Register an acquisition implementation.
+        Register an ingestion implementation.
 
         Args:
             name: Name identifier for the implementation
-            acquisition_class: Class implementing DataAcquisition
+            ingestion_class: Class implementing DataIngestion
         """
-        if not issubclass(acquisition_class, DataAcquisition):
-            raise ValueError(f"{acquisition_class} must inherit from DataAcquisition")
+        if not issubclass(ingestion_class, DataIngestion):
+            raise ValueError(f"{ingestion_class} must inherit from DataIngestion")
 
-        cls._registry[name.lower()] = acquisition_class
-        logger.debug(f"Registered acquisition provider: {name}")
+        cls._registry[name.lower()] = ingestion_class
+        logger.debug(f"Registered ingestion provider: {name}")
 
     @classmethod
-    def create(cls, name: str) -> DataAcquisition:
+    def create(cls, name: str) -> DataIngestion:
         """
-        Create an acquisition instance by name.
+        Create an ingestion instance by name.
 
         Args:
             name: Name of the registered implementation
 
         Returns:
-            Instance of the requested acquisition implementation
+            Instance of the requested ingestion implementation
 
         Raises:
             ValueError: If implementation not found
@@ -158,27 +158,27 @@ class AcquisitionFactory:
             # Try to import the implementation
             if name_lower == "openai":
                 try:
-                    from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
-                    cls.register("openai", OpenAIVisionAcquisition)
+                    from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                    cls.register("openai", OpenAIVisionIngestion)
                 except ImportError as e:
                     raise ValueError(f"Failed to import OpenAI implementation: {e}")
             elif name_lower == "tesseract":
                 try:
-                    from context_builder.impl.tesseract_acquisition import TesseractAcquisition
-                    cls.register("tesseract", TesseractAcquisition)
+                    from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                    cls.register("tesseract", TesseractIngestion)
                 except ImportError as e:
                     raise ValueError(f"Failed to import Tesseract implementation: {e}")
 
         if name_lower not in cls._registry:
             available = ", ".join(cls._registry.keys())
             raise ValueError(
-                f"Unknown acquisition provider: {name}. "
+                f"Unknown ingestion provider: {name}. "
                 f"Available: {available if available else 'none registered'}"
             )
 
-        acquisition_class = cls._registry[name_lower]
-        logger.debug(f"Creating acquisition instance: {acquisition_class.__name__}")
-        return acquisition_class()
+        ingestion_class = cls._registry[name_lower]
+        logger.debug(f"Creating ingestion instance: {ingestion_class.__name__}")
+        return ingestion_class()
 
     @classmethod
     def list_providers(cls) -> list:

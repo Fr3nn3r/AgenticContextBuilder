@@ -1,4 +1,4 @@
-"""Unit tests for OpenAIVisionAcquisition parsing methods."""
+"""Unit tests for OpenAIVisionIngestion parsing methods."""
 
 import json
 import logging
@@ -6,18 +6,18 @@ from unittest.mock import patch
 import pytest
 
 
-class TestOpenAIVisionAcquisitionParsing:
+class TestOpenAIVisionIngestionParsing:
     """Test JSON response parsing functionality."""
 
     @pytest.fixture
-    def mock_acquisition(self):
-        """Create a mock OpenAIVisionAcquisition instance."""
+    def mock_ingestion(self):
+        """Create a mock OpenAIVisionIngestion instance."""
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
             with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_acquisition import OpenAIVisionAcquisition
-                return OpenAIVisionAcquisition()
+                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                return OpenAIVisionIngestion()
 
-    def test_parse_response_pure_json(self, mock_acquisition):
+    def test_parse_response_pure_json(self, mock_ingestion):
         """Test parsing pure JSON string."""
         response = json.dumps({
             "document_type": "invoice",
@@ -28,7 +28,7 @@ class TestOpenAIVisionAcquisitionParsing:
             "text_content": "Invoice #123"
         })
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "invoice"
         assert result["language"] == "en"
@@ -37,7 +37,7 @@ class TestOpenAIVisionAcquisitionParsing:
         assert result["visual_elements"] == ["logo"]
         assert result["text_content"] == "Invoice #123"
 
-    def test_parse_response_json_code_block(self, mock_acquisition):
+    def test_parse_response_json_code_block(self, mock_ingestion):
         """Test parsing JSON from ```json code block."""
         response = """Here's the analysis:
 ```json
@@ -52,14 +52,14 @@ class TestOpenAIVisionAcquisitionParsing:
 ```
 Additional text here"""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "report"
         assert result["language"] == "fr"
         assert result["summary"] == "Quarterly report"
         assert result["text_content"] == "Q3 2024 Report"
 
-    def test_parse_response_plain_code_block(self, mock_acquisition):
+    def test_parse_response_plain_code_block(self, mock_ingestion):
         """Test parsing JSON from plain ``` code block."""
         response = """```
 {
@@ -72,13 +72,13 @@ Additional text here"""
 }
 ```"""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "form"
         assert result["language"] == "es"
         assert result["key_information"]["name"] == "John"
 
-    def test_parse_response_nested_json(self, mock_acquisition):
+    def test_parse_response_nested_json(self, mock_ingestion):
         """Test parsing nested JSON structures."""
         response = json.dumps({
             "document_type": "complex",
@@ -96,13 +96,13 @@ Additional text here"""
             "text_content": "Complex content"
         })
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["key_information"]["nested"]["deep"]["value"] == "found"
         assert result["key_information"]["list"] == [1, 2, 3]
         assert len(result["visual_elements"]) == 2
 
-    def test_parse_response_unicode(self, mock_acquisition):
+    def test_parse_response_unicode(self, mock_ingestion):
         """Test parsing response with Unicode characters."""
         response = json.dumps({
             "document_type": "international",
@@ -113,17 +113,17 @@ Additional text here"""
             "text_content": "内容 with émojis 🎉"
         }, ensure_ascii=False)
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["summary"] == "中文文档"
         assert result["key_information"]["名称"] == "测试"
         assert "🎉" in result["text_content"]
 
-    def test_parse_response_malformed_json(self, mock_acquisition):
+    def test_parse_response_malformed_json(self, mock_ingestion):
         """Test parsing malformed JSON returns fallback."""
         response = "This is not {valid JSON} at all"
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         # Should return fallback structure
         assert result["document_type"] == "unknown"
@@ -134,17 +134,17 @@ Additional text here"""
         assert result["text_content"] == response
         assert "_parse_error" in result
 
-    def test_parse_response_incomplete_json(self, mock_acquisition):
+    def test_parse_response_incomplete_json(self, mock_ingestion):
         """Test parsing incomplete JSON."""
         response = '{"document_type": "test", "language":'  # Incomplete
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "unknown"
         assert result["text_content"] == response
         assert "_parse_error" in result
 
-    def test_parse_response_invalid_json_in_code_block(self, mock_acquisition):
+    def test_parse_response_invalid_json_in_code_block(self, mock_ingestion):
         """Test parsing invalid JSON in code block."""
         response = """```json
 {
@@ -154,49 +154,49 @@ Additional text here"""
 }
 ```"""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "unknown"
         assert "_parse_error" in result
 
-    def test_parse_response_empty_string(self, mock_acquisition):
+    def test_parse_response_empty_string(self, mock_ingestion):
         """Test parsing empty string."""
         response = ""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "unknown"
         assert result["text_content"] == ""
         assert "_parse_error" in result
 
-    def test_parse_response_whitespace_only(self, mock_acquisition):
+    def test_parse_response_whitespace_only(self, mock_ingestion):
         """Test parsing whitespace-only string."""
         response = "   \n\t  "
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "unknown"
         assert "_parse_error" in result
 
-    def test_parse_response_logs_error(self, mock_acquisition, caplog):
+    def test_parse_response_logs_error(self, mock_ingestion, caplog):
         """Test parsing logs error for malformed JSON."""
         response = "Not JSON"
 
         with caplog.at_level(logging.ERROR):
-            result = mock_acquisition._parse_response(response)
+            result = mock_ingestion._parse_response(response)
 
         assert "Failed to parse JSON response" in caplog.text
 
-    def test_parse_response_logs_raw_response_debug(self, mock_acquisition, caplog):
+    def test_parse_response_logs_raw_response_debug(self, mock_ingestion, caplog):
         """Test parsing logs raw response at debug level."""
         response = "Invalid JSON"
 
         with caplog.at_level(logging.DEBUG):
-            result = mock_acquisition._parse_response(response)
+            result = mock_ingestion._parse_response(response)
 
         assert "Raw response: Invalid JSON" in caplog.text
 
-    def test_parse_response_multiple_code_blocks(self, mock_acquisition):
+    def test_parse_response_multiple_code_blocks(self, mock_ingestion):
         """Test parsing with multiple code blocks takes first json block."""
         response = """First block:
 ```json
@@ -208,24 +208,24 @@ Second block:
 {"document_type": "second", "language": "fr", "summary": "Second", "key_information": {}, "visual_elements": [], "text_content": "Second"}
 ```"""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         # Should parse the first JSON block
         assert result["document_type"] == "first"
         assert result["language"] == "en"
 
-    def test_parse_response_code_block_without_json_marker(self, mock_acquisition):
+    def test_parse_response_code_block_without_json_marker(self, mock_ingestion):
         """Test parsing code block without 'json' language marker."""
         response = """```
 {"document_type": "plain", "language": "de", "summary": "Plain block", "key_information": {}, "visual_elements": [], "text_content": "Content"}
 ```"""
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["document_type"] == "plain"
         assert result["language"] == "de"
 
-    def test_parse_response_preserves_extra_fields(self, mock_acquisition):
+    def test_parse_response_preserves_extra_fields(self, mock_ingestion):
         """Test parsing preserves extra fields not in standard schema."""
         response = json.dumps({
             "document_type": "custom",
@@ -238,7 +238,7 @@ Second block:
             "custom_data": {"nested": "value"}
         })
 
-        result = mock_acquisition._parse_response(response)
+        result = mock_ingestion._parse_response(response)
 
         assert result["extra_field"] == "extra_value"
         assert result["custom_data"]["nested"] == "value"

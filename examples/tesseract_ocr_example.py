@@ -1,5 +1,5 @@
 """
-Example usage of Tesseract OCR acquisition module.
+Example usage of Tesseract OCR ingestion module.
 
 This example demonstrates:
 - Basic OCR text extraction from images
@@ -16,7 +16,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from context_builder.acquisition import AcquisitionFactory
+from context_builder.ingestion import IngestionFactory
 
 
 def example_basic_usage():
@@ -24,8 +24,8 @@ def example_basic_usage():
     print("[Example 1: Basic Image OCR]")
     print("=" * 50)
 
-    # Create Tesseract acquisition instance
-    tesseract = AcquisitionFactory.create("tesseract")
+    # Create Tesseract ingestion instance
+    tesseract = IngestionFactory.create("tesseract")
 
     # Example with an image file
     image_path = Path("sample_image.png")  # Replace with your image

@@ -1,139 +1,139 @@
-"""Unit tests for AcquisitionFactory."""
+"""Unit tests for IngestionFactory."""
 
 import logging
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
-from context_builder.acquisition import (
-    DataAcquisition,
-    AcquisitionFactory,
+from context_builder.ingestion import (
+    DataIngestion,
+    IngestionFactory,
 )
 
 
-class DummyAcquisition(DataAcquisition):
-    """Test acquisition implementation."""
+class DummyIngestion(DataIngestion):
+    """Test ingestion implementation."""
 
     def _process_implementation(self, filepath):
         return {"dummy": "data"}
 
 
-class NotAcquisition:
-    """Class that doesn't inherit from DataAcquisition."""
+class NotIngestion:
+    """Class that doesn't inherit from DataIngestion."""
     pass
 
 
-class TestAcquisitionFactoryRegistration:
+class TestIngestionFactoryRegistration:
     """Test factory registration functionality."""
 
     def teardown_method(self):
         """Clean up registry after each test."""
         # Clear registry to avoid test interference
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
     def test_register_valid_class(self):
-        """Test registering a valid acquisition class."""
-        AcquisitionFactory.register("dummy", DummyAcquisition)
+        """Test registering a valid ingestion class."""
+        IngestionFactory.register("dummy", DummyIngestion)
 
-        assert "dummy" in AcquisitionFactory._registry
-        assert AcquisitionFactory._registry["dummy"] is DummyAcquisition
+        assert "dummy" in IngestionFactory._registry
+        assert IngestionFactory._registry["dummy"] is DummyIngestion
 
     def test_register_invalid_class(self):
-        """Test registering a class that doesn't inherit from DataAcquisition."""
-        with pytest.raises(ValueError, match="must inherit from DataAcquisition"):
-            AcquisitionFactory.register("invalid", NotAcquisition)
+        """Test registering a class that doesn't inherit from DataIngestion."""
+        with pytest.raises(ValueError, match="must inherit from DataIngestion"):
+            IngestionFactory.register("invalid", NotIngestion)
 
     def test_register_case_insensitive(self):
         """Test registration is case-insensitive."""
-        AcquisitionFactory.register("DUMMY", DummyAcquisition)
+        IngestionFactory.register("DUMMY", DummyIngestion)
 
-        assert "dummy" in AcquisitionFactory._registry
-        assert "DUMMY" not in AcquisitionFactory._registry
+        assert "dummy" in IngestionFactory._registry
+        assert "DUMMY" not in IngestionFactory._registry
 
     def test_register_logs_debug(self, caplog):
         """Test registration logs debug message."""
         with caplog.at_level(logging.DEBUG):
-            AcquisitionFactory.register("dummy", DummyAcquisition)
+            IngestionFactory.register("dummy", DummyIngestion)
 
-        assert "Registered acquisition provider: dummy" in caplog.text
+        assert "Registered ingestion provider: dummy" in caplog.text
 
     def test_register_overwrites_existing(self):
         """Test registering overwrites existing registration."""
-        AcquisitionFactory.register("dummy", DummyAcquisition)
+        IngestionFactory.register("dummy", DummyIngestion)
 
-        class AnotherAcquisition(DataAcquisition):
+        class AnotherAcquisition(DataIngestion):
             def _process_implementation(self, filepath):
                 return {}
 
-        AcquisitionFactory.register("dummy", AnotherAcquisition)
+        IngestionFactory.register("dummy", AnotherAcquisition)
 
-        assert AcquisitionFactory._registry["dummy"] is AnotherAcquisition
+        assert IngestionFactory._registry["dummy"] is AnotherAcquisition
 
 
-class TestAcquisitionFactoryCreate:
+class TestIngestionFactoryCreate:
     """Test factory creation functionality."""
 
     def setup_method(self):
         """Set up test registry."""
-        AcquisitionFactory._registry.clear()
-        AcquisitionFactory.register("dummy", DummyAcquisition)
+        IngestionFactory._registry.clear()
+        IngestionFactory.register("dummy", DummyIngestion)
 
     def teardown_method(self):
         """Clean up registry."""
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
     def test_create_registered_provider(self):
         """Test creating a registered provider."""
-        instance = AcquisitionFactory.create("dummy")
+        instance = IngestionFactory.create("dummy")
 
-        assert isinstance(instance, DummyAcquisition)
+        assert isinstance(instance, DummyIngestion)
 
     def test_create_case_insensitive(self):
         """Test creation is case-insensitive."""
-        instance1 = AcquisitionFactory.create("dummy")
-        instance2 = AcquisitionFactory.create("DUMMY")
-        instance3 = AcquisitionFactory.create("Dummy")
+        instance1 = IngestionFactory.create("dummy")
+        instance2 = IngestionFactory.create("DUMMY")
+        instance3 = IngestionFactory.create("Dummy")
 
-        assert isinstance(instance1, DummyAcquisition)
-        assert isinstance(instance2, DummyAcquisition)
-        assert isinstance(instance3, DummyAcquisition)
+        assert isinstance(instance1, DummyIngestion)
+        assert isinstance(instance2, DummyIngestion)
+        assert isinstance(instance3, DummyIngestion)
 
     def test_create_unregistered_provider(self):
         """Test creating an unregistered provider raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown acquisition provider: nonexistent"):
-            AcquisitionFactory.create("nonexistent")
+        with pytest.raises(ValueError, match="Unknown ingestion provider: nonexistent"):
+            IngestionFactory.create("nonexistent")
 
     def test_create_logs_debug(self, caplog):
         """Test creation logs debug message."""
         with caplog.at_level(logging.DEBUG):
-            AcquisitionFactory.create("dummy")
+            IngestionFactory.create("dummy")
 
-        assert "Creating acquisition instance: DummyAcquisition" in caplog.text
+        assert "Creating ingestion instance: DummyIngestion" in caplog.text
 
     def test_create_returns_new_instance(self):
         """Test create returns new instances each time."""
-        instance1 = AcquisitionFactory.create("dummy")
-        instance2 = AcquisitionFactory.create("dummy")
+        instance1 = IngestionFactory.create("dummy")
+        instance2 = IngestionFactory.create("dummy")
 
         assert instance1 is not instance2
 
 
-class TestAcquisitionFactoryOpenAI:
+class TestIngestionFactoryOpenAI:
     """Test OpenAI provider auto-loading."""
 
     def teardown_method(self):
         """Clean up registry."""
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
     def test_autoload_openai_success(self):
         """Test successful OpenAI auto-loading."""
         # Clear registry first
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
         # Mock the import inside the create method
-        with patch('context_builder.acquisition.AcquisitionFactory.register') as mock_register:
+        with patch('context_builder.ingestion.IngestionFactory.register') as mock_register:
             # This will trigger auto-load attempt
             try:
-                AcquisitionFactory.create("openai")
+                IngestionFactory.create("openai")
             except (ValueError, ImportError):
                 pass  # Expected since we're mocking
 
@@ -143,58 +143,58 @@ class TestAcquisitionFactoryOpenAI:
     def test_autoload_openai_import_error(self):
         """Test OpenAI auto-loading with import error provides helpful message."""
         # Clear registry first
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
-        with patch('context_builder.acquisition.AcquisitionFactory.register') as mock_register:
+        with patch('context_builder.ingestion.IngestionFactory.register') as mock_register:
             mock_register.side_effect = ImportError("Module not found")
 
             with pytest.raises(ValueError, match="Failed to import OpenAI implementation"):
-                AcquisitionFactory.create("openai")
+                IngestionFactory.create("openai")
 
     def test_autoload_only_for_openai(self):
         """Test auto-loading only attempts for 'openai' provider."""
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
-        with pytest.raises(ValueError, match="Unknown acquisition provider: other"):
-            AcquisitionFactory.create("other")
+        with pytest.raises(ValueError, match="Unknown ingestion provider: other"):
+            IngestionFactory.create("other")
 
 
-class TestAcquisitionFactoryListProviders:
+class TestIngestionFactoryListProviders:
     """Test list_providers functionality."""
 
     def teardown_method(self):
         """Clean up registry."""
-        AcquisitionFactory._registry.clear()
+        IngestionFactory._registry.clear()
 
     def test_list_empty_registry(self):
         """Test listing providers with empty registry."""
-        AcquisitionFactory._registry.clear()
-        providers = AcquisitionFactory.list_providers()
+        IngestionFactory._registry.clear()
+        providers = IngestionFactory.list_providers()
 
         assert providers == []
 
     def test_list_single_provider(self):
         """Test listing single provider."""
-        AcquisitionFactory.register("dummy", DummyAcquisition)
-        providers = AcquisitionFactory.list_providers()
+        IngestionFactory.register("dummy", DummyIngestion)
+        providers = IngestionFactory.list_providers()
 
         assert providers == ["dummy"]
 
     def test_list_multiple_providers(self):
         """Test listing multiple providers."""
-        class Another(DataAcquisition):
+        class Another(DataIngestion):
             def _process_implementation(self, filepath):
                 return {}
 
-        AcquisitionFactory.register("dummy", DummyAcquisition)
-        AcquisitionFactory.register("another", Another)
-        providers = AcquisitionFactory.list_providers()
+        IngestionFactory.register("dummy", DummyIngestion)
+        IngestionFactory.register("another", Another)
+        providers = IngestionFactory.list_providers()
 
         assert set(providers) == {"dummy", "another"}
 
     def test_list_returns_list_not_dict_keys(self):
         """Test list_providers returns a list, not dict_keys."""
-        AcquisitionFactory.register("dummy", DummyAcquisition)
-        providers = AcquisitionFactory.list_providers()
+        IngestionFactory.register("dummy", DummyIngestion)
+        providers = IngestionFactory.list_providers()
 
         assert isinstance(providers, list)

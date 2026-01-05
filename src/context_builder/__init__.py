@@ -7,9 +7,9 @@ for building context from various document formats.
 
 __version__ = "0.1.0"
 
-from context_builder.acquisition import AcquisitionFactory, DataAcquisition
+from context_builder.ingestion import IngestionFactory, DataIngestion
 
 __all__ = [
-    "AcquisitionFactory",
-    "DataAcquisition",
+    "IngestionFactory",
+    "DataIngestion",
 ]

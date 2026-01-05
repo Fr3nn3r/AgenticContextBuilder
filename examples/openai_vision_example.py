@@ -1,5 +1,5 @@
 """
-Example usage of OpenAI Vision API acquisition module.
+Example usage of OpenAI Vision API ingestion module.
 
 This example demonstrates:
 - Basic document analysis with structured output
@@ -19,7 +19,7 @@ from typing import Dict, Any
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from context_builder.acquisition import AcquisitionFactory
+from context_builder.ingestion import IngestionFactory
 
 
 def example_basic_usage():
@@ -34,8 +34,8 @@ def example_basic_usage():
         return
 
     try:
-        # Create OpenAI Vision acquisition instance
-        openai_vision = AcquisitionFactory.create("openai")
+        # Create OpenAI Vision ingestion instance
+        openai_vision = IngestionFactory.create("openai")
 
         # Example with an image file
         image_path = Path("sample_document.png")  # Replace with your image
@@ -102,7 +102,7 @@ def example_invoice_processing():
         return
 
     try:
-        openai_vision = AcquisitionFactory.create("openai")
+        openai_vision = IngestionFactory.create("openai")
 
         # Process invoice image
         invoice_path = Path("invoice.png")  # Replace with your invoice
@@ -162,7 +162,7 @@ def example_pdf_processing():
         return
 
     try:
-        openai_vision = AcquisitionFactory.create("openai")
+        openai_vision = IngestionFactory.create("openai")
 
         # Configure for PDF processing
         openai_vision.max_pages = 5  # Limit pages to control costs
@@ -222,7 +222,7 @@ def example_model_configuration():
 
     try:
         # Create with default settings
-        openai_default = AcquisitionFactory.create("openai")
+        openai_default = IngestionFactory.create("openai")
         print("Default Configuration:")
         print(f"  Model: {openai_default.model}")
         print(f"  Max tokens: {openai_default.max_tokens}")
@@ -230,7 +230,7 @@ def example_model_configuration():
         print(f"  Max pages: {openai_default.max_pages}")
 
         # Create with custom settings
-        openai_custom = AcquisitionFactory.create("openai")
+        openai_custom = IngestionFactory.create("openai")
 
         # Customize settings for different use cases
         print("\nCustom Configuration (for detailed analysis):")
@@ -285,7 +285,7 @@ def example_error_handling():
                     del os.environ["OPENAI_API_KEY"]
 
                 try:
-                    openai_vision = AcquisitionFactory.create("openai")
+                    openai_vision = IngestionFactory.create("openai")
                 except Exception as e:
                     print(f"  Expected error caught: {type(e).__name__}")
                     print(f"  Message: {str(e)[:100]}")
@@ -295,7 +295,7 @@ def example_error_handling():
                         os.environ["OPENAI_API_KEY"] = original_key
 
             elif test_path:
-                openai_vision = AcquisitionFactory.create("openai")
+                openai_vision = IngestionFactory.create("openai")
                 result = openai_vision.process(test_path)
 
         except Exception as e:
@@ -315,7 +315,7 @@ def example_batch_processing():
         return
 
     try:
-        openai_vision = AcquisitionFactory.create("openai")
+        openai_vision = IngestionFactory.create("openai")
 
         # Find test files
         test_files = []
@@ -438,7 +438,7 @@ def compare_with_tesseract():
     print("1. Tesseract OCR:")
     print("-" * 30)
     try:
-        tesseract = AcquisitionFactory.create("tesseract")
+        tesseract = IngestionFactory.create("tesseract")
         tesseract_result = tesseract.process(test_file)
 
         if tesseract_result['pages']:
@@ -458,7 +458,7 @@ def compare_with_tesseract():
         return
 
     try:
-        openai_vision = AcquisitionFactory.create("openai")
+        openai_vision = IngestionFactory.create("openai")
         openai_result = openai_vision.process(test_file)
 
         if openai_result['pages']:

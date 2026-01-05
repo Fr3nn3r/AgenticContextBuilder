@@ -1,4 +1,4 @@
-"""Azure Document Intelligence API implementation for data acquisition."""
+"""Azure Document Intelligence API implementation for data ingestion."""
 
 import logging
 import os
@@ -6,18 +6,18 @@ import time
 from pathlib import Path
 from typing import Dict, Any
 
-from context_builder.acquisition import (
-    DataAcquisition,
+from context_builder.ingestion import (
+    DataIngestion,
     APIError,
     ConfigurationError,
-    AcquisitionFactory,
+    IngestionFactory,
 )
 from context_builder.utils.file_utils import get_file_metadata
 
 logger = logging.getLogger(__name__)
 
 
-class AzureDocumentIntelligenceAcquisition(DataAcquisition):
+class AzureDocumentIntelligenceIngestion(DataIngestion):
     """
     Azure Document Intelligence API implementation for document extraction.
 
@@ -33,7 +33,7 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
     """
 
     def __init__(self):
-        """Initialize Azure Document Intelligence acquisition."""
+        """Initialize Azure Document Intelligence ingestion."""
         super().__init__()
 
         # Get Azure credentials from environment
@@ -312,4 +312,4 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
 
 
 # Auto-register with factory
-AcquisitionFactory.register("azure-di", AzureDocumentIntelligenceAcquisition)
+IngestionFactory.register("azure-di", AzureDocumentIntelligenceIngestion)

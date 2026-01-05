@@ -60,14 +60,14 @@ AZURE_DI_API_KEY=your-api-key-here
 ```python
 import os
 from pathlib import Path
-from context_builder.acquisition import AcquisitionFactory
+from context_builder.ingestion import IngestionFactory
 from rich.console import Console
 
 # Set your API key
 os.environ["OPENAI_API_KEY"] = "your-key-here"
 
 # Create OpenAI vision processor
-openai_vision = AcquisitionFactory.create("openai")
+openai_vision = IngestionFactory.create("openai")
 
 # Process a document
 file_path = Path("document.pdf")
@@ -83,7 +83,7 @@ console.print(result)
 ```python
 import os
 from pathlib import Path
-from context_builder.acquisition import AcquisitionFactory
+from context_builder.ingestion import IngestionFactory
 from rich.console import Console
 
 # Set your Azure credentials
@@ -91,7 +91,7 @@ os.environ["AZURE_DI_ENDPOINT"] = "https://your-resource.cognitiveservices.azure
 os.environ["AZURE_DI_API_KEY"] = "your-key-here"
 
 # Create Azure DI processor
-azure_di = AcquisitionFactory.create("azure-di")
+azure_di = IngestionFactory.create("azure-di")
 azure_di.output_dir = Path("./output")  # Set output directory for markdown files
 
 # Process a document
@@ -109,11 +109,11 @@ console.print(result)
 
 ```python
 from pathlib import Path
-from context_builder.acquisition import AcquisitionFactory
+from context_builder.ingestion import IngestionFactory
 from rich.console import Console
 
 # Create Tesseract processor (default provider)
-tesseract = AcquisitionFactory.create("tesseract")
+tesseract = IngestionFactory.create("tesseract")
 tesseract.languages = ["eng"]  # Set language(s)
 
 # Process a document
@@ -279,7 +279,7 @@ Extracted text content in markdown format with:
 
 ### Core Components
 
-- **Acquisition Layer**: Abstract base classes and factory pattern for different providers
+- **Ingestion Layer**: Abstract base classes and factory pattern for different providers
 - **Implementation Layer**: OpenAI Vision and Tesseract OCR implementations
 - **CLI Interface**: Rich command-line interface with colored output
 - **Utilities**: File operations, hashing, and helper functions
@@ -331,12 +331,12 @@ python -m pytest tests/cli/ -v
 
 ```
 context_builder/
-├── acquisition.py          # Base classes and factory
+├── ingestion.py            # Base classes and factory
 ├── cli.py                 # Command-line interface
 ├── impl/
-│   ├── openai_vision_acquisition.py    # OpenAI implementation
-│   ├── azure_di_acquisition.py         # Azure Document Intelligence implementation
-│   └── tesseract_acquisition.py        # Tesseract implementation
+│   ├── openai_vision_ingestion.py      # OpenAI implementation
+│   ├── azure_di_ingestion.py           # Azure Document Intelligence implementation
+│   └── tesseract_ingestion.py          # Tesseract implementation
 ├── schemas/
 │   └── document_analysis.py  # Pydantic output schemas
 ├── prompts/
