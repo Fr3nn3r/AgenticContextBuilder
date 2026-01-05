@@ -168,6 +168,12 @@ class IngestionFactory:
                     cls.register("tesseract", TesseractIngestion)
                 except ImportError as e:
                     raise ValueError(f"Failed to import Tesseract implementation: {e}")
+            elif name_lower == "azure-di":
+                try:
+                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    cls.register("azure-di", AzureDocumentIntelligenceIngestion)
+                except ImportError as e:
+                    raise ValueError(f"Failed to import Azure DI implementation: {e}")
 
         if name_lower not in cls._registry:
             available = ", ".join(cls._registry.keys())

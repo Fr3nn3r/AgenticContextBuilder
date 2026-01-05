@@ -258,5 +258,5 @@ class ExtractorFactory:
 
 
 def generate_run_id() -> str:
-    """Generate a unique run ID based on current timestamp."""
-    return datetime.utcnow().strftime("run_%Y-%m-%dT%H:%M:%SZ")
+    """Generate a unique run ID based on current timestamp (filesystem-safe)."""
+    return datetime.utcnow().strftime("run_%Y%m%d_%H%M%S")
