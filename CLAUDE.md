@@ -1,117 +1,38 @@
-# CLAUDE.md
+### **CLAUDE.md (compact)**
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**Priority order (if conflict):** Correctness > Security/Privacy > Maintainability (SSOT) > Simplicity (YAGNI) > Style.
 
-# IMPORTANT
-- In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake of concision
-- At the end of each plan, provide a list of unresolved questions to answer if any,
-- Read PROJECT_CONTEXT.md for project context.
+**Operating mode**
 
-## Development Guidelines
+* **Trivial changes** (typos, renames, small bugfix, isolated file, low risk): implement immediately.
+* **Non-trivial** (touches core logic, auth/billing/data model, migrations, multi-file refactor, performance, security):
 
-### Coding Standards: SOLID principles of software design
-- **S – Single Responsibility Principle (SRP)**: A class should have one job only. Each class should have a single reason to change.
-- **O – Open/Closed Principle (OCP)**: Code should be open for extension, closed for modification. We can new features without rewriting existing code.
-- **L – Liskov Substitution Principle (LSP)**: A child class should respect the contract of the parent.
-- **I – Interface Segregation Principle (ISP)**: Don’t force classes to implement methods they don’t need. Better to have many small, specific interfaces than one fat, do-everything interface.
-- **D – Dependency Inversion Principle (DIP)**: Depend on abstractions (interfaces), not concrete implementations. High-level modules shouldn’t depend on low-level details. Both should depend on interfaces/contracts.
+  1. 3–6 bullet plan
+  2. Ask only *blocking* questions (max 5)
+  3. If answers missing, proceed with clearly stated assumptions + smallest safe change.
 
-### Coding Principles: DRY + SSOT: No Duplicate Logic
-- **DRY - (Don’t Repeat Yourself)**: Never write the same code in two places. If you find yourself copying logic, stop and extract it into a shared function, class, or service.
-- **SSOT - (Single Source of Truth)**: Each piece of logic should exist in one place only. All other code should reference that one place. This avoids drift, bugs, and inconsistencies.
-- **Shared Utilities/Services**: Common operations (e.g., hashing, date formatting, JSON parsing) must live in a shared module/service. Do not re-implement them inside concrete classes.
-- **Use Standard Libraries First**: If the language already has a reliable library function (e.g., Python’s hashlib.md5, Java’s MessageDigest, Node’s crypto.createHash), always use it instead of writing a custom helper.
-- **Code Review Gate: Reviewers must ask**: “Where is the single source of truth?” when they see similar logic across files. If no SSOT exists, request a refactor before merge.
+**Architecture**
 
-Example
-❌ Bad: Two classes each define calculate_md5() internally.
-✔ Good: One HashingService (interface + implementation using standard library), injected or imported wherever needed.
+* Enforce **SSOT**: one place for state/logic; no duplicated rules.
+* Apply **SOLID** pragmatically; **no speculative refactors**.
+* Prefer standard libraries and existing project patterns.
 
-### What “good” looks like
-High cohesion per file (one purpose), low coupling across files.
-Functions ≤50–80 lines, files typically ≤200–400 lines.
+**Error handling**
 
-### Naming standards
-1) Name by purpose, not by type or mechanics
-  Bad: data, result, list1
-  Good: pendingClaims, approvedInvoices, customerLookup
-  Tip: Start names with a strong noun/verb: loadPolicies, issueRefund, riskScore.
-2) Match scope → specificity
-  Tiny/local var in 3 lines? i, row, sum is fine.
-  Public API/class? Use full, precise names: ClaimDocumentClassifier, PaymentAuthorizationService.
-3) Use domain language consistently
-  Pick one term and stick to it: claimant or insured (not both).
-  Prefer business terms over tech mush: policyLapseDate > expiryTs.
-4) Encode meaning, not metadata
-  Don’t add types: customerListArr ❌
-  Do add units/context: timeoutMs, premiumCHF, createdAtUtc.
-5) Boolean names read like statements
-  isEligible, hasConsent, shouldRetry, canSettle.
-  Avoid negatives of negatives: prefer isActive over isNotInactive.
-6) Plurals and collections
-  Singular for one, plural for many: claim, claims.
-  For maps, say what’s keyed by what: claimsByCustomerId, ratesByCountry.
-7) Avoid abbreviations unless they’re truly common
-  Good: id, URL, CPU.
-  Risky: cfg, pol, cust. If you must abbreviate, document once in the README or glossary.
-8) Keep length as short as possible, as long as necessary
-  calculateMonthlyPremium() ✔
-  calculateMonthlyPremiumForHouseholdInSwissFrancs() ❌ (push details to parameters).
-9) Be consistent with language conventions
-  Python: snake_case for functions/vars, PascalCase for classes, UPPER_SNAKE for constants.
-  JS/TS: camelCase vars/functions, PascalCase classes/components, SCREAMING_SNAKE constants.
-  Java/C#: camelCase fields/params, PascalCase classes/methods.
-  Files/folders follow the same story as symbols.
-10) Functions: verb + object (+ qualifier)
-  loadPolicy(), issueRefund(), recalculateRiskScore().
-  Pure getters/setters: getPolicy(), setStatus(); booleans: isSettled().
-11) Classes and modules: what they are
-  ClaimValidator, PolicyRepository, PremiumCalculator, PaymentGatewayClient.
-  Avoid Manager, Processor, Helper unless you truly can’t be more specific.
-12) Events and handlers
-  Events: past tense or noun: ClaimSubmitted, PaymentAuthorized.
-  Handlers: onClaimSubmitted, handlePaymentAuthorized.
-13) Error/exception names say the reason
-  InvalidPolicyNumberError, InsufficientCoverageError, ConsentMissingError.
-14) Migrations/feature flags
-  Migrations: 2025_09_20_add_claim_index.
-  Flags: ff_enableSmartTriage (with owner, expiry date in code comment).
+* Never swallow errors. Log once at boundaries with context **without secrets**.
+* Use typed/custom errors internally; convert to user-safe messages at API/UI edges.
 
-### Anti-Complexity Philosophy
-- BE VERY SUSPICIOUS OF EVERY COMPLICATION - simple = good, complex = bad
-- Do exactly what's asked, nothing more
-- Execute precisely what the user asks for, without additional features
-- Constantly verify you're not adding anything beyond explicit instructions
+**Code style**
 
-### Communication Style
-- Use simple & easy-to-understand language. write in short sentences
-- Be CLEAR and STRAIGHT TO THE POINT
-- EXPLAIN EVERYTHING CLEARLY & COMPLETELY
-- Address ALL of user's points and questions clearly and completely.
+* Self-documenting naming; booleans read naturally; include units when ambiguous.
+* Minimal comments: explain **why**, edge cases, or non-obvious constraints.
+* Follow language conventions (Py: snake_case; TS: camelCase; classes PascalCase; constants SCREAMING_SNAKE).
 
-### Misc
-Prefer ASCII-only CLI output by default: use “[OK]”/“[X]” instead of ✓/✗ for cross-platform safety.
-Use folder `scripts` to store temporary test scripts
+**Testing**
 
-### Minimal Comment Policy
-1. Explain why, not what: Don’t repeat code in English, explain intent, business rules, or trade-offs
-e.g. # Business rule: claims older than 2 years cannot be reopened
-2. Document assumptions and edge cases
-e.g. # Assumes travel insurance IDs are globally unique (not just per country)
-3. Mark todos and decisions explicitly
-e.g. // TODO: Replace with real OCR once accuracy >95%
-4. Public APIs / Interfaces need a docstring
-  Functions, classes, and modules exposed to other devs must explain:
-    What it does
-    Parameters (specifying units)
-    Return value / side effects (exceptions)
-5. Comment “why not” when code looks weird
-e.g. # Using regex instead of JSON parser because input is malformed in legacy system
-6. Keep comments close and current
-  Outdated comments are worse than none
-  If code changes, update or delete the comment
+* Add/update unit tests for new/changed logic paths (PyTest/Jest).
+* Don’t rewrite test architecture unless asked.
 
-# IMPORTANT
-- never EVER take action unless the User explicitly tells you to.
-- never EVER make assumptions -> ask questions.
-- Read PROJECT_CONTEXT.md for project context.
+**Context**
+
+* If domain rules missing, consult `PROJECT_CONTEXT.md`. If still unclear, state assumptions. 

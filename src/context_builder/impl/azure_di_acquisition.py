@@ -290,13 +290,9 @@ class AzureDocumentIntelligenceAcquisition(DataAcquisition):
                 f"{result.get('paragraph_count', 0)} paragraphs"
             )
 
-            # Warn if only 2 pages were processed (likely free tier limit)
-            if pages_processed == 2:
-                logger.warning(
-                    "Only 2 pages were processed. This is likely due to Azure Document Intelligence "
-                    "free tier limitation. Free tier processes only the first 2 pages. "
-                    "Upgrade to a paid tier to process full documents (up to 2000 pages)."
-                )
+            # Note: Removed misleading warning about 2-page limit.
+            # The free tier limit was 2 pages, but many documents genuinely have 2 pages.
+            # If you suspect truncation, check the source PDF page count vs pages_processed.
 
             return result
 
