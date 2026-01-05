@@ -14,10 +14,10 @@ Architecture follows SOLID principles:
 - SRP: Each component has single responsibility
 """
 
-from context_builder.runtime.evaluator import IEvaluator, NeuroSymbolicEvaluator
-from context_builder.runtime.claim_mapper import ClaimMapper, SchemaBasedClaimMapper
-from context_builder.runtime.result_interpreter import ResultInterpreter
-from context_builder.runtime.schema_loader import load_schema, load_logic
+from policy_compiler.runtime.evaluator import IEvaluator, NeuroSymbolicEvaluator
+from policy_compiler.runtime.claim_mapper import ClaimMapper, SchemaBasedClaimMapper
+from policy_compiler.runtime.result_interpreter import ResultInterpreter
+from policy_compiler.runtime.schema_loader import load_schema, load_logic
 
 __all__ = [
     "IEvaluator",

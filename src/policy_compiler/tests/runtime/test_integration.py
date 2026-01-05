@@ -15,10 +15,10 @@ Uses real insurance policy files from output directory.
 import pytest
 from pathlib import Path
 
-from context_builder.runtime.schema_loader import load_schema, load_logic
-from context_builder.runtime.claim_mapper import SchemaBasedClaimMapper
-from context_builder.runtime.evaluator import NeuroSymbolicEvaluator
-from context_builder.runtime.result_interpreter import ResultInterpreter
+from policy_compiler.runtime.schema_loader import load_schema, load_logic
+from policy_compiler.runtime.claim_mapper import SchemaBasedClaimMapper
+from policy_compiler.runtime.evaluator import NeuroSymbolicEvaluator
+from policy_compiler.runtime.result_interpreter import ResultInterpreter
 
 
 class TestEndToEndIntegration:

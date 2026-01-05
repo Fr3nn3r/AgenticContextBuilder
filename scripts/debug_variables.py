@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from context_builder.execution.form_generator import FormGenerator
+from policy_compiler.execution.form_generator import FormGenerator
 import json
 
 # Create generator

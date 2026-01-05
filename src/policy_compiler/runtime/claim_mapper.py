@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 import re
 
-from context_builder.runtime.validators import validate_all_fields, ValidationError
+from policy_compiler.runtime.validators import validate_all_fields, ValidationError
 
 
 class ClaimMapper(ABC):

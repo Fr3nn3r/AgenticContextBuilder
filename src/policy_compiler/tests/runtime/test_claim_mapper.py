@@ -6,7 +6,7 @@ into nested JSON structure for the logic engine.
 """
 
 import pytest
-from context_builder.runtime.claim_mapper import SchemaBasedClaimMapper
+from policy_compiler.runtime.claim_mapper import SchemaBasedClaimMapper
 
 
 class TestClaimMapperInflation:

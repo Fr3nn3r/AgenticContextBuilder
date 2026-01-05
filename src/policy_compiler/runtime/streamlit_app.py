@@ -12,18 +12,18 @@ If given a new "Pet Insurance Policy" JSON with completely different fields,
 this application should work WITHOUT any code changes.
 
 Usage:
-    streamlit run src/context_builder/runtime/streamlit_app.py
+    streamlit run src/policy_compiler/runtime/streamlit_app.py
 """
 
 import streamlit as st
 from pathlib import Path
 import json
 
-from context_builder.runtime.schema_loader import load_schema, load_logic, SchemaLoadError
-from context_builder.runtime.widget_factory import render_section, WidgetFactory
-from context_builder.runtime.claim_mapper import SchemaBasedClaimMapper
-from context_builder.runtime.evaluator import NeuroSymbolicEvaluator
-from context_builder.runtime.result_interpreter import ResultInterpreter
+from policy_compiler.runtime.schema_loader import load_schema, load_logic, SchemaLoadError
+from policy_compiler.runtime.widget_factory import render_section, WidgetFactory
+from policy_compiler.runtime.claim_mapper import SchemaBasedClaimMapper
+from policy_compiler.runtime.evaluator import NeuroSymbolicEvaluator
+from policy_compiler.runtime.result_interpreter import ResultInterpreter
 
 
 # Page configuration

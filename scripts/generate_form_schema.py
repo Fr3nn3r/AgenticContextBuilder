@@ -21,7 +21,7 @@ from typing import List
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from context_builder.execution.form_generator import FormGenerator
+from policy_compiler.execution.form_generator import FormGenerator
 
 
 def find_logic_files(input_path: Path) -> List[Path]:

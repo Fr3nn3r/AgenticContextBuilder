@@ -7,8 +7,8 @@ fused into widget help text.
 
 from pathlib import Path
 import json
-from context_builder.runtime.widget_factory import WidgetFactory
-from context_builder.runtime import load_schema, load_logic
+from policy_compiler.runtime.widget_factory import WidgetFactory
+from policy_compiler.runtime import load_schema, load_logic
 
 
 def main():

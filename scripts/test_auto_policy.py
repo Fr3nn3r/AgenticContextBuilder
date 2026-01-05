@@ -6,7 +6,7 @@ without any code changes.
 """
 
 from pathlib import Path
-from context_builder.runtime import (
+from policy_compiler.runtime import (
     load_schema,
     load_logic,
     SchemaBasedClaimMapper,
