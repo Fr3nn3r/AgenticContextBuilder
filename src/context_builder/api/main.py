@@ -315,7 +315,9 @@ app.add_middleware(
 )
 
 # Data directory - now points to output/claims with new structure
-DATA_DIR: Path = Path("output/claims")
+# Compute path relative to project root (3 levels up from this file)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 
 
 def set_data_dir(path: Path):
@@ -392,7 +394,6 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
 
         if run_dir:
             extraction_dir = run_dir / "extraction"
-            labels_dir = run_dir / "labels"
 
             # Read run summary for date
             summary_path = run_dir / "logs" / "summary.json"
@@ -429,9 +430,7 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
                             gate_fail_count += 1
                             flags_count += 2
 
-                        # Count needs vision
-                        if quality.get("needs_vision_fallback", False):
-                            needs_vision_count += 1
+                        # Note: needs_vision_count is calculated later, after checking labels
 
                         flags_count += len(quality.get("missing_required_fields", []))
 
@@ -440,9 +439,43 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
                         if amount:
                             total_amount = max(total_amount, amount)
 
-            # Count labels
-            if labels_dir and labels_dir.exists():
-                labeled_count = len(list(labels_dir.glob("*.labels.json")))
+        # Count labels and needs_vision (labels take precedence over extraction)
+        # Build a map of doc_id -> needs_vision from labels
+        label_needs_vision: dict[str, bool] = {}
+        for doc_folder in docs_dir.iterdir():
+            if doc_folder.is_dir():
+                labels_path = doc_folder / "labels" / "latest.json"
+                if labels_path.exists():
+                    labeled_count += 1
+                    try:
+                        with open(labels_path, "r", encoding="utf-8") as f:
+                            label_data = json.load(f)
+                            doc_labels = label_data.get("doc_labels", {})
+                            nv = doc_labels.get("needs_vision")
+                            if nv is not None:
+                                label_needs_vision[doc_folder.name] = bool(nv)
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+        # Recalculate needs_vision_count: for each doc, label takes precedence
+        needs_vision_count = 0
+        for doc_meta in doc_metas:
+            doc_id = doc_meta.get("doc_id", "")
+            # Check label first
+            if doc_id in label_needs_vision:
+                if label_needs_vision[doc_id]:
+                    needs_vision_count += 1
+            elif run_dir:
+                # No label, check extraction
+                ext_path = run_dir / "extraction" / f"{doc_id}.json"
+                if ext_path.exists():
+                    try:
+                        with open(ext_path, "r", encoding="utf-8") as f:
+                            ext_data = json.load(f)
+                            if ext_data.get("quality_gate", {}).get("needs_vision_fallback"):
+                                needs_vision_count += 1
+                    except (json.JSONDecodeError, IOError):
+                        pass
 
         # Calculate average risk score
         avg_risk = total_risk_score // max(extracted_count, 1)
@@ -541,13 +574,13 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
     if not docs_dir.exists():
         raise HTTPException(status_code=404, detail="No documents found")
 
-    # Get run directory (specific or latest)
+    # Get run directory (specific or latest) for extraction data
     if run_id:
         run_dir = get_run_dir_by_id(claim_dir, run_id)
     else:
         run_dir = get_latest_run_dir_for_claim(claim_dir)
     extraction_dir = run_dir / "extraction" if run_dir else None
-    labels_dir = run_dir / "labels" if run_dir else None
+    # Note: labels are now stored at docs/{doc_id}/labels/latest.json (run-independent)
 
     docs = []
     for doc_folder in docs_dir.iterdir():
@@ -593,11 +626,21 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
                     elif quality_status == "fail":
                         text_quality = "poor"
 
-        # Check for labels
-        has_labels = False
-        if labels_dir:
-            labels_path = labels_dir / f"{doc_id}.labels.json"
-            has_labels = labels_path.exists()
+        # Check for labels (at docs/{doc_id}/labels/latest.json)
+        labels_path = doc_folder / "labels" / "latest.json"
+        has_labels = labels_path.exists()
+
+        # Override needs_vision from label if present (label takes precedence)
+        if has_labels:
+            try:
+                with open(labels_path, "r", encoding="utf-8") as f:
+                    label_data = json.load(f)
+                    doc_labels = label_data.get("doc_labels", {})
+                    nv = doc_labels.get("needs_vision")
+                    if nv is not None:
+                        needs_vision = bool(nv)
+            except (json.JSONDecodeError, IOError):
+                pass
 
         docs.append(DocSummary(
             doc_id=doc_id,
@@ -682,13 +725,12 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
             with open(extraction_path, "r", encoding="utf-8") as f:
                 extraction = json.load(f)
 
-    # Load labels if exist
+    # Load labels if exist (from docs/{doc_id}/labels/latest.json)
     labels = None
-    if run_dir:
-        labels_path = run_dir / "labels" / f"{doc_id}.labels.json"
-        if labels_path.exists():
-            with open(labels_path, "r", encoding="utf-8") as f:
-                labels = json.load(f)
+    labels_path = doc_folder / "labels" / "latest.json"
+    if labels_path.exists():
+        with open(labels_path, "r", encoding="utf-8") as f:
+            labels = json.load(f)
 
     # Check for source files
     has_pdf = False
@@ -722,28 +764,27 @@ def save_labels(doc_id: str, request: SaveLabelsRequest, claim_id: Optional[str]
     Save human labels for a document.
 
     Uses atomic write (temp file + rename) for safety.
-    Labels are stored in the latest run directory.
+    Labels are stored at docs/{doc_id}/labels/latest.json (run-independent).
     """
-    # Find the document's claim directory
+    # Find the document's folder
+    doc_folder = None
     claim_dir = None
     for claim in DATA_DIR.iterdir():
         if not claim.is_dir():
             continue
         if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
             continue
-        if (claim / "docs" / doc_id).exists():
+        candidate = claim / "docs" / doc_id
+        if candidate.exists():
+            doc_folder = candidate
             claim_dir = claim
             break
 
-    if not claim_dir:
+    if not doc_folder:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-    # Get latest run directory
-    run_dir = get_latest_run_dir_for_claim(claim_dir)
-    if not run_dir:
-        raise HTTPException(status_code=404, detail="No run directory found for claim")
-
-    labels_dir = run_dir / "labels"
+    # Labels are stored at docs/{doc_id}/labels/latest.json
+    labels_dir = doc_folder / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
 
     # Build label result
@@ -761,7 +802,7 @@ def save_labels(doc_id: str, request: SaveLabelsRequest, claim_id: Optional[str]
     }
 
     # Atomic write
-    labels_path = labels_dir / f"{doc_id}.labels.json"
+    labels_path = labels_dir / "latest.json"
     temp_path = labels_path.with_suffix(".tmp")
 
     with open(temp_path, "w", encoding="utf-8") as f:
@@ -892,7 +933,7 @@ def get_claim_review(claim_id: str):
     docs_dir = claim_dir / "docs"
     run_dir = get_latest_run_dir_for_claim(claim_dir)
     extraction_dir = run_dir / "extraction" if run_dir else None
-    labels_dir = run_dir / "labels" if run_dir else None
+    # Note: labels are now stored at docs/{doc_id}/labels/latest.json (run-independent)
 
     docs = []
     gate_counts = {"pass": 0, "warn": 0, "fail": 0}
@@ -942,11 +983,21 @@ def get_claim_review(claim_id: str):
                         text_quality = "poor"
                         gate_counts["fail"] += 1
 
-        # Check for labels
-        has_labels = False
-        if labels_dir:
-            labels_path = labels_dir / f"{doc_id}.labels.json"
-            has_labels = labels_path.exists()
+        # Check for labels (at docs/{doc_id}/labels/latest.json)
+        labels_path = doc_folder / "labels" / "latest.json"
+        has_labels = labels_path.exists()
+
+        # Override needs_vision from label if present (label takes precedence)
+        if has_labels:
+            try:
+                with open(labels_path, "r", encoding="utf-8") as f:
+                    label_data = json.load(f)
+                    doc_labels = label_data.get("doc_labels", {})
+                    nv = doc_labels.get("needs_vision")
+                    if nv is not None:
+                        needs_vision = bool(nv)
+            except (json.JSONDecodeError, IOError):
+                pass
 
         if not has_labels:
             unlabeled_count += 1
@@ -1011,29 +1062,29 @@ def save_doc_review(doc_id: str, request: DocReviewRequest):
     Save simplified doc-level review (no field labels, no reviewer name).
 
     Saves doc_type_correct (yes/no/unsure) and optional notes.
+    Labels are stored at docs/{doc_id}/labels/latest.json (run-independent).
     """
     claim_id = request.claim_id
 
-    # Find the document's claim directory
+    # Find the document's folder
+    doc_folder = None
     claim_dir = None
     for claim in DATA_DIR.iterdir():
         if not claim.is_dir():
             continue
         if extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
             continue
-        if (claim / "docs" / doc_id).exists():
+        candidate = claim / "docs" / doc_id
+        if candidate.exists():
+            doc_folder = candidate
             claim_dir = claim
             break
 
-    if not claim_dir:
+    if not doc_folder:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-    # Get latest run directory
-    run_dir = get_latest_run_dir_for_claim(claim_dir)
-    if not run_dir:
-        raise HTTPException(status_code=404, detail="No run directory found for claim")
-
-    labels_dir = run_dir / "labels"
+    # Labels are stored at docs/{doc_id}/labels/latest.json
+    labels_dir = doc_folder / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
 
     # Convert doc_type_correct to boolean for storage
@@ -1059,7 +1110,7 @@ def save_doc_review(doc_id: str, request: DocReviewRequest):
     }
 
     # Atomic write
-    labels_path = labels_dir / f"{doc_id}.labels.json"
+    labels_path = labels_dir / "latest.json"
     temp_path = labels_path.with_suffix(".tmp")
 
     with open(temp_path, "w", encoding="utf-8") as f:

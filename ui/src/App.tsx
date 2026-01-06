@@ -7,7 +7,16 @@ import { Dashboard } from "./components/Dashboard";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
 import type { ClaimSummary, DocSummary } from "./types";
-import { listClaims, listDocs, listClaimRuns, type ClaimRunInfo } from "./api/client";
+import {
+  listClaims,
+  listDocs,
+  listClaimRuns,
+  getRunOverview,
+  getRunDocTypes,
+  type ClaimRunInfo,
+  type InsightsOverview,
+  type DocTypeMetrics,
+} from "./api/client";
 
 function App() {
   const navigate = useNavigate();
@@ -24,6 +33,11 @@ function App() {
   const [runs, setRuns] = useState<ClaimRunInfo[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
+  // Dashboard insights state
+  const [dashboardOverview, setDashboardOverview] = useState<InsightsOverview | null>(null);
+  const [dashboardDocTypes, setDashboardDocTypes] = useState<DocTypeMetrics[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [lobFilter, setLobFilter] = useState("all");
@@ -35,9 +49,12 @@ function App() {
     loadRuns();
   }, []);
 
-  // Load claims when run selection changes
+  // Load claims and dashboard data when run selection changes
   useEffect(() => {
     loadClaims(selectedRunId || undefined);
+    if (selectedRunId) {
+      loadDashboardData(selectedRunId);
+    }
   }, [selectedRunId]);
 
   // Apply filters whenever claims or filters change
@@ -102,6 +119,24 @@ function App() {
     }
   }
 
+  async function loadDashboardData(runId: string) {
+    try {
+      setDashboardLoading(true);
+      const [overviewData, docTypesData] = await Promise.all([
+        getRunOverview(runId),
+        getRunDocTypes(runId),
+      ]);
+      setDashboardOverview(overviewData.overview);
+      setDashboardDocTypes(docTypesData);
+    } catch (err) {
+      console.error("Failed to load dashboard data:", err);
+      setDashboardOverview(null);
+      setDashboardDocTypes([]);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }
+
   async function handleSelectClaim(claim: ClaimSummary) {
     try {
       setSelectedClaim(claim);
@@ -123,7 +158,7 @@ function App() {
   // Get current page title based on route
   function getPageTitle(): string {
     const path = location.pathname;
-    if (path === "/" || path === "/dashboard") return "Dashboard";
+    if (path === "/" || path === "/dashboard") return "Calibration Home";
     if (path === "/claims") return "Claim Document Pack";
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Pack Review";
     if (path === "/insights") return "Calibration Insights";
@@ -188,8 +223,32 @@ function App() {
             </div>
           ) : (
             <Routes>
-              <Route path="/" element={<Dashboard claims={claims} />} />
-              <Route path="/dashboard" element={<Dashboard claims={claims} />} />
+              <Route
+                path="/"
+                element={
+                  <Dashboard
+                    runs={runs}
+                    selectedRunId={selectedRunId}
+                    onRunChange={setSelectedRunId}
+                    overview={dashboardOverview}
+                    docTypes={dashboardDocTypes}
+                    loading={dashboardLoading}
+                  />
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <Dashboard
+                    runs={runs}
+                    selectedRunId={selectedRunId}
+                    onRunChange={setSelectedRunId}
+                    overview={dashboardOverview}
+                    docTypes={dashboardDocTypes}
+                    loading={dashboardLoading}
+                  />
+                }
+              />
               <Route
                 path="/claims"
                 element={

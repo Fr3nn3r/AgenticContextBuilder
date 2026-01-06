@@ -1,154 +1,282 @@
-import type { ClaimSummary } from "../types";
+import { cn } from "../lib/utils";
+import type { ClaimRunInfo, InsightsOverview, DocTypeMetrics } from "../api/client";
 
-interface DashboardProps {
-  claims: ClaimSummary[];
+// Human-readable doc type names
+const docTypeNames: Record<string, string> = {
+  loss_notice: "Loss Notice",
+  police_report: "Police Report",
+  insurance_policy: "Insurance Policy",
+};
+
+function getDocTypeName(docType: string): string {
+  return docTypeNames[docType] || docType.replace(/_/g, " ");
 }
 
-export function Dashboard({ claims }: DashboardProps) {
-  // Calculate stats
-  const totalClaims = claims.length;
-  const reviewedClaims = claims.filter((c) => c.status === "Reviewed").length;
-  const pendingClaims = totalClaims - reviewedClaims;
-  const highRiskClaims = claims.filter((c) => c.risk_score >= 50).length;
-  const totalAmount = claims.reduce((sum, c) => sum + (c.amount || 0), 0);
-  const avgRiskScore = claims.length > 0
-    ? Math.round(claims.reduce((sum, c) => sum + c.risk_score, 0) / claims.length)
+interface DashboardProps {
+  runs: ClaimRunInfo[];
+  selectedRunId: string | null;
+  onRunChange: (runId: string) => void;
+  overview: InsightsOverview | null;
+  docTypes: DocTypeMetrics[];
+  loading?: boolean;
+}
+
+export function Dashboard({
+  runs,
+  selectedRunId,
+  onRunChange,
+  overview,
+  docTypes,
+  loading,
+}: DashboardProps) {
+  // Calculate coverage metrics
+  const labelCoverage = overview && overview.docs_total > 0
+    ? Math.round((overview.docs_reviewed / overview.docs_total) * 100)
     : 0;
 
-  // Group by loss type
-  const lossTypeStats = claims.reduce((acc, c) => {
-    acc[c.loss_type] = (acc[c.loss_type] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // Get selected run info
+  const selectedRun = runs.find(r => r.run_id === selectedRunId);
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-semibold text-gray-900 mb-6">Dashboard</h2>
+    <div className="p-6 max-w-6xl mx-auto">
+      <h2 className="text-2xl font-semibold text-gray-900 mb-6">Calibration Home</h2>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard
-          title="Total Claims"
-          value={totalClaims.toString()}
-          icon={<ClaimsIcon />}
-          color="blue"
-        />
-        <StatCard
-          title="Pending Review"
-          value={pendingClaims.toString()}
-          icon={<PendingIcon />}
-          color="amber"
-        />
-        <StatCard
-          title="High Risk"
-          value={highRiskClaims.toString()}
-          icon={<AlertIcon />}
-          color="red"
-        />
-        <StatCard
-          title="Total Value"
-          value={`$${(totalAmount / 1000).toFixed(0)}K`}
-          icon={<ValueIcon />}
-          color="green"
-        />
+      {/* Run Selector + Metadata */}
+      <div className="bg-white rounded-lg border p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Run:</label>
+            <select
+              value={selectedRunId || ""}
+              onChange={(e) => onRunChange(e.target.value)}
+              className="px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {runs.map((run, idx) => (
+                <option key={run.run_id} value={run.run_id}>
+                  {run.run_id} {idx === 0 ? "(Latest)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedRun && (
+            <div className="flex items-center gap-6 text-sm text-gray-600">
+              <div>
+                <span className="text-gray-400">Model:</span>{" "}
+                <span className="font-medium">{selectedRun.model || "Unknown"}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Date:</span>{" "}
+                <span className="font-medium">
+                  {selectedRun.timestamp
+                    ? new Date(selectedRun.timestamp).toLocaleDateString()
+                    : "Unknown"}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Risk Overview */}
-        <div className="bg-white rounded-lg border p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Risk Overview</h3>
-          <div className="space-y-4">
-            <RiskBar label="High Risk (50+)" count={highRiskClaims} total={totalClaims} color="red" />
-            <RiskBar
-              label="Medium Risk (25-49)"
-              count={claims.filter((c) => c.risk_score >= 25 && c.risk_score < 50).length}
-              total={totalClaims}
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Loading calibration data...</div>
+        </div>
+      ) : (
+        <>
+          {/* Calibration Metrics Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <MetricCard
+              label="Docs Labeled"
+              value={`${overview?.docs_reviewed || 0}`}
+              subtext={`of ${overview?.docs_total || 0} total`}
+              icon={<CheckIcon />}
+              color="blue"
+            />
+            <MetricCard
+              label="Evaluated in Run"
+              value={`${overview?.docs_total || 0}`}
+              subtext="documents"
+              icon={<DocsIcon />}
+              color="gray"
+            />
+            <MetricCard
+              label="Field Presence"
+              value={`${overview?.required_field_presence_rate || 0}%`}
+              subtext="required fields"
+              icon={<FieldIcon />}
+              color={getScoreColor(overview?.required_field_presence_rate || 0)}
+            />
+            <MetricCard
+              label="Field Accuracy"
+              value={`${overview?.required_field_accuracy || 0}%`}
+              subtext="when present"
+              icon={<AccuracyIcon />}
+              color={getScoreColor(overview?.required_field_accuracy || 0)}
+            />
+            <MetricCard
+              label="Evidence Rate"
+              value={`${overview?.evidence_rate || 0}%`}
+              subtext="with provenance"
+              icon={<EvidenceIcon />}
+              color={getScoreColor(overview?.evidence_rate || 0)}
+            />
+            <MetricCard
+              label="Needs Vision"
+              value={`${overview?.docs_needs_vision || 0}`}
+              subtext="flagged docs"
+              icon={<VisionIcon />}
               color="amber"
             />
-            <RiskBar
-              label="Low Risk (<25)"
-              count={claims.filter((c) => c.risk_score < 25).length}
-              total={totalClaims}
-              color="green"
-            />
           </div>
-          <div className="mt-4 pt-4 border-t">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Average Risk Score</span>
-              <span className="font-medium text-gray-900">{avgRiskScore}</span>
+
+          {/* Secondary Row: Coverage Progress + Doc Type Scoreboard */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Coverage Progress */}
+            <div className="bg-white rounded-lg border p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Coverage</h3>
+              <div className="space-y-4">
+                <ProgressBar
+                  label="Label Coverage"
+                  value={overview?.docs_reviewed || 0}
+                  total={overview?.docs_total || 0}
+                  percentage={labelCoverage}
+                  color="green"
+                />
+                <ProgressBar
+                  label="Run Coverage"
+                  value={overview?.docs_with_extraction || 0}
+                  total={overview?.docs_reviewed || 0}
+                  percentage={overview?.run_coverage || 0}
+                  color="blue"
+                />
+              </div>
+              <div className="mt-4 pt-4 border-t space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Label Coverage</span>
+                  <span className={cn(
+                    "font-medium",
+                    labelCoverage >= 80 ? "text-green-600" : labelCoverage >= 50 ? "text-amber-600" : "text-gray-600"
+                  )}>
+                    {labelCoverage}% ({overview?.docs_reviewed || 0} / {overview?.docs_total || 0})
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Run Coverage</span>
+                  <span className={cn(
+                    "font-medium",
+                    (overview?.run_coverage || 0) >= 80 ? "text-blue-600" : (overview?.run_coverage || 0) >= 50 ? "text-amber-600" : "text-gray-600"
+                  )}>
+                    {overview?.run_coverage || 0}% ({overview?.docs_with_extraction || 0} / {overview?.docs_reviewed || 0})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Mini Doc Type Scoreboard */}
+            <div className="bg-white rounded-lg border p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Doc Type Scoreboard</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 font-medium text-gray-600">Type</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Reviewed</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Presence</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Accuracy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {docTypes.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-gray-400">
+                          No doc types evaluated yet
+                        </td>
+                      </tr>
+                    ) : (
+                      docTypes.map((dt) => (
+                        <tr key={dt.doc_type} className="border-b last:border-0">
+                          <td className="py-2 text-gray-900">{getDocTypeName(dt.doc_type)}</td>
+                          <td className="py-2 text-right text-gray-600">{dt.docs_reviewed}</td>
+                          <td className="py-2 text-right">
+                            <ScoreBadge value={dt.required_field_presence_pct} />
+                          </td>
+                          <td className="py-2 text-right">
+                            <ScoreBadge value={dt.required_field_accuracy_pct} />
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Loss Type Breakdown */}
-        <div className="bg-white rounded-lg border p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Loss Type Breakdown</h3>
-          <div className="space-y-3">
-            {Object.entries(lossTypeStats)
-              .sort((a, b) => b[1] - a[1])
-              .map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">{type}</span>
-                  <div className="flex items-center gap-3">
-                    <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{ width: `${(count / totalClaims) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-sm font-medium text-gray-900 w-8 text-right">{count}</span>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Review Progress */}
-      <div className="bg-white rounded-lg border p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Review Progress</h3>
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 rounded-full transition-all"
-                style={{ width: `${totalClaims > 0 ? (reviewedClaims / totalClaims) * 100 : 0}%` }}
+          {/* Quality Summary */}
+          <div className="bg-white rounded-lg border p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Quality Summary</h3>
+            <div className="grid grid-cols-3 gap-6">
+              <QualityStat
+                label="Text Quality Good"
+                value={overview?.docs_text_good || 0}
+                total={overview?.docs_total || 0}
+                color="green"
+              />
+              <QualityStat
+                label="Text Quality Warn"
+                value={overview?.docs_text_warn || 0}
+                total={overview?.docs_total || 0}
+                color="amber"
+              />
+              <QualityStat
+                label="Text Quality Poor"
+                value={overview?.docs_text_poor || 0}
+                total={overview?.docs_total || 0}
+                color="red"
               />
             </div>
           </div>
-          <span className="text-sm font-medium text-gray-900">
-            {reviewedClaims} / {totalClaims} reviewed
-          </span>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
 
-interface StatCardProps {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  color: "blue" | "amber" | "red" | "green";
+// Helper functions
+function getScoreColor(score: number): "green" | "amber" | "red" | "gray" {
+  if (score >= 80) return "green";
+  if (score >= 60) return "amber";
+  if (score > 0) return "red";
+  return "gray";
 }
 
-function StatCard({ title, value, icon, color }: StatCardProps) {
+// Components
+interface MetricCardProps {
+  label: string;
+  value: string;
+  subtext: string;
+  icon: React.ReactNode;
+  color: "blue" | "green" | "amber" | "red" | "gray";
+}
+
+function MetricCard({ label, value, subtext, icon, color }: MetricCardProps) {
   const colorClasses = {
     blue: "bg-blue-50 text-blue-600",
+    green: "bg-green-50 text-green-600",
     amber: "bg-amber-50 text-amber-600",
     red: "bg-red-50 text-red-600",
-    green: "bg-green-50 text-green-600",
+    gray: "bg-gray-50 text-gray-600",
   };
 
   return (
-    <div className="bg-white rounded-lg border p-6">
-      <div className="flex items-center justify-between">
+    <div className="bg-white rounded-lg border p-4">
+      <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-gray-500">{title}</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
+          <p className="text-xs text-gray-500 mb-1">{label}</p>
+          <p className="text-2xl font-semibold text-gray-900">{value}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{subtext}</p>
         </div>
-        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
+        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", colorClasses[color])}>
           {icon}
         </div>
       </div>
@@ -156,66 +284,124 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
   );
 }
 
-interface RiskBarProps {
+interface ProgressBarProps {
   label: string;
-  count: number;
+  value: number;
   total: number;
-  color: "red" | "amber" | "green";
+  percentage: number;
+  color: "green" | "amber" | "red" | "blue";
+  invert?: boolean;
 }
 
-function RiskBar({ label, count, total, color }: RiskBarProps) {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
+function ProgressBar({ label, value, total, percentage, color, invert }: ProgressBarProps) {
   const colorClasses = {
-    red: "bg-red-500",
-    amber: "bg-amber-500",
     green: "bg-green-500",
+    amber: "bg-amber-500",
+    red: "bg-red-500",
+    blue: "bg-blue-500",
   };
+
+  // For inverted bars, higher is worse
+  const displayPercentage = invert ? Math.min(percentage, 100) : percentage;
+  const textColor = invert
+    ? percentage > 10 ? "text-amber-600" : "text-green-600"
+    : color === "blue"
+    ? percentage >= 80 ? "text-blue-600" : percentage >= 50 ? "text-amber-600" : "text-gray-600"
+    : percentage >= 80 ? "text-green-600" : percentage >= 50 ? "text-amber-600" : "text-gray-600";
 
   return (
     <div>
-      <div className="flex justify-between text-sm mb-1">
+      <div className="flex justify-between text-sm mb-1.5">
         <span className="text-gray-700">{label}</span>
-        <span className="font-medium text-gray-900">{count}</span>
+        <span className={cn("font-medium", textColor)}>
+          {value} / {total}
+        </span>
       </div>
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full ${colorClasses[color]}`}
-          style={{ width: `${percentage}%` }}
+          className={cn("h-full rounded-full transition-all", colorClasses[color])}
+          style={{ width: `${displayPercentage}%` }}
         />
       </div>
     </div>
   );
 }
 
-// Icons
-function ClaimsIcon() {
+function ScoreBadge({ value }: { value: number }) {
+  const color = value >= 80 ? "text-green-600" : value >= 60 ? "text-amber-600" : "text-red-600";
+  return <span className={cn("font-medium", color)}>{value}%</span>;
+}
+
+interface QualityStatProps {
+  label: string;
+  value: number;
+  total: number;
+  color: "green" | "amber" | "red";
+}
+
+function QualityStat({ label, value, total, color }: QualityStatProps) {
+  const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+  const colorClasses = {
+    green: "text-green-600",
+    amber: "text-amber-600",
+    red: "text-red-600",
+  };
+
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="text-center">
+      <div className={cn("text-3xl font-semibold", colorClasses[color])}>{value}</div>
+      <div className="text-sm text-gray-500 mt-1">{label}</div>
+      <div className="text-xs text-gray-400">{percentage}% of total</div>
+    </div>
+  );
+}
+
+// Icons
+function CheckIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function DocsIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
   );
 }
 
-function PendingIcon() {
+function FieldIcon() {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
     </svg>
   );
 }
 
-function AlertIcon() {
+function AccuracyIcon() {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
     </svg>
   );
 }
 
-function ValueIcon() {
+function EvidenceIcon() {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+  );
+}
+
+function VisionIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
   );
 }

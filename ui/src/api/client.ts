@@ -121,6 +121,8 @@ export interface InsightsOverview {
   required_field_presence_rate: number;
   required_field_accuracy: number;
   evidence_rate: number;
+  run_coverage: number;
+  docs_with_extraction: number;
 }
 
 export interface DocTypeMetrics {

@@ -239,7 +239,7 @@ class InsightsAggregator:
                 run_dir = self._get_latest_run_dir(claim_dir)
 
             extraction_dir = run_dir / "extraction" if run_dir else None
-            labels_dir = run_dir / "labels" if run_dir else None
+            # Note: labels are now loaded from docs/{doc_id}/labels/latest.json (run-independent)
 
             # Collect run metadata from first claim with this run
             if run_dir and not self.run_metadata:
@@ -265,7 +265,7 @@ class InsightsAggregator:
                 if doc_type not in SUPPORTED_DOC_TYPES:
                     continue
 
-                # Load extraction
+                # Load extraction (from run directory)
                 extraction = None
                 if extraction_dir:
                     ext_path = extraction_dir / f"{doc_id}.json"
@@ -273,13 +273,12 @@ class InsightsAggregator:
                         with open(ext_path, "r", encoding="utf-8") as f:
                             extraction = json.load(f)
 
-                # Load labels
+                # Load labels (from docs/{doc_id}/labels/latest.json - run-independent)
                 labels = None
-                if labels_dir:
-                    labels_path = labels_dir / f"{doc_id}.labels.json"
-                    if labels_path.exists():
-                        with open(labels_path, "r", encoding="utf-8") as f:
-                            labels = json.load(f)
+                labels_path = doc_folder / "labels" / "latest.json"
+                if labels_path.exists():
+                    with open(labels_path, "r", encoding="utf-8") as f:
+                        labels = json.load(f)
 
                 self._process_document(
                     doc_id, claim_id, doc_type, filename, extraction, labels
@@ -297,19 +296,22 @@ class InsightsAggregator:
         """Process a single document and create records."""
         # Extract doc-level info from extraction
         gate_status = None
-        needs_vision = False
+        needs_vision_from_extraction = False
         if extraction:
             qg = extraction.get("quality_gate", {})
             gate_status = qg.get("status")
-            needs_vision = qg.get("needs_vision_fallback", False)
+            needs_vision_from_extraction = qg.get("needs_vision_fallback", False)
 
         # Extract doc-level info from labels
         doc_type_correct = None
         text_readable = None
+        needs_vision_from_label = None
         has_labels = labels is not None
 
         if labels:
             doc_labels = labels.get("doc_labels", {})
+            # Get needs_vision from label (takes precedence over extraction)
+            needs_vision_from_label = doc_labels.get("needs_vision")
             # Handle both bool and string formats
             dtc = doc_labels.get("doc_type_correct")
             if isinstance(dtc, bool):
@@ -320,6 +322,12 @@ class InsightsAggregator:
                 doc_type_correct = False
             # else: None (unsure or missing)
             text_readable = doc_labels.get("text_readable")
+
+        # Compute final needs_vision: label takes precedence over extraction
+        if needs_vision_from_label is not None:
+            needs_vision = needs_vision_from_label
+        else:
+            needs_vision = needs_vision_from_extraction
 
         # Build field label lookup
         field_labels = {}
@@ -528,6 +536,14 @@ class InsightsAggregator:
         else:
             evidence_rate = 0.0
 
+        # Run coverage: docs with extraction in this run / labeled docs
+        # A doc has extraction if it has at least one field with a prediction
+        docs_with_extraction = len({r.doc_id for r in self.field_records if r.has_prediction})
+        if docs_reviewed > 0:
+            run_coverage = docs_with_extraction / docs_reviewed
+        else:
+            run_coverage = 0.0
+
         return {
             "docs_total": total_docs,
             "docs_reviewed": docs_reviewed,
@@ -539,6 +555,8 @@ class InsightsAggregator:
             "required_field_presence_rate": round(presence_rate * 100, 1),
             "required_field_accuracy": round(accuracy * 100, 1),
             "evidence_rate": round(evidence_rate * 100, 1),
+            "run_coverage": round(run_coverage * 100, 1),
+            "docs_with_extraction": docs_with_extraction,
         }
 
     def get_doc_type_metrics(self) -> List[Dict[str, Any]]:
@@ -840,19 +858,20 @@ def list_all_runs(data_dir: Path) -> List[Dict[str, Any]]:
                     runs_map[run_id]["extractor_version"] = summary.get("extractor_version", "")
                     runs_map[run_id]["prompt_version"] = summary.get("prompt_version", "")
 
-            # Count extractions and labels
+            # Count extractions
             extraction_dir = run_dir / "extraction"
-            labels_dir = run_dir / "labels"
-
             if extraction_dir.exists():
                 runs_map[run_id]["extracted_count"] += len(list(extraction_dir.glob("*.json")))
-            if labels_dir.exists():
-                runs_map[run_id]["labeled_count"] += len(list(labels_dir.glob("*.labels.json")))
 
-            # Count docs
+            # Count docs and labels (labels are at docs/{doc_id}/labels/latest.json - run-independent)
             docs_dir = claim_dir / "docs"
             if docs_dir.exists():
-                runs_map[run_id]["docs_count"] += len([d for d in docs_dir.iterdir() if d.is_dir()])
+                for doc_folder in docs_dir.iterdir():
+                    if doc_folder.is_dir():
+                        runs_map[run_id]["docs_count"] += 1
+                        labels_path = doc_folder / "labels" / "latest.json"
+                        if labels_path.exists():
+                            runs_map[run_id]["labeled_count"] += 1
 
     # Convert to list and sort by timestamp (newest first)
     runs = list(runs_map.values())
