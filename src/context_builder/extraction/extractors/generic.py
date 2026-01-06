@@ -82,7 +82,7 @@ class GenericFieldExtractor(FieldExtractor):
         raw_extractions = self._llm_extract(extraction_context)
 
         # Step 4: Build ExtractedField objects with provenance
-        fields = self._build_extracted_fields(raw_extractions, pages)
+        fields = self._build_extracted_fields(raw_extractions, pages, all_candidates)
 
         # Step 5: Evaluate quality gate
         quality_gate = self._build_quality_gate(fields)
@@ -188,6 +188,7 @@ class GenericFieldExtractor(FieldExtractor):
         self,
         raw_extractions: Dict[str, Any],
         pages: List[PageContent],
+        candidates_by_field: Optional[Dict[str, List[CandidateSpan]]] = None,
     ) -> List[ExtractedField]:
         """
         Convert raw LLM extractions to ExtractedField objects.
@@ -195,10 +196,11 @@ class GenericFieldExtractor(FieldExtractor):
         Includes:
         - Normalization
         - Validation
-        - Provenance mapping
+        - Provenance mapping (using candidate page hints for accuracy)
         """
         fields = []
         raw_fields = raw_extractions.get("fields", [])
+        candidates_by_field = candidates_by_field or {}
 
         # Process extracted fields
         extracted_names = set()
@@ -223,9 +225,18 @@ class GenericFieldExtractor(FieldExtractor):
                 normalized_value = value
 
             # Build provenance if we have a quote
+            # Use candidate pages as hints for more accurate page detection
             provenance = []
             if text_quote and value:
-                prov = self._find_provenance(pages, text_quote)
+                hint_pages = []
+                if field_name in candidates_by_field:
+                    # Get unique pages from candidates, ordered by occurrence
+                    seen_pages = set()
+                    for cand in candidates_by_field[field_name]:
+                        if cand.page not in seen_pages:
+                            hint_pages.append(cand.page)
+                            seen_pages.add(cand.page)
+                prov = self._find_provenance(pages, text_quote, hint_pages)
                 if prov:
                     provenance.append(prov)
 
@@ -253,10 +264,45 @@ class GenericFieldExtractor(FieldExtractor):
         return fields
 
     def _find_provenance(
-        self, pages: List[PageContent], text_quote: str
+        self,
+        pages: List[PageContent],
+        text_quote: str,
+        hint_pages: Optional[List[int]] = None,
     ) -> Optional[FieldProvenance]:
-        """Find provenance (page + position) for a text quote."""
+        """
+        Find provenance (page + position) for a text quote.
+
+        Args:
+            pages: List of document pages
+            text_quote: The text to find
+            hint_pages: Pages to search first (from candidate finder)
+
+        Returns:
+            FieldProvenance with correct page number, or None if not found
+        """
+        # Build page lookup for efficient access
+        page_by_num = {p.page: p for p in pages}
+
+        # Search hint pages first (most likely to contain the text)
+        if hint_pages:
+            for page_num in hint_pages:
+                if page_num in page_by_num:
+                    page = page_by_num[page_num]
+                    position = find_text_position(page.text, text_quote)
+                    if position:
+                        return FieldProvenance(
+                            page=page.page,
+                            method="di_text",
+                            text_quote=text_quote,
+                            char_start=position[0],
+                            char_end=position[1],
+                        )
+
+        # Fall back to searching all pages if not found in hints
         for page in pages:
+            # Skip pages already searched via hints
+            if hint_pages and page.page in hint_pages:
+                continue
             position = find_text_position(page.text, text_quote)
             if position:
                 return FieldProvenance(
