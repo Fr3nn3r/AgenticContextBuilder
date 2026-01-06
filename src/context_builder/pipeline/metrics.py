@@ -91,6 +91,10 @@ def _compute_field_metrics(
     """
     Compute field-level metrics for documents that have both extraction and labels.
 
+    Only includes documents where doc_type_correct is True (not False or missing).
+    Documents with wrong doc_type are excluded from accuracy metrics to avoid
+    contaminating results with misclassified documents.
+
     Returns:
         Dict with field presence, accuracy, and evidence metrics
     """
@@ -104,6 +108,7 @@ def _compute_field_metrics(
             "evidence_rate_pct": 0,
             "by_doc_type": {},
             "top_failing_fields": [],
+            "docs_excluded_wrong_type": 0,
         }
 
     # Aggregate counters
@@ -113,6 +118,7 @@ def _compute_field_metrics(
     required_fields_labeled = 0
     total_fields_with_evidence = 0
     total_fields_with_value = 0
+    docs_excluded_wrong_type = 0
 
     # Per doc type counters
     by_doc_type: Dict[str, Dict[str, int]] = defaultdict(lambda: {
@@ -147,6 +153,18 @@ def _compute_field_metrics(
                 labels = json.load(f)
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Failed to load data for {doc_id}: {e}")
+            continue
+
+        # CRITICAL: Filter by doc_type_correct
+        # Only include docs where doc_type_correct is explicitly True
+        # Docs with wrong doc_type contaminate accuracy metrics
+        doc_labels = labels.get("doc_labels", {})
+        doc_type_correct = doc_labels.get("doc_type_correct")
+        if doc_type_correct is not True:
+            # Skip docs where doc_type is wrong or unknown
+            if doc_type_correct is False:
+                docs_excluded_wrong_type += 1
+                logger.debug(f"Excluding {doc_id} from metrics: doc_type_correct=False")
             continue
 
         doc_type = extraction.get("doc", {}).get("doc_type", "unknown")
@@ -248,4 +266,5 @@ def _compute_field_metrics(
         "evidence_rate_pct": round(evidence_pct, 1),
         "by_doc_type": doc_type_summary,
         "top_failing_fields": top_failing,
+        "docs_excluded_wrong_type": docs_excluded_wrong_type,
     }
