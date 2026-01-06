@@ -28,6 +28,18 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     const [highlightQuery, setHighlightQuery] = useState<string>(initialHighlight || "");
     const [pageRendered, setPageRendered] = useState(false);
 
+    // Function to clean evidence text (strip HTML tags, normalize whitespace)
+    const cleanEvidenceText = (text: string): string => {
+      // Remove HTML/XML tags like <td>, </td>, etc.
+      let cleaned = text.replace(/<[^>]*>/g, "");
+      // Remove common artifacts
+      cleaned = cleaned.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+      cleaned = cleaned.replace(/&amp;/g, "&");
+      // Normalize whitespace
+      cleaned = cleaned.replace(/\s+/g, " ").trim();
+      return cleaned;
+    };
+
     // Function to highlight text in the PDF text layer
     const applyHighlight = useCallback((searchText: string) => {
       if (!searchText) {
@@ -57,8 +69,9 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         }
       });
 
-      // Normalize search text for comparison
-      const normalizedSearch = searchText.toLowerCase().trim();
+      // Clean and normalize search text (strip HTML tags, etc.)
+      const cleanedSearch = cleanEvidenceText(searchText);
+      const normalizedSearch = cleanedSearch.toLowerCase().trim();
       if (normalizedSearch.length < 3) return;
 
       // Get all text spans
@@ -78,24 +91,65 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         fullText += text;
       });
 
-      // Search for the text (case-insensitive)
-      const normalizedFullText = fullText.toLowerCase();
-      const matchIndex = normalizedFullText.indexOf(normalizedSearch);
+      // Normalize PDF text for comparison (collapse whitespace)
+      const normalizedFullText = fullText.toLowerCase().replace(/\s+/g, " ");
 
-      if (matchIndex === -1) {
-        // Try partial match with first significant words
-        const words = normalizedSearch.split(/\s+/).filter(w => w.length > 2);
-        if (words.length > 0) {
-          const firstWord = words[0];
-          const wordIndex = normalizedFullText.indexOf(firstWord);
-          if (wordIndex !== -1) {
-            highlightRange(charMap, wordIndex, wordIndex + firstWord.length);
+      // Also create a version of search without spaces for flexible matching
+      const searchNoSpaces = normalizedSearch.replace(/\s+/g, "");
+      const fullTextNoSpaces = fullText.toLowerCase().replace(/\s+/g, "");
+
+      // Try exact match first
+      let matchIndex = normalizedFullText.indexOf(normalizedSearch);
+      let matchLength = normalizedSearch.length;
+
+      // If no exact match, try without spaces (PDF often splits text oddly)
+      if (matchIndex === -1 && searchNoSpaces.length >= 5) {
+        const noSpaceIndex = fullTextNoSpaces.indexOf(searchNoSpaces);
+        if (noSpaceIndex !== -1) {
+          // Found match in no-space version, need to map back to original
+          // Approximate: find the position in original text
+          let origPos = 0;
+          let noSpacePos = 0;
+          while (noSpacePos < noSpaceIndex && origPos < fullText.length) {
+            if (!/\s/.test(fullText[origPos])) {
+              noSpacePos++;
+            }
+            origPos++;
           }
+          matchIndex = origPos;
+          // Find end position
+          let endNoSpacePos = noSpacePos + searchNoSpaces.length;
+          while (noSpacePos < endNoSpacePos && origPos < fullText.length) {
+            if (!/\s/.test(fullText[origPos])) {
+              noSpacePos++;
+            }
+            origPos++;
+          }
+          matchLength = origPos - matchIndex;
         }
-        return;
       }
 
-      highlightRange(charMap, matchIndex, matchIndex + normalizedSearch.length);
+      // If still no match, try finding significant substrings
+      if (matchIndex === -1) {
+        // Try to find the longest significant word/number sequence
+        const significantParts = normalizedSearch
+          .split(/[\s:,;]+/)
+          .filter(p => p.length >= 4)
+          .sort((a, b) => b.length - a.length); // Longest first
+
+        for (const part of significantParts) {
+          const partIndex = normalizedFullText.indexOf(part);
+          if (partIndex !== -1) {
+            matchIndex = partIndex;
+            matchLength = part.length;
+            break;
+          }
+        }
+      }
+
+      if (matchIndex === -1) return;
+
+      highlightRange(charMap, matchIndex, matchIndex + matchLength);
     }, []);
 
     // Helper to highlight a range of characters
