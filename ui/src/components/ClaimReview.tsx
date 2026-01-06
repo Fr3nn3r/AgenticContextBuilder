@@ -24,6 +24,8 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   // Review state
   const [notes, setNotes] = useState("");
+  const [docTypeCorrect, setDocTypeCorrect] = useState<"yes" | "no" | "unsure">("yes");
+  const [needsVision, setNeedsVision] = useState<boolean>(false);
 
   // Field-level labels state
   const [fieldLabels, setFieldLabels] = useState<FieldLabel[]>([]);
@@ -80,6 +82,8 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
       if (data.labels) {
         setFieldLabels(data.labels.field_labels || []);
         setNotes(data.labels.review.notes || "");
+        setDocTypeCorrect(data.labels.doc_labels.doc_type_correct ? "yes" : "no");
+        setNeedsVision(false);
       } else if (data.extraction) {
         // Initialize field labels from extraction fields with "unknown" judgement
         setFieldLabels(
@@ -90,9 +94,13 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           }))
         );
         setNotes("");
+        setDocTypeCorrect("yes");
+        setNeedsVision(data.extraction.quality_gate?.needs_vision_fallback || false);
       } else {
         setFieldLabels([]);
         setNotes("");
+        setDocTypeCorrect("yes");
+        setNeedsVision(false);
       }
     } catch (err) {
       console.error("Failed to load document:", err);
@@ -318,10 +326,10 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           </div>
         </div>
 
-        {/* Right: Extracted fields */}
+        {/* Right: Extracted fields + Review controls */}
         <div className="w-96 border-l overflow-hidden flex flex-col">
           <div className="p-3 border-b bg-white">
-            <h3 className="font-medium text-gray-900">Extracted Fields</h3>
+            <h3 className="font-medium text-gray-900">Document Pack Review</h3>
             {currentDoc && (
               <div className="text-xs text-gray-500 mt-0.5">
                 {currentDoc.filename}
@@ -342,6 +350,72 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
               </div>
             )}
           </div>
+
+          {/* Bottom: Review controls */}
+          {currentDoc && (
+            <div className="border-t p-3 bg-gray-50 space-y-3">
+              {/* Doc type correct */}
+              <div>
+                <div className="text-sm text-gray-700 mb-1">
+                  Document type "<span className="font-medium">{currentDoc.doc_type}</span>" correct?
+                </div>
+                <div className="flex gap-2">
+                  {(["yes", "no", "unsure"] as const).map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => setDocTypeCorrect(option)}
+                      className={cn(
+                        "px-3 py-1 text-sm rounded border transition-colors",
+                        docTypeCorrect === option
+                          ? option === "yes"
+                            ? "bg-green-100 border-green-500 text-green-700"
+                            : option === "no"
+                            ? "bg-red-100 border-red-500 text-red-700"
+                            : "bg-yellow-100 border-yellow-500 text-yellow-700"
+                          : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Needs vision */}
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={needsVision}
+                  onChange={(e) => setNeedsVision(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">Needs vision extraction</span>
+              </label>
+
+              {/* Notes */}
+              <input
+                type="text"
+                placeholder="Notes (optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+              />
+
+              {/* Save button */}
+              <button
+                onClick={() => activeDocId && handleSaveReview(activeDocId)}
+                disabled={savingDocId === activeDocId || !activeDocId}
+                className={cn(
+                  "w-full px-4 py-2 rounded-md font-medium transition-colors",
+                  savingDocId === activeDocId
+                    ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                    : "bg-gray-900 text-white hover:bg-gray-800"
+                )}
+              >
+                {savingDocId === activeDocId ? "Saving..." : "Save Labels"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
