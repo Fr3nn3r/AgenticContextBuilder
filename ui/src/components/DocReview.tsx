@@ -26,9 +26,11 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
   const [reviewer, setReviewer] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Highlight state
+  // Highlight state with provenance info
   const [highlightQuote, setHighlightQuote] = useState<string | undefined>();
   const [highlightPage, setHighlightPage] = useState<number | undefined>();
+  const [highlightCharStart, setHighlightCharStart] = useState<number | undefined>();
+  const [highlightCharEnd, setHighlightCharEnd] = useState<number | undefined>();
 
   useEffect(() => {
     loadDoc();
@@ -75,9 +77,11 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
     );
   }
 
-  function handleQuoteClick(quote: string, page: number) {
+  function handleQuoteClick(quote: string, page: number, charStart?: number, charEnd?: number) {
     setHighlightQuote(quote);
     setHighlightPage(page);
+    setHighlightCharStart(charStart);
+    setHighlightCharEnd(charEnd);
   }
 
   async function handleSave() {
@@ -135,19 +139,28 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
-        Back to Claims
+        Back to Claim Workspace
       </button>
 
-      {/* Document header */}
+      {/* Document header - Extraction Review */}
       <div className="bg-white rounded-lg border p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">{doc.filename}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Extraction Review</h2>
+            <p className="text-xs text-gray-400 mb-1">Validate fields against source text</p>
+            <div className="text-sm text-gray-700 font-medium">{doc.filename}</div>
             <div className="text-sm text-gray-500">
-              {doc.claim_id} &middot; {doc.doc_type} &middot; {doc.language.toUpperCase()} &middot; {doc.pages.length} pages
+              {doc.claim_id} &middot; {doc.doc_type}
+              {extraction && ` (${Math.round(extraction.doc.doc_type_confidence * 100)}%)`}
+              {" "}&middot; {doc.language.toUpperCase()} &middot; {doc.pages.length} pages
             </div>
+            {extraction && (
+              <div className="text-xs text-gray-400 mt-1">
+                Run: {extraction.run.run_id} &middot; Extractor v{extraction.run.extractor_version}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {qualityStatus && (
               <QualityBadge status={qualityStatus} />
             )}
@@ -161,7 +174,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                   : "bg-gray-900 text-white hover:bg-gray-800"
               )}
             >
-              {saving ? "Saving..." : "Save Labels"}
+              {saving ? "Saving..." : "Save review"}
             </button>
           </div>
         </div>
@@ -179,6 +192,8 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
               pages={doc.pages}
               highlightQuote={highlightQuote}
               highlightPage={highlightPage}
+              highlightCharStart={highlightCharStart}
+              highlightCharEnd={highlightCharEnd}
             />
           </div>
         </div>
@@ -271,7 +286,7 @@ function QualityBadge({ status }: { status: string }) {
 
   return (
     <span className={cn("px-3 py-1 rounded-full text-sm font-medium", styles[status])}>
-      {status.toUpperCase()}
+      Gate: {status.toUpperCase()}
     </span>
   );
 }

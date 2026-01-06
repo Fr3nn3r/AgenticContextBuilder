@@ -44,7 +44,7 @@ class ClaimSummary(BaseModel):
     doc_types: List[str]
     extracted_count: int
     labeled_count: int
-    # New fields for ClaimEval-style display
+    # ClaimEval-style fields (kept for backwards compatibility)
     lob: str = "MOTOR"  # Line of business
     risk_score: int = 0  # 0-100
     loss_type: str = ""
@@ -53,6 +53,12 @@ class ClaimSummary(BaseModel):
     flags_count: int = 0
     status: str = "Not Reviewed"  # "Not Reviewed" or "Reviewed"
     closed_date: Optional[str] = None
+    # Extraction-centric fields
+    gate_pass_count: int = 0
+    gate_warn_count: int = 0
+    gate_fail_count: int = 0
+    needs_vision_count: int = 0
+    last_processed: Optional[str] = None
 
 
 class DocSummary(BaseModel):
@@ -65,6 +71,10 @@ class DocSummary(BaseModel):
     has_labels: bool
     quality_status: Optional[str] = None
     confidence: float = 0.0
+    # Extraction-centric fields
+    text_quality: Optional[str] = None  # "good", "warn", "poor"
+    missing_required_fields: List[str] = []
+    needs_vision: bool = False
 
 
 class DocPayload(BaseModel):
@@ -272,6 +282,12 @@ def list_claims():
         total_amount = 0.0
         flags_count = 0
         closed_date = None
+        last_processed = None
+        # Extraction-centric counters
+        gate_pass_count = 0
+        gate_warn_count = 0
+        gate_fail_count = 0
+        needs_vision_count = 0
 
         if run_dir:
             extraction_dir = run_dir / "extraction"
@@ -288,6 +304,7 @@ def list_claims():
                         try:
                             dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
                             closed_date = dt.strftime("%d %b %Y")
+                            last_processed = dt.strftime("%Y-%m-%d %H:%M")
                         except Exception:
                             pass
 
@@ -299,12 +316,22 @@ def list_claims():
                         ext_data = json.load(f)
                         total_risk_score += calculate_risk_score(ext_data)
 
-                        # Count quality issues as flags
+                        # Count quality gate statuses
                         quality = ext_data.get("quality_gate", {})
-                        if quality.get("status") == "warn":
+                        status = quality.get("status", "unknown")
+                        if status == "pass":
+                            gate_pass_count += 1
+                        elif status == "warn":
+                            gate_warn_count += 1
                             flags_count += 1
-                        elif quality.get("status") == "fail":
+                        elif status == "fail":
+                            gate_fail_count += 1
                             flags_count += 2
+
+                        # Count needs vision
+                        if quality.get("needs_vision_fallback", False):
+                            needs_vision_count += 1
+
                         flags_count += len(quality.get("missing_required_fields", []))
 
                         # Extract amount
@@ -340,6 +367,12 @@ def list_claims():
             flags_count=flags_count,
             status=status,
             closed_date=closed_date,
+            # Extraction-centric fields
+            gate_pass_count=gate_pass_count,
+            gate_warn_count=gate_warn_count,
+            gate_fail_count=gate_fail_count,
+            needs_vision_count=needs_vision_count,
+            last_processed=last_processed,
         ))
 
     # Sort by risk score descending
@@ -391,6 +424,9 @@ def list_docs(claim_id: str):
         has_extraction = False
         quality_status = None
         confidence = 0.0
+        text_quality = None
+        missing_required_fields: List[str] = []
+        needs_vision = False
 
         if extraction_dir:
             extraction_path = extraction_dir / f"{doc_id}.json"
@@ -398,11 +434,21 @@ def list_docs(claim_id: str):
             if has_extraction:
                 with open(extraction_path, "r", encoding="utf-8") as f:
                     ext_data = json.load(f)
-                    quality_status = ext_data.get("quality_gate", {}).get("status")
+                    quality_gate = ext_data.get("quality_gate", {})
+                    quality_status = quality_gate.get("status")
+                    missing_required_fields = quality_gate.get("missing_required_fields", [])
+                    needs_vision = quality_gate.get("needs_vision_fallback", False)
                     # Calculate average field confidence
                     fields = ext_data.get("fields", [])
                     if fields:
                         confidence = sum(f.get("confidence", 0) for f in fields) / len(fields)
+                    # Determine text quality based on extraction quality
+                    if quality_status == "pass":
+                        text_quality = "good"
+                    elif quality_status == "warn":
+                        text_quality = "warn"
+                    elif quality_status == "fail":
+                        text_quality = "poor"
 
         # Check for labels
         has_labels = False
@@ -419,6 +465,9 @@ def list_docs(claim_id: str):
             has_labels=has_labels,
             quality_status=quality_status,
             confidence=round(confidence, 2),
+            text_quality=text_quality,
+            missing_required_fields=missing_required_fields,
+            needs_vision=needs_vision,
         ))
 
     return docs

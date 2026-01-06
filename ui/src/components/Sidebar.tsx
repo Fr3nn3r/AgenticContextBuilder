@@ -9,7 +9,7 @@ interface SidebarProps {
 
 const navItems = [
   { id: "dashboard" as View, label: "Dashboard", icon: DashboardIcon },
-  { id: "claims" as View, label: "Claims Review", icon: ClaimsIcon },
+  { id: "claims" as View, label: "Claim Workspace", icon: ClaimsIcon },
   { id: "qa-insights" as View, label: "QA Insights", icon: InsightsIcon },
   { id: "reports" as View, label: "Reports", icon: ReportsIcon },
   { id: "settings" as View, label: "Settings", icon: SettingsIcon },

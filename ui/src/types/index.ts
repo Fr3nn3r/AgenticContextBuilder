@@ -7,7 +7,7 @@ export interface ClaimSummary {
   doc_types: string[];
   extracted_count: number;
   labeled_count: number;
-  // ClaimEval-style fields
+  // ClaimEval-style fields (kept for backwards compatibility)
   lob: string;
   risk_score: number;
   loss_type: string;
@@ -16,6 +16,12 @@ export interface ClaimSummary {
   flags_count: number;
   status: string;
   closed_date: string | null;
+  // Extraction-centric fields
+  gate_pass_count: number;
+  gate_warn_count: number;
+  gate_fail_count: number;
+  needs_vision_count: number;
+  last_processed: string | null;
 }
 
 export interface DocSummary {
@@ -27,6 +33,10 @@ export interface DocSummary {
   has_labels: boolean;
   quality_status: string | null;
   confidence: number;
+  // Extraction-centric fields
+  text_quality: "good" | "warn" | "poor" | null;
+  missing_required_fields: string[];
+  needs_vision: boolean;
 }
 
 export interface PageContent {

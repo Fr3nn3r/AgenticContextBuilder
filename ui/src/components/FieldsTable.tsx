@@ -1,3 +1,4 @@
+import { useEffect, useCallback, useState } from "react";
 import type { ExtractedField, FieldLabel } from "../types";
 import { cn } from "../lib/utils";
 
@@ -5,7 +6,27 @@ interface FieldsTableProps {
   fields: ExtractedField[];
   labels: FieldLabel[];
   onLabelChange: (fieldName: string, judgement: "correct" | "incorrect" | "unknown") => void;
-  onQuoteClick: (quote: string, page: number) => void;
+  onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number) => void;
+}
+
+// Human-readable field names mapping
+const fieldDisplayNames: Record<string, string> = {
+  incident_date: "Incident date",
+  incident_location: "Incident location",
+  policy_number: "Policy number",
+  claimant_name: "Claimant name",
+  vehicle_plate: "Vehicle plate",
+  vehicle_make: "Vehicle make",
+  vehicle_model: "Vehicle model",
+  vehicle_year: "Vehicle year",
+  loss_description: "Loss description",
+  reported_date: "Report date",
+  officer_name: "Officer name",
+  badge_number: "Badge number",
+};
+
+function getDisplayName(fieldName: string): string {
+  return fieldDisplayNames[fieldName] || fieldName.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export function FieldsTable({
@@ -14,22 +35,76 @@ export function FieldsTable({
   onLabelChange,
   onQuoteClick,
 }: FieldsTableProps) {
+  const [focusedFieldIndex, setFocusedFieldIndex] = useState(0);
+
   function getLabel(fieldName: string): FieldLabel | undefined {
     return labels.find((l) => l.field_name === fieldName);
   }
 
+  // Keyboard shortcuts handler
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const currentField = fields[focusedFieldIndex];
+    if (!currentField) return;
+
+    switch (e.key) {
+      case "1":
+        e.preventDefault();
+        onLabelChange(currentField.name, "correct");
+        break;
+      case "2":
+        e.preventDefault();
+        onLabelChange(currentField.name, "incorrect"); // "wrong" in UI
+        break;
+      case "3":
+        e.preventDefault();
+        onLabelChange(currentField.name, "unknown"); // "cannot verify" in UI
+        break;
+      case "n":
+        e.preventDefault();
+        // Move to next field
+        setFocusedFieldIndex(prev => Math.min(prev + 1, fields.length - 1));
+        break;
+      case "p":
+        e.preventDefault();
+        // Move to previous field
+        setFocusedFieldIndex(prev => Math.max(prev - 1, 0));
+        break;
+    }
+  }, [fields, focusedFieldIndex, onLabelChange]);
+
+  useEffect(() => {
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
   return (
     <div className="divide-y">
-      {fields.map((field) => {
+      {/* Keyboard shortcuts help */}
+      <div className="px-3 py-2 bg-gray-50 text-xs text-gray-500 border-b">
+        Shortcuts: <kbd className="px-1 bg-white border rounded">1</kbd> Correct
+        <span className="mx-2">&middot;</span>
+        <kbd className="px-1 bg-white border rounded">2</kbd> Wrong
+        <span className="mx-2">&middot;</span>
+        <kbd className="px-1 bg-white border rounded">3</kbd> Cannot verify
+        <span className="mx-2">&middot;</span>
+        <kbd className="px-1 bg-white border rounded">n</kbd>/<kbd className="px-1 bg-white border rounded">p</kbd> Next/Prev field
+      </div>
+      {fields.map((field, index) => {
         const label = getLabel(field.name);
         const provenance = field.provenance[0];
+        const isFocused = index === focusedFieldIndex;
 
         return (
-          <div key={field.name} className="p-3">
-            {/* Field header */}
+          <div
+            key={field.name}
+            className={cn("p-3", isFocused && "bg-blue-50 ring-2 ring-blue-200 ring-inset")}
+            onClick={() => setFocusedFieldIndex(index)}
+          >
+            {/* Field header with human label + technical key */}
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="font-medium">{field.name}</span>
+                <span className="font-medium">{getDisplayName(field.name)}</span>
+                <code className="text-xs text-gray-400 bg-gray-100 px-1 rounded">{field.name}</code>
                 <StatusBadge status={field.status} />
                 {field.value_is_placeholder && (
                   <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
@@ -64,11 +139,17 @@ export function FieldsTable({
             {/* Evidence quote */}
             {provenance && (
               <button
-                onClick={() => onQuoteClick(provenance.text_quote, provenance.page)}
+                onClick={() => onQuoteClick(
+                  provenance.text_quote,
+                  provenance.page,
+                  provenance.char_start,
+                  provenance.char_end
+                )}
                 className="text-left w-full mb-2"
               >
                 <div className="text-xs text-muted-foreground mb-1">
-                  Evidence (Page {provenance.page}):
+                  Evidence (Page {provenance.page}
+                  {provenance.char_start !== undefined && `, chars ${provenance.char_start}-${provenance.char_end}`}):
                 </div>
                 <div className="text-sm bg-yellow-50 border-l-2 border-yellow-400 px-2 py-1 hover:bg-yellow-100 transition-colors">
                   "{provenance.text_quote}"
@@ -80,18 +161,21 @@ export function FieldsTable({
             <div className="flex gap-2">
               <LabelButton
                 label="correct"
+                shortcut="1"
                 selected={label?.judgement === "correct"}
                 onClick={() => onLabelChange(field.name, "correct")}
                 color="green"
               />
               <LabelButton
-                label="incorrect"
+                label="wrong"
+                shortcut="2"
                 selected={label?.judgement === "incorrect"}
                 onClick={() => onLabelChange(field.name, "incorrect")}
                 color="red"
               />
               <LabelButton
-                label="unknown"
+                label="cannot verify"
+                shortcut="3"
                 selected={label?.judgement === "unknown"}
                 onClick={() => onLabelChange(field.name, "unknown")}
                 color="gray"
@@ -111,21 +195,28 @@ function StatusBadge({ status }: { status: "present" | "missing" | "uncertain" }
     uncertain: "bg-yellow-100 text-yellow-700",
   };
 
+  const labels: Record<string, string> = {
+    present: "Extracted",
+    missing: "Missing",
+    uncertain: "Uncertain",
+  };
+
   return (
     <span className={cn("text-xs px-1.5 py-0.5 rounded", styles[status])}>
-      {status}
+      {labels[status]}
     </span>
   );
 }
 
 interface LabelButtonProps {
   label: string;
+  shortcut: string;
   selected: boolean;
   onClick: () => void;
   color: "green" | "red" | "gray";
 }
 
-function LabelButton({ label, selected, onClick, color }: LabelButtonProps) {
+function LabelButton({ label, shortcut, selected, onClick, color }: LabelButtonProps) {
   const colors = {
     green: selected
       ? "bg-green-500 text-white"
@@ -138,21 +229,25 @@ function LabelButton({ label, selected, onClick, color }: LabelButtonProps) {
       : "bg-gray-100 text-gray-700 hover:bg-gray-200",
   };
 
-  const icons = {
+  const icons: Record<string, string> = {
     correct: "✓",
-    incorrect: "✗",
-    unknown: "?",
+    wrong: "✗",
+    "cannot verify": "?",
   };
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        "px-3 py-1 rounded text-sm font-medium transition-colors",
+        "px-3 py-1 rounded text-sm font-medium transition-colors flex items-center gap-1",
         colors[color]
       )}
     >
-      {icons[label as keyof typeof icons]} {label}
+      {icons[label]} {label}
+      <kbd className={cn(
+        "ml-1 px-1 text-xs rounded",
+        selected ? "bg-white/20" : "bg-black/10"
+      )}>{shortcut}</kbd>
     </button>
   );
 }

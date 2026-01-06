@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { PageContent } from "../types";
 import { cn } from "../lib/utils";
 
@@ -6,19 +6,61 @@ interface PageViewerProps {
   pages: PageContent[];
   highlightQuote?: string;
   highlightPage?: number;
+  highlightCharStart?: number;
+  highlightCharEnd?: number;
 }
 
-export function PageViewer({ pages, highlightQuote, highlightPage }: PageViewerProps) {
+export function PageViewer({
+  pages,
+  highlightQuote,
+  highlightPage,
+  highlightCharStart,
+  highlightCharEnd,
+}: PageViewerProps) {
   const [selectedPage, setSelectedPage] = useState(highlightPage || 1);
+  const highlightRef = useRef<HTMLElement>(null);
 
   const currentPage = pages.find((p) => p.page === selectedPage);
 
-  // Highlight text in page content
+  // Auto-switch to highlight page when it changes
+  useEffect(() => {
+    if (highlightPage && highlightPage !== selectedPage) {
+      setSelectedPage(highlightPage);
+    }
+  }, [highlightPage]);
+
+  // Scroll to highlight when it appears
+  useEffect(() => {
+    if (highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightCharStart, highlightCharEnd, highlightQuote, selectedPage]);
+
+  // Highlight text in page content using exact offsets or fallback to quote search
   function renderPageContent(text: string) {
     if (!highlightQuote || selectedPage !== highlightPage) {
       return <pre className="whitespace-pre-wrap text-sm">{text}</pre>;
     }
 
+    // Try to use exact character offsets first
+    if (highlightCharStart !== undefined && highlightCharEnd !== undefined) {
+      const before = text.slice(0, highlightCharStart);
+      const match = text.slice(highlightCharStart, highlightCharEnd);
+      const after = text.slice(highlightCharEnd);
+
+      // Verify the match looks correct (at least partially matches the quote)
+      if (match.length > 0) {
+        return (
+          <pre className="whitespace-pre-wrap text-sm">
+            {before}
+            <mark ref={highlightRef} className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
+            {after}
+          </pre>
+        );
+      }
+    }
+
+    // Fallback: search for the quote in the text
     const lowerText = text.toLowerCase();
     const lowerQuote = highlightQuote.toLowerCase();
     const index = lowerText.indexOf(lowerQuote);
@@ -34,7 +76,7 @@ export function PageViewer({ pages, highlightQuote, highlightPage }: PageViewerP
     return (
       <pre className="whitespace-pre-wrap text-sm">
         {before}
-        <mark className="bg-yellow-200 px-0.5">{match}</mark>
+        <mark ref={highlightRef} className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
         {after}
       </pre>
     );

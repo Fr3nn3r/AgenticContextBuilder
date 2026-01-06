@@ -119,8 +119,8 @@ function App() {
         <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">
             {view === "dashboard" && "Dashboard"}
-            {view === "claims" && "Claims Review"}
-            {view === "review" && "Document Review"}
+            {view === "claims" && "Claim Workspace"}
+            {view === "review" && "Extraction Review"}
             {view === "qa-insights" && "QA Insights"}
             {view === "reports" && "Reports"}
             {view === "settings" && "Settings"}

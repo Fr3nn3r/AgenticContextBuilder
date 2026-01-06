@@ -51,45 +51,72 @@ export function ClaimsTable({
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Claims Review</h2>
-        <p className="text-gray-500">{totalCount} claims</p>
+        <h2 className="text-2xl font-semibold text-gray-900">Claim Workspace</h2>
+        <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
+      </div>
+
+      {/* KPI Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-lg border p-4">
+          <div className="text-2xl font-semibold text-gray-900">{totalCount}</div>
+          <div className="text-sm text-gray-500">Claims</div>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="text-2xl font-semibold text-gray-900">
+            {claims.reduce((sum, c) => sum + c.labeled_count, 0)} / {claims.reduce((sum, c) => sum + c.doc_count, 0)}
+          </div>
+          <div className="text-sm text-gray-500">Docs labeled</div>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="text-2xl font-semibold text-red-600">
+            {claims.reduce((sum, c) => sum + c.gate_fail_count, 0)}
+          </div>
+          <div className="text-sm text-gray-500">Docs failing gate</div>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="text-2xl font-semibold text-amber-600">
+            {claims.reduce((sum, c) => sum + c.needs_vision_count, 0)}
+          </div>
+          <div className="text-sm text-gray-500">Needs vision</div>
+        </div>
       </div>
 
       {/* Filters and Search */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          {/* LOB Filter */}
-          <select
-            value={lobFilter}
-            onChange={(e) => onLobFilterChange(e.target.value)}
-            className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-          >
-            <option value="all">All LOB</option>
-            <option value="MOTOR">MOTOR</option>
-            <option value="HOME">HOME</option>
-          </select>
-
-          {/* Status Filter */}
+          {/* Gate Status Filter */}
           <select
             value={statusFilter}
             onChange={(e) => onStatusFilterChange(e.target.value)}
             className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
           >
-            <option value="all">All Status</option>
-            <option value="Not Reviewed">Not Reviewed</option>
-            <option value="Reviewed">Reviewed</option>
+            <option value="all">All Gate Status</option>
+            <option value="has_fail">Has FAIL docs</option>
+            <option value="has_warn">Has WARN docs</option>
+            <option value="all_pass">All PASS</option>
           </select>
 
-          {/* Risk Filter */}
+          {/* Unlabeled Filter */}
+          <select
+            value={lobFilter}
+            onChange={(e) => onLobFilterChange(e.target.value)}
+            className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+          >
+            <option value="all">All Claims</option>
+            <option value="has_unlabeled">Has unlabeled docs</option>
+            <option value="needs_vision">Needs vision</option>
+          </select>
+
+          {/* Risk Filter (kept for backwards compatibility) */}
           <select
             value={riskFilter}
             onChange={(e) => onRiskFilterChange(e.target.value)}
             className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
           >
-            <option value="all">All Risk</option>
-            <option value="high">High Risk (50+)</option>
-            <option value="medium">Medium Risk (25-49)</option>
-            <option value="low">Low Risk (&lt;25)</option>
+            <option value="all">All Priority</option>
+            <option value="high">High Priority</option>
+            <option value="medium">Medium Priority</option>
+            <option value="low">Low Priority</option>
           </select>
         </div>
 
@@ -131,19 +158,13 @@ export function ClaimsTable({
                 </div>
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">LOB</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                <div className="flex items-center gap-1">
-                  Risk Score
-                  <SortIcon />
-                </div>
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Loss Type</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">Amount</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Flags</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Status</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Docs</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Labeled</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Gate</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Needs Vision</th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">
                 <div className="flex items-center justify-end gap-1">
-                  Closed
+                  Last processed
                   <SortIcon />
                 </div>
               </th>
@@ -186,48 +207,85 @@ export function ClaimsTable({
                   <td className="px-4 py-3">
                     <LobBadge lob={claim.lob} />
                   </td>
-                  <td className="px-4 py-3">
-                    <RiskScore score={claim.risk_score} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{claim.loss_type}</td>
-                  <td className="px-4 py-3 text-right text-gray-900">
-                    {claim.amount ? formatCurrency(claim.amount, claim.currency) : "-"}
+                  <td className="px-4 py-3 text-center text-gray-900">
+                    {claim.doc_count}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {claim.flags_count > 0 && (
+                    <span className={cn(
+                      "text-sm",
+                      claim.labeled_count === claim.doc_count ? "text-green-600" : "text-gray-600"
+                    )}>
+                      {claim.labeled_count}/{claim.doc_count}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <GateSummary
+                      pass={claim.gate_pass_count}
+                      warn={claim.gate_warn_count}
+                      fail={claim.gate_fail_count}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {claim.needs_vision_count > 0 ? (
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                          />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                        {claim.flags_count}
+                        {claim.needs_vision_count}
                       </span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadge status={claim.status} />
-                  </td>
                   <td className="px-4 py-3 text-right text-gray-500 text-sm">
-                    {claim.closed_date || "-"}
+                    {claim.last_processed || "-"}
                   </td>
                 </tr>
 
-                {/* Expanded docs row */}
+                {/* Expanded docs row - Document Pack Queue */}
                 {expandedClaim === claim.claim_id && (
                   <tr>
-                    <td colSpan={9} className="bg-gray-50 border-b">
+                    <td colSpan={8} className="bg-gray-50 border-b">
                       <div className="px-6 py-4">
-                        <h4 className="text-sm font-medium text-gray-700 mb-3">
-                          Documents ({claim.doc_count})
-                        </h4>
+                        {/* Document Pack Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">Document Pack</h4>
+                            <p className="text-xs text-gray-500">
+                              {claim.doc_count} documents &middot; {claim.labeled_count} labeled &middot; {claim.gate_fail_count} fail
+                            </p>
+                          </div>
+                          {docs.length > 0 && docs.some(d => !d.has_labels) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const unlabeled = docs.find(d => !d.has_labels);
+                                if (unlabeled) onSelectDoc(unlabeled.doc_id);
+                              }}
+                              className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded hover:bg-gray-800 transition-colors"
+                            >
+                              Review next unlabeled
+                            </button>
+                          )}
+                        </div>
                         {docs.length === 0 ? (
                           <p className="text-sm text-gray-500">Loading documents...</p>
                         ) : (
                           <div className="space-y-2">
-                            {docs.map((doc) => (
+                            {/* Sort docs: FAIL > WARN > Unlabeled > PASS labeled */}
+                            {[...docs].sort((a, b) => {
+                              const statusOrder = { fail: 0, warn: 1, pass: 2 };
+                              const aStatus = a.quality_status || "pass";
+                              const bStatus = b.quality_status || "pass";
+                              const aOrder = statusOrder[aStatus as keyof typeof statusOrder] ?? 2;
+                              const bOrder = statusOrder[bStatus as keyof typeof statusOrder] ?? 2;
+                              if (aOrder !== bOrder) return aOrder - bOrder;
+                              // Within same status, unlabeled first
+                              if (!a.has_labels && b.has_labels) return -1;
+                              if (a.has_labels && !b.has_labels) return 1;
+                              return 0;
+                            }).map((doc) => (
                               <button
                                 key={doc.doc_id}
                                 onClick={(e) => {
@@ -243,20 +301,33 @@ export function ClaimsTable({
                                       {doc.filename}
                                     </div>
                                     <div className="text-xs text-gray-500">
-                                      {doc.doc_type} &middot; {doc.language.toUpperCase()}
-                                      {doc.confidence > 0 && ` &middot; ${Math.round(doc.confidence * 100)}% confidence`}
+                                      {doc.doc_type} &middot; {Math.round(doc.confidence * 100)}%
+                                      {doc.text_quality && ` &middot; Text: ${doc.text_quality}`}
                                     </div>
+                                    {doc.missing_required_fields && doc.missing_required_fields.length > 0 && (
+                                      <div className="text-xs text-red-600 mt-0.5">
+                                        Missing: {doc.missing_required_fields.join(", ")}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {doc.has_extraction && (
-                                    <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
-                                      Extracted
-                                    </span>
-                                  )}
-                                  {doc.has_labels && (
+                                  {/* Gate Badge */}
+                                  <GateBadge status={doc.quality_status} />
+                                  {/* Labeled/Unlabeled Badge */}
+                                  {doc.has_labels ? (
                                     <span className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded">
                                       Labeled
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
+                                      Unlabeled
+                                    </span>
+                                  )}
+                                  {/* Needs Vision Badge */}
+                                  {doc.needs_vision && (
+                                    <span className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded">
+                                      Needs Vision
                                     </span>
                                   )}
                                   <svg
@@ -322,40 +393,43 @@ function LobBadge({ lob }: { lob: string }) {
   );
 }
 
-function RiskScore({ score }: { score: number }) {
-  // Color based on score
-  let barColor = "bg-green-500";
-  if (score >= 50) {
-    barColor = "bg-orange-500";
-  } else if (score >= 25) {
-    barColor = "bg-yellow-500";
-  }
-
+function GateSummary({ pass, warn, fail }: { pass: number; warn: number; fail: number }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          className={cn("h-full rounded-full", barColor)}
-          style={{ width: `${Math.min(score, 100)}%` }}
-        />
-      </div>
-      <span className="text-sm font-medium text-gray-900 w-8">{score}</span>
+    <div className="flex items-center gap-1 text-xs">
+      {pass > 0 && (
+        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+          {pass} PASS
+        </span>
+      )}
+      {warn > 0 && (
+        <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded">
+          {warn} WARN
+        </span>
+      )}
+      {fail > 0 && (
+        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+          {fail} FAIL
+        </span>
+      )}
+      {pass === 0 && warn === 0 && fail === 0 && (
+        <span className="text-gray-400">-</span>
+      )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const isReviewed = status === "Reviewed";
+function GateBadge({ status }: { status: string | null }) {
+  if (!status) return null;
+
+  const styles: Record<string, string> = {
+    pass: "bg-green-100 text-green-700",
+    warn: "bg-yellow-100 text-yellow-700",
+    fail: "bg-red-100 text-red-700",
+  };
+
   return (
-    <span
-      className={cn(
-        "inline-flex px-2 py-1 text-xs font-medium rounded",
-        isReviewed
-          ? "bg-green-100 text-green-800"
-          : "text-gray-600"
-      )}
-    >
-      {status}
+    <span className={cn("text-xs px-2 py-1 rounded font-medium", styles[status])}>
+      Gate: {status.toUpperCase()}
     </span>
   );
 }
@@ -377,7 +451,3 @@ function QualityDot({ status }: { status: string | null }) {
   );
 }
 
-function formatCurrency(amount: number, currency: string): string {
-  const symbol = currency === "USD" ? "$" : currency === "EUR" ? "€" : "£";
-  return `${symbol}${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
