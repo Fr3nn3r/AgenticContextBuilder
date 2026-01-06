@@ -258,5 +258,20 @@ class ExtractorFactory:
 
 
 def generate_run_id() -> str:
-    """Generate a unique run ID based on current timestamp (filesystem-safe)."""
-    return datetime.utcnow().strftime("run_%Y%m%d_%H%M%S")
+    """Generate a unique run ID based on timestamp + git sha (filesystem-safe).
+
+    Format: run_YYYYMMDD_HHMMSS_<short_git_sha>
+    Example: run_20260106_143022_a1b2c3d
+    """
+    import subprocess
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode().strip()
+    except Exception:
+        sha = "nogit"
+    return f"run_{timestamp}_{sha}"

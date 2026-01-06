@@ -1,8 +1,12 @@
 """Run module: orchestrate ingestion, classification, and extraction pipeline."""
 
+import hashlib
 import json
 import logging
+import os
 import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,6 +31,7 @@ from context_builder.schemas.extraction_result import (
     DocumentMetadata,
     ExtractionRunMetadata,
 )
+from context_builder.schemas.run_errors import DocStatus, RunErrorCode, TextSource
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,112 @@ def _write_json(path: Path, data: Any) -> None:
     """Write JSON file with utf-8 encoding."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+
+
+def _write_json_atomic(path: Path, data: Any) -> None:
+    """Write JSON via temp file + rename for atomicity."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    tmp_path.replace(path)
+
+
+def _get_git_info() -> Dict[str, Any]:
+    """Get current git commit info."""
+    try:
+        commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode().strip()
+
+        # Check if working tree is dirty
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            timeout=5,
+        )
+        is_dirty = len(result.stdout.strip()) > 0
+
+        return {
+            "commit_sha": commit_sha,
+            "is_dirty": is_dirty,
+        }
+    except Exception:
+        return {
+            "commit_sha": None,
+            "is_dirty": None,
+        }
+
+
+def _compute_templates_hash() -> str:
+    """Compute deterministic hash of extraction specs/templates."""
+    try:
+        # Hash the extraction specs
+        specs_dir = Path(__file__).parent.parent / "extraction" / "specs"
+        if not specs_dir.exists():
+            return "no_specs"
+
+        hasher = hashlib.md5()
+        for spec_file in sorted(specs_dir.glob("*.yaml")):
+            hasher.update(spec_file.read_bytes())
+        return hasher.hexdigest()[:12]
+    except Exception:
+        return "hash_error"
+
+
+def _setup_run_logging(run_paths: RunPaths, run_id: str) -> logging.Handler:
+    """Set up file logging for this run."""
+    run_paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(run_paths.run_log, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    ))
+    handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def _write_manifest(
+    run_paths: RunPaths,
+    run_id: str,
+    claim_id: str,
+    command: str,
+    doc_count: int,
+    model: str,
+) -> Dict[str, Any]:
+    """Write manifest.json at run start. Returns manifest dict for later update."""
+    manifest = {
+        "run_id": run_id,
+        "started_at": datetime.utcnow().isoformat() + "Z",
+        "ended_at": None,
+        "command": command,
+        "cwd": str(Path.cwd()),
+        "hostname": os.environ.get("COMPUTERNAME", os.environ.get("HOSTNAME", "unknown")),
+        "python_version": sys.version.split()[0],
+        "git": _get_git_info(),
+        "pipeline_versions": {
+            "contextbuilder_version": "1.0.0",
+            "extractor_version": "v1.0.0",
+            "templates_hash": _compute_templates_hash(),
+            "model_name": model,
+        },
+        "input": {
+            "claim_id": claim_id,
+            "docs_discovered": doc_count,
+        },
+        "counters_expected": {
+            "docs": doc_count,
+        },
+    }
+    _write_json_atomic(run_paths.manifest_json, manifest)
+    return manifest
+
+
+def _mark_run_complete(run_paths: RunPaths) -> None:
+    """Create .complete marker after all artifacts written."""
+    run_paths.complete_marker.touch()
 
 
 def _ingest_document(
@@ -339,6 +450,9 @@ def process_claim(
     classifier: Any = None,
     run_id: Optional[str] = None,
     force: bool = False,
+    command: str = "",
+    model: str = "gpt-4o",
+    compute_metrics: bool = True,
 ) -> ClaimResult:
     """
     Process all documents in a claim through the full pipeline.
@@ -349,6 +463,9 @@ def process_claim(
         classifier: Document classifier (created if None)
         run_id: Run identifier (generated if None)
         force: If True, reprocess even if already done
+        command: CLI command string for manifest
+        model: Model name for manifest
+        compute_metrics: If True, compute metrics.json at end
 
     Returns:
         ClaimResult with aggregated stats
@@ -356,7 +473,18 @@ def process_claim(
     start_time = time.time()
     run_id = run_id or generate_run_id()
 
-    # Check if already processed
+    # Create run paths early to check existence
+    claim_paths = get_claim_paths(output_base, claim.claim_id)
+    run_paths = get_run_paths(claim_paths, run_id)
+
+    # Check if run already exists (unless force)
+    if run_paths.run_root.exists() and not force:
+        raise ValueError(
+            f"Run {run_id} already exists at {run_paths.run_root}. "
+            "Use --force to overwrite."
+        )
+
+    # Check if already processed (different from run exists)
     if not force and is_claim_processed(output_base, claim.claim_id):
         logger.info(f"Skipping already processed claim: {claim.claim_id}")
         return ClaimResult(
@@ -366,95 +494,157 @@ def process_claim(
             stats={"total": len(claim.documents), "skipped": len(claim.documents)},
         )
 
-    # Create classifier if not provided
-    if classifier is None:
-        classifier = ClassifierFactory.create("openai")
-
-    # Create run paths (claim structure created per-doc)
-    claim_paths = get_claim_paths(output_base, claim.claim_id)
-    run_paths = get_run_paths(claim_paths, run_id)
+    # Create logs directory and set up file logging
     run_paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_handler = _setup_run_logging(run_paths, run_id)
 
-    # Process each document
-    results: List[DocResult] = []
-    for doc in claim.documents:
-        # Create document structure
-        doc_paths, _, _ = create_doc_structure(
-            output_base, claim.claim_id, doc.doc_id, run_id
-        )
+    try:
+        logger.info(f"Starting run {run_id} for claim {claim.claim_id}")
 
-        result = process_document(
-            doc=doc,
-            claim_id=claim.claim_id,
-            doc_paths=doc_paths,
+        # Write manifest at start
+        manifest = _write_manifest(
             run_paths=run_paths,
-            classifier=classifier,
             run_id=run_id,
+            claim_id=claim.claim_id,
+            command=command,
+            doc_count=len(claim.documents),
+            model=model,
         )
-        results.append(result)
 
-    # Calculate stats
-    success_count = sum(1 for r in results if r.status == "success")
-    error_count = sum(1 for r in results if r.status == "error")
-    total_count = len(results)
+        # Create classifier if not provided
+        if classifier is None:
+            classifier = ClassifierFactory.create("openai")
 
-    # Count by source type
-    pdf_count = sum(1 for r in results if r.source_type == "pdf")
-    image_count = sum(1 for r in results if r.source_type == "image")
-    text_count = sum(1 for r in results if r.source_type == "text")
+        # Process each document
+        results: List[DocResult] = []
+        for doc in claim.documents:
+            logger.info(f"Processing document: {doc.original_filename}")
 
-    stats = {
-        "total": total_count,
-        "success": success_count,
-        "errors": error_count,
-        "pdfs": pdf_count,
-        "images": image_count,
-        "texts": text_count,
-    }
+            # Create document structure
+            doc_paths, _, _ = create_doc_structure(
+                output_base, claim.claim_id, doc.doc_id, run_id
+            )
 
-    # Determine overall status
-    if success_count == total_count:
-        status = "success"
-    elif success_count > 0:
-        status = "partial"
-    else:
-        status = "failed"
+            result = process_document(
+                doc=doc,
+                claim_id=claim.claim_id,
+                doc_paths=doc_paths,
+                run_paths=run_paths,
+                classifier=classifier,
+                run_id=run_id,
+            )
+            results.append(result)
 
-    elapsed = time.time() - start_time
+            logger.info(
+                f"Document {doc.original_filename}: {result.status} "
+                f"(type={result.doc_type}, {result.time_ms}ms)"
+            )
 
-    # Write summary
-    summary = {
-        "claim_id": claim.claim_id,
-        "run_id": run_id,
-        "status": status,
-        "stats": stats,
-        "documents": [
-            {
-                "doc_id": r.doc_id,
-                "original_filename": r.original_filename,
-                "source_type": r.source_type,
-                "status": r.status,
-                "doc_type": r.doc_type,
-                "error": r.error,
-                "time_ms": r.time_ms,
-            }
-            for r in results
-        ],
-        "processing_time_seconds": round(elapsed, 2),
-        "completed_at": datetime.utcnow().isoformat() + "Z",
-    }
-    _write_json(run_paths.summary_json, summary)
+        # Calculate stats
+        success_count = sum(1 for r in results if r.status == "success")
+        error_count = sum(1 for r in results if r.status == "error")
+        total_count = len(results)
 
-    logger.info(
-        f"Claim {claim.claim_id}: {status} "
-        f"({success_count}/{total_count} docs, {elapsed:.1f}s)"
-    )
+        # Count by source type
+        pdf_count = sum(1 for r in results if r.source_type == "pdf")
+        image_count = sum(1 for r in results if r.source_type == "image")
+        text_count = sum(1 for r in results if r.source_type == "text")
 
-    return ClaimResult(
-        claim_id=claim.claim_id,
-        status=status,
-        run_id=run_id,
-        documents=results,
-        stats=stats,
-        time_seconds=elapsed,
-    )
+        stats = {
+            "total": total_count,
+            "success": success_count,
+            "errors": error_count,
+            "pdfs": pdf_count,
+            "images": image_count,
+            "texts": text_count,
+        }
+
+        # Determine overall status
+        if success_count == total_count:
+            status = "success"
+        elif success_count > 0:
+            status = "partial"
+        else:
+            status = "failed"
+
+        elapsed = time.time() - start_time
+
+        # Write enhanced summary with error codes
+        summary = {
+            "claim_id": claim.claim_id,
+            "run_id": run_id,
+            "status": status,
+            "stats": stats,
+            "aggregates": {
+                "discovered": total_count,
+                "processed": success_count,
+                "skipped": 0,
+                "failed": error_count,
+            },
+            "documents": [
+                {
+                    "claim_id": claim.claim_id,
+                    "doc_id": r.doc_id,
+                    "original_filename": r.original_filename,
+                    "source_type": r.source_type,
+                    "status": DocStatus.PROCESSED.value if r.status == "success" else DocStatus.FAILED.value,
+                    "doc_type_predicted": r.doc_type,
+                    "error_code": RunErrorCode.UNKNOWN_EXCEPTION.value if r.error else None,
+                    "error_message": r.error,
+                    "text_source_used": (
+                        TextSource.DI_TEXT.value if r.source_type == "pdf" else
+                        TextSource.VISION_OCR.value if r.source_type == "image" else
+                        TextSource.RAW_TEXT.value
+                    ),
+                    "time_ms": r.time_ms,
+                    "output_paths": {
+                        "extraction": f"extraction/{r.doc_id}.json" if r.extraction_path else None,
+                        "context": f"context/{r.doc_id}.json",
+                    },
+                }
+                for r in results
+            ],
+            "processing_time_seconds": round(elapsed, 2),
+            "completed_at": datetime.utcnow().isoformat() + "Z",
+        }
+        _write_json_atomic(run_paths.summary_json, summary)
+
+        # Compute and write metrics
+        if compute_metrics:
+            try:
+                from context_builder.pipeline.metrics import compute_run_metrics
+                metrics = compute_run_metrics(run_paths, claim_paths.claim_root)
+                _write_json_atomic(run_paths.metrics_json, metrics)
+                logger.info(f"Metrics computed: {metrics.get('coverage', {})}")
+            except Exception as e:
+                logger.warning(f"Failed to compute metrics: {e}")
+
+        # Update manifest with end time
+        manifest["ended_at"] = datetime.utcnow().isoformat() + "Z"
+        manifest["counters_actual"] = {
+            "docs_processed": success_count,
+            "docs_failed": error_count,
+        }
+        _write_json_atomic(run_paths.manifest_json, manifest)
+
+        # Mark run complete
+        _mark_run_complete(run_paths)
+
+        logger.info(
+            f"Claim {claim.claim_id}: {status} "
+            f"({success_count}/{total_count} docs, {elapsed:.1f}s)"
+        )
+
+        return ClaimResult(
+            claim_id=claim.claim_id,
+            status=status,
+            run_id=run_id,
+            documents=results,
+            stats=stats,
+            time_seconds=elapsed,
+        )
+
+    finally:
+        # Always clean up log handler
+        logging.getLogger().removeHandler(log_handler)
+        log_handler.close()

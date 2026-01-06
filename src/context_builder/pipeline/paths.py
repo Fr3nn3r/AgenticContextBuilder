@@ -42,6 +42,11 @@ class RunPaths:
     context_dir: Path  # run_root/context
     logs_dir: Path  # run_root/logs
     summary_json: Path  # logs/summary.json
+    # New run control paths
+    manifest_json: Path  # run_root/manifest.json
+    metrics_json: Path  # logs/metrics.json
+    run_log: Path  # logs/run.log
+    complete_marker: Path  # run_root/.complete
 
 
 def get_claim_paths(output_base: Path, claim_id: str) -> ClaimPaths:
@@ -85,6 +90,11 @@ def get_run_paths(claim_paths: ClaimPaths, run_id: str) -> RunPaths:
         context_dir=run_root / "context",
         logs_dir=logs_dir,
         summary_json=logs_dir / "summary.json",
+        # New run control paths
+        manifest_json=run_root / "manifest.json",
+        metrics_json=logs_dir / "metrics.json",
+        run_log=logs_dir / "run.log",
+        complete_marker=run_root / ".complete",
     )
 
 

@@ -228,6 +228,29 @@ Examples:
         help="Display results in rich format to stdout only (no files saved, all logs suppressed, incompatible with -v)",
     )
 
+    # Run control options for acquire
+    run_control_group = acquire_parser.add_argument_group("Run Control")
+    run_control_group.add_argument(
+        "--run-id",
+        metavar="ID",
+        help="Override run ID (default: auto-generated timestamp_gitsha)",
+    )
+    run_control_group.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing run folder if it exists",
+    )
+    run_control_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Discovery only - show what would be processed without actually running",
+    )
+    run_control_group.add_argument(
+        "--no-metrics",
+        action="store_true",
+        help="Skip metrics computation at end of run",
+    )
+
     # ========== EXTRACT SUBCOMMAND ==========
     extract_parser = subparsers.add_parser(
         "extract",
