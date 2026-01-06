@@ -22,6 +22,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
   const [docLabels, setDocLabels] = useState<DocLabels>({
     doc_type_correct: true,
     text_readable: "good",
+    needs_vision: false,
   });
   const [reviewer, setReviewer] = useState("");
   const [notes, setNotes] = useState("");

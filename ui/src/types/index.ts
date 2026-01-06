@@ -102,6 +102,7 @@ export interface FieldLabel {
 export interface DocLabels {
   doc_type_correct: boolean;
   text_readable: "good" | "warn" | "poor";
+  needs_vision: boolean;
 }
 
 export interface LabelResult {

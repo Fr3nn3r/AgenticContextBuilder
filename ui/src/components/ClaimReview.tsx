@@ -83,7 +83,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
         setFieldLabels(data.labels.field_labels || []);
         setNotes(data.labels.review.notes || "");
         setDocTypeCorrect(data.labels.doc_labels.doc_type_correct ? "yes" : "no");
-        setNeedsVision(false);
+        setNeedsVision(data.labels.doc_labels.needs_vision ?? false);
       } else if (data.extraction) {
         // Initialize field labels from extraction fields with "unknown" judgement
         setFieldLabels(
@@ -138,8 +138,9 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     try {
       setSavingDocId(docId);
       const docLabels: DocLabels = {
-        doc_type_correct: true,
+        doc_type_correct: docTypeCorrect === "yes",
         text_readable: "good",
+        needs_vision: needsVision,
       };
       // Use "system" as reviewer until accounts are implemented
       await saveLabels(docId, "system", notes, fieldLabels, docLabels);

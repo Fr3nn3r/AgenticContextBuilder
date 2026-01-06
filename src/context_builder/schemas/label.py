@@ -31,6 +31,9 @@ class DocLabels(BaseModel):
     text_readable: Literal["good", "warn", "poor"] = Field(
         ..., description="Quality of extracted text"
     )
+    needs_vision: bool = Field(
+        default=False, description="Whether document needs vision-based extraction"
+    )
 
 
 class ReviewMetadata(BaseModel):
