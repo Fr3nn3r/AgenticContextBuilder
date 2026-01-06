@@ -16,12 +16,14 @@ export interface ClaimSummary {
   flags_count: number;
   status: string;
   closed_date: string | null;
-  // Extraction-centric fields
+  // Extraction-centric fields (run-dependent)
   gate_pass_count: number;
   gate_warn_count: number;
   gate_fail_count: number;
   needs_vision_count: number;
   last_processed: string | null;
+  // Run context
+  in_run: boolean;
 }
 
 export interface DocSummary {

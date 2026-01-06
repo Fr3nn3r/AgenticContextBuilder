@@ -54,12 +54,14 @@ class ClaimSummary(BaseModel):
     flags_count: int = 0
     status: str = "Not Reviewed"  # "Not Reviewed" or "Reviewed"
     closed_date: Optional[str] = None
-    # Extraction-centric fields
+    # Extraction-centric fields (run-dependent)
     gate_pass_count: int = 0
     gate_warn_count: int = 0
     gate_fail_count: int = 0
     needs_vision_count: int = 0
     last_processed: Optional[str] = None
+    # Run context
+    in_run: bool = True  # False if claim has no docs in the selected run
 
 
 class DocSummary(BaseModel):
@@ -212,6 +214,36 @@ def get_latest_run_dir_for_claim(claim_dir: Path) -> Optional[Path]:
     return run_dirs[0] if run_dirs else None
 
 
+def get_run_dir_by_id(claim_dir: Path, run_id: str) -> Optional[Path]:
+    """Get a specific run directory by ID for a claim."""
+    runs_dir = claim_dir / "runs"
+    if not runs_dir.exists():
+        return None
+
+    run_dir = runs_dir / run_id
+    if run_dir.exists() and run_dir.is_dir():
+        return run_dir
+    return None
+
+
+def get_all_run_ids() -> List[str]:
+    """Get all unique run IDs across all claims, sorted newest first."""
+    run_ids = set()
+    if not DATA_DIR.exists():
+        return []
+
+    for claim_dir in DATA_DIR.iterdir():
+        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+            continue
+        runs_dir = claim_dir / "runs"
+        if runs_dir.exists():
+            for run_dir in runs_dir.iterdir():
+                if run_dir.is_dir() and run_dir.name.startswith("run_"):
+                    run_ids.add(run_dir.name)
+
+    return sorted(run_ids, reverse=True)
+
+
 def calculate_risk_score(extraction_data: Dict[str, Any]) -> int:
     """Calculate risk score based on extraction quality and completeness."""
     if not extraction_data:
@@ -297,9 +329,12 @@ def set_data_dir(path: Path):
 # =============================================================================
 
 @app.get("/api/claims", response_model=List[ClaimSummary])
-def list_claims():
+def list_claims(run_id: Optional[str] = Query(None, description="Filter by run ID")):
     """
     List all claims in the data directory.
+
+    Args:
+        run_id: Optional run ID to filter extraction metrics. If not provided, uses latest run.
 
     Uses new folder structure:
       {claim_id}/docs/{doc_id}/meta/doc.json
@@ -335,8 +370,11 @@ def list_claims():
 
         doc_types = list(set(m.get("doc_type", "unknown") for m in doc_metas))
 
-        # Get latest run for this claim
-        run_dir = get_latest_run_dir_for_claim(claim_dir)
+        # Get run directory (specific or latest)
+        if run_id:
+            run_dir = get_run_dir_by_id(claim_dir, run_id)
+        else:
+            run_dir = get_latest_run_dir_for_claim(claim_dir)
 
         # Count extractions and gather data
         extracted_count = 0
@@ -415,6 +453,9 @@ def list_claims():
         # Extract claim number for display
         claim_number = extract_claim_number(claim_dir.name)
 
+        # Determine if claim has extractions in the selected run
+        in_run = run_dir is not None and extracted_count > 0
+
         claims.append(ClaimSummary(
             claim_id=claim_number,
             folder_name=claim_dir.name,
@@ -430,24 +471,60 @@ def list_claims():
             flags_count=flags_count,
             status=status,
             closed_date=closed_date,
-            # Extraction-centric fields
+            # Extraction-centric fields (run-dependent)
             gate_pass_count=gate_pass_count,
             gate_warn_count=gate_warn_count,
             gate_fail_count=gate_fail_count,
             needs_vision_count=needs_vision_count,
             last_processed=last_processed,
+            # Run context
+            in_run=in_run,
         ))
 
     # Sort by risk score descending
     return sorted(claims, key=lambda c: c.risk_score, reverse=True)
 
 
+@app.get("/api/claims/runs")
+def list_claim_runs():
+    """
+    List all available run IDs for the claims view.
+
+    Returns list of run IDs sorted newest first, with metadata.
+    """
+    run_ids = get_all_run_ids()
+    runs = []
+
+    for r_id in run_ids:
+        # Get metadata from first claim that has this run
+        metadata = {"run_id": r_id, "timestamp": None, "model": None}
+
+        for claim_dir in DATA_DIR.iterdir():
+            if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+                continue
+            run_dir = claim_dir / "runs" / r_id
+            if run_dir.exists():
+                summary_path = run_dir / "logs" / "summary.json"
+                if summary_path.exists():
+                    with open(summary_path, "r", encoding="utf-8") as f:
+                        summary = json.load(f)
+                        metadata["timestamp"] = summary.get("completed_at")
+                        metadata["model"] = summary.get("model")
+                    break
+
+        runs.append(metadata)
+
+    return runs
+
+
 @app.get("/api/claims/{claim_id}/docs", response_model=List[DocSummary])
-def list_docs(claim_id: str):
+def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Filter by run ID")):
     """
     List documents for a specific claim.
 
-    claim_id can be either the full folder name or extracted claim number.
+    Args:
+        claim_id: Can be either the full folder name or extracted claim number.
+        run_id: Optional run ID for extraction metrics. If not provided, uses latest run.
     """
     # Find claim directory (could be folder_name or claim_id)
     claim_dir = None
@@ -464,8 +541,11 @@ def list_docs(claim_id: str):
     if not docs_dir.exists():
         raise HTTPException(status_code=404, detail="No documents found")
 
-    # Get latest run for extractions/labels
-    run_dir = get_latest_run_dir_for_claim(claim_dir)
+    # Get run directory (specific or latest)
+    if run_id:
+        run_dir = get_run_dir_by_id(claim_dir, run_id)
+    else:
+        run_dir = get_latest_run_dir_for_claim(claim_dir)
     extraction_dir = run_dir / "extraction" if run_dir else None
     labels_dir = run_dir / "labels" if run_dir else None
 

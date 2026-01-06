@@ -23,12 +23,29 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
-export async function listClaims(): Promise<ClaimSummary[]> {
-  return fetchJson<ClaimSummary[]>(`${API_BASE}/claims`);
+export async function listClaims(runId?: string): Promise<ClaimSummary[]> {
+  const url = runId
+    ? `${API_BASE}/claims?run_id=${encodeURIComponent(runId)}`
+    : `${API_BASE}/claims`;
+  return fetchJson<ClaimSummary[]>(url);
 }
 
-export async function listDocs(claimId: string): Promise<DocSummary[]> {
-  return fetchJson<DocSummary[]>(`${API_BASE}/claims/${claimId}/docs`);
+export async function listDocs(claimId: string, runId?: string): Promise<DocSummary[]> {
+  const url = runId
+    ? `${API_BASE}/claims/${claimId}/docs?run_id=${encodeURIComponent(runId)}`
+    : `${API_BASE}/claims/${claimId}/docs`;
+  return fetchJson<DocSummary[]>(url);
+}
+
+// Run info for claims view
+export interface ClaimRunInfo {
+  run_id: string;
+  timestamp: string | null;
+  model: string | null;
+}
+
+export async function listClaimRuns(): Promise<ClaimRunInfo[]> {
+  return fetchJson<ClaimRunInfo[]>(`${API_BASE}/claims/runs`);
 }
 
 export async function getDoc(docId: string, claimId?: string): Promise<DocPayload> {

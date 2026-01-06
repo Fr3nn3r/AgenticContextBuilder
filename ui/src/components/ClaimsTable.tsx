@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ClaimSummary, DocSummary } from "../types";
+import type { ClaimRunInfo } from "../api/client";
 import { cn } from "../lib/utils";
 
 interface ClaimsTableProps {
@@ -11,6 +12,11 @@ interface ClaimsTableProps {
   lobFilter: string;
   statusFilter: string;
   riskFilter: string;
+  // Run props
+  runs: ClaimRunInfo[];
+  selectedRunId: string | null;
+  onRunChange: (runId: string | null) => void;
+  // Callbacks
   onSearchChange: (query: string) => void;
   onLobFilterChange: (lob: string) => void;
   onStatusFilterChange: (status: string) => void;
@@ -18,6 +24,15 @@ interface ClaimsTableProps {
   onSelectClaim: (claim: ClaimSummary) => void;
   onSelectDoc: (docId: string, claimId: string) => void;
   onNavigateToReview: (claimId: string) => void;
+}
+
+function formatTimestamp(ts: string | null): string {
+  if (!ts) return "Unknown";
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return ts;
+  }
 }
 
 export function ClaimsTable({
@@ -29,6 +44,9 @@ export function ClaimsTable({
   lobFilter,
   statusFilter,
   riskFilter,
+  runs,
+  selectedRunId,
+  onRunChange,
   onSearchChange,
   onLobFilterChange,
   onStatusFilterChange,
@@ -40,6 +58,13 @@ export function ClaimsTable({
   void _selectedClaim; // Used for future features
   const [expandedClaim, setExpandedClaim] = useState<string | null>(null);
 
+  // Get selected run metadata
+  const selectedRun = runs.find((r) => r.run_id === selectedRunId);
+
+  // Count claims in run vs not in run
+  const claimsInRun = claims.filter((c) => c.in_run).length;
+  const claimsNotInRun = claims.filter((c) => !c.in_run).length;
+
   function handleClaimClick(claim: ClaimSummary) {
     if (expandedClaim === claim.claim_id) {
       setExpandedClaim(null);
@@ -49,37 +74,90 @@ export function ClaimsTable({
     }
   }
 
+  // Calculate KPIs only from claims in this run
+  const claimsInRunData = claims.filter((c) => c.in_run);
+  const totalDocsLabeled = claims.reduce((sum, c) => sum + c.labeled_count, 0);  // Labels are run-independent
+  const totalDocs = claims.reduce((sum, c) => sum + c.doc_count, 0);
+  const totalGateFail = claimsInRunData.reduce((sum, c) => sum + c.gate_fail_count, 0);  // Run-dependent
+  const totalNeedsVision = claimsInRunData.reduce((sum, c) => sum + c.needs_vision_count, 0);  // Run-dependent
+
   return (
     <div className="p-6">
-      {/* Header */}
+      {/* Header with Run Context */}
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Claim Document Pack</h2>
-        <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">Claim Document Pack</h2>
+            <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
+          </div>
+
+          {/* Run Selector and Metadata */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Run:</label>
+              <select
+                value={selectedRunId || ""}
+                onChange={(e) => onRunChange(e.target.value || null)}
+                className="border rounded px-2 py-1 text-sm min-w-[180px]"
+              >
+                {runs.map((run, idx) => (
+                  <option key={run.run_id} value={run.run_id}>
+                    {run.run_id} {idx === 0 ? "(Latest)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Run Metadata */}
+            {selectedRun && (
+              <div className="flex items-center gap-3 text-xs text-gray-500 border-l pl-4">
+                <span>
+                  <strong>Time:</strong> {formatTimestamp(selectedRun.timestamp)}
+                </span>
+                {selectedRun.model && (
+                  <span>
+                    <strong>Model:</strong> {selectedRun.model}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* KPI Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-semibold text-gray-900">{totalCount}</div>
           <div className="text-sm text-gray-500">Claims</div>
+          {claimsNotInRun > 0 && (
+            <div className="text-xs text-amber-600 mt-1">{claimsNotInRun} not in run</div>
+          )}
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-semibold text-gray-900">
-            {claims.reduce((sum, c) => sum + c.labeled_count, 0)} / {claims.reduce((sum, c) => sum + c.doc_count, 0)}
+            {totalDocsLabeled} / {totalDocs}
           </div>
           <div className="text-sm text-gray-500">Docs labeled</div>
+          <div className="text-xs text-gray-400 mt-1">Run-independent</div>
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-semibold text-red-600">
-            {claims.reduce((sum, c) => sum + c.gate_fail_count, 0)}
+            {totalGateFail}
           </div>
           <div className="text-sm text-gray-500">Docs failing gate</div>
+          <div className="text-xs text-gray-400 mt-1">In selected run</div>
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-semibold text-amber-600">
-            {claims.reduce((sum, c) => sum + c.needs_vision_count, 0)}
+            {totalNeedsVision}
           </div>
           <div className="text-sm text-gray-500">Needs vision</div>
+          <div className="text-xs text-gray-400 mt-1">In selected run</div>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="text-2xl font-semibold text-blue-600">{claimsInRun}</div>
+          <div className="text-sm text-gray-500">Claims in run</div>
         </div>
       </div>
 
@@ -179,7 +257,8 @@ export function ClaimsTable({
                   onClick={() => handleClaimClick(claim)}
                   className={cn(
                     "border-b cursor-pointer hover:bg-gray-50 transition-colors",
-                    expandedClaim === claim.claim_id && "bg-gray-50"
+                    expandedClaim === claim.claim_id && "bg-gray-50",
+                    !claim.in_run && "opacity-60"
                   )}
                 >
                   <td className="px-4 py-3">
@@ -203,7 +282,14 @@ export function ClaimsTable({
                     </button>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">{claim.claim_id}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">{claim.claim_id}</span>
+                      {!claim.in_run && (
+                        <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
+                          Not in run
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <LobBadge lob={claim.lob} />
@@ -220,25 +306,29 @@ export function ClaimsTable({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <GateSummary
-                        pass={claim.gate_pass_count}
-                        warn={claim.gate_warn_count}
-                        fail={claim.gate_fail_count}
-                      />
-                      {/* Needs Vision indicator (non-column badge) */}
-                      {claim.needs_vision_count > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-amber-600" title={`${claim.needs_vision_count} doc(s) need vision`}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </span>
-                      )}
-                    </div>
+                    {claim.in_run ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <GateSummary
+                          pass={claim.gate_pass_count}
+                          warn={claim.gate_warn_count}
+                          fail={claim.gate_fail_count}
+                        />
+                        {/* Needs Vision indicator (non-column badge) */}
+                        {claim.needs_vision_count > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600" title={`${claim.needs_vision_count} doc(s) need vision`}>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-500 text-sm">
-                    {claim.last_processed || "-"}
+                    {claim.in_run ? (claim.last_processed || "-") : "-"}
                   </td>
                 </tr>
 

@@ -7,7 +7,7 @@ import { Dashboard } from "./components/Dashboard";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
 import type { ClaimSummary, DocSummary } from "./types";
-import { listClaims, listDocs } from "./api/client";
+import { listClaims, listDocs, listClaimRuns, type ClaimRunInfo } from "./api/client";
 
 function App() {
   const navigate = useNavigate();
@@ -20,16 +20,25 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Run state
+  const [runs, setRuns] = useState<ClaimRunInfo[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [lobFilter, setLobFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [riskFilter, setRiskFilter] = useState("all");
 
-  // Load claims on mount
+  // Load runs on mount
   useEffect(() => {
-    loadClaims();
+    loadRuns();
   }, []);
+
+  // Load claims when run selection changes
+  useEffect(() => {
+    loadClaims(selectedRunId || undefined);
+  }, [selectedRunId]);
 
   // Apply filters whenever claims or filters change
   useEffect(() => {
@@ -66,11 +75,24 @@ function App() {
     setFilteredClaims(result);
   }, [claims, searchQuery, lobFilter, statusFilter, riskFilter]);
 
-  async function loadClaims() {
+  async function loadRuns() {
+    try {
+      const data = await listClaimRuns();
+      setRuns(data);
+      // Auto-select latest run if none selected
+      if (data.length > 0 && !selectedRunId) {
+        setSelectedRunId(data[0].run_id);
+      }
+    } catch (err) {
+      console.error("Failed to load runs:", err);
+    }
+  }
+
+  async function loadClaims(runId?: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await listClaims();
+      const data = await listClaims(runId);
       setClaims(data);
       setFilteredClaims(data);
     } catch (err) {
@@ -83,7 +105,7 @@ function App() {
   async function handleSelectClaim(claim: ClaimSummary) {
     try {
       setSelectedClaim(claim);
-      const data = await listDocs(claim.folder_name);
+      const data = await listDocs(claim.folder_name, selectedRunId || undefined);
       setDocs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load docs");
@@ -158,7 +180,7 @@ function App() {
             <div className="flex flex-col items-center justify-center h-full">
               <p className="text-red-600 mb-4">{error}</p>
               <button
-                onClick={loadClaims}
+                onClick={() => loadClaims(selectedRunId || undefined)}
                 className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
               >
                 Retry
@@ -180,6 +202,9 @@ function App() {
                     lobFilter={lobFilter}
                     statusFilter={statusFilter}
                     riskFilter={riskFilter}
+                    runs={runs}
+                    selectedRunId={selectedRunId}
+                    onRunChange={setSelectedRunId}
                     onSearchChange={setSearchQuery}
                     onLobFilterChange={setLobFilter}
                     onStatusFilterChange={setStatusFilter}
@@ -192,7 +217,7 @@ function App() {
               />
               <Route
                 path="/claims/:claimId/review"
-                element={<ClaimReview onSaved={loadClaims} />}
+                element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} />}
               />
               <Route path="/insights" element={<InsightsPage />} />
               <Route path="/templates" element={<TemplatesPage />} />
