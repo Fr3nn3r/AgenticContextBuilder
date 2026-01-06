@@ -36,6 +36,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   const [highlightPage, setHighlightPage] = useState<number | undefined>();
   const [highlightCharStart, setHighlightCharStart] = useState<number | undefined>();
   const [highlightCharEnd, setHighlightCharEnd] = useState<number | undefined>();
+  const [highlightValue, setHighlightValue] = useState<string | undefined>();
 
   // Active doc ID from URL or auto-selected
   const activeDocId = searchParams.get("doc") || claimData?.default_doc_id;
@@ -113,11 +114,12 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     setSearchParams({ doc: docId });
   }
 
-  function handleQuoteClick(quote: string, page: number, charStart?: number, charEnd?: number) {
+  function handleQuoteClick(quote: string, page: number, charStart?: number, charEnd?: number, extractedValue?: string) {
     setHighlightQuote(quote);
     setHighlightPage(page);
     setHighlightCharStart(charStart);
     setHighlightCharEnd(charEnd);
+    setHighlightValue(extractedValue);
   }
 
   function handleFieldLabelChange(
@@ -354,6 +356,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
                 highlightPage={highlightPage}
                 highlightCharStart={highlightCharStart}
                 highlightCharEnd={highlightCharEnd}
+                highlightValue={highlightValue}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">

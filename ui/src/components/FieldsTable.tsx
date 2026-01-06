@@ -6,7 +6,7 @@ interface FieldsTableProps {
   fields: ExtractedField[];
   labels: FieldLabel[];
   onLabelChange: (fieldName: string, judgement: "correct" | "incorrect" | "unknown") => void;
-  onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number) => void;
+  onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number, extractedValue?: string) => void;
   readOnly?: boolean;
 }
 
@@ -102,7 +102,8 @@ export function FieldsTable({
                   provenance.text_quote,
                   provenance.page,
                   provenance.char_start,
-                  provenance.char_end
+                  provenance.char_end,
+                  field.normalized_value || field.value || undefined
                 )}
                 className="text-left w-full mb-2"
               >

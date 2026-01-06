@@ -187,7 +187,8 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
 
         const mark = document.createElement("mark");
         mark.className = "pdf-text-highlight";
-        mark.style.cssText = "background-color: #fef08a; color: inherit; padding: 0; border-radius: 2px;";
+        // Use semi-transparent background and outline so text underneath remains visible
+        mark.style.cssText = "background-color: rgba(250, 204, 21, 0.4); color: inherit; padding: 2px 0; border-radius: 2px; outline: 2px solid rgba(250, 204, 21, 0.8); outline-offset: 1px;";
         mark.textContent = highlighted;
         span.appendChild(mark);
 

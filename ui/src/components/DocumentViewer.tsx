@@ -17,6 +17,8 @@ interface DocumentViewerProps {
   highlightPage?: number;
   highlightCharStart?: number;
   highlightCharEnd?: number;
+  // Extracted value to highlight in PDF (prioritized over quote)
+  highlightValue?: string;
 }
 
 export function DocumentViewer({
@@ -29,6 +31,7 @@ export function DocumentViewer({
   highlightPage,
   highlightCharStart,
   highlightCharEnd,
+  highlightValue,
 }: DocumentViewerProps) {
   // Default to PDF if available, otherwise text
   const defaultTab: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
@@ -45,14 +48,16 @@ export function DocumentViewer({
   useEffect(() => {
     if (highlightPage !== undefined && activeTab === "pdf" && pdfViewerRef.current) {
       pdfViewerRef.current.goToPage(highlightPage);
-      if (highlightQuote) {
+      // Prioritize highlighting the extracted value over the full quote
+      const textToHighlight = highlightValue || highlightQuote;
+      if (textToHighlight) {
         // Small delay to allow page navigation
         setTimeout(() => {
-          pdfViewerRef.current?.highlightText(highlightQuote);
+          pdfViewerRef.current?.highlightText(textToHighlight);
         }, 300);
       }
     }
-  }, [highlightPage, highlightQuote, activeTab]);
+  }, [highlightPage, highlightQuote, highlightValue, activeTab]);
 
   // Determine available tabs
   const availableTabs: { id: ViewerTab; label: string }[] = [
@@ -106,7 +111,7 @@ export function DocumentViewer({
             ref={pdfViewerRef}
             url={sourceUrl}
             currentPage={highlightPage}
-            highlightText={highlightQuote}
+            highlightText={highlightValue || highlightQuote}
           />
         )}
 
