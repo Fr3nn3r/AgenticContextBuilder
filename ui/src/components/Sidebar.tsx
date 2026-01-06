@@ -16,7 +16,7 @@ const navItems = [
 
 export function Sidebar({ currentView }: SidebarProps) {
   return (
-    <div className="w-56 bg-gray-900 text-white flex flex-col">
+    <div className="w-56 bg-gray-900 text-white flex flex-col" data-testid="sidebar">
       {/* Logo */}
       <div className="p-4 flex items-center gap-2">
         <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-gray-900 font-bold text-sm">
@@ -35,6 +35,7 @@ export function Sidebar({ currentView }: SidebarProps) {
             <NavLink
               key={item.id}
               to={item.path}
+              data-testid={`nav-${item.id}`}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
                 isActive

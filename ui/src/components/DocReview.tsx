@@ -202,7 +202,23 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         {/* Right: Fields + Labels */}
         <div className="bg-white rounded-lg border overflow-hidden flex flex-col">
           <div className="p-3 border-b bg-gray-50">
-            <h3 className="font-medium text-gray-900">Extracted Fields</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-gray-900">Extracted Fields</h3>
+              {/* Label Status Summary */}
+              <div className="flex items-center gap-3 text-xs">
+                <span className={cn(
+                  "px-2 py-1 rounded",
+                  doc.labels ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                )}>
+                  {doc.labels ? "Labels: Saved" : "Labels: Not saved"}
+                </span>
+                {extraction && (
+                  <span className="text-gray-500">
+                    Fields labeled: {fieldLabels.filter(l => l.judgement !== "unknown").length}/{fieldLabels.length}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Fields */}
@@ -213,6 +229,8 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 labels={fieldLabels}
                 onLabelChange={handleLabelChange}
                 onQuoteClick={handleQuoteClick}
+                docType={doc.doc_type}
+                runId={extraction.run.run_id}
               />
             ) : (
               <div className="p-4 text-gray-500">

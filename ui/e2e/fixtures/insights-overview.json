@@ -1,0 +1,18 @@
+{
+  "run_metadata": {
+    "run_id": "run_001",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "model": "gpt-4o",
+    "extractor_version": "1.0.0",
+    "docs_total": 5
+  },
+  "overview": {
+    "docs_total": 5,
+    "docs_reviewed": 3,
+    "docs_doc_type_wrong": 0,
+    "required_field_presence_rate": 85,
+    "required_field_accuracy": 92,
+    "evidence_rate": 78,
+    "docs_needs_vision": 1
+  }
+}

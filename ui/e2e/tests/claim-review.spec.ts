@@ -70,4 +70,91 @@ test.describe("Claim Review", () => {
     // Should show extracted fields from fixture - look for field names (use first() since multiple matches exist)
     await expect(page.getByText("Date Of Loss", { exact: true })).toBeVisible();
   });
+
+  test("prev/next claim controls exist", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // Prev/Next claim buttons should exist
+    await expect(review.prevClaimButton).toBeVisible();
+    await expect(review.nextClaimButton).toBeVisible();
+  });
+
+  test("prev claim button is disabled for first claim", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // First claim in fixture has prev_claim_id: null, so prev should be disabled
+    await expect(review.prevClaimButton).toBeDisabled();
+  });
+
+  test("next claim button navigates to next claim", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // Next claim should be enabled (fixture has next_claim_id: "CLM-2024-002")
+    await expect(review.nextClaimButton).not.toBeDisabled();
+
+    // Click next claim
+    await review.nextClaimButton.click();
+
+    // URL should change to next claim
+    await expect(page).toHaveURL(/CLM-2024-002/);
+  });
+
+  test("doc strip shows document list with type and status", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // Doc strip items should be visible
+    await expect(review.docStripItems.first()).toBeVisible();
+
+    // Should have 3 docs (from fixture)
+    const docCount = await review.getDocStripItemCount();
+    expect(docCount).toBe(3);
+
+    // Check first doc shows doc_type
+    const firstDoc = review.docStripItems.first();
+    await expect(firstDoc).toContainText("loss_notice");
+  });
+
+  test("doc strip shows labeled status indicator", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // From fixture: doc_002 (police_report) has has_labels: true
+    // Look for the checkmark SVG that indicates labeled status
+    const docWithLabels = review.docStripItems.filter({
+      hasText: "police_report",
+    });
+    await expect(docWithLabels).toBeVisible();
+
+    // The labeled doc should have a checkmark
+    const checkmark = docWithLabels.locator("svg.text-green-500");
+    await expect(checkmark).toBeVisible();
+  });
+
+  test("doc strip shows quality gate indicator", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001");
+
+    // Each doc should have a gate status dot
+    // From fixture: doc_001 = pass (green), doc_002 = warn (yellow), doc_003 = fail (red)
+
+    // Check for colored dots in each doc strip item
+    const firstDoc = review.docStripItems.first();
+    const gateDot = firstDoc.locator(".rounded-full").first();
+    await expect(gateDot).toBeVisible();
+  });
+
+  test("clicking doc in strip updates viewer", async ({ page }) => {
+    const review = new ClaimReviewPage(page);
+    await review.goto("CLM-2024-001", "doc_001");
+
+    // Click on police_report doc
+    await review.selectDocumentFromList("police_report");
+
+    // URL should update to include new doc
+    await expect(page).toHaveURL(/doc=doc_002/);
+  });
 });

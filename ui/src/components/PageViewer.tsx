@@ -53,7 +53,7 @@ export function PageViewer({
         return (
           <pre className="whitespace-pre-wrap text-sm">
             {before}
-            <mark ref={highlightRef} className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
+            <mark ref={highlightRef} data-testid="highlight-marker" className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
             {after}
           </pre>
         );
@@ -76,7 +76,7 @@ export function PageViewer({
     return (
       <pre className="whitespace-pre-wrap text-sm">
         {before}
-        <mark ref={highlightRef} className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
+        <mark ref={highlightRef} data-testid="highlight-marker" className="bg-yellow-200 px-0.5 ring-2 ring-yellow-400">{match}</mark>
         {after}
       </pre>
     );

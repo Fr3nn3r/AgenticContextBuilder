@@ -96,6 +96,7 @@ export function ClaimsTable({
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-700">Run:</label>
               <select
+                data-testid="run-selector"
                 value={selectedRunId || ""}
                 onChange={(e) => onRunChange(e.target.value || null)}
                 className="border rounded px-2 py-1 text-sm min-w-[180px]"
@@ -240,7 +241,12 @@ export function ClaimsTable({
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">LOB</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Docs</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Labeled</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Gate</th>
+              <th
+                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-help"
+                title="Extraction Gate (Run): PASS/WARN/FAIL based on required fields presence, evidence quality, and extraction errors for the selected run"
+              >
+                Extraction Gate
+              </th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">
                 <div className="flex items-center justify-end gap-1">
                   Last processed

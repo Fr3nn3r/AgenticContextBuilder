@@ -13,6 +13,12 @@ export class ClaimReviewPage extends BasePage {
   readonly docCounter: Locator;
   readonly nextDocButton: Locator;
   readonly prevDocButton: Locator;
+  // New locators for tests
+  readonly prevClaimButton: Locator;
+  readonly nextClaimButton: Locator;
+  readonly docStripItems: Locator;
+  readonly evidenceLinks: Locator;
+  readonly highlightMarker: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -28,12 +34,20 @@ export class ClaimReviewPage extends BasePage {
     this.textTab = page.getByRole("button", { name: "Text" });
     this.pdfTab = page.getByRole("button", { name: "PDF" });
     this.jsonTab = page.getByRole("button", { name: "JSON" });
-    // Save - be specific to avoid multiple matches
-    this.saveButton = page.getByRole("button", { name: "Save Labels" });
+    // Save - use testid for stability
+    this.saveButton = page.getByTestId("save-labels-btn");
     // Doc navigation - look for the format "1/3" or similar
     this.docCounter = page.locator('text=/\\d+\\/\\d+/');
     this.nextDocButton = page.locator('button:has(svg[class*="lucide-chevron-right"])').last();
     this.prevDocButton = page.locator('button:has(svg[class*="lucide-chevron-left"])').last();
+    // Claim navigation
+    this.prevClaimButton = page.getByTestId("prev-claim");
+    this.nextClaimButton = page.getByTestId("next-claim");
+    // Doc strip
+    this.docStripItems = page.getByTestId("doc-strip-item");
+    // Evidence
+    this.evidenceLinks = page.getByTestId("evidence-link");
+    this.highlightMarker = page.getByTestId("highlight-marker");
   }
 
   async goto(claimId: string, docId?: string) {
@@ -76,5 +90,28 @@ export class ClaimReviewPage extends BasePage {
     const docItem = this.docList.getByText(new RegExp(docType, "i")).first();
     await docItem.click();
     await this.page.waitForTimeout(300);
+  }
+
+  async clickEvidence(index: number = 0) {
+    await this.evidenceLinks.nth(index).click();
+    await this.page.waitForTimeout(500);
+  }
+
+  async isHighlightVisible(): Promise<boolean> {
+    return await this.highlightMarker.isVisible();
+  }
+
+  async navigateToPrevClaim() {
+    await this.prevClaimButton.click();
+    await this.waitForLoad();
+  }
+
+  async navigateToNextClaim() {
+    await this.nextClaimButton.click();
+    await this.waitForLoad();
+  }
+
+  async getDocStripItemCount(): Promise<number> {
+    return await this.docStripItems.count();
   }
 }

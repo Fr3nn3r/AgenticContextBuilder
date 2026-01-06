@@ -207,6 +207,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           <div className="flex items-center gap-1">
             <span className="text-sm font-medium text-gray-900">Claim {claimData.claim_id}</span>
             <button
+              data-testid="prev-claim"
               onClick={() => claimData.prev_claim_id && navigate(`/claims/${claimData.prev_claim_id}/review`)}
               disabled={!claimData.prev_claim_id}
               className={cn(
@@ -222,6 +223,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
               </svg>
             </button>
             <button
+              data-testid="next-claim"
               onClick={() => claimData.next_claim_id && navigate(`/claims/${claimData.next_claim_id}/review`)}
               disabled={!claimData.next_claim_id}
               className={cn(
@@ -404,6 +406,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
               {/* Save button */}
               <button
+                data-testid="save-labels-btn"
                 onClick={() => activeDocId && handleSaveReview(activeDocId)}
                 disabled={savingDocId === activeDocId || !activeDocId}
                 className={cn(
@@ -434,6 +437,7 @@ interface DocListItemProps {
 function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemProps) {
   return (
     <div
+      data-testid="doc-strip-item"
       className={cn(
         "flex items-center gap-2 px-3 py-2 border-b cursor-pointer transition-colors",
         isActive ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-100"

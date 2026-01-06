@@ -24,6 +24,25 @@ test.describe("Templates Page", () => {
     await expect(page.getByRole("button", { name: /Police Report/i })).toBeVisible();
   });
 
+  test("displays exactly 3 supported doc types", async ({ page }) => {
+    const templates = new TemplatesPage(page);
+    await templates.goto();
+
+    // Should show all 3 supported doc types
+    await expect(page.getByRole("button", { name: /Loss Notice/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Police Report/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Insurance Policy/i })).toBeVisible();
+
+    // Count template buttons (should be exactly 3)
+    const templateButtons = page.getByRole("button").filter({
+      has: page.locator("text=/Loss Notice|Police Report|Insurance Policy/i"),
+    });
+
+    // We should have exactly 3 doc type templates
+    const count = await templateButtons.count();
+    expect(count).toBe(3);
+  });
+
   test("should show template details when selected", async ({ page }) => {
     const templates = new TemplatesPage(page);
     await templates.goto();

@@ -1,0 +1,24 @@
+[
+  {
+    "run_id": "run_001",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "model": "gpt-4o",
+    "extractor_version": "1.0.0",
+    "docs_count": 5,
+    "labeled_count": 3,
+    "presence_rate": 85,
+    "accuracy_rate": 92,
+    "evidence_rate": 78
+  },
+  {
+    "run_id": "run_002",
+    "timestamp": "2024-01-10T09:00:00Z",
+    "model": "gpt-4o",
+    "extractor_version": "0.9.0",
+    "docs_count": 4,
+    "labeled_count": 2,
+    "presence_rate": 80,
+    "accuracy_rate": 88,
+    "evidence_rate": 72
+  }
+]

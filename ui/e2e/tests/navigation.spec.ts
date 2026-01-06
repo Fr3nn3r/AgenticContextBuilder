@@ -15,6 +15,7 @@ test.describe("Sidebar Navigation", () => {
     await expect(sidebar.sidebar).toBeVisible();
     await expect(sidebar.dashboardLink).toBeVisible();
     await expect(sidebar.claimsLink).toBeVisible();
+    await expect(sidebar.insightsLink).toBeVisible();
     await expect(sidebar.templatesLink).toBeVisible();
   });
 
@@ -40,6 +41,17 @@ test.describe("Sidebar Navigation", () => {
     await expect(page).toHaveURL(/\/templates/);
   });
 
+  test("should navigate to Insights page via sidebar", async ({ page }) => {
+    await page.goto("/dashboard");
+    const sidebar = new SidebarPage(page);
+    const basePage = new BasePage(page);
+
+    await sidebar.navigateToInsights();
+    await basePage.waitForLoad();
+
+    await expect(page).toHaveURL(/\/insights/);
+  });
+
   test("should navigate back to Dashboard via sidebar", async ({ page }) => {
     await page.goto("/claims");
     const sidebar = new SidebarPage(page);
@@ -59,7 +71,11 @@ test.describe("Sidebar Navigation", () => {
     await sidebar.navigateToClaims();
     await expect(page).toHaveURL(/\/claims/);
 
-    // Claims -> Templates
+    // Claims -> Insights
+    await sidebar.navigateToInsights();
+    await expect(page).toHaveURL(/\/insights/);
+
+    // Insights -> Templates
     await sidebar.navigateToTemplates();
     await expect(page).toHaveURL(/\/templates/);
 

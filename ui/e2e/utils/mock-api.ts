@@ -12,6 +12,8 @@ const claimsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claims.
 const claimReviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claim-review.json"), "utf-8"));
 const docPayloadFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "doc-payload.json"), "utf-8"));
 const templatesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "templates.json"), "utf-8"));
+const runsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.json"), "utf-8"));
+const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "insights-overview.json"), "utf-8"));
 
 export async function setupApiMocks(page: Page) {
   // Mock GET /api/claims
@@ -93,6 +95,61 @@ export async function setupApiMocks(page: Page) {
         labeled_count: 3,
         quality_gate: { pass: 2, warn: 2, fail: 1 },
       }),
+    });
+  });
+
+  // Mock GET /api/insights/runs
+  await page.route("**/api/insights/runs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(runsFixture),
+    });
+  });
+
+  // Mock GET /api/insights/runs/:runId/overview
+  await page.route(/\/api\/insights\/runs\/[^/]+\/overview/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(insightsOverviewFixture),
+    });
+  });
+
+  // Mock GET /api/insights/runs/:runId/doc-types
+  await page.route(/\/api\/insights\/runs\/[^/]+\/doc-types/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          doc_type: "loss_notice",
+          docs_reviewed: 2,
+          required_field_presence_pct: 90,
+          required_field_accuracy_pct: 95,
+          evidence_rate_pct: 85,
+          top_failing_field: null,
+          docs_needs_vision: 0,
+        },
+        {
+          doc_type: "police_report",
+          docs_reviewed: 1,
+          required_field_presence_pct: 75,
+          required_field_accuracy_pct: 80,
+          evidence_rate_pct: 70,
+          top_failing_field: "badge_number",
+          docs_needs_vision: 1,
+        },
+      ]),
+    });
+  });
+
+  // Mock GET /api/claim-runs
+  await page.route("**/api/claim-runs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(runsFixture),
     });
   });
 }

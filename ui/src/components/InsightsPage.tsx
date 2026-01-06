@@ -306,6 +306,7 @@ export function InsightsPage() {
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-700">Run:</label>
               <select
+                data-testid="run-selector"
                 value={selectedRunId || ""}
                 onChange={(e) => setSelectedRunId(e.target.value)}
                 className="border rounded px-2 py-1 text-sm min-w-[180px]"
@@ -320,7 +321,7 @@ export function InsightsPage() {
 
             {/* Run Metadata */}
             {runMetadata && (
-              <div className="flex items-center gap-4 text-xs text-gray-500 border-l pl-4">
+              <div data-testid="run-metadata" className="flex items-center gap-4 text-xs text-gray-500 border-l pl-4">
                 <span>
                   <strong>Time:</strong> {formatTimestamp(String(runMetadata.timestamp || ""))}
                 </span>

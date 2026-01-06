@@ -6,15 +6,17 @@ export class SidebarPage {
   readonly logo: Locator;
   readonly dashboardLink: Locator;
   readonly claimsLink: Locator;
+  readonly insightsLink: Locator;
   readonly templatesLink: Locator;
 
   constructor(page: Page) {
     this.page = page;
-    this.sidebar = page.locator(".bg-gray-900");
+    this.sidebar = page.getByTestId("sidebar");
     this.logo = page.locator("text=ContextBuilder");
-    this.dashboardLink = page.getByRole("link", { name: /Dashboard/i });
-    this.claimsLink = page.getByRole("link", { name: /Claim Document Pack/i });
-    this.templatesLink = page.getByRole("link", { name: /Extraction Templates/i });
+    this.dashboardLink = page.getByTestId("nav-dashboard");
+    this.claimsLink = page.getByTestId("nav-claims");
+    this.insightsLink = page.getByTestId("nav-insights");
+    this.templatesLink = page.getByTestId("nav-templates");
   }
 
   async navigateToDashboard() {
@@ -30,6 +32,11 @@ export class SidebarPage {
   async navigateToTemplates() {
     await this.templatesLink.click();
     await this.page.waitForURL("**/templates");
+  }
+
+  async navigateToInsights() {
+    await this.insightsLink.click();
+    await this.page.waitForURL("**/insights");
   }
 
   async isVisible(): Promise<boolean> {
