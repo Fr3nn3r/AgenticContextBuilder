@@ -22,6 +22,10 @@ from context_builder.ingestion import (
     DataIngestion,
 )
 
+# Import pipeline components for the new pipeline command
+from context_builder.pipeline.discovery import discover_claims
+from context_builder.pipeline.run import process_claim
+
 # Ensure Azure DI implementation is imported so it auto-registers
 try:
     from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
@@ -96,11 +100,14 @@ def setup_argparser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     subparsers.required = True
 
-    # ========== ACQUIRE SUBCOMMAND ==========
+    # ========== ACQUIRE SUBCOMMAND (DEPRECATED) ==========
     acquire_parser = subparsers.add_parser(
         "acquire",
-        help="Acquire document content using vision APIs (OCR, Azure DI, OpenAI Vision)",
+        help="[DEPRECATED] Acquire document content using vision APIs - use 'pipeline' instead",
         epilog="""
+*** DEPRECATED: This command creates flat files. Use 'pipeline' for the new
+    structured output with runs, manifests, and metrics. ***
+
 Examples:
   %(prog)s document.pdf                    # Process a single PDF
   %(prog)s folder/ -r                      # Process all files in folder recursively
@@ -251,11 +258,13 @@ Examples:
         help="Skip metrics computation at end of run",
     )
 
-    # ========== EXTRACT SUBCOMMAND ==========
+    # ========== EXTRACT SUBCOMMAND (DEPRECATED) ==========
     extract_parser = subparsers.add_parser(
         "extract",
-        help="Extract structured data from markdown files using AI",
+        help="[DEPRECATED] Extract structured data from markdown files using AI",
         epilog="""
+*** DEPRECATED: Use 'pipeline' command for document extraction. ***
+
 Examples:
   %(prog)s input.md -o output.json                          # Extract from markdown
   %(prog)s doc.md -o result.json --prompt custom_prompt.md  # Use custom prompt
@@ -332,11 +341,13 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
-    # ========== EXTRACT_LOGIC SUBCOMMAND ==========
+    # ========== EXTRACT_LOGIC SUBCOMMAND (DEPRECATED) ==========
     extract_logic_parser = subparsers.add_parser(
         "extract_logic",
-        help="Extract policy logic as normalized JSON Logic from markdown files",
+        help="[DEPRECATED] Extract policy logic as normalized JSON Logic from markdown files",
         epilog="""
+*** DEPRECATED: This command is for policy logic extraction only. ***
+
 Examples:
   %(prog)s input.md -o output/                             # Extract to directory (generates two files)
   %(prog)s doc.md -o result --symbol-table symbols.json    # Include symbol table
@@ -415,6 +426,94 @@ Examples:
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     extract_logic_logging_group.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # ========== PIPELINE SUBCOMMAND (NEW) ==========
+    pipeline_parser = subparsers.add_parser(
+        "pipeline",
+        help="Run the full document processing pipeline (discover, classify, extract)",
+        epilog="""
+The pipeline command processes claim folders and creates structured outputs:
+
+Output Structure:
+  output/claims/{claim_id}/
+    docs/{doc_id}/           - Document-level data
+      source/                - Original files
+      text/                  - Extracted text (pages.json)
+      meta/                  - Document metadata
+      labels/                - Human QA labels (latest.json)
+    runs/{run_id}/           - Run-scoped outputs
+      manifest.json          - Run metadata (git, versions, timing)
+      extraction/            - Extraction results per doc
+      context/               - Classification context per doc
+      logs/                  - summary.json, metrics.json, run.log
+      .complete              - Marker file (written last)
+
+Examples:
+  %(prog)s claims_folder/ -o output/claims    # Process all claims
+  %(prog)s claims_folder/ -o output/claims --model gpt-4o
+  %(prog)s claims_folder/ -o output/claims --dry-run   # Preview only
+  %(prog)s claims_folder/ -o output/claims --force     # Overwrite existing run
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Required arguments for pipeline
+    pipeline_parser.add_argument(
+        "input_path",
+        metavar="PATH",
+        help="Path to claims folder (each subfolder is a claim with documents)",
+    )
+
+    # Output options for pipeline
+    pipeline_output_group = pipeline_parser.add_argument_group("Output Options")
+    pipeline_output_group.add_argument(
+        "-o",
+        "--output-dir",
+        metavar="DIR",
+        default="output/claims",
+        help="Output directory for structured results (default: output/claims)",
+    )
+
+    # Model configuration for pipeline
+    pipeline_model_group = pipeline_parser.add_argument_group("Model Configuration")
+    pipeline_model_group.add_argument(
+        "--model",
+        metavar="MODEL",
+        default="gpt-4o",
+        help="LLM model for classification and extraction (default: gpt-4o)",
+    )
+
+    # Run control options for pipeline
+    pipeline_run_group = pipeline_parser.add_argument_group("Run Control")
+    pipeline_run_group.add_argument(
+        "--run-id",
+        metavar="ID",
+        help="Override run ID (default: auto-generated run_YYYYMMDD_HHMMSS_gitsha)",
+    )
+    pipeline_run_group.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing run folder if it exists",
+    )
+    pipeline_run_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Discovery only - show what would be processed without running",
+    )
+    pipeline_run_group.add_argument(
+        "--no-metrics",
+        action="store_true",
+        help="Skip metrics computation at end of run",
+    )
+
+    # Logging options for pipeline
+    pipeline_logging_group = pipeline_parser.add_argument_group("Logging Options")
+    pipeline_logging_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    pipeline_logging_group.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
@@ -1106,6 +1205,115 @@ def main():
                         print(f"  [!] Review semantic_audit_report.txt for details")
                     else:
                         print(f"  [OK] No semantic hallucinations detected")
+
+        elif args.command == "pipeline":
+            # ========== PIPELINE COMMAND ==========
+            # Validate input path
+            input_path = Path(args.input_path)
+            if not input_path.exists():
+                logger.error(f"Path not found: {input_path}")
+                sys.exit(1)
+
+            if not input_path.is_dir():
+                logger.error(f"Input path is not a directory: {input_path}")
+                sys.exit(1)
+
+            # Create output directory if needed
+            output_dir = Path(args.output_dir)
+            if not output_dir.exists():
+                logger.info(f"Creating output directory: {output_dir}")
+                try:
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    logger.error(f"Failed to create output directory: {e}")
+                    sys.exit(1)
+
+            # Discover claims
+            logger.info(f"Discovering claims in: {input_path}")
+            try:
+                claims = discover_claims(input_path)
+            except Exception as e:
+                logger.error(f"Failed to discover claims: {e}")
+                sys.exit(1)
+
+            if not claims:
+                logger.warning("No claims found in input path")
+                if not args.quiet:
+                    print(f"[!] No claims found in {input_path}")
+                sys.exit(1)
+
+            logger.info(f"Discovered {len(claims)} claim(s)")
+
+            # Dry-run mode: just show what would be processed
+            if args.dry_run:
+                print(f"\n[DRY RUN] Would process {len(claims)} claim(s):\n")
+                for claim in claims:
+                    # Handle encoding for Windows console
+                    try:
+                        print(f"  Claim: {claim.claim_id}")
+                        print(f"    Documents: {len(claim.documents)}")
+                        for doc in claim.documents:
+                            # Encode and decode to handle special chars
+                            filename = doc.original_filename.encode('ascii', errors='replace').decode('ascii')
+                            print(f"      - {filename} ({doc.source_type})")
+                        print()
+                    except UnicodeEncodeError:
+                        print(f"  Claim: {claim.claim_id} ({len(claim.documents)} docs)")
+                        print()
+                print(f"Output directory: {output_dir}")
+                print(f"Model: {args.model}")
+                if args.run_id:
+                    print(f"Run ID: {args.run_id}")
+                sys.exit(0)
+
+            # Build command string for manifest
+            command_str = " ".join(sys.argv)
+
+            # Process each claim
+            total_docs = 0
+            success_docs = 0
+            failed_claims = []
+
+            for i, claim in enumerate(claims, 1):
+                logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
+                if not args.quiet:
+                    print(f"\n[{i}/{len(claims)}] Processing claim: {claim.claim_id} ({len(claim.documents)} docs)")
+
+                try:
+                    result = process_claim(
+                        claim=claim,
+                        output_base=output_dir,
+                        classifier=None,  # Will be created by process_claim
+                        run_id=args.run_id,
+                        force=args.force,
+                        command=command_str,
+                        model=args.model,
+                        compute_metrics=not args.no_metrics,
+                    )
+
+                    total_docs += len(result.documents)
+                    success_docs += sum(1 for d in result.documents if d.status == "success")
+
+                    if result.status in ("success", "partial"):
+                        logger.info(f"Claim {claim.claim_id}: {result.status} - {result.stats}")
+                    else:
+                        logger.warning(f"Claim {claim.claim_id}: {result.status}")
+                        failed_claims.append(claim.claim_id)
+
+                except Exception as e:
+                    logger.error(f"Failed to process claim {claim.claim_id}: {e}")
+                    failed_claims.append(claim.claim_id)
+
+            # Print summary
+            if not args.quiet:
+                print(f"\n{'='*50}")
+                print(f"Pipeline Complete")
+                print(f"{'='*50}")
+                print(f"Claims processed: {len(claims)}")
+                print(f"Documents: {success_docs}/{total_docs} successful")
+                if failed_claims:
+                    print(f"Failed claims: {', '.join(failed_claims)}")
+                print(f"Output: {output_dir}")
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")
