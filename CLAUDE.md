@@ -238,6 +238,6 @@ AZURE_DI_API_KEY=...
 
 ## Notes
 
-- **docs/ folder**: Contains temporary working notes - IGNORE unless explicitly referenced with full path
+- **scratch/ folder**: Contains temporary working notes - IGNORE unless explicitly referenced with full path
 - **Extraction specs**: Located in `src/context_builder/extraction/specs/*.yaml`
 - **Prompts**: Located in `src/context_builder/prompts/*.md` (Jinja2 templates)
