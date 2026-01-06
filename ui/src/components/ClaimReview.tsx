@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getClaimReview, getDoc, saveLabels, getDocSourceUrl } from "../api/client";
-import type { ClaimReviewPayload, DocPayload, FieldLabel, DocLabels } from "../types";
+import type { ClaimReviewPayload, DocPayload, FieldLabel, DocLabels, DocSummary } from "../types";
 import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
 import { cn } from "../lib/utils";
@@ -19,7 +19,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   const [currentDoc, setCurrentDoc] = useState<DocPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [docLoading, setDocLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingDocId, setSavingDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Review state
@@ -37,6 +37,9 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   // Active doc ID from URL or auto-selected
   const activeDocId = searchParams.get("doc") || claimData?.default_doc_id;
+
+  // Current doc index for navigation
+  const currentDocIndex = claimData?.docs.findIndex(d => d.doc_id === activeDocId) ?? -1;
 
   // Load claim data on mount
   useEffect(() => {
@@ -121,43 +124,36 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     );
   }
 
-  async function handleSaveReview() {
-    if (!activeDocId || !claimId) return;
+  async function handleSaveReview(docId: string) {
+    if (!claimId) return;
 
     try {
-      setSaving(true);
+      setSavingDocId(docId);
       const docLabels: DocLabels = {
         doc_type_correct: true,
         text_readable: "good",
       };
       // Use "system" as reviewer until accounts are implemented
-      await saveLabels(activeDocId, "system", notes, fieldLabels, docLabels);
+      await saveLabels(docId, "system", notes, fieldLabels, docLabels);
       onSaved();
-
-      // Move to next unlabeled doc if available
-      if (claimData) {
-        const currentIndex = claimData.docs.findIndex(d => d.doc_id === activeDocId);
-        const nextUnlabeled = claimData.docs.find((d, i) => i > currentIndex && !d.has_labels);
-        if (nextUnlabeled) {
-          handleSelectDoc(nextUnlabeled.doc_id);
-        }
-      }
+      // Reload claim data to update doc statuses
+      await loadClaimData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to save review");
     } finally {
-      setSaving(false);
+      setSavingDocId(null);
     }
   }
 
-  function handlePrevClaim() {
-    if (claimData?.prev_claim_id) {
-      navigate(`/claims/${claimData.prev_claim_id}/review`);
+  function handlePrevDoc() {
+    if (claimData && currentDocIndex > 0) {
+      handleSelectDoc(claimData.docs[currentDocIndex - 1].doc_id);
     }
   }
 
-  function handleNextClaim() {
-    if (claimData?.next_claim_id) {
-      navigate(`/claims/${claimData.next_claim_id}/review`);
+  function handleNextDoc() {
+    if (claimData && currentDocIndex < claimData.docs.length - 1) {
+      handleSelectDoc(claimData.docs[currentDocIndex + 1].doc_id);
     }
   }
 
@@ -185,7 +181,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Compact header: Back | [<Prev] Claim ID [Next>] | Stats */}
+      {/* Header: Back to Claim | Doc navigation */}
       <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
         <button
           onClick={() => navigate("/claims")}
@@ -194,101 +190,71 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Claims
+          Claim {claimData.claim_id}
         </button>
 
-        {/* Claim navigation with ID in center */}
-        <div className="flex items-center gap-3">
+        {/* Doc navigation */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={handlePrevClaim}
-            disabled={!claimData.prev_claim_id}
+            onClick={handlePrevDoc}
+            disabled={currentDocIndex <= 0}
             className={cn(
-              "p-1.5 rounded transition-colors",
-              claimData.prev_claim_id
+              "p-1 rounded transition-colors",
+              currentDocIndex > 0
                 ? "text-gray-700 hover:bg-gray-100"
                 : "text-gray-300 cursor-not-allowed"
             )}
-            title="Previous claim"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-
-          <div className="text-center">
-            <div className="font-semibold text-gray-900">{claimData.claim_id}</div>
-            <div className="text-xs text-gray-500">
-              {claimData.lob} &middot; {claimData.doc_count} docs &middot; {claimData.unlabeled_count} unlabeled
-            </div>
-          </div>
-
+          <span className="text-sm text-gray-600">
+            {currentDocIndex + 1}/{claimData.docs.length}
+          </span>
           <button
-            onClick={handleNextClaim}
-            disabled={!claimData.next_claim_id}
+            onClick={handleNextDoc}
+            disabled={currentDocIndex >= claimData.docs.length - 1}
             className={cn(
-              "p-1.5 rounded transition-colors",
-              claimData.next_claim_id
+              "p-1 rounded transition-colors",
+              currentDocIndex < claimData.docs.length - 1
                 ? "text-gray-700 hover:bg-gray-100"
                 : "text-gray-300 cursor-not-allowed"
             )}
-            title="Next claim"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
         </div>
-
-        {/* Gate summary */}
-        <div className="text-xs">
-          <GateCounts counts={claimData.gate_counts} />
-        </div>
       </div>
 
-      {/* Doc navigation strip */}
-      <div className="px-4 py-2 bg-gray-50 border-b overflow-x-auto">
-        <div className="flex gap-2">
-          {claimData.docs.map((doc) => (
-            <button
-              key={doc.doc_id}
-              onClick={() => handleSelectDoc(doc.doc_id)}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors",
-                activeDocId === doc.doc_id
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100 border"
-              )}
-            >
-              <GateDot status={doc.quality_status} />
-              <span className="font-medium">{doc.doc_type}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Doc details row */}
-      {currentDoc && (
-        <div className="px-4 py-2 bg-white border-b flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div>
-              <span className="font-medium text-gray-900">{currentDoc.filename}</span>
-              <span className="text-sm text-gray-500 ml-2">
-                {currentDoc.doc_type}
-                {currentDoc.extraction && ` (${Math.round(currentDoc.extraction.doc.doc_type_confidence * 100)}%)`}
-                {" "}&middot; {currentDoc.language.toUpperCase()} &middot; {currentDoc.pages.length} pages
-              </span>
+      {/* Main content: 3-column layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Document list */}
+        <div className="w-80 border-r bg-gray-50 flex flex-col overflow-hidden">
+          <div className="p-3 border-b bg-white">
+            <h2 className="font-semibold text-gray-900">Document Pack Review</h2>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {claimData.doc_count} documents &middot; {claimData.unlabeled_count} to review
             </div>
-            {currentDoc.extraction?.quality_gate && (
-              <QualityBadge status={currentDoc.extraction.quality_gate.status} />
-            )}
+          </div>
+          <div className="flex-1 overflow-auto">
+            {claimData.docs.map((doc) => (
+              <DocListItem
+                key={doc.doc_id}
+                doc={doc}
+                isActive={activeDocId === doc.doc_id}
+                isSaving={savingDocId === doc.doc_id}
+                onSelect={() => handleSelectDoc(doc.doc_id)}
+                onSave={() => handleSaveReview(doc.doc_id)}
+              />
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Main content: split view */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 overflow-hidden">
-        {/* Left: Document viewer */}
-        <div className="border-r overflow-hidden flex flex-col">
+        {/* Center: Document viewer */}
+        <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-hidden">
             {docLoading ? (
               <div className="flex items-center justify-center h-full text-gray-500">
@@ -315,10 +281,15 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           </div>
         </div>
 
-        {/* Right: Extracted fields + Save */}
-        <div className="overflow-hidden flex flex-col">
-          <div className="p-3 border-b bg-gray-50">
+        {/* Right: Extracted fields */}
+        <div className="w-96 border-l overflow-hidden flex flex-col">
+          <div className="p-3 border-b bg-white">
             <h3 className="font-medium text-gray-900">Extracted Fields</h3>
+            {currentDoc && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                {currentDoc.filename}
+              </div>
+            )}
           </div>
           <div className="flex-1 overflow-auto">
             {currentDoc?.extraction ? (
@@ -334,42 +305,73 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
               </div>
             )}
           </div>
-
-          {/* Bottom: Notes + Save button */}
-          <div className="border-t p-3 bg-gray-50 flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Notes (optional)"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
-            />
-            <button
-              onClick={handleSaveReview}
-              disabled={saving || !activeDocId}
-              className={cn(
-                "px-4 py-2 rounded-md font-medium transition-colors whitespace-nowrap",
-                saving
-                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                  : "bg-gray-900 text-white hover:bg-gray-800"
-              )}
-            >
-              {saving ? "Saving..." : "Save Review"}
-            </button>
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function GateCounts({ counts }: { counts: { pass: number; warn: number; fail: number } }) {
+interface DocListItemProps {
+  doc: DocSummary;
+  isActive: boolean;
+  isSaving: boolean;
+  onSelect: () => void;
+  onSave: () => void;
+}
+
+function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemProps) {
   return (
-    <span className="flex items-center gap-2">
-      {counts.pass > 0 && <span className="text-green-600">{counts.pass} PASS</span>}
-      {counts.warn > 0 && <span className="text-yellow-600">{counts.warn} WARN</span>}
-      {counts.fail > 0 && <span className="text-red-600">{counts.fail} FAIL</span>}
-    </span>
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-2 border-b cursor-pointer transition-colors",
+        isActive ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-100"
+      )}
+      onClick={onSelect}
+    >
+      {/* Status dot */}
+      <GateDot status={doc.quality_status} />
+
+      {/* Doc info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={cn("text-sm font-medium truncate", isActive ? "text-blue-900" : "text-gray-900")}>
+            {doc.doc_type}
+          </span>
+          {doc.has_labels && (
+            <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 truncate">
+          {doc.filename}
+        </div>
+      </div>
+
+      {/* Confidence */}
+      <div className="text-xs text-gray-400 flex-shrink-0">
+        {Math.round(doc.confidence * 100)}%
+      </div>
+
+      {/* Save button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onSave();
+        }}
+        disabled={isSaving || doc.has_labels}
+        className={cn(
+          "px-2 py-1 text-xs rounded transition-colors flex-shrink-0",
+          doc.has_labels
+            ? "bg-gray-100 text-gray-400 cursor-default"
+            : isSaving
+            ? "bg-gray-200 text-gray-500"
+            : "bg-gray-900 text-white hover:bg-gray-800"
+        )}
+      >
+        {isSaving ? "..." : doc.has_labels ? "Saved" : "Save"}
+      </button>
+    </div>
   );
 }
 
@@ -380,20 +382,6 @@ function GateDot({ status }: { status: string | null }) {
     fail: "bg-red-500",
   };
   return (
-    <span className={cn("w-2 h-2 rounded-full", status ? colors[status] : "bg-gray-300")} />
-  );
-}
-
-function QualityBadge({ status }: { status: "pass" | "warn" | "fail" }) {
-  const styles: Record<string, string> = {
-    pass: "bg-green-100 text-green-700",
-    warn: "bg-yellow-100 text-yellow-700",
-    fail: "bg-red-100 text-red-700",
-  };
-
-  return (
-    <span className={cn("px-2 py-0.5 rounded text-xs font-medium", styles[status])}>
-      {status.toUpperCase()}
-    </span>
+    <span className={cn("w-2 h-2 rounded-full flex-shrink-0", status ? colors[status] : "bg-gray-300")} />
   );
 }
