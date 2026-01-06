@@ -1,0 +1,60 @@
+[
+  {
+    "doc_type": "loss_notice",
+    "version": "1.0",
+    "required_fields": ["date_of_loss", "claimant_name", "loss_description"],
+    "optional_fields": ["witness_name", "estimated_damage", "policy_number"],
+    "field_rules": {
+      "date_of_loss": {
+        "normalize": "date",
+        "hints": ["date of loss", "loss date", "incident date"]
+      },
+      "estimated_damage": {
+        "normalize": "currency",
+        "hints": ["damage amount", "estimated cost"]
+      }
+    },
+    "quality_gate": {
+      "pass_if": ["all_required_present", "confidence_above_80"],
+      "warn_if": ["low_confidence", "missing_optional"],
+      "fail_if": ["missing_required", "confidence_below_50"]
+    }
+  },
+  {
+    "doc_type": "police_report",
+    "version": "1.0",
+    "required_fields": ["report_number", "officer_name", "incident_date"],
+    "optional_fields": ["witness_statement", "officer_badge_number"],
+    "field_rules": {
+      "incident_date": {
+        "normalize": "date"
+      },
+      "report_number": {
+        "validate": "alphanumeric"
+      }
+    },
+    "quality_gate": {
+      "pass_if": ["all_required_present"],
+      "warn_if": ["low_confidence"],
+      "fail_if": ["missing_required"]
+    }
+  },
+  {
+    "doc_type": "insurance_policy",
+    "version": "1.0",
+    "required_fields": ["policy_number", "effective_date", "expiration_date", "insured_name"],
+    "optional_fields": ["coverage_limits", "deductible"],
+    "field_rules": {
+      "effective_date": {
+        "normalize": "date"
+      },
+      "expiration_date": {
+        "normalize": "date"
+      }
+    },
+    "quality_gate": {
+      "pass_if": ["all_required_present"],
+      "fail_if": ["missing_required"]
+    }
+  }
+]

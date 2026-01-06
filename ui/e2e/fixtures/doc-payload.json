@@ -1,0 +1,120 @@
+{
+  "doc_id": "doc_001",
+  "claim_id": "CLM-2024-001",
+  "filename": "loss_notice.pdf",
+  "doc_type": "loss_notice",
+  "language": "en",
+  "pages": [
+    {
+      "page": 1,
+      "text": "LOSS NOTICE FORM\n\nDate of Loss: January 10, 2024\nClaimant Name: John Smith\nPolicy Number: POL-123456\n\nDescription of Loss:\nVehicle collision at intersection of Main St and Oak Ave. The insured vehicle (2022 Toyota Camry) was struck by another vehicle that ran a red light.\n\nEstimated Damage: $15,000\n\nWitness: Jane Doe (555-0123)",
+      "text_md5": "abc123def456"
+    }
+  ],
+  "extraction": {
+    "schema_version": "extraction_result_v1",
+    "run": {
+      "run_id": "run_001",
+      "extractor_version": "1.0.0",
+      "model": "gpt-4o",
+      "prompt_version": "v1",
+      "input_hashes": {
+        "pages": "abc123"
+      }
+    },
+    "doc": {
+      "doc_id": "doc_001",
+      "claim_id": "CLM-2024-001",
+      "doc_type": "loss_notice",
+      "doc_type_confidence": 0.95,
+      "language": "en",
+      "page_count": 1
+    },
+    "pages": [
+      {
+        "page": 1,
+        "text": "LOSS NOTICE FORM\n\nDate of Loss: January 10, 2024\nClaimant Name: John Smith\nPolicy Number: POL-123456\n\nDescription of Loss:\nVehicle collision at intersection of Main St and Oak Ave. The insured vehicle (2022 Toyota Camry) was struck by another vehicle that ran a red light.\n\nEstimated Damage: $15,000\n\nWitness: Jane Doe (555-0123)",
+        "text_md5": "abc123def456"
+      }
+    ],
+    "fields": [
+      {
+        "name": "date_of_loss",
+        "value": "January 10, 2024",
+        "normalized_value": "2024-01-10",
+        "confidence": 0.98,
+        "status": "present",
+        "provenance": [
+          {
+            "page": 1,
+            "method": "extraction",
+            "text_quote": "Date of Loss: January 10, 2024",
+            "char_start": 18,
+            "char_end": 48
+          }
+        ],
+        "value_is_placeholder": false
+      },
+      {
+        "name": "claimant_name",
+        "value": "John Smith",
+        "normalized_value": "John Smith",
+        "confidence": 0.95,
+        "status": "present",
+        "provenance": [
+          {
+            "page": 1,
+            "method": "extraction",
+            "text_quote": "Claimant Name: John Smith",
+            "char_start": 49,
+            "char_end": 74
+          }
+        ],
+        "value_is_placeholder": false
+      },
+      {
+        "name": "loss_description",
+        "value": "Vehicle collision at intersection of Main St and Oak Ave. The insured vehicle (2022 Toyota Camry) was struck by another vehicle that ran a red light.",
+        "normalized_value": null,
+        "confidence": 0.92,
+        "status": "present",
+        "provenance": [
+          {
+            "page": 1,
+            "method": "extraction",
+            "text_quote": "Vehicle collision at intersection of Main St and Oak Ave",
+            "char_start": 117,
+            "char_end": 173
+          }
+        ],
+        "value_is_placeholder": false
+      },
+      {
+        "name": "estimated_damage",
+        "value": "$15,000",
+        "normalized_value": "15000",
+        "confidence": 0.99,
+        "status": "present",
+        "provenance": [
+          {
+            "page": 1,
+            "method": "extraction",
+            "text_quote": "Estimated Damage: $15,000",
+            "char_start": 267,
+            "char_end": 292
+          }
+        ],
+        "value_is_placeholder": false
+      }
+    ],
+    "quality_gate": {
+      "status": "pass",
+      "reasons": ["All required fields present"],
+      "missing_required_fields": [],
+      "needs_vision_fallback": false
+    }
+  },
+  "labels": null,
+  "has_pdf": true,
+  "has_image": false
+}

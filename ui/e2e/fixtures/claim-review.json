@@ -1,0 +1,60 @@
+{
+  "claim_id": "CLM-2024-001",
+  "folder_name": "CLM-2024-001",
+  "lob": "MOTOR",
+  "doc_count": 3,
+  "unlabeled_count": 2,
+  "gate_counts": {
+    "pass": 1,
+    "warn": 1,
+    "fail": 1
+  },
+  "run_metadata": {
+    "run_id": "run_001",
+    "model": "gpt-4o"
+  },
+  "prev_claim_id": null,
+  "next_claim_id": "CLM-2024-002",
+  "docs": [
+    {
+      "doc_id": "doc_001",
+      "filename": "loss_notice.pdf",
+      "doc_type": "loss_notice",
+      "language": "en",
+      "has_extraction": true,
+      "has_labels": false,
+      "quality_status": "pass",
+      "confidence": 0.95,
+      "text_quality": "good",
+      "missing_required_fields": [],
+      "needs_vision": false
+    },
+    {
+      "doc_id": "doc_002",
+      "filename": "police_report.pdf",
+      "doc_type": "police_report",
+      "language": "en",
+      "has_extraction": true,
+      "has_labels": true,
+      "quality_status": "warn",
+      "confidence": 0.82,
+      "text_quality": "warn",
+      "missing_required_fields": ["officer_badge_number"],
+      "needs_vision": false
+    },
+    {
+      "doc_id": "doc_003",
+      "filename": "insurance_policy.pdf",
+      "doc_type": "insurance_policy",
+      "language": "en",
+      "has_extraction": true,
+      "has_labels": false,
+      "quality_status": "fail",
+      "confidence": 0.65,
+      "text_quality": "poor",
+      "missing_required_fields": ["policy_number", "effective_date"],
+      "needs_vision": true
+    }
+  ],
+  "default_doc_id": "doc_001"
+}

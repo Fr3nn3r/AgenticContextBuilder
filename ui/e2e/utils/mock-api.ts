@@ -1,0 +1,98 @@
+import { Page } from "@playwright/test";
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load fixtures
+const fixturesDir = path.join(__dirname, "..", "fixtures");
+const claimsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claims.json"), "utf-8"));
+const claimReviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claim-review.json"), "utf-8"));
+const docPayloadFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "doc-payload.json"), "utf-8"));
+const templatesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "templates.json"), "utf-8"));
+
+export async function setupApiMocks(page: Page) {
+  // Mock GET /api/claims
+  await page.route("**/api/claims", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(claimsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/claims/:claimId/docs
+  await page.route("**/api/claims/*/docs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(claimReviewFixture.docs),
+    });
+  });
+
+  // Mock GET /api/claims/:claimId/review
+  await page.route("**/api/claims/*/review", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(claimReviewFixture),
+    });
+  });
+
+  // Mock GET /api/docs/:docId (but not /labels or /source)
+  await page.route(/\/api\/docs\/[^/]+$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(docPayloadFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock POST /api/docs/:docId/labels
+  await page.route("**/api/docs/*/labels", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "saved", path: "/mock/path" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/templates
+  await page.route("**/api/templates", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(templatesFixture),
+    });
+  });
+
+  // Mock GET /api/runs/latest
+  await page.route("**/api/runs/latest", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_dir: "runs/latest",
+        total_claims: 2,
+        total_docs: 5,
+        extracted_count: 5,
+        labeled_count: 3,
+        quality_gate: { pass: 2, warn: 2, fail: 1 },
+      }),
+    });
+  });
+}
