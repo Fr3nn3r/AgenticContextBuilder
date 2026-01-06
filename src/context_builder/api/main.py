@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 
@@ -87,6 +88,9 @@ class DocPayload(BaseModel):
     pages: List[Dict[str, Any]]  # Page text content
     extraction: Optional[Dict[str, Any]] = None
     labels: Optional[Dict[str, Any]] = None
+    # Source file info
+    has_pdf: bool = False
+    has_image: bool = False
 
 
 class RunSummary(BaseModel):
@@ -105,6 +109,65 @@ class SaveLabelsRequest(BaseModel):
     notes: str = ""
     field_labels: List[Dict[str, Any]]
     doc_labels: Dict[str, Any]
+
+
+class DocReviewRequest(BaseModel):
+    """Request body for simplified doc-level review."""
+    claim_id: str
+    doc_type_correct: str  # "yes", "no", "unsure"
+    notes: str = ""
+
+
+class GateCounts(BaseModel):
+    """Gate status counts."""
+    pass_count: int = 0  # renamed from 'pass' to avoid Python keyword
+    warn: int = 0
+    fail: int = 0
+
+
+class RunMetadata(BaseModel):
+    """Run metadata."""
+    run_id: str
+    model: str = ""
+
+
+class ClaimReviewPayload(BaseModel):
+    """Payload for claim-level review."""
+    claim_id: str
+    folder_name: str
+    lob: str = "MOTOR"
+    doc_count: int
+    unlabeled_count: int
+    gate_counts: Dict[str, int]  # {"pass": N, "warn": N, "fail": N}
+    run_metadata: Optional[Dict[str, str]] = None
+    prev_claim_id: Optional[str] = None
+    next_claim_id: Optional[str] = None
+    docs: List[DocSummary]
+    default_doc_id: Optional[str] = None
+
+
+class FieldRule(BaseModel):
+    """Field extraction rule."""
+    normalize: str = "uppercase_trim"
+    validate: str = "non_empty"
+    hints: List[str] = []
+
+
+class QualityGateRules(BaseModel):
+    """Quality gate rules."""
+    pass_if: List[str] = []
+    warn_if: List[str] = []
+    fail_if: List[str] = []
+
+
+class TemplateSpec(BaseModel):
+    """Extraction template specification."""
+    doc_type: str
+    version: str
+    required_fields: List[str]
+    optional_fields: List[str]
+    field_rules: Dict[str, Dict[str, Any]]
+    quality_gate: Dict[str, List[str]]
 
 
 # =============================================================================
@@ -547,6 +610,18 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
             with open(labels_path, "r", encoding="utf-8") as f:
                 labels = json.load(f)
 
+    # Check for source files
+    has_pdf = False
+    has_image = False
+    source_dir = doc_folder / "source"
+    if source_dir.exists():
+        for source_file in source_dir.iterdir():
+            ext = source_file.suffix.lower()
+            if ext == ".pdf":
+                has_pdf = True
+            elif ext in {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".bmp", ".webp"}:
+                has_image = True
+
     return DocPayload(
         doc_id=doc_id,
         claim_id=extract_claim_number(claim_dir.name),
@@ -556,6 +631,8 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
         pages=pages,
         extraction=extraction,
         labels=labels,
+        has_pdf=has_pdf,
+        has_image=has_image,
     )
 
 
@@ -690,3 +767,331 @@ def get_run_summary():
 def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "data_dir": str(DATA_DIR)}
+
+
+# =============================================================================
+# NEW ENDPOINTS FOR CLAIM-LEVEL REVIEW
+# =============================================================================
+
+@app.get("/api/claims/{claim_id}/review", response_model=ClaimReviewPayload)
+def get_claim_review(claim_id: str):
+    """
+    Get claim review payload for the claim-level review screen.
+
+    Returns claim metadata, ordered doc list with status, and prev/next claim IDs
+    for sequential navigation.
+    """
+    # Find claim directory
+    claim_dir = None
+    for d in DATA_DIR.iterdir():
+        if d.is_dir():
+            if d.name == claim_id or extract_claim_number(d.name) == claim_id:
+                claim_dir = d
+                break
+
+    if not claim_dir or not claim_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
+
+    # Get all claims sorted alphabetically for prev/next navigation
+    all_claims = sorted([
+        d.name for d in DATA_DIR.iterdir()
+        if d.is_dir() and not d.name.startswith(".") and (d / "docs").exists()
+    ])
+
+    # Find prev/next claims
+    current_idx = None
+    for i, c in enumerate(all_claims):
+        if c == claim_dir.name or extract_claim_number(c) == claim_id:
+            current_idx = i
+            break
+
+    prev_claim_id = extract_claim_number(all_claims[current_idx - 1]) if current_idx and current_idx > 0 else None
+    next_claim_id = extract_claim_number(all_claims[current_idx + 1]) if current_idx is not None and current_idx < len(all_claims) - 1 else None
+
+    # Get docs for this claim (reuse list_docs logic)
+    docs_dir = claim_dir / "docs"
+    run_dir = get_latest_run_dir_for_claim(claim_dir)
+    extraction_dir = run_dir / "extraction" if run_dir else None
+    labels_dir = run_dir / "labels" if run_dir else None
+
+    docs = []
+    gate_counts = {"pass": 0, "warn": 0, "fail": 0}
+    unlabeled_count = 0
+
+    for doc_folder in docs_dir.iterdir():
+        if not doc_folder.is_dir():
+            continue
+
+        doc_id = doc_folder.name
+        meta_path = doc_folder / "meta" / "doc.json"
+
+        if not meta_path.exists():
+            continue
+
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+        # Check for extraction
+        has_extraction = False
+        quality_status = None
+        confidence = 0.0
+        text_quality = None
+        missing_required_fields: List[str] = []
+        needs_vision = False
+
+        if extraction_dir:
+            extraction_path = extraction_dir / f"{doc_id}.json"
+            has_extraction = extraction_path.exists()
+            if has_extraction:
+                with open(extraction_path, "r", encoding="utf-8") as f:
+                    ext_data = json.load(f)
+                    quality_gate = ext_data.get("quality_gate", {})
+                    quality_status = quality_gate.get("status")
+                    missing_required_fields = quality_gate.get("missing_required_fields", [])
+                    needs_vision = quality_gate.get("needs_vision_fallback", False)
+                    fields = ext_data.get("fields", [])
+                    if fields:
+                        confidence = sum(f.get("confidence", 0) for f in fields) / len(fields)
+                    if quality_status == "pass":
+                        text_quality = "good"
+                        gate_counts["pass"] += 1
+                    elif quality_status == "warn":
+                        text_quality = "warn"
+                        gate_counts["warn"] += 1
+                    elif quality_status == "fail":
+                        text_quality = "poor"
+                        gate_counts["fail"] += 1
+
+        # Check for labels
+        has_labels = False
+        if labels_dir:
+            labels_path = labels_dir / f"{doc_id}.labels.json"
+            has_labels = labels_path.exists()
+
+        if not has_labels:
+            unlabeled_count += 1
+
+        docs.append(DocSummary(
+            doc_id=doc_id,
+            filename=meta.get("original_filename", "Unknown"),
+            doc_type=meta.get("doc_type", "unknown"),
+            language=meta.get("language", "es"),
+            has_extraction=has_extraction,
+            has_labels=has_labels,
+            quality_status=quality_status,
+            confidence=round(confidence, 2),
+            text_quality=text_quality,
+            missing_required_fields=missing_required_fields,
+            needs_vision=needs_vision,
+        ))
+
+    # Sort docs: unlabeled first, then by gate status (FAIL, WARN, PASS)
+    status_order = {"fail": 0, "warn": 1, "pass": 2, None: 3}
+    docs.sort(key=lambda d: (d.has_labels, status_order.get(d.quality_status, 3)))
+
+    # Find default doc (first unlabeled, or first doc)
+    default_doc_id = None
+    for d in docs:
+        if not d.has_labels:
+            default_doc_id = d.doc_id
+            break
+    if not default_doc_id and docs:
+        default_doc_id = docs[0].doc_id
+
+    # Get run metadata
+    run_metadata = None
+    if run_dir:
+        summary_path = run_dir / "logs" / "summary.json"
+        if summary_path.exists():
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary = json.load(f)
+                run_metadata = {
+                    "run_id": run_dir.name,
+                    "model": summary.get("model", ""),
+                }
+
+    return ClaimReviewPayload(
+        claim_id=extract_claim_number(claim_dir.name),
+        folder_name=claim_dir.name,
+        lob="MOTOR",
+        doc_count=len(docs),
+        unlabeled_count=unlabeled_count,
+        gate_counts=gate_counts,
+        run_metadata=run_metadata,
+        prev_claim_id=prev_claim_id,
+        next_claim_id=next_claim_id,
+        docs=docs,
+        default_doc_id=default_doc_id,
+    )
+
+
+@app.post("/api/docs/{doc_id}/review")
+def save_doc_review(doc_id: str, request: DocReviewRequest):
+    """
+    Save simplified doc-level review (no field labels, no reviewer name).
+
+    Saves doc_type_correct (yes/no/unsure) and optional notes.
+    """
+    claim_id = request.claim_id
+
+    # Find the document's claim directory
+    claim_dir = None
+    for claim in DATA_DIR.iterdir():
+        if not claim.is_dir():
+            continue
+        if extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
+            continue
+        if (claim / "docs" / doc_id).exists():
+            claim_dir = claim
+            break
+
+    if not claim_dir:
+        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+    # Get latest run directory
+    run_dir = get_latest_run_dir_for_claim(claim_dir)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail="No run directory found for claim")
+
+    labels_dir = run_dir / "labels"
+    labels_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert doc_type_correct to boolean for storage
+    doc_type_correct_map = {"yes": True, "no": False, "unsure": None}
+    doc_type_correct_value = doc_type_correct_map.get(request.doc_type_correct, None)
+
+    # Build label result (simplified schema)
+    label_data = {
+        "schema_version": "label_v2",
+        "doc_id": doc_id,
+        "claim_id": extract_claim_number(claim_dir.name),
+        "review": {
+            "reviewed_at": datetime.utcnow().isoformat(),
+            "reviewer": "",  # No reviewer name in simplified flow
+            "notes": request.notes,
+        },
+        "field_labels": [],  # No field-level labels in simplified flow
+        "doc_labels": {
+            "doc_type_correct": doc_type_correct_value,
+            "doc_type_correct_raw": request.doc_type_correct,  # Keep original value
+            "text_readable": "good",
+        },
+    }
+
+    # Atomic write
+    labels_path = labels_dir / f"{doc_id}.labels.json"
+    temp_path = labels_path.with_suffix(".tmp")
+
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(label_data, f, indent=2, ensure_ascii=False)
+
+    temp_path.replace(labels_path)
+
+    return {"status": "saved"}
+
+
+@app.get("/api/templates", response_model=List[TemplateSpec])
+def get_templates():
+    """
+    Get all extraction templates from the spec_loader.
+
+    Returns template specs for display in the Extraction Templates screen.
+    """
+    try:
+        from context_builder.extraction.spec_loader import list_available_specs, get_spec
+    except ImportError:
+        # Fallback if spec_loader not available - return empty list
+        return []
+
+    templates = []
+    available = list_available_specs()
+
+    for doc_type in available:
+        try:
+            spec = get_spec(doc_type)
+            templates.append(TemplateSpec(
+                doc_type=spec.doc_type,
+                version=spec.version,
+                required_fields=spec.required_fields,
+                optional_fields=spec.optional_fields,
+                field_rules={
+                    name: {
+                        "normalize": rule.normalize,
+                        "validate": rule.validate,
+                        "hints": rule.hints,
+                    }
+                    for name, rule in spec.field_rules.items()
+                },
+                quality_gate={
+                    "pass_if": spec.quality_gate.pass_if,
+                    "warn_if": spec.quality_gate.warn_if,
+                    "fail_if": spec.quality_gate.fail_if,
+                },
+            ))
+        except Exception:
+            # Skip specs that fail to load
+            continue
+
+    return templates
+
+
+@app.get("/api/docs/{doc_id}/source")
+def get_doc_source(doc_id: str, claim_id: Optional[str] = Query(None)):
+    """
+    Serve the original document source file (PDF/image).
+
+    Returns the file from docs/{doc_id}/source/ with correct content-type.
+    """
+    # Find the document across all claims
+    doc_folder = None
+    claim_dir = None
+
+    for claim in DATA_DIR.iterdir():
+        if not claim.is_dir():
+            continue
+
+        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
+            continue
+
+        candidate = claim / "docs" / doc_id
+        if candidate.exists():
+            doc_folder = candidate
+            claim_dir = claim
+            break
+
+    if not doc_folder:
+        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+    # Look for source file
+    source_dir = doc_folder / "source"
+    if not source_dir.exists():
+        raise HTTPException(status_code=404, detail="No source file available")
+
+    # Find the source file (could be PDF, JPG, PNG, etc.)
+    source_files = list(source_dir.iterdir())
+    if not source_files:
+        raise HTTPException(status_code=404, detail="No source file found")
+
+    source_file = source_files[0]  # Use first file found
+
+    # Determine media type based on extension
+    ext_to_media = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+        ".bmp": "image/bmp",
+        ".webp": "image/webp",
+    }
+
+    ext = source_file.suffix.lower()
+    media_type = ext_to_media.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=source_file,
+        media_type=media_type,
+        filename=source_file.name,
+    )

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useState } from "react";
 import type { ExtractedField, FieldLabel } from "../types";
 import { cn } from "../lib/utils";
 
@@ -7,6 +7,7 @@ interface FieldsTableProps {
   labels: FieldLabel[];
   onLabelChange: (fieldName: string, judgement: "correct" | "incorrect" | "unknown") => void;
   onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number) => void;
+  readOnly?: boolean;
 }
 
 // Human-readable field names mapping
@@ -34,6 +35,7 @@ export function FieldsTable({
   labels,
   onLabelChange,
   onQuoteClick,
+  readOnly = false,
 }: FieldsTableProps) {
   const [focusedFieldIndex, setFocusedFieldIndex] = useState(0);
 
@@ -41,54 +43,11 @@ export function FieldsTable({
     return labels.find((l) => l.field_name === fieldName);
   }
 
-  // Keyboard shortcuts handler
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    const currentField = fields[focusedFieldIndex];
-    if (!currentField) return;
-
-    switch (e.key) {
-      case "1":
-        e.preventDefault();
-        onLabelChange(currentField.name, "correct");
-        break;
-      case "2":
-        e.preventDefault();
-        onLabelChange(currentField.name, "incorrect"); // "wrong" in UI
-        break;
-      case "3":
-        e.preventDefault();
-        onLabelChange(currentField.name, "unknown"); // "cannot verify" in UI
-        break;
-      case "n":
-        e.preventDefault();
-        // Move to next field
-        setFocusedFieldIndex(prev => Math.min(prev + 1, fields.length - 1));
-        break;
-      case "p":
-        e.preventDefault();
-        // Move to previous field
-        setFocusedFieldIndex(prev => Math.max(prev - 1, 0));
-        break;
-    }
-  }, [fields, focusedFieldIndex, onLabelChange]);
-
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  // Focus state for visual indication (no keyboard shortcuts)
+  void focusedFieldIndex; // Kept for potential future use
 
   return (
     <div className="divide-y">
-      {/* Keyboard shortcuts help */}
-      <div className="px-3 py-2 bg-gray-50 text-xs text-gray-500 border-b">
-        Shortcuts: <kbd className="px-1 bg-white border rounded">1</kbd> Correct
-        <span className="mx-2">&middot;</span>
-        <kbd className="px-1 bg-white border rounded">2</kbd> Wrong
-        <span className="mx-2">&middot;</span>
-        <kbd className="px-1 bg-white border rounded">3</kbd> Cannot verify
-        <span className="mx-2">&middot;</span>
-        <kbd className="px-1 bg-white border rounded">n</kbd>/<kbd className="px-1 bg-white border rounded">p</kbd> Next/Prev field
-      </div>
       {fields.map((field, index) => {
         const label = getLabel(field.name);
         const provenance = field.provenance[0];
@@ -157,30 +116,29 @@ export function FieldsTable({
               </button>
             )}
 
-            {/* Label buttons */}
-            <div className="flex gap-2">
-              <LabelButton
-                label="correct"
-                shortcut="1"
-                selected={label?.judgement === "correct"}
-                onClick={() => onLabelChange(field.name, "correct")}
-                color="green"
-              />
-              <LabelButton
-                label="wrong"
-                shortcut="2"
-                selected={label?.judgement === "incorrect"}
-                onClick={() => onLabelChange(field.name, "incorrect")}
-                color="red"
-              />
-              <LabelButton
-                label="cannot verify"
-                shortcut="3"
-                selected={label?.judgement === "unknown"}
-                onClick={() => onLabelChange(field.name, "unknown")}
-                color="gray"
-              />
-            </div>
+            {/* Label buttons for field-level review */}
+            {!readOnly && (
+              <div className="flex gap-2">
+                <LabelButton
+                  label="correct"
+                  selected={label?.judgement === "correct"}
+                  onClick={() => onLabelChange(field.name, "correct")}
+                  color="green"
+                />
+                <LabelButton
+                  label="wrong"
+                  selected={label?.judgement === "incorrect"}
+                  onClick={() => onLabelChange(field.name, "incorrect")}
+                  color="red"
+                />
+                <LabelButton
+                  label="cannot verify"
+                  selected={label?.judgement === "unknown"}
+                  onClick={() => onLabelChange(field.name, "unknown")}
+                  color="gray"
+                />
+              </div>
+            )}
           </div>
         );
       })}
@@ -210,13 +168,12 @@ function StatusBadge({ status }: { status: "present" | "missing" | "uncertain" }
 
 interface LabelButtonProps {
   label: string;
-  shortcut: string;
   selected: boolean;
   onClick: () => void;
   color: "green" | "red" | "gray";
 }
 
-function LabelButton({ label, shortcut, selected, onClick, color }: LabelButtonProps) {
+function LabelButton({ label, selected, onClick, color }: LabelButtonProps) {
   const colors = {
     green: selected
       ? "bg-green-500 text-white"
@@ -244,10 +201,6 @@ function LabelButton({ label, shortcut, selected, onClick, color }: LabelButtonP
       )}
     >
       {icons[label]} {label}
-      <kbd className={cn(
-        "ml-1 px-1 text-xs rounded",
-        selected ? "bg-white/20" : "bg-black/10"
-      )}>{shortcut}</kbd>
     </button>
   );
 }

@@ -16,7 +16,8 @@ interface ClaimsTableProps {
   onStatusFilterChange: (status: string) => void;
   onRiskFilterChange: (risk: string) => void;
   onSelectClaim: (claim: ClaimSummary) => void;
-  onSelectDoc: (docId: string) => void;
+  onSelectDoc: (docId: string, claimId: string) => void;
+  onNavigateToReview: (claimId: string) => void;
 }
 
 export function ClaimsTable({
@@ -34,6 +35,7 @@ export function ClaimsTable({
   onRiskFilterChange,
   onSelectClaim,
   onSelectDoc,
+  onNavigateToReview,
 }: ClaimsTableProps) {
   void _selectedClaim; // Used for future features
   const [expandedClaim, setExpandedClaim] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function ClaimsTable({
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Claim Workspace</h2>
+        <h2 className="text-2xl font-semibold text-gray-900">Claim Document Pack</h2>
         <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
       </div>
 
@@ -161,7 +163,6 @@ export function ClaimsTable({
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Docs</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Labeled</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Gate</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Needs Vision</th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">
                 <div className="flex items-center justify-end gap-1">
                   Last processed
@@ -219,24 +220,22 @@ export function ClaimsTable({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <GateSummary
-                      pass={claim.gate_pass_count}
-                      warn={claim.gate_warn_count}
-                      fail={claim.gate_fail_count}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {claim.needs_vision_count > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-amber-600">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        {claim.needs_vision_count}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">-</span>
-                    )}
+                    <div className="flex items-center justify-center gap-2">
+                      <GateSummary
+                        pass={claim.gate_pass_count}
+                        warn={claim.gate_warn_count}
+                        fail={claim.gate_fail_count}
+                      />
+                      {/* Needs Vision indicator (non-column badge) */}
+                      {claim.needs_vision_count > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs text-amber-600" title={`${claim.needs_vision_count} doc(s) need vision`}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right text-gray-500 text-sm">
                     {claim.last_processed || "-"}
@@ -246,7 +245,7 @@ export function ClaimsTable({
                 {/* Expanded docs row - Document Pack Queue */}
                 {expandedClaim === claim.claim_id && (
                   <tr>
-                    <td colSpan={8} className="bg-gray-50 border-b">
+                    <td colSpan={7} className="bg-gray-50 border-b">
                       <div className="px-6 py-4">
                         {/* Document Pack Header */}
                         <div className="flex items-center justify-between mb-3">
@@ -260,8 +259,7 @@ export function ClaimsTable({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const unlabeled = docs.find(d => !d.has_labels);
-                                if (unlabeled) onSelectDoc(unlabeled.doc_id);
+                                onNavigateToReview(claim.claim_id);
                               }}
                               className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded hover:bg-gray-800 transition-colors"
                             >
@@ -273,24 +271,24 @@ export function ClaimsTable({
                           <p className="text-sm text-gray-500">Loading documents...</p>
                         ) : (
                           <div className="space-y-2">
-                            {/* Sort docs: FAIL > WARN > Unlabeled > PASS labeled */}
+                            {/* Sort docs: Unlabeled first, then FAIL > WARN > PASS */}
                             {[...docs].sort((a, b) => {
+                              // Unlabeled first
+                              if (!a.has_labels && b.has_labels) return -1;
+                              if (a.has_labels && !b.has_labels) return 1;
+                              // Then by gate status: FAIL > WARN > PASS
                               const statusOrder = { fail: 0, warn: 1, pass: 2 };
                               const aStatus = a.quality_status || "pass";
                               const bStatus = b.quality_status || "pass";
                               const aOrder = statusOrder[aStatus as keyof typeof statusOrder] ?? 2;
                               const bOrder = statusOrder[bStatus as keyof typeof statusOrder] ?? 2;
-                              if (aOrder !== bOrder) return aOrder - bOrder;
-                              // Within same status, unlabeled first
-                              if (!a.has_labels && b.has_labels) return -1;
-                              if (a.has_labels && !b.has_labels) return 1;
-                              return 0;
+                              return aOrder - bOrder;
                             }).map((doc) => (
                               <button
                                 key={doc.doc_id}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onSelectDoc(doc.doc_id);
+                                  onSelectDoc(doc.doc_id, claim.claim_id);
                                 }}
                                 className="w-full flex items-center justify-between p-3 bg-white rounded-lg border hover:border-gray-300 transition-colors text-left"
                               >

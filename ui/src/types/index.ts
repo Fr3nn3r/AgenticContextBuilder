@@ -126,6 +126,9 @@ export interface DocPayload {
   pages: PageContent[];
   extraction: ExtractionResult | null;
   labels: LabelResult | null;
+  // Source file info
+  has_pdf: boolean;
+  has_image: boolean;
 }
 
 export interface RunSummary {
@@ -135,4 +138,55 @@ export interface RunSummary {
   extracted_count: number;
   labeled_count: number;
   quality_gate: Record<string, number>;
+}
+
+// New types for claim-level review
+
+export interface ClaimReviewPayload {
+  claim_id: string;
+  folder_name: string;
+  lob: string;
+  doc_count: number;
+  unlabeled_count: number;
+  gate_counts: {
+    pass: number;
+    warn: number;
+    fail: number;
+  };
+  run_metadata: {
+    run_id: string;
+    model: string;
+  } | null;
+  prev_claim_id: string | null;
+  next_claim_id: string | null;
+  docs: DocSummary[];
+  default_doc_id: string | null;
+}
+
+export interface DocReviewRequest {
+  doc_type_correct: "yes" | "no" | "unsure";
+  notes: string;
+}
+
+// Extraction template types
+
+export interface FieldRule {
+  normalize?: string;
+  validate?: string;
+  hints?: string[];
+}
+
+export interface QualityGateRules {
+  pass_if?: string[];
+  warn_if?: string[];
+  fail_if?: string[];
+}
+
+export interface TemplateSpec {
+  doc_type: string;
+  version: string;
+  required_fields: string[];
+  optional_fields: string[];
+  field_rules: Record<string, FieldRule>;
+  quality_gate: QualityGateRules;
 }

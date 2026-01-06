@@ -7,6 +7,9 @@ import type {
   RunSummary,
   FieldLabel,
   DocLabels,
+  ClaimReviewPayload,
+  DocReviewRequest,
+  TemplateSpec,
 } from "../types";
 
 const API_BASE = "/api";
@@ -28,8 +31,11 @@ export async function listDocs(claimId: string): Promise<DocSummary[]> {
   return fetchJson<DocSummary[]>(`${API_BASE}/claims/${claimId}/docs`);
 }
 
-export async function getDoc(docId: string): Promise<DocPayload> {
-  return fetchJson<DocPayload>(`${API_BASE}/docs/${docId}`);
+export async function getDoc(docId: string, claimId?: string): Promise<DocPayload> {
+  const url = claimId
+    ? `${API_BASE}/docs/${docId}?claim_id=${claimId}`
+    : `${API_BASE}/docs/${docId}`;
+  return fetchJson<DocPayload>(url);
 }
 
 export async function saveLabels(
@@ -53,4 +59,34 @@ export async function saveLabels(
 
 export async function getRunSummary(): Promise<RunSummary> {
   return fetchJson<RunSummary>(`${API_BASE}/runs/latest`);
+}
+
+// New API functions for claim-level review
+
+export async function getClaimReview(claimId: string): Promise<ClaimReviewPayload> {
+  return fetchJson<ClaimReviewPayload>(`${API_BASE}/claims/${claimId}/review`);
+}
+
+export async function saveDocReview(
+  docId: string,
+  claimId: string,
+  data: DocReviewRequest
+): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/docs/${docId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      claim_id: claimId,
+      ...data,
+    }),
+  });
+}
+
+export async function getTemplates(): Promise<TemplateSpec[]> {
+  return fetchJson<TemplateSpec[]>(`${API_BASE}/templates`);
+}
+
+// Get URL for document source file (PDF/image)
+export function getDocSourceUrl(docId: string, claimId: string): string {
+  return `${API_BASE}/docs/${docId}/source?claim_id=${claimId}`;
 }

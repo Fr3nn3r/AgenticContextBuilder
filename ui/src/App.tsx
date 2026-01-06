@@ -1,20 +1,21 @@
 import { useState, useEffect } from "react";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ClaimsTable } from "./components/ClaimsTable";
-import { DocReview } from "./components/DocReview";
+import { ClaimReview } from "./components/ClaimReview";
 import { Dashboard } from "./components/Dashboard";
+import { TemplatesPage } from "./components/TemplatesPage";
 import type { ClaimSummary, DocSummary } from "./types";
 import { listClaims, listDocs } from "./api/client";
 
-type View = "dashboard" | "claims" | "review" | "qa-insights" | "reports" | "settings";
-
 function App() {
-  const [view, setView] = useState<View>("claims");
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
   const [filteredClaims, setFilteredClaims] = useState<ClaimSummary[]>([]);
   const [selectedClaim, setSelectedClaim] = useState<ClaimSummary | null>(null);
   const [docs, setDocs] = useState<DocSummary[]>([]);
-  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,42 +89,43 @@ function App() {
     }
   }
 
-  function handleSelectDoc(docId: string) {
-    setSelectedDoc(docId);
-    setView("review");
+  function handleSelectDoc(docId: string, claimId: string) {
+    navigate(`/claims/${claimId}/review?doc=${docId}`);
   }
 
-  function handleBackToClaims() {
-    setView("claims");
-    setSelectedDoc(null);
+  function handleNavigateToReview(claimId: string) {
+    navigate(`/claims/${claimId}/review`);
   }
 
-  function handleNavigation(newView: View) {
-    setView(newView);
-    if (newView !== "review") {
-      setSelectedDoc(null);
-    }
+  // Get current page title based on route
+  function getPageTitle(): string {
+    const path = location.pathname;
+    if (path === "/" || path === "/dashboard") return "Dashboard";
+    if (path === "/claims") return "Claim Document Pack";
+    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Claim Review";
+    if (path === "/templates") return "Extraction Templates";
+    return "ContextBuilder";
+  }
+
+  // Get current view for sidebar active state
+  function getCurrentView(): "dashboard" | "claims" | "templates" {
+    const path = location.pathname;
+    if (path === "/" || path === "/dashboard") return "dashboard";
+    if (path === "/templates") return "templates";
+    return "claims"; // /claims and /claims/:id/review both highlight claims
   }
 
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
-      <Sidebar
-        currentView={view}
-        onNavigate={handleNavigation}
-      />
+      <Sidebar currentView={getCurrentView()} />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">
-            {view === "dashboard" && "Dashboard"}
-            {view === "claims" && "Claim Workspace"}
-            {view === "review" && "Extraction Review"}
-            {view === "qa-insights" && "QA Insights"}
-            {view === "reports" && "Reports"}
-            {view === "settings" && "Settings"}
+            {getPageTitle()}
           </h1>
           <div className="flex items-center gap-4">
             <button className="p-2 text-gray-500 hover:text-gray-700">
@@ -138,7 +140,7 @@ function App() {
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
             <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-700">
-              QA
+              CB
             </div>
           </div>
         </header>
@@ -159,35 +161,38 @@ function App() {
                 Retry
               </button>
             </div>
-          ) : view === "dashboard" ? (
-            <Dashboard claims={claims} />
-          ) : view === "claims" ? (
-            <ClaimsTable
-              claims={filteredClaims}
-              totalCount={claims.length}
-              selectedClaim={selectedClaim}
-              docs={docs}
-              searchQuery={searchQuery}
-              lobFilter={lobFilter}
-              statusFilter={statusFilter}
-              riskFilter={riskFilter}
-              onSearchChange={setSearchQuery}
-              onLobFilterChange={setLobFilter}
-              onStatusFilterChange={setStatusFilter}
-              onRiskFilterChange={setRiskFilter}
-              onSelectClaim={handleSelectClaim}
-              onSelectDoc={handleSelectDoc}
-            />
-          ) : view === "review" && selectedDoc ? (
-            <DocReview
-              docId={selectedDoc}
-              onBack={handleBackToClaims}
-              onSaved={loadClaims}
-            />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              Coming soon...
-            </div>
+            <Routes>
+              <Route path="/" element={<Dashboard claims={claims} />} />
+              <Route path="/dashboard" element={<Dashboard claims={claims} />} />
+              <Route
+                path="/claims"
+                element={
+                  <ClaimsTable
+                    claims={filteredClaims}
+                    totalCount={claims.length}
+                    selectedClaim={selectedClaim}
+                    docs={docs}
+                    searchQuery={searchQuery}
+                    lobFilter={lobFilter}
+                    statusFilter={statusFilter}
+                    riskFilter={riskFilter}
+                    onSearchChange={setSearchQuery}
+                    onLobFilterChange={setLobFilter}
+                    onStatusFilterChange={setStatusFilter}
+                    onRiskFilterChange={setRiskFilter}
+                    onSelectClaim={handleSelectClaim}
+                    onSelectDoc={handleSelectDoc}
+                    onNavigateToReview={handleNavigateToReview}
+                  />
+                }
+              />
+              <Route
+                path="/claims/:claimId/review"
+                element={<ClaimReview onSaved={loadClaims} />}
+              />
+              <Route path="/templates" element={<TemplatesPage />} />
+            </Routes>
           )}
         </main>
       </div>
