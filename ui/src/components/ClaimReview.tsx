@@ -22,10 +22,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Doc-level review state
-  const [docTypeCorrect, setDocTypeCorrect] = useState<boolean>(true);
-  const [textReadable, setTextReadable] = useState<"good" | "warn" | "poor">("good");
-  const [reviewer, setReviewer] = useState("");
+  // Review state
   const [notes, setNotes] = useState("");
 
   // Field-level labels state
@@ -79,9 +76,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
       // Initialize review state from existing labels or extraction fields
       if (data.labels) {
         setFieldLabels(data.labels.field_labels || []);
-        setDocTypeCorrect(data.labels.doc_labels.doc_type_correct ?? true);
-        setTextReadable(data.labels.doc_labels.text_readable || "good");
-        setReviewer(data.labels.review.reviewer || "");
         setNotes(data.labels.review.notes || "");
       } else if (data.extraction) {
         // Initialize field labels from extraction fields with "unknown" judgement
@@ -92,15 +86,9 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
             notes: "",
           }))
         );
-        setDocTypeCorrect(true);
-        setTextReadable("good");
-        setReviewer("");
         setNotes("");
       } else {
         setFieldLabels([]);
-        setDocTypeCorrect(true);
-        setTextReadable("good");
-        setReviewer("");
         setNotes("");
       }
     } catch (err) {
@@ -136,20 +124,15 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   async function handleSaveReview() {
     if (!activeDocId || !claimId) return;
 
-    if (!reviewer.trim()) {
-      alert("Please enter your name as reviewer");
-      return;
-    }
-
     try {
       setSaving(true);
       const docLabels: DocLabels = {
-        doc_type_correct: docTypeCorrect,
-        text_readable: textReadable,
+        doc_type_correct: true,
+        text_readable: "good",
       };
-      await saveLabels(activeDocId, reviewer, notes, fieldLabels, docLabels);
+      // Use "system" as reviewer until accounts are implemented
+      await saveLabels(activeDocId, "system", notes, fieldLabels, docLabels);
       onSaved();
-      alert("Labels saved successfully!");
 
       // Move to next unlabeled doc if available
       if (claimData) {
@@ -202,139 +185,105 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top navigation: Back + Prev/Next claim */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b">
+      {/* Compact header: Back | [<Prev] Claim ID [Next>] | Stats */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
         <button
           onClick={() => navigate("/claims")}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+          className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Claims
+          Claims
         </button>
-        <div className="flex items-center gap-2">
+
+        {/* Claim navigation with ID in center */}
+        <div className="flex items-center gap-3">
           <button
             onClick={handlePrevClaim}
             disabled={!claimData.prev_claim_id}
             className={cn(
-              "px-3 py-1.5 text-sm rounded border transition-colors",
+              "p-1.5 rounded transition-colors",
               claimData.prev_claim_id
-                ? "text-gray-700 hover:bg-gray-50"
+                ? "text-gray-700 hover:bg-gray-100"
                 : "text-gray-300 cursor-not-allowed"
             )}
+            title="Previous claim"
           >
-            <span className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Prev Claim
-            </span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
+
+          <div className="text-center">
+            <div className="font-semibold text-gray-900">{claimData.claim_id}</div>
+            <div className="text-xs text-gray-500">
+              {claimData.lob} &middot; {claimData.doc_count} docs &middot; {claimData.unlabeled_count} unlabeled
+            </div>
+          </div>
+
           <button
             onClick={handleNextClaim}
             disabled={!claimData.next_claim_id}
             className={cn(
-              "px-3 py-1.5 text-sm rounded border transition-colors",
+              "p-1.5 rounded transition-colors",
               claimData.next_claim_id
-                ? "text-gray-700 hover:bg-gray-50"
+                ? "text-gray-700 hover:bg-gray-100"
                 : "text-gray-300 cursor-not-allowed"
             )}
+            title="Next claim"
           >
-            <span className="flex items-center gap-1">
-              Next Claim
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
         </div>
-      </div>
 
-      {/* Claim header */}
-      <div className="px-6 py-4 bg-white border-b">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              {claimData.claim_id}
-            </h2>
-            <div className="text-sm text-gray-500">
-              {claimData.lob} &middot; {claimData.doc_count} docs &middot; {claimData.unlabeled_count} unlabeled
-            </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-              <GateCounts counts={claimData.gate_counts} />
-              {claimData.run_metadata && (
-                <span>&middot; Run: {claimData.run_metadata.run_id}</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Doc header with Gate badge and Save button */}
-      <div className="px-6 py-3 bg-white border-b flex items-center justify-between">
-        <div>
-          {currentDoc && (
-            <>
-              <div className="font-medium text-gray-900">{currentDoc.filename}</div>
-              <div className="text-sm text-gray-500">
-                {currentDoc.claim_id} &middot; {currentDoc.doc_type}
-                {currentDoc.extraction && ` (${Math.round(currentDoc.extraction.doc.doc_type_confidence * 100)}%)`}
-                {" "}&middot; {currentDoc.language.toUpperCase()} &middot; {currentDoc.pages.length} pages
-              </div>
-              {currentDoc.extraction && (
-                <div className="text-xs text-gray-400 mt-1">
-                  Run: {currentDoc.extraction.run.run_id} &middot; Extractor v{currentDoc.extraction.run.extractor_version}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {currentDoc?.extraction?.quality_gate && (
-            <QualityBadge status={currentDoc.extraction.quality_gate.status} />
-          )}
-          <button
-            onClick={handleSaveReview}
-            disabled={saving || !activeDocId}
-            className={cn(
-              "px-4 py-2 rounded-md font-medium transition-colors",
-              saving
-                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                : "bg-gray-900 text-white hover:bg-gray-800"
-            )}
-          >
-            {saving ? "Saving..." : "Save review"}
-          </button>
+        {/* Gate summary */}
+        <div className="text-xs">
+          <GateCounts counts={claimData.gate_counts} />
         </div>
       </div>
 
       {/* Doc navigation strip */}
-      <div className="px-6 py-2 bg-white border-b overflow-x-auto">
+      <div className="px-4 py-2 bg-gray-50 border-b overflow-x-auto">
         <div className="flex gap-2">
           {claimData.docs.map((doc) => (
             <button
               key={doc.doc_id}
               onClick={() => handleSelectDoc(doc.doc_id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-colors",
+                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors",
                 activeDocId === doc.doc_id
                   ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  : "bg-white text-gray-700 hover:bg-gray-100 border"
               )}
             >
               <GateDot status={doc.quality_status} />
               <span className="font-medium">{doc.doc_type}</span>
-              {doc.needs_vision && (
-                <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              )}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Doc details row */}
+      {currentDoc && (
+        <div className="px-4 py-2 bg-white border-b flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div>
+              <span className="font-medium text-gray-900">{currentDoc.filename}</span>
+              <span className="text-sm text-gray-500 ml-2">
+                {currentDoc.doc_type}
+                {currentDoc.extraction && ` (${Math.round(currentDoc.extraction.doc.doc_type_confidence * 100)}%)`}
+                {" "}&middot; {currentDoc.language.toUpperCase()} &middot; {currentDoc.pages.length} pages
+              </span>
+            </div>
+            {currentDoc.extraction?.quality_gate && (
+              <QualityBadge status={currentDoc.extraction.quality_gate.status} />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main content: split view */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 overflow-hidden">
@@ -366,7 +315,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           </div>
         </div>
 
-        {/* Right: Extracted fields + Doc labels */}
+        {/* Right: Extracted fields + Save */}
         <div className="overflow-hidden flex flex-col">
           <div className="p-3 border-b bg-gray-50">
             <h3 className="font-medium text-gray-900">Extracted Fields</h3>
@@ -386,48 +335,27 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
             )}
           </div>
 
-          {/* Doc-level labels & reviewer */}
-          <div className="border-t p-4 space-y-3 bg-gray-50">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={docTypeCorrect}
-                  onChange={(e) => setDocTypeCorrect(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                <span className="text-sm text-gray-700">Doc type correct</span>
-              </label>
-
-              <select
-                value={textReadable}
-                onChange={(e) =>
-                  setTextReadable(e.target.value as "good" | "warn" | "poor")
-                }
-                className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-              >
-                <option value="good">Text: Good</option>
-                <option value="warn">Text: Warn</option>
-                <option value="poor">Text: Poor</option>
-              </select>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Reviewer name"
-                value={reviewer}
-                onChange={(e) => setReviewer(e.target.value)}
-                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
-              />
-              <input
-                type="text"
-                placeholder="Notes (optional)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
-              />
-            </div>
+          {/* Bottom: Notes + Save button */}
+          <div className="border-t p-3 bg-gray-50 flex items-center gap-3">
+            <input
+              type="text"
+              placeholder="Notes (optional)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+            />
+            <button
+              onClick={handleSaveReview}
+              disabled={saving || !activeDocId}
+              className={cn(
+                "px-4 py-2 rounded-md font-medium transition-colors whitespace-nowrap",
+                saving
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                  : "bg-gray-900 text-white hover:bg-gray-800"
+              )}
+            >
+              {saving ? "Saving..." : "Save Review"}
+            </button>
           </div>
         </div>
       </div>
@@ -437,7 +365,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
 function GateCounts({ counts }: { counts: { pass: number; warn: number; fail: number } }) {
   return (
-    <span className="flex items-center gap-1">
+    <span className="flex items-center gap-2">
       {counts.pass > 0 && <span className="text-green-600">{counts.pass} PASS</span>}
       {counts.warn > 0 && <span className="text-yellow-600">{counts.warn} WARN</span>}
       {counts.fail > 0 && <span className="text-red-600">{counts.fail} FAIL</span>}
@@ -464,7 +392,7 @@ function QualityBadge({ status }: { status: "pass" | "warn" | "fail" }) {
   };
 
   return (
-    <span className={cn("px-3 py-1 rounded-full text-sm font-medium", styles[status])}>
+    <span className={cn("px-2 py-0.5 rounded text-xs font-medium", styles[status])}>
       {status.toUpperCase()}
     </span>
   );
