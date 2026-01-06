@@ -41,10 +41,16 @@ export function DocumentViewer({
     setActiveTab(newDefault);
   }, [hasPdf, sourceUrl]);
 
-  // When highlight page changes (evidence clicked), navigate PDF to that page
+  // When highlight changes (evidence clicked), navigate PDF to that page and highlight text
   useEffect(() => {
     if (highlightPage !== undefined && activeTab === "pdf" && pdfViewerRef.current) {
       pdfViewerRef.current.goToPage(highlightPage);
+      if (highlightQuote) {
+        // Small delay to allow page navigation
+        setTimeout(() => {
+          pdfViewerRef.current?.highlightText(highlightQuote);
+        }, 300);
+      }
     }
   }, [highlightPage, highlightQuote, activeTab]);
 
@@ -100,6 +106,7 @@ export function DocumentViewer({
             ref={pdfViewerRef}
             url={sourceUrl}
             currentPage={highlightPage}
+            highlightText={highlightQuote}
           />
         )}
 
