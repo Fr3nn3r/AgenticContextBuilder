@@ -1095,3 +1095,107 @@ def get_doc_source(doc_id: str, claim_id: Optional[str] = Query(None)):
         media_type=media_type,
         filename=source_file.name,
     )
+
+
+# =============================================================================
+# INSIGHTS ENDPOINTS
+# =============================================================================
+
+@app.get("/api/insights/overview")
+def get_insights_overview():
+    """
+    Get overview KPIs for the Calibration Insights screen.
+
+    Returns:
+    - docs_total: Total docs (supported types)
+    - docs_reviewed: Docs with labels
+    - docs_doc_type_wrong: Docs where doc_type was labeled incorrect
+    - docs_needs_vision: Docs flagged as needing vision
+    - required_field_presence_rate: Avg presence rate for required fields
+    - required_field_accuracy: Avg accuracy for required fields
+    - evidence_rate: Avg evidence rate for extracted fields
+    """
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR)
+    return aggregator.get_overview()
+
+
+@app.get("/api/insights/doc-types")
+def get_insights_doc_types():
+    """
+    Get metrics per doc type for the scoreboard.
+
+    Returns list of doc type metrics including:
+    - docs_reviewed, docs_doc_type_wrong, docs_needs_vision
+    - required_field_presence_pct, required_field_accuracy_pct
+    - evidence_rate_pct, top_failing_field
+    """
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR)
+    return aggregator.get_doc_type_metrics()
+
+
+@app.get("/api/insights/priorities")
+def get_insights_priorities(limit: int = Query(10, ge=1, le=50)):
+    """
+    Get prioritized list of (doc_type, field) to improve.
+
+    Returns ranked list with:
+    - doc_type, field_name, is_required
+    - affected_docs count
+    - failure breakdown (extractor_miss, incorrect, etc.)
+    - priority_score and fix_bucket recommendation
+    """
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR)
+    return aggregator.get_priorities(limit=limit)
+
+
+@app.get("/api/insights/field-details")
+def get_insights_field_details(
+    doc_type: str = Query(..., description="Document type"),
+    field: str = Query(..., alias="field", description="Field name"),
+):
+    """
+    Get detailed breakdown for a specific (doc_type, field).
+
+    Returns:
+    - total_docs, labeled_docs, with_prediction, with_evidence
+    - breakdown: correct, incorrect, extractor_miss, etc.
+    - rates: presence_pct, evidence_pct, accuracy_pct
+    """
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR)
+    return aggregator.get_field_details(doc_type, field)
+
+
+@app.get("/api/insights/examples")
+def get_insights_examples(
+    doc_type: Optional[str] = Query(None, description="Filter by doc type"),
+    field: Optional[str] = Query(None, description="Filter by field name"),
+    outcome: Optional[str] = Query(None, description="Filter by outcome"),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """
+    Get example cases for drilldown.
+
+    Filters:
+    - doc_type: loss_notice, police_report, insurance_policy
+    - field: specific field name
+    - outcome: correct, incorrect, extractor_miss, cannot_verify, evidence_missing
+
+    Returns list with claim_id, doc_id, values, judgement, and review_url.
+    """
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR)
+    return aggregator.get_examples(
+        doc_type=doc_type,
+        field_name=field,
+        outcome=outcome,
+        limit=limit,
+    )

@@ -5,6 +5,7 @@ import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
 import { Dashboard } from "./components/Dashboard";
 import { TemplatesPage } from "./components/TemplatesPage";
+import { InsightsPage } from "./components/InsightsPage";
 import type { ClaimSummary, DocSummary } from "./types";
 import { listClaims, listDocs } from "./api/client";
 
@@ -102,15 +103,17 @@ function App() {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "Dashboard";
     if (path === "/claims") return "Claim Document Pack";
-    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Claim Review";
+    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Pack Review";
+    if (path === "/insights") return "Calibration Insights";
     if (path === "/templates") return "Extraction Templates";
     return "ContextBuilder";
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "dashboard" | "claims" | "templates" {
+  function getCurrentView(): "dashboard" | "claims" | "insights" | "templates" {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
+    if (path === "/insights") return "insights";
     if (path === "/templates") return "templates";
     return "claims"; // /claims and /claims/:id/review both highlight claims
   }
@@ -191,6 +194,7 @@ function App() {
                 path="/claims/:claimId/review"
                 element={<ClaimReview onSaved={loadClaims} />}
               />
+              <Route path="/insights" element={<InsightsPage />} />
               <Route path="/templates" element={<TemplatesPage />} />
             </Routes>
           )}
