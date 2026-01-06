@@ -181,17 +181,54 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header: Back to Claim | Doc navigation */}
+      {/* Header: Back to Claims | Claim ID with nav | Doc navigation */}
       <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
-        <button
-          onClick={() => navigate("/claims")}
-          className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Claim {claimData.claim_id}
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate("/claims")}
+            className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Claims
+          </button>
+
+          {/* Claim navigation */}
+          <div className="flex items-center gap-1">
+            <span className="text-sm font-medium text-gray-900">Claim {claimData.claim_id}</span>
+            <button
+              onClick={() => claimData.prev_claim_id && navigate(`/claims/${claimData.prev_claim_id}/review`)}
+              disabled={!claimData.prev_claim_id}
+              className={cn(
+                "p-1 rounded transition-colors",
+                claimData.prev_claim_id
+                  ? "text-gray-600 hover:bg-gray-100"
+                  : "text-gray-300 cursor-not-allowed"
+              )}
+              title="Previous claim"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => claimData.next_claim_id && navigate(`/claims/${claimData.next_claim_id}/review`)}
+              disabled={!claimData.next_claim_id}
+              className={cn(
+                "p-1 rounded transition-colors",
+                claimData.next_claim_id
+                  ? "text-gray-600 hover:bg-gray-100"
+                  : "text-gray-300 cursor-not-allowed"
+              )}
+              title="Next claim"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
 
         {/* Doc navigation */}
         <div className="flex items-center gap-2">
