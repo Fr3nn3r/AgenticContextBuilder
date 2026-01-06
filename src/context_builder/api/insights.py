@@ -10,7 +10,9 @@ Scope: 3 supported doc types (loss_notice, police_report, insurance_policy)
 """
 
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from enum import Enum
@@ -18,6 +20,9 @@ from enum import Enum
 
 # Supported doc types for insights
 SUPPORTED_DOC_TYPES = ["loss_notice", "police_report", "insurance_policy"]
+
+# Baseline settings file
+BASELINE_FILE = ".insights_baseline.json"
 
 
 class FieldOutcome(str, Enum):
@@ -157,16 +162,35 @@ class Example:
     review_url: str
 
 
+@dataclass
+class RunInfo:
+    """Information about a single extraction run."""
+    run_id: str
+    timestamp: Optional[str]
+    model: str
+    extractor_version: str
+    prompt_version: str
+    docs_count: int
+    extracted_count: int
+    labeled_count: int
+    # KPI snapshot
+    presence_rate: float = 0.0
+    accuracy_rate: float = 0.0
+    evidence_rate: float = 0.0
+
+
 class InsightsAggregator:
     """
     Aggregates extraction results and labels into insights metrics.
     """
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, run_id: Optional[str] = None):
         self.data_dir = data_dir
+        self.run_id = run_id  # None means "latest"
         self.field_records: List[FieldRecord] = []
         self.doc_records: List[DocRecord] = []
         self.specs: Dict[str, Any] = {}
+        self.run_metadata: Dict[str, Any] = {}
         self._loaded = False
 
     def load_data(self) -> None:
@@ -208,10 +232,18 @@ class InsightsAggregator:
             if not docs_dir.exists():
                 continue
 
-            # Get latest run
-            run_dir = self._get_latest_run_dir(claim_dir)
+            # Get specific run or latest
+            if self.run_id:
+                run_dir = self._get_run_dir_by_id(claim_dir, self.run_id)
+            else:
+                run_dir = self._get_latest_run_dir(claim_dir)
+
             extraction_dir = run_dir / "extraction" if run_dir else None
             labels_dir = run_dir / "labels" if run_dir else None
+
+            # Collect run metadata from first claim with this run
+            if run_dir and not self.run_metadata:
+                self._load_run_metadata(run_dir)
 
             for doc_folder in docs_dir.iterdir():
                 if not doc_folder.is_dir():
@@ -410,9 +442,42 @@ class InsightsAggregator:
         )
         return run_dirs[0] if run_dirs else None
 
+    def _get_run_dir_by_id(self, claim_dir: Path, run_id: str) -> Optional[Path]:
+        """Get a specific run directory by ID."""
+        runs_dir = claim_dir / "runs"
+        if not runs_dir.exists():
+            return None
+        run_dir = runs_dir / run_id
+        if run_dir.exists() and run_dir.is_dir():
+            return run_dir
+        return None
+
+    def _load_run_metadata(self, run_dir: Path) -> None:
+        """Load run metadata from summary.json."""
+        summary_path = run_dir / "logs" / "summary.json"
+        if summary_path.exists():
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary = json.load(f)
+                self.run_metadata = {
+                    "run_id": run_dir.name,
+                    "timestamp": summary.get("completed_at"),
+                    "model": summary.get("model", ""),
+                    "extractor_version": summary.get("extractor_version", ""),
+                    "prompt_version": summary.get("prompt_version", ""),
+                    "docs_processed": summary.get("docs_processed", 0),
+                }
+        else:
+            self.run_metadata = {
+                "run_id": run_dir.name,
+                "timestamp": None,
+                "model": "",
+                "extractor_version": "",
+                "prompt_version": "",
+                "docs_processed": 0,
+            }
+
     def _extract_claim_number(self, folder_name: str) -> str:
         """Extract claim number from folder name."""
-        import re
         match = re.search(r'(\d{2}-\d{2}-VH-\d+)', folder_name)
         return match.group(1) if match else folder_name
 
@@ -712,3 +777,211 @@ class InsightsAggregator:
             })
 
         return examples
+
+    def get_run_metadata(self) -> Dict[str, Any]:
+        """Get metadata for the current run."""
+        self.load_data()
+        return {
+            **self.run_metadata,
+            "docs_total": len(self.doc_records),
+            "docs_reviewed": len([d for d in self.doc_records if d.has_labels]),
+        }
+
+
+# =============================================================================
+# Run Management Functions
+# =============================================================================
+
+def list_all_runs(data_dir: Path) -> List[Dict[str, Any]]:
+    """
+    List all extraction runs across all claims with their metadata and KPIs.
+    Returns runs sorted by timestamp (newest first).
+    """
+    runs_map: Dict[str, Dict[str, Any]] = {}
+
+    if not data_dir.exists():
+        return []
+
+    for claim_dir in data_dir.iterdir():
+        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+            continue
+
+        runs_dir = claim_dir / "runs"
+        if not runs_dir.exists():
+            continue
+
+        for run_dir in runs_dir.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+                continue
+
+            run_id = run_dir.name
+            if run_id not in runs_map:
+                runs_map[run_id] = {
+                    "run_id": run_id,
+                    "timestamp": None,
+                    "model": "",
+                    "extractor_version": "",
+                    "prompt_version": "",
+                    "claims_count": 0,
+                    "docs_count": 0,
+                    "extracted_count": 0,
+                    "labeled_count": 0,
+                }
+
+            runs_map[run_id]["claims_count"] += 1
+
+            # Try to get metadata from summary.json
+            summary_path = run_dir / "logs" / "summary.json"
+            if summary_path.exists() and not runs_map[run_id]["timestamp"]:
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+                    runs_map[run_id]["timestamp"] = summary.get("completed_at")
+                    runs_map[run_id]["model"] = summary.get("model", "")
+                    runs_map[run_id]["extractor_version"] = summary.get("extractor_version", "")
+                    runs_map[run_id]["prompt_version"] = summary.get("prompt_version", "")
+
+            # Count extractions and labels
+            extraction_dir = run_dir / "extraction"
+            labels_dir = run_dir / "labels"
+
+            if extraction_dir.exists():
+                runs_map[run_id]["extracted_count"] += len(list(extraction_dir.glob("*.json")))
+            if labels_dir.exists():
+                runs_map[run_id]["labeled_count"] += len(list(labels_dir.glob("*.labels.json")))
+
+            # Count docs
+            docs_dir = claim_dir / "docs"
+            if docs_dir.exists():
+                runs_map[run_id]["docs_count"] += len([d for d in docs_dir.iterdir() if d.is_dir()])
+
+    # Convert to list and sort by timestamp (newest first)
+    runs = list(runs_map.values())
+    runs.sort(key=lambda r: r["timestamp"] or "", reverse=True)
+
+    # Calculate KPIs for each run
+    for run in runs:
+        aggregator = InsightsAggregator(data_dir, run_id=run["run_id"])
+        try:
+            overview = aggregator.get_overview()
+            run["presence_rate"] = overview.get("required_field_presence_rate", 0)
+            run["accuracy_rate"] = overview.get("required_field_accuracy", 0)
+            run["evidence_rate"] = overview.get("evidence_rate", 0)
+        except Exception:
+            run["presence_rate"] = 0
+            run["accuracy_rate"] = 0
+            run["evidence_rate"] = 0
+
+    return runs
+
+
+def compare_runs(data_dir: Path, baseline_run_id: str, current_run_id: str) -> Dict[str, Any]:
+    """
+    Compare two runs and compute deltas.
+
+    Returns:
+    - overview_deltas: delta for each KPI
+    - priority_changes: fields that improved/regressed
+    - doc_type_deltas: per doc type metric changes
+    """
+    baseline = InsightsAggregator(data_dir, run_id=baseline_run_id)
+    current = InsightsAggregator(data_dir, run_id=current_run_id)
+
+    baseline_overview = baseline.get_overview()
+    current_overview = current.get_overview()
+
+    baseline_priorities = baseline.get_priorities(limit=20)
+    current_priorities = current.get_priorities(limit=20)
+
+    baseline_doc_types = baseline.get_doc_type_metrics()
+    current_doc_types = current.get_doc_type_metrics()
+
+    # Compute overview deltas
+    overview_deltas = {}
+    for key in ["required_field_presence_rate", "required_field_accuracy", "evidence_rate",
+                "docs_reviewed", "docs_doc_type_wrong", "docs_needs_vision"]:
+        baseline_val = baseline_overview.get(key, 0)
+        current_val = current_overview.get(key, 0)
+        delta = current_val - baseline_val if isinstance(current_val, (int, float)) else 0
+        overview_deltas[key] = {
+            "baseline": baseline_val,
+            "current": current_val,
+            "delta": round(delta, 1) if isinstance(delta, float) else delta,
+        }
+
+    # Compute priority changes
+    baseline_priority_set = {(p["doc_type"], p["field_name"]) for p in baseline_priorities}
+    current_priority_set = {(p["doc_type"], p["field_name"]) for p in current_priorities}
+
+    # Fields that were in baseline but not in current (improved)
+    improved = [
+        {"doc_type": dt, "field_name": fn, "status": "improved"}
+        for dt, fn in baseline_priority_set - current_priority_set
+    ]
+
+    # Fields that are in current but not in baseline (regressed)
+    regressed = [
+        {"doc_type": dt, "field_name": fn, "status": "regressed"}
+        for dt, fn in current_priority_set - baseline_priority_set
+    ]
+
+    # Fields in both - compare affected counts
+    for p in current_priorities:
+        key = (p["doc_type"], p["field_name"])
+        if key in baseline_priority_set:
+            baseline_p = next((bp for bp in baseline_priorities
+                              if bp["doc_type"] == p["doc_type"] and bp["field_name"] == p["field_name"]), None)
+            if baseline_p:
+                delta = p["affected_docs"] - baseline_p["affected_docs"]
+                if delta != 0:
+                    regressed.append({
+                        "doc_type": p["doc_type"],
+                        "field_name": p["field_name"],
+                        "status": "regressed" if delta > 0 else "improved",
+                        "delta": delta,
+                    })
+
+    # Compute doc type deltas
+    doc_type_deltas = []
+    baseline_dt_map = {dt["doc_type"]: dt for dt in baseline_doc_types}
+    for dt in current_doc_types:
+        baseline_dt = baseline_dt_map.get(dt["doc_type"], {})
+        doc_type_deltas.append({
+            "doc_type": dt["doc_type"],
+            "presence_delta": round(dt.get("required_field_presence_pct", 0) - baseline_dt.get("required_field_presence_pct", 0), 1),
+            "accuracy_delta": round(dt.get("required_field_accuracy_pct", 0) - baseline_dt.get("required_field_accuracy_pct", 0), 1),
+            "evidence_delta": round(dt.get("evidence_rate_pct", 0) - baseline_dt.get("evidence_rate_pct", 0), 1),
+        })
+
+    return {
+        "baseline_run_id": baseline_run_id,
+        "current_run_id": current_run_id,
+        "baseline_metadata": baseline.get_run_metadata(),
+        "current_metadata": current.get_run_metadata(),
+        "overview_deltas": overview_deltas,
+        "priority_changes": improved + regressed,
+        "doc_type_deltas": doc_type_deltas,
+    }
+
+
+def get_baseline(data_dir: Path) -> Optional[str]:
+    """Get the current baseline run ID."""
+    baseline_path = data_dir / BASELINE_FILE
+    if baseline_path.exists():
+        with open(baseline_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("baseline_run_id")
+    return None
+
+
+def set_baseline(data_dir: Path, run_id: str) -> None:
+    """Set a run as the baseline."""
+    baseline_path = data_dir / BASELINE_FILE
+    with open(baseline_path, "w", encoding="utf-8") as f:
+        json.dump({"baseline_run_id": run_id, "set_at": datetime.now().isoformat()}, f)
+
+
+def clear_baseline(data_dir: Path) -> None:
+    """Clear the baseline setting."""
+    baseline_path = data_dir / BASELINE_FILE
+    if baseline_path.exists():
+        baseline_path.unlink()

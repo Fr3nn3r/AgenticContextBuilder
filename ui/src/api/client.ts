@@ -202,3 +202,76 @@ export async function getInsightsExamples(params: {
   if (params.limit) query.set("limit", params.limit.toString());
   return fetchJson<InsightExample[]>(`${API_BASE}/insights/examples?${query.toString()}`);
 }
+
+// Run management
+
+export interface RunInfo {
+  run_id: string;
+  timestamp: string | null;
+  model: string;
+  extractor_version: string;
+  prompt_version: string;
+  claims_count: number;
+  docs_count: number;
+  extracted_count: number;
+  labeled_count: number;
+  presence_rate: number;
+  accuracy_rate: number;
+  evidence_rate: number;
+}
+
+export interface RunOverview {
+  run_metadata: {
+    run_id: string;
+    timestamp: string | null;
+    model: string;
+    extractor_version: string;
+    prompt_version: string;
+    docs_processed: number;
+    docs_total: number;
+    docs_reviewed: number;
+  };
+  overview: InsightsOverview;
+}
+
+export interface RunComparison {
+  baseline_run_id: string;
+  current_run_id: string;
+  baseline_metadata: Record<string, unknown>;
+  current_metadata: Record<string, unknown>;
+  overview_deltas: Record<string, { baseline: number; current: number; delta: number }>;
+  priority_changes: Array<{ doc_type: string; field_name: string; status: string; delta?: number }>;
+  doc_type_deltas: Array<{ doc_type: string; presence_delta: number; accuracy_delta: number; evidence_delta: number }>;
+}
+
+export async function getInsightsRuns(): Promise<RunInfo[]> {
+  return fetchJson<RunInfo[]>(`${API_BASE}/insights/runs`);
+}
+
+export async function getRunOverview(runId: string): Promise<RunOverview> {
+  return fetchJson<RunOverview>(`${API_BASE}/insights/run/${runId}/overview`);
+}
+
+export async function getRunDocTypes(runId: string): Promise<DocTypeMetrics[]> {
+  return fetchJson<DocTypeMetrics[]>(`${API_BASE}/insights/run/${runId}/doc-types`);
+}
+
+export async function getRunPriorities(runId: string, limit = 10): Promise<PriorityItem[]> {
+  return fetchJson<PriorityItem[]>(`${API_BASE}/insights/run/${runId}/priorities?limit=${limit}`);
+}
+
+export async function compareRuns(baselineId: string, currentId: string): Promise<RunComparison> {
+  return fetchJson<RunComparison>(`${API_BASE}/insights/compare?baseline=${baselineId}&current=${currentId}`);
+}
+
+export async function getBaseline(): Promise<{ baseline_run_id: string | null }> {
+  return fetchJson<{ baseline_run_id: string | null }>(`${API_BASE}/insights/baseline`);
+}
+
+export async function setBaseline(runId: string): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(`${API_BASE}/insights/baseline?run_id=${runId}`, { method: "POST" });
+}
+
+export async function clearBaseline(): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(`${API_BASE}/insights/baseline`, { method: "DELETE" });
+}

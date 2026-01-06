@@ -1199,3 +1199,97 @@ def get_insights_examples(
         outcome=outcome,
         limit=limit,
     )
+
+
+# =============================================================================
+# RUN MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.get("/api/insights/runs")
+def get_insights_runs():
+    """
+    List all extraction runs with metadata and KPIs.
+
+    Returns list of runs sorted by timestamp (newest first), each with:
+    - run_id, timestamp, model, extractor_version, prompt_version
+    - claims_count, docs_count, extracted_count, labeled_count
+    - presence_rate, accuracy_rate, evidence_rate
+    """
+    from context_builder.api.insights import list_all_runs
+
+    return list_all_runs(DATA_DIR)
+
+
+@app.get("/api/insights/run/{run_id}/overview")
+def get_run_overview(run_id: str):
+    """Get overview KPIs for a specific run."""
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR, run_id=run_id)
+    return {
+        "run_metadata": aggregator.get_run_metadata(),
+        "overview": aggregator.get_overview(),
+    }
+
+
+@app.get("/api/insights/run/{run_id}/doc-types")
+def get_run_doc_types(run_id: str):
+    """Get doc type metrics for a specific run."""
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR, run_id=run_id)
+    return aggregator.get_doc_type_metrics()
+
+
+@app.get("/api/insights/run/{run_id}/priorities")
+def get_run_priorities(run_id: str, limit: int = Query(10, ge=1, le=50)):
+    """Get priorities for a specific run."""
+    from context_builder.api.insights import InsightsAggregator
+
+    aggregator = InsightsAggregator(DATA_DIR, run_id=run_id)
+    return aggregator.get_priorities(limit=limit)
+
+
+@app.get("/api/insights/compare")
+def compare_runs_endpoint(
+    baseline: str = Query(..., description="Baseline run ID"),
+    current: str = Query(..., description="Current run ID to compare"),
+):
+    """
+    Compare two runs and compute deltas.
+
+    Returns:
+    - overview_deltas: delta for each KPI
+    - priority_changes: fields that improved/regressed
+    - doc_type_deltas: per doc type metric changes
+    """
+    from context_builder.api.insights import compare_runs
+
+    return compare_runs(DATA_DIR, baseline, current)
+
+
+@app.get("/api/insights/baseline")
+def get_baseline_endpoint():
+    """Get the current baseline run ID."""
+    from context_builder.api.insights import get_baseline
+
+    baseline_id = get_baseline(DATA_DIR)
+    return {"baseline_run_id": baseline_id}
+
+
+@app.post("/api/insights/baseline")
+def set_baseline_endpoint(run_id: str = Query(..., description="Run ID to set as baseline")):
+    """Set a run as the baseline for comparisons."""
+    from context_builder.api.insights import set_baseline
+
+    set_baseline(DATA_DIR, run_id)
+    return {"status": "ok", "baseline_run_id": run_id}
+
+
+@app.delete("/api/insights/baseline")
+def clear_baseline_endpoint():
+    """Clear the baseline setting."""
+    from context_builder.api.insights import clear_baseline
+
+    clear_baseline(DATA_DIR)
+    return {"status": "ok"}
