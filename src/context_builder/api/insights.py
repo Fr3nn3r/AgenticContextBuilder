@@ -10,12 +10,18 @@ Scope: 3 supported doc types (loss_notice, police_report, insurance_policy)
 """
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from context_builder.storage import FileStorage
+
+logger = logging.getLogger(__name__)
 
 
 # Supported doc types for insights
@@ -185,14 +191,27 @@ class InsightsAggregator:
     Aggregates extraction results and labels into insights metrics.
     """
 
-    def __init__(self, data_dir: Path, run_id: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Path,
+        run_id: Optional[str] = None,
+        storage: Optional["FileStorage"] = None,
+    ):
         self.data_dir = data_dir
         self.run_id = run_id  # None means "latest"
+        self._storage = storage
         self.field_records: List[FieldRecord] = []
         self.doc_records: List[DocRecord] = []
         self.specs: Dict[str, Any] = {}
         self.run_metadata: Dict[str, Any] = {}
         self._loaded = False
+
+    def _get_storage(self) -> "FileStorage":
+        """Get or create Storage instance."""
+        if self._storage is None:
+            from context_builder.storage import FileStorage
+            self._storage = FileStorage(self.data_dir)
+        return self._storage
 
     def load_data(self) -> None:
         """Load all extraction results and labels."""
@@ -221,65 +240,61 @@ class InsightsAggregator:
             pass
 
     def _load_documents(self) -> None:
-        """Load all documents with their extractions and labels."""
+        """Load all documents with their extractions and labels using Storage."""
+        storage = self._get_storage()
+
         if not self.data_dir.exists():
             return
 
-        for claim_dir in self.data_dir.iterdir():
-            if not claim_dir.is_dir() or claim_dir.name.startswith("."):
-                continue
+        # Determine which run to use
+        active_run_id = self.run_id
+        if not active_run_id:
+            # Get latest run from global runs
+            runs = storage.list_runs()
+            if runs:
+                active_run_id = runs[0].run_id
 
-            docs_dir = claim_dir / "docs"
-            if not docs_dir.exists():
-                continue
-
-            # Get specific run or latest
-            if self.run_id:
-                run_dir = self._get_run_dir_by_id(claim_dir, self.run_id)
+        # Load run metadata once
+        if active_run_id and not self.run_metadata:
+            run_bundle = storage.get_run(active_run_id)
+            if run_bundle and run_bundle.summary:
+                self.run_metadata = {
+                    "run_id": active_run_id,
+                    "timestamp": run_bundle.summary.get("completed_at"),
+                    "model": run_bundle.summary.get("model", ""),
+                    "extractor_version": run_bundle.summary.get("extractor_version", ""),
+                    "prompt_version": run_bundle.summary.get("prompt_version", ""),
+                    "docs_processed": run_bundle.summary.get("docs_total", 0),
+                }
             else:
-                run_dir = self._get_latest_run_dir(claim_dir)
+                self.run_metadata = {
+                    "run_id": active_run_id,
+                    "timestamp": None,
+                    "model": "",
+                    "extractor_version": "",
+                    "prompt_version": "",
+                    "docs_processed": 0,
+                }
 
-            extraction_dir = run_dir / "extraction" if run_dir else None
-            # Note: labels are now loaded from docs/{doc_id}/labels/latest.json (run-independent)
-
-            # Collect run metadata from first claim with this run
-            if run_dir and not self.run_metadata:
-                self._load_run_metadata(run_dir)
-
-            for doc_folder in docs_dir.iterdir():
-                if not doc_folder.is_dir():
-                    continue
-
-                doc_id = doc_folder.name
-                meta_path = doc_folder / "meta" / "doc.json"
-                if not meta_path.exists():
-                    continue
-
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-
-                doc_type = meta.get("doc_type", "unknown")
-                filename = meta.get("original_filename", "Unknown")
-                claim_id = self._extract_claim_number(claim_dir.name)
+        # Iterate over all claims and docs using Storage
+        for claim_ref in storage.list_claims():
+            for doc_ref in storage.list_docs(claim_ref.claim_id):
+                doc_id = doc_ref.doc_id
+                doc_type = doc_ref.doc_type
+                filename = doc_ref.filename
+                claim_id = doc_ref.claim_id
 
                 # Skip unsupported doc types
                 if doc_type not in SUPPORTED_DOC_TYPES:
                     continue
 
-                # Load extraction (from run directory)
+                # Load extraction using Storage
                 extraction = None
-                if extraction_dir:
-                    ext_path = extraction_dir / f"{doc_id}.json"
-                    if ext_path.exists():
-                        with open(ext_path, "r", encoding="utf-8") as f:
-                            extraction = json.load(f)
+                if active_run_id:
+                    extraction = storage.get_extraction(active_run_id, doc_id, claim_id)
 
-                # Load labels (from docs/{doc_id}/labels/latest.json - run-independent)
-                labels = None
-                labels_path = doc_folder / "labels" / "latest.json"
-                if labels_path.exists():
-                    with open(labels_path, "r", encoding="utf-8") as f:
-                        labels = json.load(f)
+                # Load labels using Storage (run-independent)
+                labels = storage.get_label(doc_id)
 
                 self._process_document(
                     doc_id, claim_id, doc_type, filename, extraction, labels
@@ -449,56 +464,6 @@ class InsightsAggregator:
             # Evidence missing overlay
             if record.has_prediction and not record.has_evidence:
                 record.evidence_missing_tag = True
-
-    def _get_latest_run_dir(self, claim_dir: Path) -> Optional[Path]:
-        """Get the most recent run directory for a claim."""
-        runs_dir = claim_dir / "runs"
-        if not runs_dir.exists():
-            return None
-        run_dirs = sorted(
-            [d for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("run_")],
-            reverse=True
-        )
-        return run_dirs[0] if run_dirs else None
-
-    def _get_run_dir_by_id(self, claim_dir: Path, run_id: str) -> Optional[Path]:
-        """Get a specific run directory by ID."""
-        runs_dir = claim_dir / "runs"
-        if not runs_dir.exists():
-            return None
-        run_dir = runs_dir / run_id
-        if run_dir.exists() and run_dir.is_dir():
-            return run_dir
-        return None
-
-    def _load_run_metadata(self, run_dir: Path) -> None:
-        """Load run metadata from summary.json."""
-        summary_path = run_dir / "logs" / "summary.json"
-        if summary_path.exists():
-            with open(summary_path, "r", encoding="utf-8") as f:
-                summary = json.load(f)
-                self.run_metadata = {
-                    "run_id": run_dir.name,
-                    "timestamp": summary.get("completed_at"),
-                    "model": summary.get("model", ""),
-                    "extractor_version": summary.get("extractor_version", ""),
-                    "prompt_version": summary.get("prompt_version", ""),
-                    "docs_processed": summary.get("docs_processed", 0),
-                }
-        else:
-            self.run_metadata = {
-                "run_id": run_dir.name,
-                "timestamp": None,
-                "model": "",
-                "extractor_version": "",
-                "prompt_version": "",
-                "docs_processed": 0,
-            }
-
-    def _extract_claim_number(self, folder_name: str) -> str:
-        """Extract claim number from folder name."""
-        match = re.search(r'(\d{2}-\d{2}-VH-\d+)', folder_name)
-        return match.group(1) if match else folder_name
 
     # -------------------------------------------------------------------------
     # Aggregation methods
@@ -811,143 +776,79 @@ class InsightsAggregator:
 # Run Management Functions
 # =============================================================================
 
-def list_all_runs(data_dir: Path) -> List[Dict[str, Any]]:
+def list_all_runs(
+    data_dir: Path,
+    storage: Optional["FileStorage"] = None,
+) -> List[Dict[str, Any]]:
     """
     List all extraction runs with their metadata and KPIs.
-    Reads from global runs directory (output/runs/) when available.
-    Falls back to scanning claim folders for backwards compatibility.
-    Returns runs sorted by timestamp (newest first).
+
+    Uses Storage abstraction for efficient run lookups via indexes.
+    Falls back to filesystem scan when indexes are unavailable.
+
+    Args:
+        data_dir: Path to claims directory (output/claims/).
+        storage: Optional Storage instance to reuse.
+
+    Returns:
+        List of run info dicts sorted by timestamp (newest first).
     """
-    runs_map: Dict[str, Dict[str, Any]] = {}
+    from context_builder.storage import FileStorage
 
     if not data_dir.exists():
         return []
 
-    # First, try global runs directory (new structure)
-    global_runs_dir = data_dir.parent / "runs"
-    if global_runs_dir.exists():
-        for run_dir in global_runs_dir.iterdir():
-            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
-                continue
-            # Only include runs with .complete marker
-            if not (run_dir / ".complete").exists():
-                continue
+    # Create or use provided Storage instance
+    if storage is None:
+        storage = FileStorage(data_dir)
 
-            run_id = run_dir.name
-            runs_map[run_id] = {
-                "run_id": run_id,
-                "timestamp": None,
-                "model": "",
-                "extractor_version": "",
-                "prompt_version": "",
-                "claims_count": 0,
-                "docs_count": 0,
-                "extracted_count": 0,
-                "labeled_count": 0,
-            }
+    # Get runs from Storage (handles index + fallback)
+    run_refs = storage.list_runs()
+    if not run_refs:
+        return []
 
-            # Read from global manifest
-            manifest_path = run_dir / "manifest.json"
-            if manifest_path.exists():
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-                    runs_map[run_id]["model"] = manifest.get("model", "")
-                    runs_map[run_id]["claims_count"] = manifest.get("claims_count", 0)
+    runs = []
+    for run_ref in run_refs:
+        run_id = run_ref.run_id
 
-            # Read from global summary
-            summary_path = run_dir / "summary.json"
-            if summary_path.exists():
-                with open(summary_path, "r", encoding="utf-8") as f:
-                    summary = json.load(f)
-                    runs_map[run_id]["timestamp"] = summary.get("completed_at")
-                    runs_map[run_id]["docs_count"] = summary.get("docs_total", 0)
-                    runs_map[run_id]["extracted_count"] = summary.get("docs_success", 0)
+        # Build run info dict from RunRef
+        run_info = {
+            "run_id": run_id,
+            "timestamp": run_ref.ended_at,
+            "model": "",
+            "extractor_version": "",
+            "prompt_version": "",
+            "claims_count": run_ref.claims_count,
+            "docs_count": run_ref.docs_count,
+            "extracted_count": 0,
+            "labeled_count": 0,
+        }
 
-        # If we found global runs, use them
-        if runs_map:
-            runs = list(runs_map.values())
-            runs.sort(key=lambda r: r["timestamp"] or "", reverse=True)
-            # Calculate KPIs for each run
-            for run in runs:
-                aggregator = InsightsAggregator(data_dir, run_id=run["run_id"])
-                try:
-                    overview = aggregator.get_overview()
-                    run["presence_rate"] = overview.get("required_field_presence_rate", 0)
-                    run["accuracy_rate"] = overview.get("required_field_accuracy", 0)
-                    run["evidence_rate"] = overview.get("evidence_rate", 0)
-                except Exception:
-                    run["presence_rate"] = 0
-                    run["accuracy_rate"] = 0
-                    run["evidence_rate"] = 0
-            return runs
+        # Get additional details from RunBundle if available
+        run_bundle = storage.get_run(run_id)
+        if run_bundle:
+            if run_bundle.manifest:
+                run_info["model"] = run_bundle.manifest.get("model", "")
+            if run_bundle.summary:
+                run_info["extracted_count"] = run_bundle.summary.get("docs_success", 0)
+                run_info["extractor_version"] = run_bundle.summary.get("extractor_version", "")
+                run_info["prompt_version"] = run_bundle.summary.get("prompt_version", "")
 
-    # Fallback: scan claim folders for backwards compatibility
-    for claim_dir in data_dir.iterdir():
-        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
-            continue
+        runs.append(run_info)
 
-        runs_dir = claim_dir / "runs"
-        if not runs_dir.exists():
-            continue
-
-        for run_dir in runs_dir.iterdir():
-            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
-                continue
-
-            run_id = run_dir.name
-            if run_id not in runs_map:
-                runs_map[run_id] = {
-                    "run_id": run_id,
-                    "timestamp": None,
-                    "model": "",
-                    "extractor_version": "",
-                    "prompt_version": "",
-                    "claims_count": 0,
-                    "docs_count": 0,
-                    "extracted_count": 0,
-                    "labeled_count": 0,
-                }
-
-            runs_map[run_id]["claims_count"] += 1
-
-            # Try to get metadata from summary.json
-            summary_path = run_dir / "logs" / "summary.json"
-            if summary_path.exists() and not runs_map[run_id]["timestamp"]:
-                with open(summary_path, "r", encoding="utf-8") as f:
-                    summary = json.load(f)
-                    runs_map[run_id]["timestamp"] = summary.get("completed_at")
-                    runs_map[run_id]["model"] = summary.get("model", "")
-                    runs_map[run_id]["extractor_version"] = summary.get("extractor_version", "")
-                    runs_map[run_id]["prompt_version"] = summary.get("prompt_version", "")
-
-            # Count extractions
-            extraction_dir = run_dir / "extraction"
-            if extraction_dir.exists():
-                runs_map[run_id]["extracted_count"] += len(list(extraction_dir.glob("*.json")))
-
-            # Count docs and labels (labels are at docs/{doc_id}/labels/latest.json - run-independent)
-            docs_dir = claim_dir / "docs"
-            if docs_dir.exists():
-                for doc_folder in docs_dir.iterdir():
-                    if doc_folder.is_dir():
-                        runs_map[run_id]["docs_count"] += 1
-                        labels_path = doc_folder / "labels" / "latest.json"
-                        if labels_path.exists():
-                            runs_map[run_id]["labeled_count"] += 1
-
-    # Convert to list and sort by timestamp (newest first)
-    runs = list(runs_map.values())
+    # Already sorted by Storage, but ensure consistency
     runs.sort(key=lambda r: r["timestamp"] or "", reverse=True)
 
     # Calculate KPIs for each run
     for run in runs:
-        aggregator = InsightsAggregator(data_dir, run_id=run["run_id"])
+        aggregator = InsightsAggregator(data_dir, run_id=run["run_id"], storage=storage)
         try:
             overview = aggregator.get_overview()
             run["presence_rate"] = overview.get("required_field_presence_rate", 0)
             run["accuracy_rate"] = overview.get("required_field_accuracy", 0)
             run["evidence_rate"] = overview.get("evidence_rate", 0)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to calculate KPIs for run {run['run_id']}: {e}")
             run["presence_rate"] = 0
             run["accuracy_rate"] = 0
             run["evidence_rate"] = 0
@@ -1068,39 +969,51 @@ def clear_baseline(data_dir: Path) -> None:
         baseline_path.unlink()
 
 
-def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
+def list_detailed_runs(
+    data_dir: Path,
+    storage: Optional["FileStorage"] = None,
+) -> List[Dict[str, Any]]:
     """
     List all extraction runs with detailed metadata including phase metrics.
-    Aggregates per-claim summaries to compute phase-level data.
 
-    Returns list of DetailedRunInfo sorted by timestamp (newest first).
+    Uses Storage abstraction for run discovery, then aggregates per-claim
+    summaries to compute phase-level data.
+
+    Args:
+        data_dir: Path to claims directory (output/claims/).
+        storage: Optional Storage instance to reuse.
+
+    Returns:
+        List of DetailedRunInfo sorted by timestamp (newest first).
     """
+    from context_builder.storage import FileStorage
+
     detailed_runs = []
 
     if not data_dir.exists():
         return []
 
-    # Check global runs directory first
-    global_runs_dir = data_dir.parent / "runs"
-    if not global_runs_dir.exists():
+    # Create or use provided Storage instance
+    if storage is None:
+        storage = FileStorage(data_dir)
+
+    # Get runs from Storage
+    run_refs = storage.list_runs()
+    if not run_refs:
         return []
 
-    for run_dir in global_runs_dir.iterdir():
-        if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
-            continue
-        # Only include runs with .complete marker
-        if not (run_dir / ".complete").exists():
-            continue
+    for run_ref in run_refs:
+        run_id = run_ref.run_id
 
-        run_id = run_dir.name
+        # Initialize detailed run info structure
         run_info = {
             "run_id": run_id,
-            "timestamp": None,
+            "timestamp": run_ref.ended_at,
             "model": "",
-            "status": "complete",
+            "status": run_ref.status or "complete",
             "duration_seconds": None,
-            "claims_count": 0,
-            "docs_total": 0,
+            "claims_count": run_ref.claims_count,
+            "docs_total": run_ref.docs_count,
             "docs_success": 0,
             "docs_failed": 0,
             "phases": {
@@ -1131,16 +1044,17 @@ def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
             },
         }
 
-        # Read from global manifest
-        manifest_path = run_dir / "manifest.json"
+        # Get RunBundle for manifest and summary
+        run_bundle = storage.get_run(run_id)
         claim_run_paths = []
-        if manifest_path.exists():
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
+
+        if run_bundle:
+            # Extract data from manifest
+            if run_bundle.manifest:
+                manifest = run_bundle.manifest
                 run_info["model"] = manifest.get("model", "")
                 run_info["claims_count"] = manifest.get("claims_count", 0)
                 # Get list of claim run paths for aggregation
-                # Paths in manifest are relative to project root (e.g., output/claims/...)
                 for claim in manifest.get("claims", []):
                     path_str = claim.get("claim_run_path", "")
                     if path_str:
@@ -1153,11 +1067,9 @@ def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
                                 claim_path = data_dir.parent.parent / claim_path
                         claim_run_paths.append(claim_path)
 
-        # Read from global summary
-        summary_path = run_dir / "summary.json"
-        if summary_path.exists():
-            with open(summary_path, "r", encoding="utf-8") as f:
-                summary = json.load(f)
+            # Extract data from summary
+            if run_bundle.summary:
+                summary = run_bundle.summary
                 run_info["timestamp"] = summary.get("completed_at")
                 run_info["docs_total"] = summary.get("docs_total", 0)
                 run_info["docs_success"] = summary.get("docs_success", 0)
