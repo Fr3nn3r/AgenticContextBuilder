@@ -27,17 +27,20 @@ BASELINE_FILE = ".insights_baseline.json"
 
 class FieldOutcome(str, Enum):
     """Outcome classification for a (doc, field) pair based on truth comparison."""
-    MATCH = "match"              # Confirmed truth matches extraction
-    MISMATCH = "mismatch"        # Confirmed truth differs from extraction
-    MISS = "miss"                # Confirmed truth exists but no extraction
-    UNVERIFIABLE = "unverifiable"  # Cannot establish ground truth
-    # Legacy values for backwards compatibility
-    CORRECT = "correct"
+    # Truth-based outcomes (v3 schema)
+    CORRECT = "correct"          # Labeled truth matches extraction
+    INCORRECT = "incorrect"      # Labeled truth differs from extraction
+    MISSING = "missing"          # Labeled truth exists but no extraction
+    UNVERIFIABLE = "unverifiable"  # Cannot establish truth
+    # Legacy values for backwards compatibility (v1 schema)
     EXTRACTOR_MISS = "extractor_miss"
-    INCORRECT = "incorrect"
     CORRECT_ABSENT = "correct_absent"
     CANNOT_VERIFY = "cannot_verify"
     EVIDENCE_MISSING = "evidence_missing"
+    # Deprecated aliases (kept for API backward compatibility)
+    MATCH = "match"
+    MISMATCH = "mismatch"
+    MISS = "miss"
 
 
 @dataclass
@@ -54,10 +57,10 @@ class FieldRecord:
     normalized_value: Optional[str]
     has_evidence: bool
     confidence: float
-    # Label data (v2 schema: state-based)
+    # Label data (v3 schema: state-based)
     has_label: bool
-    state: Optional[str]  # "CONFIRMED", "UNVERIFIABLE", "UNLABELED", or None
-    truth_value: Optional[str]  # Ground truth value (when state=CONFIRMED)
+    state: Optional[str]  # "LABELED", "UNVERIFIABLE", "UNLABELED", or None (also accepts legacy "CONFIRMED")
+    truth_value: Optional[str]  # Truth value (when state=LABELED)
     # Legacy label data (v1 schema: judgement-based)
     judgement: Optional[str]  # "correct", "incorrect", "unknown", or None (deprecated)
     correct_value: Optional[str]  # (deprecated, use truth_value)
@@ -405,18 +408,19 @@ class InsightsAggregator:
                 record.outcome = None
                 continue
 
-            # Truth-based outcome classification (v2 schema)
-            if record.state == "CONFIRMED":
+            # Truth-based outcome classification (v3 schema, with v2 backward compat)
+            # Accept both "LABELED" (v3) and "CONFIRMED" (v2) for backward compatibility
+            if record.state in ("LABELED", "CONFIRMED"):
                 # Compare normalized_value to truth_value
                 if not record.has_prediction:
-                    # Extractor missed a field that has ground truth
-                    record.outcome = FieldOutcome.MISS
+                    # Extractor missed a field that has truth
+                    record.outcome = FieldOutcome.MISSING
                 elif record.normalized_value == record.truth_value:
-                    # Extraction matches ground truth
-                    record.outcome = FieldOutcome.MATCH
+                    # Extraction matches truth
+                    record.outcome = FieldOutcome.CORRECT
                 else:
-                    # Extraction differs from ground truth
-                    record.outcome = FieldOutcome.MISMATCH
+                    # Extraction differs from truth
+                    record.outcome = FieldOutcome.INCORRECT
             elif record.state == "UNVERIFIABLE":
                 # Cannot establish ground truth - excluded from accuracy
                 record.outcome = FieldOutcome.UNVERIFIABLE
@@ -512,24 +516,24 @@ class InsightsAggregator:
         total_docs = len(self.doc_records)
         docs_doc_type_wrong = len([d for d in self.doc_records if d.doc_type_correct is False])
 
-        # Doc coverage: docs with at least one CONFIRMED field
+        # Doc coverage: docs with at least one LABELED field (accepts legacy CONFIRMED)
         docs_with_truth = len({
-            r.doc_id for r in self.field_records if r.state == "CONFIRMED"
+            r.doc_id for r in self.field_records if r.state in ("LABELED", "CONFIRMED")
         })
 
-        # Field coverage: CONFIRMED fields / total fields
+        # Field coverage: LABELED fields / total fields (accepts legacy CONFIRMED)
         total_fields = len(self.field_records)
-        confirmed_fields = len([r for r in self.field_records if r.state == "CONFIRMED"])
+        labeled_fields = len([r for r in self.field_records if r.state in ("LABELED", "CONFIRMED")])
 
-        # Truth-based accuracy: match / (match + mismatch + miss)
-        # Only count CONFIRMED fields from valid docs
-        confirmed_valid = [r for r in valid_records if r.state == "CONFIRMED"]
-        match_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MATCH])
-        mismatch_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MISMATCH])
-        miss_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MISS])
-        accuracy_denom = match_count + mismatch_count + miss_count
+        # Truth-based accuracy: correct / (correct + incorrect + missing)
+        # Only count LABELED fields from valid docs (accepts legacy CONFIRMED)
+        labeled_valid = [r for r in valid_records if r.state in ("LABELED", "CONFIRMED")]
+        correct_count = len([r for r in labeled_valid if r.outcome == FieldOutcome.CORRECT])
+        incorrect_count = len([r for r in labeled_valid if r.outcome == FieldOutcome.INCORRECT])
+        missing_count = len([r for r in labeled_valid if r.outcome == FieldOutcome.MISSING])
+        accuracy_denom = correct_count + incorrect_count + missing_count
         if accuracy_denom > 0:
-            accuracy = match_count / accuracy_denom
+            accuracy = correct_count / accuracy_denom
         else:
             accuracy = 0.0
 
@@ -550,20 +554,25 @@ class InsightsAggregator:
 
         return {
             "docs_total": total_docs,
-            "docs_with_truth": docs_with_truth,  # NEW: doc coverage numerator
-            "confirmed_fields": confirmed_fields,  # NEW: field coverage numerator
-            "total_fields": total_fields,  # NEW: field coverage denominator
-            "accuracy_rate": round(accuracy * 100, 1),  # NEW: truth-based accuracy
+            "docs_with_truth": docs_with_truth,  # Doc coverage numerator
+            "labeled_fields": labeled_fields,  # Field coverage numerator
+            "total_fields": total_fields,  # Field coverage denominator
+            "accuracy_rate": round(accuracy * 100, 1),  # Truth-based accuracy
             "evidence_rate": round(evidence_rate * 100, 1),
             # Accuracy breakdown
-            "match_count": match_count,
-            "mismatch_count": mismatch_count,
-            "miss_count": miss_count,
+            "correct_count": correct_count,
+            "incorrect_count": incorrect_count,
+            "missing_count": missing_count,
             # Legacy metrics (for backwards compatibility)
             "docs_reviewed": docs_reviewed,
             "docs_doc_type_wrong": docs_doc_type_wrong,
             "required_field_presence_rate": round(presence_rate * 100, 1),
             "required_field_accuracy": round(accuracy * 100, 1),
+            # Deprecated field names (kept for API backward compatibility)
+            "confirmed_fields": labeled_fields,
+            "match_count": correct_count,
+            "mismatch_count": incorrect_count,
+            "miss_count": missing_count,
         }
 
     def get_doc_type_metrics(self) -> List[Dict[str, Any]]:
@@ -593,8 +602,8 @@ class InsightsAggregator:
             else:
                 presence = 0.0
 
-            # Accuracy
-            accuracy_denom = [r for r in required_records if r.judgement in ("correct", "incorrect")]
+            # Accuracy - use state-based filtering (accepts both LABELED and legacy CONFIRMED)
+            accuracy_denom = [r for r in required_records if r.state in ("LABELED", "CONFIRMED")]
             if accuracy_denom:
                 accuracy = len([r for r in accuracy_denom if r.outcome == FieldOutcome.CORRECT]) / len(accuracy_denom)
             else:
@@ -604,10 +613,10 @@ class InsightsAggregator:
             extracted = [r for r in type_records if r.has_prediction]
             evidence = sum(1 for r in extracted if r.has_evidence) / len(extracted) if extracted else 0.0
 
-            # Top failing field
+            # Top failing field (check both new and legacy outcome values)
             field_failures = {}
             for r in type_records:
-                if r.outcome in (FieldOutcome.EXTRACTOR_MISS, FieldOutcome.INCORRECT):
+                if r.outcome in (FieldOutcome.MISSING, FieldOutcome.INCORRECT, FieldOutcome.EXTRACTOR_MISS):
                     field_failures[r.field_name] = field_failures.get(r.field_name, 0) + 1
             top_field = max(field_failures, key=field_failures.get) if field_failures else None
 
@@ -630,10 +639,10 @@ class InsightsAggregator:
 
         # Only consider docs where doc_type is correct
         valid_docs = {r.doc_id for r in self.doc_records if r.doc_type_correct is True}
-        # Only consider CONFIRMED fields (truth-based metrics)
+        # Only consider LABELED fields (truth-based metrics, accepts legacy CONFIRMED)
         valid_records = [
             r for r in self.field_records
-            if r.doc_id in valid_docs and r.state == "CONFIRMED"
+            if r.doc_id in valid_docs and r.state in ("LABELED", "CONFIRMED")
         ]
 
         # Group by (doc_type, field_name)
@@ -650,33 +659,35 @@ class InsightsAggregator:
             is_required = field_name in spec.get("required_fields", [])
 
             # Count truth-based outcomes
-            mismatch_count = len([r for r in records if r.outcome == FieldOutcome.MISMATCH])
-            miss_count = len([r for r in records if r.outcome == FieldOutcome.MISS])
-            total_confirmed = len(records)
+            incorrect_count = len([r for r in records if r.outcome == FieldOutcome.INCORRECT])
+            missing_count = len([r for r in records if r.outcome == FieldOutcome.MISSING])
+            total_labeled = len(records)
 
-            # Error count = mismatch + miss (equal weight per user preference)
-            error_count = mismatch_count + miss_count
+            # Error count = incorrect + missing (equal weight per user preference)
+            error_count = incorrect_count + missing_count
             if error_count == 0:
                 continue
 
             # Error rate for display
-            error_rate = error_count / total_confirmed if total_confirmed > 0 else 0.0
+            error_rate = error_count / total_labeled if total_labeled > 0 else 0.0
 
             priorities.append({
                 "doc_type": doc_type,
                 "field_name": field_name,
                 "is_required": is_required,
-                "mismatch_count": mismatch_count,  # NEW: truth differs from extraction
-                "miss_count": miss_count,  # NEW: no extraction for confirmed truth
-                "total_confirmed": total_confirmed,  # NEW: total CONFIRMED fields
-                "error_rate": round(error_rate * 100, 1),  # NEW: (mismatch + miss) / total
+                "incorrect_count": incorrect_count,  # Truth differs from extraction
+                "missing_count": missing_count,  # No extraction for labeled truth
+                "total_labeled": total_labeled,  # Total LABELED fields
+                "error_rate": round(error_rate * 100, 1),  # (incorrect + missing) / total
                 # Legacy fields for backwards compatibility
                 "affected_docs": error_count,
-                "total_labeled": total_confirmed,
+                "mismatch_count": incorrect_count,
+                "miss_count": missing_count,
+                "total_confirmed": total_labeled,
                 "priority_score": error_count,
             })
 
-        # Sort by error count descending (equal weight for mismatch and miss)
+        # Sort by error count descending (equal weight for incorrect and missing)
         priorities.sort(key=lambda p: p["affected_docs"], reverse=True)
         return priorities[:limit]
 

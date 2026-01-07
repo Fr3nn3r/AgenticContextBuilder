@@ -1,7 +1,7 @@
 """Pydantic schemas for human labels on extraction results.
 
-Schema version: label_v2
-- Ground Truth Registry model with CONFIRMED/UNVERIFIABLE/UNLABELED states
+Schema version: label_v3
+- Truth Registry model with LABELED/UNVERIFIABLE/UNLABELED states
 - Simplified DocLabels (only doc_type_correct)
 """
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 # Field label states
-FieldState = Literal["CONFIRMED", "UNVERIFIABLE", "UNLABELED"]
+FieldState = Literal["LABELED", "UNVERIFIABLE", "UNLABELED"]
 
 # Reasons why a field cannot be verified
 UnverifiableReason = Literal[
@@ -25,10 +25,10 @@ UnverifiableReason = Literal[
 
 class FieldLabel(BaseModel):
     """
-    Ground truth label for a single extracted field.
+    Truth label for a single extracted field.
 
     States:
-    - CONFIRMED: Ground truth value is known and stored in truth_value
+    - LABELED: Truth value is known and stored in truth_value
     - UNVERIFIABLE: Truth cannot be established (reason required)
     - UNLABELED: No decision yet (default state)
     """
@@ -38,10 +38,10 @@ class FieldLabel(BaseModel):
     field_name: str = Field(..., description="Name of the field being labeled")
     state: FieldState = Field(
         default="UNLABELED",
-        description="Label state: CONFIRMED, UNVERIFIABLE, or UNLABELED"
+        description="Label state: LABELED, UNVERIFIABLE, or UNLABELED"
     )
     truth_value: Optional[str] = Field(
-        None, description="Ground truth value (required when state=CONFIRMED)"
+        None, description="Truth value (required when state=LABELED)"
     )
     unverifiable_reason: Optional[UnverifiableReason] = Field(
         None, description="Reason field is unverifiable (required when state=UNVERIFIABLE)"
@@ -54,8 +54,8 @@ class FieldLabel(BaseModel):
     @model_validator(mode="after")
     def validate_state_requirements(self):
         """Ensure required fields are present based on state."""
-        if self.state == "CONFIRMED" and self.truth_value is None:
-            raise ValueError("truth_value is required when state=CONFIRMED")
+        if self.state == "LABELED" and self.truth_value is None:
+            raise ValueError("truth_value is required when state=LABELED")
         if self.state == "UNVERIFIABLE" and self.unverifiable_reason is None:
             raise ValueError("unverifiable_reason is required when state=UNVERIFIABLE")
         return self
@@ -86,13 +86,13 @@ class LabelResult(BaseModel):
     Complete label result for a document.
 
     This is the schema written to docs/{doc_id}/labels/latest.json files.
-    Ground truth is stored per-document, independent of extraction runs.
+    Truth labels are stored per-document, independent of extraction runs.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["label_v2"] = Field(
-        default="label_v2", description="Schema version for compatibility"
+    schema_version: Literal["label_v3"] = Field(
+        default="label_v3", description="Schema version for compatibility"
     )
     doc_id: str = Field(..., description="Document identifier")
     claim_id: str = Field(..., description="Parent claim identifier")

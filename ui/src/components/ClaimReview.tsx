@@ -123,7 +123,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
         l.field_name === fieldName
           ? {
               ...l,
-              state: "CONFIRMED" as const,
+              state: "LABELED" as const,
               truth_value: truthValue,
               unverifiable_reason: undefined,
               updated_at: new Date().toISOString(),
@@ -155,7 +155,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   function handleEditTruth(fieldName: string, newTruthValue: string) {
     setFieldLabels((prev) =>
       prev.map((l) =>
-        l.field_name === fieldName && l.state === "CONFIRMED"
+        l.field_name === fieldName && (l.state === "LABELED" || l.state === "CONFIRMED")
           ? { ...l, truth_value: newTruthValue, updated_at: new Date().toISOString() }
           : l
       )

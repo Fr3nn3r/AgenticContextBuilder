@@ -90,9 +90,9 @@ export interface ExtractionResult {
   quality_gate: QualityGate;
 }
 
-// Ground Truth Label Types (label_v2)
+// Truth Label Types (label_v3, with legacy CONFIRMED support)
 
-export type FieldState = "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED";
+export type FieldState = "LABELED" | "UNVERIFIABLE" | "UNLABELED" | "CONFIRMED";
 
 export type UnverifiableReason =
   | "not_present_in_doc"
@@ -201,8 +201,8 @@ export interface TemplateSpec {
   quality_gate: QualityGateRules;
 }
 
-// Comparison result for ground truth vs extraction
-export type ComparisonResult = "match" | "mismatch" | "missing" | "unlabeled" | "unverifiable";
+// Comparison result for truth vs extraction
+export type ComparisonResult = "correct" | "incorrect" | "missing" | "unlabeled" | "unverifiable";
 
 export interface FieldComparison {
   field_name: string;

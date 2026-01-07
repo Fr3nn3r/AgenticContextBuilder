@@ -113,16 +113,20 @@ export function getDocSourceUrl(docId: string, claimId: string): string {
 
 export interface InsightsOverview {
   docs_total: number;
-  docs_with_truth: number;        // NEW: docs with ≥1 CONFIRMED field
-  confirmed_fields: number;       // NEW: total CONFIRMED fields
-  total_fields: number;           // NEW: total fields across docs
-  accuracy_rate: number;          // NEW: match / (match + mismatch + miss)
+  docs_with_truth: number;        // Docs with ≥1 LABELED field
+  labeled_fields: number;         // Total LABELED fields
+  total_fields: number;           // Total fields across docs
+  accuracy_rate: number;          // correct / (correct + incorrect + missing)
   evidence_rate: number;
   // Accuracy breakdown
-  match_count: number;
-  mismatch_count: number;
-  miss_count: number;
-  // Legacy metrics (for backwards compatibility)
+  correct_count: number;
+  incorrect_count: number;
+  missing_count: number;
+  // Legacy/deprecated fields (for backwards compatibility)
+  confirmed_fields?: number;      // Deprecated: use labeled_fields
+  match_count?: number;           // Deprecated: use correct_count
+  mismatch_count?: number;        // Deprecated: use incorrect_count
+  miss_count?: number;            // Deprecated: use missing_count
   docs_reviewed: number;
   docs_doc_type_wrong: number;
   required_field_presence_rate: number;
@@ -147,13 +151,15 @@ export interface PriorityItem {
   field_name: string;
   is_required: boolean;
   // Truth-based metrics
-  mismatch_count: number;         // NEW: truth differs from extraction
-  miss_count: number;             // NEW: no extraction for confirmed truth
-  total_confirmed: number;        // NEW: total CONFIRMED fields
-  error_rate: number;             // NEW: (mismatch + miss) / total_confirmed
-  // Legacy fields for backwards compatibility
+  incorrect_count: number;        // Truth differs from extraction
+  missing_count: number;          // No extraction for labeled truth
+  total_labeled: number;          // Total LABELED fields
+  error_rate: number;             // (incorrect + missing) / total_labeled
+  // Legacy/deprecated fields (for backwards compatibility)
+  mismatch_count?: number;        // Deprecated: use incorrect_count
+  miss_count?: number;            // Deprecated: use missing_count
+  total_confirmed?: number;       // Deprecated: use total_labeled
   affected_docs: number;
-  total_labeled: number;
   priority_score: number;
 }
 

@@ -500,17 +500,17 @@ function InsightsTab({
         <KPICard
           label="Doc Coverage"
           value={`${overview?.docs_with_truth || 0}/${overview?.docs_total || 0}`}
-          subtext="docs with ground truth"
+          subtext="docs with truth labels"
         />
         <KPICard
           label="Field Coverage"
-          value={`${overview?.confirmed_fields || 0}/${overview?.total_fields || 0}`}
-          subtext="confirmed fields"
+          value={`${overview?.labeled_fields || overview?.confirmed_fields || 0}/${overview?.total_fields || 0}`}
+          subtext="labeled fields"
         />
         <KPICard
           label="Accuracy"
           value={`${overview?.accuracy_rate || 0}%`}
-          subtext={`${overview?.match_count || 0} match / ${(overview?.match_count || 0) + (overview?.mismatch_count || 0) + (overview?.miss_count || 0)} total`}
+          subtext={`${overview?.correct_count || overview?.match_count || 0} correct / ${(overview?.correct_count || overview?.match_count || 0) + (overview?.incorrect_count || overview?.mismatch_count || 0) + (overview?.missing_count || overview?.miss_count || 0)} total`}
           variant={getScoreVariant(overview?.accuracy_rate || 0)}
         />
         <KPICard
@@ -533,7 +533,7 @@ function InsightsTab({
           <div className="bg-white rounded-lg border shadow-sm max-h-[400px] overflow-y-auto">
             {priorities.length === 0 ? (
               <div className="p-4 text-gray-500 text-center text-sm">
-                No error drivers found. Add ground truth labels to see insights.
+                No error drivers found. Add truth labels to see insights.
               </div>
             ) : (
               <div className="divide-y">
@@ -558,9 +558,9 @@ function InsightsTab({
                     <div className="flex items-center gap-2 mt-0.5 ml-5 text-xs">
                       <span className="text-gray-500">{item.error_rate}% error rate</span>
                       <span className="text-gray-300">·</span>
-                      {item.mismatch_count > 0 && <span className="text-red-600">{item.mismatch_count} mismatch</span>}
-                      {item.miss_count > 0 && <span className="text-yellow-600">{item.miss_count} miss</span>}
-                      <span className="ml-auto text-gray-500">{item.total_confirmed} confirmed</span>
+                      {(item.incorrect_count ?? item.mismatch_count ?? 0) > 0 && <span className="text-red-600">{item.incorrect_count ?? item.mismatch_count ?? 0} incorrect</span>}
+                      {(item.missing_count ?? item.miss_count ?? 0) > 0 && <span className="text-yellow-600">{item.missing_count ?? item.miss_count ?? 0} missing</span>}
+                      <span className="ml-auto text-gray-500">{item.total_labeled ?? item.total_confirmed ?? 0} labeled</span>
                     </div>
                   </button>
                 ))}
@@ -663,9 +663,9 @@ function InsightsTab({
 
           {fieldDetails && (
             <div className="flex items-center gap-2 p-3 border-b">
-              <OutcomeChip label="Match" count={fieldDetails.breakdown.correct} variant="success" selected={selectedOutcome === "match"} onClick={() => onOutcomeFilter(selectedOutcome === "match" ? null : "match")} />
-              <OutcomeChip label="Mismatch" count={fieldDetails.breakdown.incorrect} variant="error" selected={selectedOutcome === "mismatch"} onClick={() => onOutcomeFilter(selectedOutcome === "mismatch" ? null : "mismatch")} />
-              <OutcomeChip label="Miss" count={fieldDetails.breakdown.extractor_miss} variant="warning" selected={selectedOutcome === "miss"} onClick={() => onOutcomeFilter(selectedOutcome === "miss" ? null : "miss")} />
+              <OutcomeChip label="Correct" count={fieldDetails.breakdown.correct} variant="success" selected={selectedOutcome === "correct"} onClick={() => onOutcomeFilter(selectedOutcome === "correct" ? null : "correct")} />
+              <OutcomeChip label="Incorrect" count={fieldDetails.breakdown.incorrect} variant="error" selected={selectedOutcome === "incorrect"} onClick={() => onOutcomeFilter(selectedOutcome === "incorrect" ? null : "incorrect")} />
+              <OutcomeChip label="Missing" count={fieldDetails.breakdown.extractor_miss} variant="warning" selected={selectedOutcome === "missing"} onClick={() => onOutcomeFilter(selectedOutcome === "missing" ? null : "missing")} />
             </div>
           )}
 
@@ -1068,27 +1068,29 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
   if (!outcome) return <span className="text-gray-300">-</span>;
   const styles: Record<string, string> = {
-    // Truth-based outcomes (new)
+    // Truth-based outcomes (v3)
+    correct: "bg-green-100 text-green-700",
+    incorrect: "bg-red-100 text-red-700",
+    missing: "bg-yellow-100 text-yellow-700",
+    unverifiable: "bg-gray-100 text-gray-600",
+    // Legacy outcomes (backwards compatibility)
     match: "bg-green-100 text-green-700",
     mismatch: "bg-red-100 text-red-700",
     miss: "bg-yellow-100 text-yellow-700",
-    unverifiable: "bg-gray-100 text-gray-600",
-    // Legacy outcomes (backwards compatibility)
-    correct: "bg-green-100 text-green-700",
-    incorrect: "bg-red-100 text-red-700",
     extractor_miss: "bg-yellow-100 text-yellow-700",
     cannot_verify: "bg-gray-100 text-gray-600",
     correct_absent: "bg-gray-100 text-gray-600",
   };
   const labels: Record<string, string> = {
-    // Truth-based labels (new)
-    match: "Match",
-    mismatch: "Mismatch",
-    miss: "Miss",
-    unverifiable: "Unverifiable",
-    // Legacy labels
+    // Truth-based labels (v3)
     correct: "Correct",
     incorrect: "Incorrect",
+    missing: "Missing",
+    unverifiable: "Unverifiable",
+    // Legacy labels (backwards compatibility)
+    match: "Correct",
+    mismatch: "Incorrect",
+    miss: "Missing",
     extractor_miss: "Missing",
     cannot_verify: "Unknown",
     correct_absent: "Correct",

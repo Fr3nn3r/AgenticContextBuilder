@@ -45,7 +45,7 @@ const unverifiableReasonLabels: Record<UnverifiableReason, string> = {
 };
 
 // Compare extracted value to truth value (normalized comparison)
-function compareValues(extracted: string | null, truth: string | null | undefined): "match" | "mismatch" | "missing" | "unlabeled" {
+function compareValues(extracted: string | null, truth: string | null | undefined): "correct" | "incorrect" | "missing" | "unlabeled" {
   if (truth === null || truth === undefined) return "unlabeled";
   if (extracted === null || extracted === "") return "missing";
 
@@ -53,7 +53,7 @@ function compareValues(extracted: string | null, truth: string | null | undefine
   const normExtracted = (extracted || "").trim().toLowerCase();
   const normTruth = (truth || "").trim().toLowerCase();
 
-  return normExtracted === normTruth ? "match" : "mismatch";
+  return normExtracted === normTruth ? "correct" : "incorrect";
 }
 
 export function FieldsTable({
@@ -179,8 +179,8 @@ export function FieldsTable({
         const isExpectedForDocType = expectedFields.length === 0 || expectedFields.includes(field.name);
         const isNotExpected = !isExpectedForDocType && field.status === "missing";
 
-        // Compute comparison result for CONFIRMED fields
-        const comparisonResult = label?.state === "CONFIRMED"
+        // Compute comparison result for LABELED fields (accepts legacy CONFIRMED)
+        const comparisonResult = (label?.state === "LABELED" || label?.state === "CONFIRMED")
           ? compareValues(field.normalized_value || field.value, label.truth_value)
           : "unlabeled";
 
@@ -199,7 +199,7 @@ export function FieldsTable({
               <span className="font-semibold text-gray-900">{getDisplayName(field.name)}</span>
               <div className="flex items-center gap-2">
                 <StateBadge state={label?.state || "UNLABELED"} />
-                {label?.state === "CONFIRMED" && (
+                {(label?.state === "LABELED" || label?.state === "CONFIRMED") && (
                   <ComparisonBadge result={comparisonResult} compact />
                 )}
               </div>
@@ -267,7 +267,7 @@ export function FieldsTable({
                           type="text"
                           value={newTruthValue}
                           onChange={(e) => setNewTruthValue(e.target.value)}
-                          placeholder="Enter ground truth value"
+                          placeholder="Enter truth value"
                           className="w-full px-2 py-1 text-sm border rounded"
                           autoFocus
                         />
@@ -332,8 +332,8 @@ export function FieldsTable({
                   </div>
                 )}
 
-                {/* CONFIRMED state - show truth value */}
-                {label?.state === "CONFIRMED" && (
+                {/* LABELED state - show truth value (accepts legacy CONFIRMED) */}
+                {(label?.state === "LABELED" || label?.state === "CONFIRMED") && (
                   <div>
                     {editingField === field.name ? (
                       // Editing mode
@@ -404,7 +404,7 @@ export function FieldsTable({
                           type="text"
                           value={newTruthValue}
                           onChange={(e) => setNewTruthValue(e.target.value)}
-                          placeholder="Enter ground truth value"
+                          placeholder="Enter truth value"
                           className="w-full px-2 py-1 text-sm border rounded"
                           autoFocus
                         />
@@ -443,32 +443,36 @@ export function FieldsTable({
   );
 }
 
-function StateBadge({ state }: { state: "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED" }) {
+function StateBadge({ state }: { state: "LABELED" | "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED" }) {
   const styles: Record<string, string> = {
-    CONFIRMED: "bg-green-100 text-green-700",
+    LABELED: "bg-green-100 text-green-700",
+    CONFIRMED: "bg-green-100 text-green-700",  // Legacy support
     UNVERIFIABLE: "bg-gray-100 text-gray-600",
     UNLABELED: "bg-amber-100 text-amber-700",
   };
 
+  // Display "Labeled" for both LABELED and legacy CONFIRMED
+  const displayLabel = (state === "LABELED" || state === "CONFIRMED") ? "Labeled" : state;
+
   return (
     <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium", styles[state])}>
-      {state}
+      {displayLabel}
     </span>
   );
 }
 
-function ComparisonBadge({ result, compact = false }: { result: "match" | "mismatch" | "missing" | "unlabeled"; compact?: boolean }) {
+function ComparisonBadge({ result, compact = false }: { result: "correct" | "incorrect" | "missing" | "unlabeled"; compact?: boolean }) {
   const config: Record<string, { bg: string; text: string; icon: string }> = {
-    match: { bg: "bg-green-100", text: "text-green-700", icon: "✓" },
-    mismatch: { bg: "bg-red-100", text: "text-red-700", icon: "✗" },
+    correct: { bg: "bg-green-100", text: "text-green-700", icon: "✓" },
+    incorrect: { bg: "bg-red-100", text: "text-red-700", icon: "✗" },
     missing: { bg: "bg-amber-100", text: "text-amber-700", icon: "?" },
     unlabeled: { bg: "bg-gray-100", text: "text-gray-500", icon: "-" },
   };
 
   const { bg, text, icon } = config[result];
   const labels: Record<string, string> = {
-    match: "Match",
-    mismatch: "Mismatch",
+    correct: "Correct",
+    incorrect: "Incorrect",
     missing: "Missing",
     unlabeled: "Not labeled",
   };

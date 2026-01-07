@@ -1,4 +1,4 @@
-"""Contract tests for LabelResult schema validation (label_v2)."""
+"""Contract tests for LabelResult schema validation (label_v3)."""
 
 import pytest
 from datetime import datetime
@@ -26,10 +26,10 @@ class TestLabelResultSchema:
 
     @pytest.fixture
     def valid_field_label(self):
-        """Create valid field label with CONFIRMED state."""
+        """Create valid field label with LABELED state."""
         return FieldLabel(
             field_name="incident_date",
-            state="CONFIRMED",
+            state="LABELED",
             truth_value="2024-01-15",
             notes="Date is correct",
         )
@@ -44,14 +44,14 @@ class TestLabelResultSchema:
     ):
         """Test that a valid LabelResult can be created."""
         label = LabelResult(
-            schema_version="label_v2",
+            schema_version="label_v3",
             doc_id="doc123",
             claim_id="claim456",
             review=valid_review_metadata,
             field_labels=[valid_field_label],
             doc_labels=valid_doc_labels,
         )
-        assert label.schema_version == "label_v2"
+        assert label.schema_version == "label_v3"
         assert label.doc_id == "doc123"
         assert label.doc_labels.doc_type_correct is True
 
@@ -61,7 +61,7 @@ class TestLabelResultSchema:
         """Test that extra fields are rejected."""
         with pytest.raises(ValidationError) as exc_info:
             LabelResult(
-                schema_version="label_v2",
+                schema_version="label_v3",
                 doc_id="doc123",
                 claim_id="claim456",
                 review=valid_review_metadata,
@@ -92,7 +92,7 @@ class TestLabelResultParsing:
     def test_parse_from_dict(self):
         """Test parsing from dictionary (like JSON file load)."""
         data = {
-            "schema_version": "label_v2",
+            "schema_version": "label_v3",
             "doc_id": "abc123",
             "claim_id": "claim1",
             "review": {
@@ -103,7 +103,7 @@ class TestLabelResultParsing:
             "field_labels": [
                 {
                     "field_name": "date",
-                    "state": "CONFIRMED",
+                    "state": "LABELED",
                     "truth_value": "2024-01-01",
                     "notes": "",
                 }
@@ -118,13 +118,13 @@ class TestLabelResultParsing:
         assert label.doc_id == "abc123"
         assert label.doc_labels.doc_type_correct is True
         assert len(label.field_labels) == 1
-        assert label.field_labels[0].state == "CONFIRMED"
+        assert label.field_labels[0].state == "LABELED"
         assert label.field_labels[0].truth_value == "2024-01-01"
 
     def test_parse_with_iso_datetime(self):
         """Test parsing with ISO datetime string."""
         data = {
-            "schema_version": "label_v2",
+            "schema_version": "label_v3",
             "doc_id": "abc123",
             "claim_id": "claim1",
             "review": {
@@ -146,9 +146,9 @@ class TestFieldLabelValidation:
 
     def test_valid_states(self):
         """Test all valid state values."""
-        # CONFIRMED requires truth_value
-        label_confirmed = FieldLabel(field_name="test", state="CONFIRMED", truth_value="value")
-        assert label_confirmed.state == "CONFIRMED"
+        # LABELED requires truth_value
+        label_labeled = FieldLabel(field_name="test", state="LABELED", truth_value="value")
+        assert label_labeled.state == "LABELED"
 
         # UNVERIFIABLE requires unverifiable_reason
         label_unverifiable = FieldLabel(
@@ -170,16 +170,16 @@ class TestFieldLabelValidation:
         label = FieldLabel(field_name="test", state="UNLABELED")
         assert label.truth_value is None
 
-    def test_truth_value_required_for_confirmed(self):
-        """Test truth_value is required when state=CONFIRMED."""
+    def test_truth_value_required_for_labeled(self):
+        """Test truth_value is required when state=LABELED."""
         with pytest.raises(ValidationError):
-            FieldLabel(field_name="test", state="CONFIRMED")  # Missing truth_value
+            FieldLabel(field_name="test", state="LABELED")  # Missing truth_value
 
-    def test_truth_value_with_confirmed_state(self):
-        """Test truth_value can be set with CONFIRMED state."""
+    def test_truth_value_with_labeled_state(self):
+        """Test truth_value can be set with LABELED state."""
         label = FieldLabel(
             field_name="test",
-            state="CONFIRMED",
+            state="LABELED",
             truth_value="actual_value",
         )
         assert label.truth_value == "actual_value"
@@ -265,7 +265,7 @@ class TestLabelResultSerialization:
     def test_round_trip_serialization(self):
         """Test model can be serialized and deserialized."""
         label = LabelResult(
-            schema_version="label_v2",
+            schema_version="label_v3",
             doc_id="doc1",
             claim_id="claim1",
             review=ReviewMetadata(
@@ -275,7 +275,7 @@ class TestLabelResultSerialization:
             field_labels=[
                 FieldLabel(
                     field_name="date",
-                    state="CONFIRMED",
+                    state="LABELED",
                     truth_value="2024-01-15",
                 ),
             ],
