@@ -53,6 +53,7 @@ tmp/
 data/
 output/
 htmlcov/
+.coverage
 .pytest_cache/
 prompts/tmp/
 test_output/
