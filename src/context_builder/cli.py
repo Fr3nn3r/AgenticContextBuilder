@@ -519,6 +519,49 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== INDEX SUBCOMMAND (NEW) ==========
+    index_parser = subparsers.add_parser(
+        "index",
+        help="Build or manage registry indexes for fast lookups",
+        epilog="""
+The index command builds JSONL indexes for fast document, label, and run lookups.
+
+Index Files (output/registry/):
+  doc_index.jsonl      - Document metadata for all docs
+  label_index.jsonl    - Label summaries for labeled docs
+  run_index.jsonl      - Completed run metadata
+  registry_meta.json   - Build timestamp and counts
+
+Examples:
+  %(prog)s build                          # Build indexes from default output/
+  %(prog)s build --root output            # Specify output directory
+  %(prog)s build --root output -v         # Verbose output
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Index subcommands
+    index_subparsers = index_parser.add_subparsers(dest="index_command", help="Index commands")
+    index_subparsers.required = True
+
+    # Build subcommand
+    index_build_parser = index_subparsers.add_parser(
+        "build",
+        help="Build all indexes from filesystem",
+    )
+    index_build_parser.add_argument(
+        "--root",
+        metavar="DIR",
+        default="output",
+        help="Output root directory (default: output)",
+    )
+    index_build_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    index_build_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     return parser
 
 
@@ -1395,6 +1438,33 @@ def main():
                 if failed_claims:
                     print(f"Failed claims: {', '.join(failed_claims)}")
                 print(f"Output: {output_dir}")
+
+        elif args.command == "index":
+            # ========== INDEX COMMAND ==========
+            if args.index_command == "build":
+                from context_builder.storage.index_builder import build_all_indexes
+
+                output_dir = Path(args.root)
+                if not output_dir.exists():
+                    logger.error(f"Output directory not found: {output_dir}")
+                    sys.exit(1)
+
+                logger.info(f"Building indexes from: {output_dir}")
+
+                try:
+                    stats = build_all_indexes(output_dir)
+
+                    if not args.quiet:
+                        print(f"\n[OK] Index build complete")
+                        print(f"    Documents: {stats['doc_count']}")
+                        print(f"    Labels: {stats['label_count']}")
+                        print(f"    Runs: {stats['run_count']}")
+                        print(f"    Claims: {stats['claim_count']}")
+                        print(f"    Registry: {output_dir}/registry/")
+
+                except Exception as e:
+                    logger.error(f"Index build failed: {e}")
+                    sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")

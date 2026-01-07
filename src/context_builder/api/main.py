@@ -232,37 +232,13 @@ def get_global_runs_dir() -> Path:
 def get_all_run_ids() -> List[str]:
     """Get all run IDs from the global runs directory, sorted newest first.
 
-    Reads from output/runs/ which contains workspace-scoped runs.
-    Falls back to scanning claim folders if global runs don't exist (backwards compatibility).
+    Uses Storage abstraction with index support for fast lookups.
+    Falls back to filesystem scan if indexes unavailable.
     """
-    global_runs_dir = get_global_runs_dir()
-
-    # First, try global runs directory (new structure)
-    if global_runs_dir.exists():
-        run_ids = []
-        for run_dir in global_runs_dir.iterdir():
-            if run_dir.is_dir() and run_dir.name.startswith("run_"):
-                # Only include runs that have .complete marker
-                if (run_dir / ".complete").exists():
-                    run_ids.append(run_dir.name)
-        if run_ids:
-            return sorted(run_ids, reverse=True)
-
-    # Fallback: scan claim folders for backwards compatibility
-    run_ids = set()
-    if not DATA_DIR.exists():
-        return []
-
-    for claim_dir in DATA_DIR.iterdir():
-        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
-            continue
-        runs_dir = claim_dir / "runs"
-        if runs_dir.exists():
-            for run_dir in runs_dir.iterdir():
-                if run_dir.is_dir() and run_dir.name.startswith("run_"):
-                    run_ids.add(run_dir.name)
-
-    return sorted(run_ids, reverse=True)
+    storage = get_storage()
+    runs = storage.list_runs()
+    # Already sorted by run_id (newest first) from storage
+    return [r.run_id for r in runs]
 
 
 def calculate_risk_score(extraction_data: Dict[str, Any]) -> int:
@@ -340,11 +316,24 @@ app.add_middleware(
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 
+# Storage abstraction layer (uses indexes when available)
+from context_builder.storage import FileStorage
+_storage: Optional[FileStorage] = None
+
+
+def get_storage() -> FileStorage:
+    """Get or create the Storage instance."""
+    global _storage
+    if _storage is None:
+        _storage = FileStorage(DATA_DIR)
+    return _storage
+
 
 def set_data_dir(path: Path):
     """Set the data directory for the API."""
-    global DATA_DIR
+    global DATA_DIR, _storage
     DATA_DIR = path
+    _storage = None  # Reset storage to use new path
 
 
 # =============================================================================
@@ -642,13 +631,14 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
 
 
 @app.get("/api/docs/{doc_id}", response_model=DocPayload)
-def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
+def get_doc(doc_id: str, claim_id: Optional[str] = Query(None), run_id: Optional[str] = Query(None)):
     """
     Get full document payload for review.
 
     Args:
         doc_id: The document ID (folder name under docs/)
         claim_id: Optional claim ID to help locate the document
+        run_id: Optional run ID for extraction data (uses latest if not provided)
 
     Returns:
     - Document metadata
@@ -656,68 +646,37 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
     - Extraction results (if available)
     - Labels (if available)
     """
-    # Find the document across all claims
-    doc_folder = None
-    claim_dir = None
+    storage = get_storage()
 
-    for claim in DATA_DIR.iterdir():
-        if not claim.is_dir():
-            continue
-
-        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
-            continue
-
-        candidate = claim / "docs" / doc_id
-        if candidate.exists():
-            doc_folder = candidate
-            claim_dir = claim
-            break
-
-    if not doc_folder:
+    # Get document bundle (uses index for O(1) lookup)
+    doc_bundle = storage.get_doc(doc_id)
+    if not doc_bundle:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-    # Read document metadata
-    meta_path = doc_folder / "meta" / "doc.json"
-    if not meta_path.exists():
-        raise HTTPException(status_code=404, detail="Document metadata not found")
-
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
+    meta = doc_bundle.metadata
     filename = meta.get("original_filename", "Unknown")
     doc_type = meta.get("doc_type", "unknown")
     language = meta.get("language", "es")
+    resolved_claim_id = doc_bundle.claim_id or extract_claim_number(doc_bundle.claim_folder)
 
-    # Load pages from pages.json
-    pages = []
-    pages_path = doc_folder / "text" / "pages.json"
-    if pages_path.exists():
-        with open(pages_path, "r", encoding="utf-8") as f:
-            pages_data = json.load(f)
-            pages = pages_data.get("pages", [])
+    # Load pages
+    doc_text = storage.get_doc_text(doc_id)
+    pages = doc_text.pages if doc_text else []
 
-    # Get latest run
-    run_dir = get_latest_run_dir_for_claim(claim_dir)
-
-    # Load extraction if exists
+    # Get extraction for latest or specific run
     extraction = None
-    if run_dir:
-        extraction_path = run_dir / "extraction" / f"{doc_id}.json"
-        if extraction_path.exists():
-            with open(extraction_path, "r", encoding="utf-8") as f:
-                extraction = json.load(f)
+    runs = storage.list_runs()
+    if runs:
+        target_run_id = run_id or runs[0].run_id
+        extraction = storage.get_extraction(target_run_id, doc_id, claim_id=resolved_claim_id)
 
-    # Load labels if exist (from docs/{doc_id}/labels/latest.json)
-    labels = None
-    labels_path = doc_folder / "labels" / "latest.json"
-    if labels_path.exists():
-        with open(labels_path, "r", encoding="utf-8") as f:
-            labels = json.load(f)
+    # Load labels (uses index for fast lookup if available)
+    labels = storage.get_label(doc_id)
 
     # Check for source files
     has_pdf = False
     has_image = False
-    source_dir = doc_folder / "source"
+    source_dir = doc_bundle.doc_root / "source"
     if source_dir.exists():
         for source_file in source_dir.iterdir():
             ext = source_file.suffix.lower()
@@ -728,7 +687,7 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None)):
 
     return DocPayload(
         doc_id=doc_id,
-        claim_id=extract_claim_number(claim_dir.name),
+        claim_id=resolved_claim_id,
         filename=filename,
         doc_type=doc_type,
         language=language,
@@ -745,37 +704,25 @@ def save_labels(doc_id: str, request: SaveLabelsRequest, claim_id: Optional[str]
     """
     Save human labels for a document.
 
-    Uses atomic write (temp file + rename) for safety.
+    Uses Storage abstraction for atomic write (temp file + rename).
     Labels are stored at docs/{doc_id}/labels/latest.json (run-independent).
     """
-    # Find the document's folder
-    doc_folder = None
-    claim_dir = None
-    for claim in DATA_DIR.iterdir():
-        if not claim.is_dir():
-            continue
-        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
-            continue
-        candidate = claim / "docs" / doc_id
-        if candidate.exists():
-            doc_folder = candidate
-            claim_dir = claim
-            break
+    storage = get_storage()
 
-    if not doc_folder:
+    # Verify document exists and get claim_id
+    doc_bundle = storage.get_doc(doc_id)
+    if not doc_bundle:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-    # Labels are stored at docs/{doc_id}/labels/latest.json
-    labels_dir = doc_folder / "labels"
-    labels_dir.mkdir(parents=True, exist_ok=True)
+    resolved_claim_id = doc_bundle.claim_id or extract_claim_number(doc_bundle.claim_folder)
 
-    # Build label result (label_v2 schema)
+    # Build label result (label_v3 schema)
     label_data = {
-        "schema_version": "label_v2",
+        "schema_version": "label_v3",
         "doc_id": doc_id,
-        "claim_id": extract_claim_number(claim_dir.name),
+        "claim_id": resolved_claim_id,
         "review": {
-            "reviewed_at": datetime.utcnow().isoformat(),
+            "reviewed_at": datetime.utcnow().isoformat() + "Z",
             "reviewer": request.reviewer,
             "notes": request.notes,
         },
@@ -783,16 +730,13 @@ def save_labels(doc_id: str, request: SaveLabelsRequest, claim_id: Optional[str]
         "doc_labels": request.doc_labels,
     }
 
-    # Atomic write
-    labels_path = labels_dir / "latest.json"
-    temp_path = labels_path.with_suffix(".tmp")
+    # Save using Storage's atomic write
+    try:
+        storage.save_label(doc_id, label_data)
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save labels: {e}")
 
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(label_data, f, indent=2, ensure_ascii=False)
-
-    temp_path.replace(labels_path)
-
-    return {"status": "saved", "path": str(labels_path)}
+    return {"status": "saved", "doc_id": doc_id}
 
 
 @app.post("/api/docs/{doc_id}/extract")
@@ -1128,38 +1072,18 @@ def get_doc_source(doc_id: str, claim_id: Optional[str] = Query(None)):
     Serve the original document source file (PDF/image).
 
     Returns the file from docs/{doc_id}/source/ with correct content-type.
+    Uses Storage abstraction for O(1) document lookup.
     """
-    # Find the document across all claims
-    doc_folder = None
-    claim_dir = None
+    storage = get_storage()
 
-    for claim in DATA_DIR.iterdir():
-        if not claim.is_dir():
-            continue
-
-        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
-            continue
-
-        candidate = claim / "docs" / doc_id
-        if candidate.exists():
-            doc_folder = candidate
-            claim_dir = claim
-            break
-
-    if not doc_folder:
-        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
-
-    # Look for source file
-    source_dir = doc_folder / "source"
-    if not source_dir.exists():
+    # Get source path using Storage (uses index for fast lookup)
+    source_file = storage.get_doc_source_path(doc_id)
+    if not source_file:
+        # Check if document exists at all
+        doc = storage.get_doc(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
         raise HTTPException(status_code=404, detail="No source file available")
-
-    # Find the source file (could be PDF, JPG, PNG, etc.)
-    source_files = list(source_dir.iterdir())
-    if not source_files:
-        raise HTTPException(status_code=404, detail="No source file found")
-
-    source_file = source_files[0]  # Use first file found
 
     # Determine media type based on extension
     ext_to_media = {
@@ -1191,27 +1115,17 @@ def get_doc_azure_di(doc_id: str, claim_id: Optional[str] = Query(None)):
 
     Returns the azure_di.json if available, containing word-level
     polygon coordinates for visual highlighting on PDF.
+    Uses Storage abstraction for O(1) document lookup.
     """
-    # Find the document across all claims (same pattern as get_doc_source)
-    doc_folder = None
+    storage = get_storage()
 
-    for claim in DATA_DIR.iterdir():
-        if not claim.is_dir():
-            continue
-
-        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
-            continue
-
-        candidate = claim / "docs" / doc_id
-        if candidate.exists():
-            doc_folder = candidate
-            break
-
-    if not doc_folder:
+    # Get document bundle (uses index for fast lookup)
+    doc_bundle = storage.get_doc(doc_id)
+    if not doc_bundle:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
     # Look for azure_di.json
-    azure_di_path = doc_folder / "text" / "raw" / "azure_di.json"
+    azure_di_path = doc_bundle.doc_root / "text" / "raw" / "azure_di.json"
     if not azure_di_path.exists():
         raise HTTPException(status_code=404, detail="Azure DI data not available")
 

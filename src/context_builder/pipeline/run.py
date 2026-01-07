@@ -365,6 +365,7 @@ def process_document(
 
         doc_meta = {
             "doc_id": doc.doc_id,
+            "claim_id": claim_id,
             "original_filename": doc.original_filename,
             "source_type": doc.source_type,
             "doc_type": doc_type,
