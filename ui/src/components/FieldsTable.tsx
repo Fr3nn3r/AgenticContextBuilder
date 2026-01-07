@@ -205,18 +205,18 @@ export function FieldsTable({
               </div>
             </div>
 
-            {/* Extracted value - prominent display */}
-            <div className="mb-2 p-2 bg-slate-100 rounded border border-slate-200">
-              <div className="text-xs text-slate-500 mb-1">Extracted</div>
+            {/* Extracted value - single line with highlighted value */}
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm text-gray-600">Extracted:</span>
               {field.value ? (
-                <div className="font-mono text-base font-medium text-slate-900">
+                <span className="font-mono text-sm font-medium text-gray-900 px-2 py-0.5 bg-amber-50 border-2 border-amber-300 rounded">
                   {field.normalized_value || field.value}
                   {field.value_is_placeholder && (
                     <span className="ml-2 text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-normal">
                       Placeholder
                     </span>
                   )}
-                </div>
+                </span>
               ) : (
                 <span className="text-sm px-2 py-0.5 bg-red-100 text-red-700 rounded">
                   Missing
