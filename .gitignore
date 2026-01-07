@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -60,3 +60,11 @@ v1/
 test_folder/
 _deprecated_v1/
 _scripts/
+
+# Playwright test artifacts
+.playwright-mcp/
+ui/playwright-report/
+ui/test-results/
+
+# Windows artifacts
+nul
