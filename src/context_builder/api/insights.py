@@ -1119,6 +1119,10 @@ def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
 
         # Aggregate per-claim summaries for phase metrics
         total_time_ms = 0
+        ingestion_duration = 0
+        classification_duration = 0
+        extraction_duration = 0
+
         for claim_run_path in claim_run_paths:
             claim_summary_path = claim_run_path / "logs" / "summary.json"
             if not claim_summary_path.exists():
@@ -1128,52 +1132,117 @@ def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
                 with open(claim_summary_path, "r", encoding="utf-8") as f:
                     claim_summary = json.load(f)
 
-                # Ingestion metrics from aggregates
-                aggregates = claim_summary.get("aggregates", {})
-                run_info["phases"]["ingestion"]["discovered"] += aggregates.get("discovered", 0)
-                run_info["phases"]["ingestion"]["ingested"] += aggregates.get("processed", 0)
-                run_info["phases"]["ingestion"]["skipped"] += aggregates.get("skipped", 0)
-                run_info["phases"]["ingestion"]["failed"] += aggregates.get("failed", 0)
+                # Check if native phases data is available (new format)
+                if "phases" in claim_summary:
+                    claim_phases = claim_summary["phases"]
 
-                # Extraction metrics from stats
-                stats = claim_summary.get("stats", {})
-                run_info["phases"]["extraction"]["attempted"] += stats.get("total", 0)
-                run_info["phases"]["extraction"]["succeeded"] += stats.get("success", 0)
-                run_info["phases"]["extraction"]["failed"] += stats.get("errors", 0)
+                    # Ingestion
+                    ing = claim_phases.get("ingestion", {})
+                    run_info["phases"]["ingestion"]["discovered"] += ing.get("discovered", 0)
+                    run_info["phases"]["ingestion"]["ingested"] += ing.get("ingested", 0)
+                    run_info["phases"]["ingestion"]["skipped"] += ing.get("skipped", 0)
+                    run_info["phases"]["ingestion"]["failed"] += ing.get("failed", 0)
+                    if ing.get("duration_ms"):
+                        ingestion_duration += ing["duration_ms"]
+
+                    # Classification
+                    clf = claim_phases.get("classification", {})
+                    run_info["phases"]["classification"]["classified"] += clf.get("classified", 0)
+                    run_info["phases"]["classification"]["low_confidence"] += clf.get("low_confidence", 0)
+                    # Merge distribution
+                    for doc_type, count in clf.get("distribution", {}).items():
+                        dist = run_info["phases"]["classification"]["distribution"]
+                        dist[doc_type] = dist.get(doc_type, 0) + count
+                    if clf.get("duration_ms"):
+                        classification_duration += clf["duration_ms"]
+
+                    # Extraction
+                    ext = claim_phases.get("extraction", {})
+                    run_info["phases"]["extraction"]["attempted"] += ext.get("attempted", 0)
+                    run_info["phases"]["extraction"]["succeeded"] += ext.get("succeeded", 0)
+                    run_info["phases"]["extraction"]["failed"] += ext.get("failed", 0)
+                    if ext.get("duration_ms"):
+                        extraction_duration += ext["duration_ms"]
+
+                    # Quality gate
+                    qg = claim_phases.get("quality_gate", {})
+                    run_info["phases"]["quality_gate"]["pass"] += qg.get("pass", 0)
+                    run_info["phases"]["quality_gate"]["warn"] += qg.get("warn", 0)
+                    run_info["phases"]["quality_gate"]["fail"] += qg.get("fail", 0)
+
+                else:
+                    # Fallback: compute from aggregates/stats (old format)
+                    aggregates = claim_summary.get("aggregates", {})
+                    run_info["phases"]["ingestion"]["discovered"] += aggregates.get("discovered", 0)
+                    run_info["phases"]["ingestion"]["ingested"] += aggregates.get("processed", 0)
+                    run_info["phases"]["ingestion"]["skipped"] += aggregates.get("skipped", 0)
+                    run_info["phases"]["ingestion"]["failed"] += aggregates.get("failed", 0)
+
+                    stats = claim_summary.get("stats", {})
+                    run_info["phases"]["extraction"]["attempted"] += stats.get("total", 0)
+                    run_info["phases"]["extraction"]["succeeded"] += stats.get("success", 0)
+                    run_info["phases"]["extraction"]["failed"] += stats.get("errors", 0)
+
+                    # Per-document data for classification and quality gate (old format)
+                    for doc in claim_summary.get("documents", []):
+                        doc_type = doc.get("doc_type_predicted")
+                        if doc_type:
+                            run_info["phases"]["classification"]["classified"] += 1
+                            dist = run_info["phases"]["classification"]["distribution"]
+                            dist[doc_type] = dist.get(doc_type, 0) + 1
+
+                        # Check for inline quality_gate_status (new doc format)
+                        qg_status = doc.get("quality_gate_status")
+                        if qg_status:
+                            if qg_status == "pass":
+                                run_info["phases"]["quality_gate"]["pass"] += 1
+                            elif qg_status == "warn":
+                                run_info["phases"]["quality_gate"]["warn"] += 1
+                            elif qg_status == "fail":
+                                run_info["phases"]["quality_gate"]["fail"] += 1
+                        else:
+                            # Fallback: read from extraction result file
+                            extraction_path = doc.get("output_paths", {}).get("extraction")
+                            if extraction_path:
+                                ext_full_path = claim_run_path / extraction_path
+                                if ext_full_path.exists():
+                                    try:
+                                        with open(ext_full_path, "r", encoding="utf-8") as ef:
+                                            ext_result = json.load(ef)
+                                            qg = ext_result.get("quality_gate", {})
+                                            gate_status = qg.get("status", "").lower()
+                                            if gate_status == "pass":
+                                                run_info["phases"]["quality_gate"]["pass"] += 1
+                                            elif gate_status == "warn":
+                                                run_info["phases"]["quality_gate"]["warn"] += 1
+                                            elif gate_status == "fail":
+                                                run_info["phases"]["quality_gate"]["fail"] += 1
+                                    except (json.JSONDecodeError, IOError):
+                                        pass
+
+                        # Aggregate per-doc timings if available
+                        timings = doc.get("timings", {})
+                        if timings.get("ingestion_ms"):
+                            ingestion_duration += timings["ingestion_ms"]
+                        if timings.get("classification_ms"):
+                            classification_duration += timings["classification_ms"]
+                        if timings.get("extraction_ms"):
+                            extraction_duration += timings["extraction_ms"]
 
                 # Processing time
                 if claim_summary.get("processing_time_seconds"):
                     total_time_ms += int(claim_summary["processing_time_seconds"] * 1000)
 
-                # Per-document data for classification and quality gate
-                for doc in claim_summary.get("documents", []):
-                    doc_type = doc.get("doc_type_predicted")
-                    if doc_type:
-                        run_info["phases"]["classification"]["classified"] += 1
-                        dist = run_info["phases"]["classification"]["distribution"]
-                        dist[doc_type] = dist.get(doc_type, 0) + 1
-
-                    # Quality gate from extraction results
-                    extraction_path = doc.get("output_paths", {}).get("extraction")
-                    if extraction_path:
-                        ext_full_path = claim_run_path / extraction_path
-                        if ext_full_path.exists():
-                            try:
-                                with open(ext_full_path, "r", encoding="utf-8") as ef:
-                                    ext_result = json.load(ef)
-                                    qg = ext_result.get("quality_gate", {})
-                                    gate_status = qg.get("status", "").lower()
-                                    if gate_status == "pass":
-                                        run_info["phases"]["quality_gate"]["pass"] += 1
-                                    elif gate_status == "warn":
-                                        run_info["phases"]["quality_gate"]["warn"] += 1
-                                    elif gate_status == "fail":
-                                        run_info["phases"]["quality_gate"]["fail"] += 1
-                            except (json.JSONDecodeError, IOError):
-                                pass
-
             except (json.JSONDecodeError, IOError):
                 continue
+
+        # Set phase durations
+        if ingestion_duration > 0:
+            run_info["phases"]["ingestion"]["duration_ms"] = ingestion_duration
+        if classification_duration > 0:
+            run_info["phases"]["classification"]["duration_ms"] = classification_duration
+        if extraction_duration > 0:
+            run_info["phases"]["extraction"]["duration_ms"] = extraction_duration
 
         # Set total duration
         if total_time_ms > 0:

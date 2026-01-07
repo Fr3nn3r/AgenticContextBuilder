@@ -275,6 +275,7 @@ export interface PhaseMetrics {
     attempted: number;
     succeeded: number;
     failed: number;
+    skipped_unsupported?: number;
     duration_ms?: number | null;
   };
   quality_gate: {

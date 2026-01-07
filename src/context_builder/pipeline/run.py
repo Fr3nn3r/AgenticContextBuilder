@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class PhaseTimings:
+    """Per-phase timing breakdown in milliseconds."""
+
+    ingestion_ms: int = 0
+    classification_ms: int = 0
+    extraction_ms: int = 0
+    total_ms: int = 0
+
+
+@dataclass
 class DocResult:
     """Result of processing a single document."""
 
@@ -45,10 +55,15 @@ class DocResult:
     status: str  # "success", "error", "skipped"
     source_type: Optional[str] = None  # "pdf", "image", "text"
     doc_type: Optional[str] = None
+    doc_type_confidence: Optional[float] = None
     language: Optional[str] = None
     extraction_path: Optional[Path] = None
     error: Optional[str] = None
     time_ms: int = 0
+    # Phase-level tracking
+    timings: Optional[PhaseTimings] = None
+    failed_phase: Optional[str] = None  # "ingestion", "classification", "extraction"
+    quality_gate_status: Optional[str] = None  # "pass", "warn", "fail"
 
 
 @dataclass
@@ -284,8 +299,13 @@ def process_document(
         DocResult with processing status and paths
     """
     start_time = time.time()
+    timings = PhaseTimings()
+    current_phase = "ingestion"
 
     try:
+        # ========== INGESTION PHASE ==========
+        ingestion_start = time.time()
+
         # Step 1: Copy/write source file
         if doc.source_type in ("pdf", "image"):
             # Copy binary file to source/
@@ -313,6 +333,12 @@ def process_document(
             ),
         )
         _write_json(doc_paths.pages_json, pages_data)
+
+        timings.ingestion_ms = int((time.time() - ingestion_start) * 1000)
+
+        # ========== CLASSIFICATION PHASE ==========
+        current_phase = "classification"
+        classification_start = time.time()
 
         # Step 4: Classify document
         classification = classifier.classify(text_content, doc.original_filename)
@@ -351,10 +377,17 @@ def process_document(
         }
         _write_json(doc_paths.doc_json, doc_meta)
 
-        # Step 7-8: Run extraction if supported
+        timings.classification_ms = int((time.time() - classification_start) * 1000)
+
+        # ========== EXTRACTION PHASE ==========
+        current_phase = "extraction"
+        extraction_start = time.time()
         extraction_path = None
+        quality_gate_status = None
+
+        # Step 7-8: Run extraction if supported
         if ExtractorFactory.is_supported(doc_type):
-            extraction_path = _run_extraction(
+            extraction_path, quality_gate_status = _run_extraction(
                 doc_id=doc.doc_id,
                 file_md5=doc.file_md5,
                 content_md5=content_md5,
@@ -370,21 +403,27 @@ def process_document(
         else:
             logger.debug(f"No extractor for {doc_type}: {doc.original_filename}")
 
-        elapsed_ms = int((time.time() - start_time) * 1000)
+        timings.extraction_ms = int((time.time() - extraction_start) * 1000)
+        timings.total_ms = int((time.time() - start_time) * 1000)
+
         return DocResult(
             doc_id=doc.doc_id,
             original_filename=doc.original_filename,
             status="success",
             source_type=doc.source_type,
             doc_type=doc_type,
+            doc_type_confidence=confidence,
             language=language,
             extraction_path=extraction_path,
-            time_ms=elapsed_ms,
+            time_ms=timings.total_ms,
+            timings=timings,
+            quality_gate_status=quality_gate_status,
         )
 
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.exception(f"Failed to process {doc.original_filename}")
+        timings.total_ms = elapsed_ms
+        logger.exception(f"Failed to process {doc.original_filename} in {current_phase} phase")
         return DocResult(
             doc_id=doc.doc_id,
             original_filename=doc.original_filename,
@@ -392,6 +431,8 @@ def process_document(
             source_type=doc.source_type,
             error=str(e),
             time_ms=elapsed_ms,
+            timings=timings,
+            failed_phase=current_phase,
         )
 
 
@@ -406,8 +447,12 @@ def _run_extraction(
     language: str,
     run_paths: RunPaths,
     run_id: str,
-) -> Path:
-    """Run field extraction for supported doc types."""
+) -> tuple[Path, Optional[str]]:
+    """Run field extraction for supported doc types.
+
+    Returns:
+        Tuple of (extraction_path, quality_gate_status)
+    """
     # Import extractors to ensure they're registered
     import context_builder.extraction.extractors  # noqa: F401
 
@@ -441,7 +486,75 @@ def _run_extraction(
     output_path = run_paths.extraction_dir / f"{doc_id}.json"
     _write_json(output_path, result.model_dump())
 
-    return output_path
+    # Get quality gate status
+    quality_gate_status = result.quality_gate.status if result.quality_gate else None
+
+    return output_path, quality_gate_status
+
+
+def _compute_phase_aggregates(results: List[DocResult]) -> Dict[str, Any]:
+    """
+    Compute aggregate phase metrics from document results.
+
+    Returns dict with ingestion, classification, extraction, and quality_gate sub-dicts.
+    """
+    from collections import Counter
+
+    # Ingestion metrics
+    ingestion_success = sum(1 for r in results if r.status == "success" or (r.failed_phase and r.failed_phase != "ingestion"))
+    ingestion_failed = sum(1 for r in results if r.failed_phase == "ingestion")
+    ingestion_duration = sum(r.timings.ingestion_ms for r in results if r.timings and r.timings.ingestion_ms)
+
+    # Classification metrics
+    # Docs that made it past ingestion
+    classified = sum(1 for r in results if r.doc_type is not None)
+    classification_failed = sum(1 for r in results if r.failed_phase == "classification")
+    classification_duration = sum(r.timings.classification_ms for r in results if r.timings and r.timings.classification_ms)
+
+    # Build doc type distribution
+    doc_type_distribution: Counter[str] = Counter()
+    for r in results:
+        if r.doc_type:
+            doc_type_distribution[r.doc_type] += 1
+
+    # Extraction metrics
+    extraction_attempted = sum(1 for r in results if r.extraction_path is not None or r.failed_phase == "extraction")
+    extraction_succeeded = sum(1 for r in results if r.extraction_path is not None)
+    extraction_failed = sum(1 for r in results if r.failed_phase == "extraction")
+    extraction_duration = sum(r.timings.extraction_ms for r in results if r.timings and r.timings.extraction_ms)
+
+    # Quality gate metrics
+    qg_pass = sum(1 for r in results if r.quality_gate_status == "pass")
+    qg_warn = sum(1 for r in results if r.quality_gate_status == "warn")
+    qg_fail = sum(1 for r in results if r.quality_gate_status == "fail")
+
+    return {
+        "ingestion": {
+            "discovered": len(results),
+            "ingested": ingestion_success,
+            "skipped": 0,  # Would track duplicates/unsupported if we had that info
+            "failed": ingestion_failed,
+            "duration_ms": ingestion_duration if ingestion_duration > 0 else None,
+        },
+        "classification": {
+            "classified": classified,
+            "low_confidence": 0,  # TODO: Track when confidence < threshold
+            "distribution": dict(doc_type_distribution),
+            "duration_ms": classification_duration if classification_duration > 0 else None,
+        },
+        "extraction": {
+            "attempted": extraction_attempted,
+            "succeeded": extraction_succeeded,
+            "failed": extraction_failed,
+            "skipped_unsupported": len(results) - extraction_attempted,
+            "duration_ms": extraction_duration if extraction_duration > 0 else None,
+        },
+        "quality_gate": {
+            "pass": qg_pass,
+            "warn": qg_warn,
+            "fail": qg_fail,
+        },
+    }
 
 
 def process_claim(
@@ -569,7 +682,10 @@ def process_claim(
 
         elapsed = time.time() - start_time
 
-        # Write enhanced summary with error codes
+        # Compute aggregate phase metrics
+        phases = _compute_phase_aggregates(results)
+
+        # Write enhanced summary with error codes and phase metrics
         summary = {
             "claim_id": claim.claim_id,
             "run_id": run_id,
@@ -581,6 +697,7 @@ def process_claim(
                 "skipped": 0,
                 "failed": error_count,
             },
+            "phases": phases,
             "documents": [
                 {
                     "claim_id": claim.claim_id,
@@ -589,14 +706,23 @@ def process_claim(
                     "source_type": r.source_type,
                     "status": DocStatus.PROCESSED.value if r.status == "success" else DocStatus.FAILED.value,
                     "doc_type_predicted": r.doc_type,
+                    "doc_type_confidence": r.doc_type_confidence,
                     "error_code": RunErrorCode.UNKNOWN_EXCEPTION.value if r.error else None,
                     "error_message": r.error,
+                    "failed_phase": r.failed_phase,
                     "text_source_used": (
                         TextSource.DI_TEXT.value if r.source_type == "pdf" else
                         TextSource.VISION_OCR.value if r.source_type == "image" else
                         TextSource.RAW_TEXT.value
                     ),
                     "time_ms": r.time_ms,
+                    "timings": {
+                        "ingestion_ms": r.timings.ingestion_ms if r.timings else None,
+                        "classification_ms": r.timings.classification_ms if r.timings else None,
+                        "extraction_ms": r.timings.extraction_ms if r.timings else None,
+                        "total_ms": r.timings.total_ms if r.timings else r.time_ms,
+                    },
+                    "quality_gate_status": r.quality_gate_status,
                     "output_paths": {
                         "extraction": f"extraction/{r.doc_id}.json" if r.extraction_path else None,
                         "context": f"context/{r.doc_id}.json",
