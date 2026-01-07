@@ -26,13 +26,18 @@ BASELINE_FILE = ".insights_baseline.json"
 
 
 class FieldOutcome(str, Enum):
-    """Outcome classification for a (doc, field) pair."""
+    """Outcome classification for a (doc, field) pair based on truth comparison."""
+    MATCH = "match"              # Confirmed truth matches extraction
+    MISMATCH = "mismatch"        # Confirmed truth differs from extraction
+    MISS = "miss"                # Confirmed truth exists but no extraction
+    UNVERIFIABLE = "unverifiable"  # Cannot establish ground truth
+    # Legacy values for backwards compatibility
     CORRECT = "correct"
     EXTRACTOR_MISS = "extractor_miss"
     INCORRECT = "incorrect"
-    CORRECT_ABSENT = "correct_absent"  # Label says wrong but field absent (rare)
+    CORRECT_ABSENT = "correct_absent"
     CANNOT_VERIFY = "cannot_verify"
-    EVIDENCE_MISSING = "evidence_missing"  # Overlay tag
+    EVIDENCE_MISSING = "evidence_missing"
 
 
 @dataclass
@@ -49,10 +54,13 @@ class FieldRecord:
     normalized_value: Optional[str]
     has_evidence: bool
     confidence: float
-    # Label data
+    # Label data (v2 schema: state-based)
     has_label: bool
-    judgement: Optional[str]  # "correct", "incorrect", "unknown", or None
-    correct_value: Optional[str]
+    state: Optional[str]  # "CONFIRMED", "UNVERIFIABLE", "UNLABELED", or None
+    truth_value: Optional[str]  # Ground truth value (when state=CONFIRMED)
+    # Legacy label data (v1 schema: judgement-based)
+    judgement: Optional[str]  # "correct", "incorrect", "unknown", or None (deprecated)
+    correct_value: Optional[str]  # (deprecated, use truth_value)
     # Doc-level data
     doc_type_correct: Optional[bool]  # True, False, or None (unsure/missing)
     gate_status: Optional[str]  # "pass", "warn", "fail"
@@ -342,8 +350,11 @@ class InsightsAggregator:
                 p.get("text_quote") for p in provenance
             )
 
-            # Label info
+            # Label info (v2 schema: state-based)
             has_label = bool(label_data)
+            state = label_data.get("state")  # CONFIRMED, UNVERIFIABLE, UNLABELED
+            truth_value = label_data.get("truth_value")
+            # Legacy v1 schema (for backwards compatibility)
             judgement = label_data.get("judgement")
             correct_value = label_data.get("correct_value")
 
@@ -363,6 +374,8 @@ class InsightsAggregator:
                 has_evidence=has_evidence,
                 confidence=confidence,
                 has_label=has_label,
+                state=state,
+                truth_value=truth_value,
                 judgement=judgement,
                 correct_value=correct_value,
                 doc_type_correct=doc_type_correct,
@@ -386,25 +399,46 @@ class InsightsAggregator:
         self.doc_records.append(doc_record)
 
     def _classify_outcomes(self) -> None:
-        """Classify outcomes for all field records."""
+        """Classify outcomes for all field records using truth-based comparison."""
         for record in self.field_records:
             if not record.has_label:
                 record.outcome = None
                 continue
 
-            # Outcome classification
-            if record.judgement == "correct":
-                if record.has_prediction:
-                    record.outcome = FieldOutcome.CORRECT
+            # Truth-based outcome classification (v2 schema)
+            if record.state == "CONFIRMED":
+                # Compare normalized_value to truth_value
+                if not record.has_prediction:
+                    # Extractor missed a field that has ground truth
+                    record.outcome = FieldOutcome.MISS
+                elif record.normalized_value == record.truth_value:
+                    # Extraction matches ground truth
+                    record.outcome = FieldOutcome.MATCH
                 else:
-                    record.outcome = FieldOutcome.EXTRACTOR_MISS
-            elif record.judgement == "incorrect":
-                if record.has_prediction:
-                    record.outcome = FieldOutcome.INCORRECT
+                    # Extraction differs from ground truth
+                    record.outcome = FieldOutcome.MISMATCH
+            elif record.state == "UNVERIFIABLE":
+                # Cannot establish ground truth - excluded from accuracy
+                record.outcome = FieldOutcome.UNVERIFIABLE
+            elif record.state == "UNLABELED":
+                # Not yet labeled - no outcome
+                record.outcome = None
+            elif record.judgement:
+                # Legacy v1 schema fallback (judgement-based)
+                if record.judgement == "correct":
+                    if record.has_prediction:
+                        record.outcome = FieldOutcome.CORRECT
+                    else:
+                        record.outcome = FieldOutcome.EXTRACTOR_MISS
+                elif record.judgement == "incorrect":
+                    if record.has_prediction:
+                        record.outcome = FieldOutcome.INCORRECT
+                    else:
+                        record.outcome = FieldOutcome.CORRECT_ABSENT
+                elif record.judgement == "unknown":
+                    record.outcome = FieldOutcome.CANNOT_VERIFY
                 else:
-                    record.outcome = FieldOutcome.CORRECT_ABSENT
-            elif record.judgement == "unknown":
-                record.outcome = FieldOutcome.CANNOT_VERIFY
+                    record.outcome = None
             else:
                 record.outcome = None
 
@@ -467,7 +501,7 @@ class InsightsAggregator:
     # -------------------------------------------------------------------------
 
     def get_overview(self) -> Dict[str, Any]:
-        """Get overview KPIs."""
+        """Get overview KPIs using truth-based metrics."""
         self.load_data()
 
         # Filter to docs where doc_type is correct (for field metrics)
@@ -476,23 +510,26 @@ class InsightsAggregator:
 
         # Doc-level counts
         total_docs = len(self.doc_records)
-        docs_reviewed = len([d for d in self.doc_records if d.has_labels])
         docs_doc_type_wrong = len([d for d in self.doc_records if d.doc_type_correct is False])
 
-        # Field-level metrics (only for valid docs with labels)
-        labeled_required = [r for r in valid_records if r.is_required and r.has_label]
+        # Doc coverage: docs with at least one CONFIRMED field
+        docs_with_truth = len({
+            r.doc_id for r in self.field_records if r.state == "CONFIRMED"
+        })
 
-        # Presence rate (among required fields)
-        if labeled_required:
-            presence_rate = sum(1 for r in labeled_required if r.has_prediction) / len(labeled_required)
-        else:
-            presence_rate = 0.0
+        # Field coverage: CONFIRMED fields / total fields
+        total_fields = len(self.field_records)
+        confirmed_fields = len([r for r in self.field_records if r.state == "CONFIRMED"])
 
-        # Accuracy (among required fields with correct/incorrect judgement)
-        accuracy_denom = [r for r in labeled_required if r.judgement in ("correct", "incorrect")]
-        if accuracy_denom:
-            accuracy_numer = [r for r in accuracy_denom if r.outcome == FieldOutcome.CORRECT]
-            accuracy = len(accuracy_numer) / len(accuracy_denom)
+        # Truth-based accuracy: match / (match + mismatch + miss)
+        # Only count CONFIRMED fields from valid docs
+        confirmed_valid = [r for r in valid_records if r.state == "CONFIRMED"]
+        match_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MATCH])
+        mismatch_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MISMATCH])
+        miss_count = len([r for r in confirmed_valid if r.outcome == FieldOutcome.MISS])
+        accuracy_denom = match_count + mismatch_count + miss_count
+        if accuracy_denom > 0:
+            accuracy = match_count / accuracy_denom
         else:
             accuracy = 0.0
 
@@ -503,23 +540,30 @@ class InsightsAggregator:
         else:
             evidence_rate = 0.0
 
-        # Run coverage: docs with extraction in this run / labeled docs
-        # A doc has extraction if it has at least one field with a prediction
-        docs_with_extraction = len({r.doc_id for r in self.field_records if r.has_prediction})
-        if docs_reviewed > 0:
-            run_coverage = docs_with_extraction / docs_reviewed
+        # Legacy metrics for backwards compatibility
+        docs_reviewed = len([d for d in self.doc_records if d.has_labels])
+        labeled_required = [r for r in valid_records if r.is_required and r.has_label]
+        if labeled_required:
+            presence_rate = sum(1 for r in labeled_required if r.has_prediction) / len(labeled_required)
         else:
-            run_coverage = 0.0
+            presence_rate = 0.0
 
         return {
             "docs_total": total_docs,
+            "docs_with_truth": docs_with_truth,  # NEW: doc coverage numerator
+            "confirmed_fields": confirmed_fields,  # NEW: field coverage numerator
+            "total_fields": total_fields,  # NEW: field coverage denominator
+            "accuracy_rate": round(accuracy * 100, 1),  # NEW: truth-based accuracy
+            "evidence_rate": round(evidence_rate * 100, 1),
+            # Accuracy breakdown
+            "match_count": match_count,
+            "mismatch_count": mismatch_count,
+            "miss_count": miss_count,
+            # Legacy metrics (for backwards compatibility)
             "docs_reviewed": docs_reviewed,
             "docs_doc_type_wrong": docs_doc_type_wrong,
             "required_field_presence_rate": round(presence_rate * 100, 1),
             "required_field_accuracy": round(accuracy * 100, 1),
-            "evidence_rate": round(evidence_rate * 100, 1),
-            "run_coverage": round(run_coverage * 100, 1),
-            "docs_with_extraction": docs_with_extraction,
         }
 
     def get_doc_type_metrics(self) -> List[Dict[str, Any]]:
@@ -581,12 +625,16 @@ class InsightsAggregator:
         return results
 
     def get_priorities(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get prioritized list of (doc_type, field) to improve."""
+        """Get prioritized list of (doc_type, field) to improve - Top Error Drivers."""
         self.load_data()
 
         # Only consider docs where doc_type is correct
         valid_docs = {r.doc_id for r in self.doc_records if r.doc_type_correct is True}
-        valid_records = [r for r in self.field_records if r.doc_id in valid_docs and r.has_label]
+        # Only consider CONFIRMED fields (truth-based metrics)
+        valid_records = [
+            r for r in self.field_records
+            if r.doc_id in valid_docs and r.state == "CONFIRMED"
+        ]
 
         # Group by (doc_type, field_name)
         groups: Dict[Tuple[str, str], List[FieldRecord]] = {}
@@ -601,43 +649,35 @@ class InsightsAggregator:
             spec = self.specs.get(doc_type, {})
             is_required = field_name in spec.get("required_fields", [])
 
-            # Count outcomes
-            extractor_miss = len([r for r in records if r.outcome == FieldOutcome.EXTRACTOR_MISS])
-            incorrect = len([r for r in records if r.outcome == FieldOutcome.INCORRECT])
-            evidence_missing = len([r for r in records if r.evidence_missing_tag])
-            cannot_verify = len([r for r in records if r.outcome == FieldOutcome.CANNOT_VERIFY])
+            # Count truth-based outcomes
+            mismatch_count = len([r for r in records if r.outcome == FieldOutcome.MISMATCH])
+            miss_count = len([r for r in records if r.outcome == FieldOutcome.MISS])
+            total_confirmed = len(records)
 
-            affected = extractor_miss + incorrect
-            if affected == 0:
+            # Error count = mismatch + miss (equal weight per user preference)
+            error_count = mismatch_count + miss_count
+            if error_count == 0:
                 continue
 
-            # Priority score: weighted by severity
-            score = (extractor_miss * 3) + (incorrect * 3) + (evidence_missing * 2) + (cannot_verify * 1)
-
-            # Determine fix bucket
-            if evidence_missing > extractor_miss and evidence_missing > incorrect:
-                fix_bucket = "Improve provenance capture"
-            elif extractor_miss > incorrect:
-                fix_bucket = "Improve span finding / extraction prompt"
-            else:
-                fix_bucket = "Improve extraction accuracy"
+            # Error rate for display
+            error_rate = error_count / total_confirmed if total_confirmed > 0 else 0.0
 
             priorities.append({
                 "doc_type": doc_type,
                 "field_name": field_name,
                 "is_required": is_required,
-                "affected_docs": affected,
-                "total_labeled": len(records),
-                "extractor_miss": extractor_miss,
-                "incorrect": incorrect,
-                "evidence_missing": evidence_missing,
-                "cannot_verify": cannot_verify,
-                "priority_score": score,
-                "fix_bucket": fix_bucket,
+                "mismatch_count": mismatch_count,  # NEW: truth differs from extraction
+                "miss_count": miss_count,  # NEW: no extraction for confirmed truth
+                "total_confirmed": total_confirmed,  # NEW: total CONFIRMED fields
+                "error_rate": round(error_rate * 100, 1),  # NEW: (mismatch + miss) / total
+                # Legacy fields for backwards compatibility
+                "affected_docs": error_count,
+                "total_labeled": total_confirmed,
+                "priority_score": error_count,
             })
 
-        # Sort by priority score descending
-        priorities.sort(key=lambda p: p["priority_score"], reverse=True)
+        # Sort by error count descending (equal weight for mismatch and miss)
+        priorities.sort(key=lambda p: p["affected_docs"], reverse=True)
         return priorities[:limit]
 
     def get_field_details(self, doc_type: str, field_name: str) -> Dict[str, Any]:
@@ -716,7 +756,7 @@ class InsightsAggregator:
                 except ValueError:
                     pass
 
-        # Only include labeled records
+        # Only include records with labels (either state or judgement)
         records = [r for r in records if r.has_label]
 
         # Limit
@@ -733,12 +773,15 @@ class InsightsAggregator:
                 "field_name": r.field_name,
                 "predicted_value": r.predicted_value,
                 "normalized_value": r.normalized_value,
-                "judgement": r.judgement,
+                "truth_value": r.truth_value,  # NEW: ground truth value
+                "state": r.state,  # NEW: CONFIRMED/UNVERIFIABLE/UNLABELED
                 "has_evidence": r.has_evidence,
                 "gate_status": r.gate_status,
                 "outcome": r.outcome.value if r.outcome else None,
                 "doc_type_correct": r.doc_type_correct,
                 "review_url": review_url,
+                # Legacy fields for backwards compatibility
+                "judgement": r.judgement,
             })
 
         return examples

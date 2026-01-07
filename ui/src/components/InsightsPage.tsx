@@ -292,10 +292,6 @@ export function InsightsPage() {
     );
   }
 
-  const labelCompleteness = overview?.docs_total
-    ? Math.round((overview.docs_reviewed / overview.docs_total) * 100)
-    : 0;
-
   return (
     <div className="p-4 space-y-4 max-w-[1600px] mx-auto">
       {/* Run Context Header */}
@@ -410,7 +406,6 @@ export function InsightsPage() {
       {activeTab === "insights" && (
         <InsightsTab
           overview={overview}
-          labelCompleteness={labelCompleteness}
           docTypes={docTypes}
           priorities={priorities}
           fieldDetails={fieldDetails}
@@ -464,7 +459,6 @@ export function InsightsPage() {
 
 interface InsightsTabProps {
   overview: InsightsOverview | null;
-  labelCompleteness: number;
   docTypes: DocTypeMetrics[];
   priorities: PriorityItem[];
   fieldDetails: FieldDetails | null;
@@ -484,7 +478,6 @@ interface InsightsTabProps {
 
 function InsightsTab({
   overview,
-  labelCompleteness,
   docTypes,
   priorities,
   fieldDetails,
@@ -505,41 +498,42 @@ function InsightsTab({
       {/* Overview KPIs */}
       <section className="grid grid-cols-3 md:grid-cols-5 gap-3">
         <KPICard
-          label="Reviewed"
-          value={`${overview?.docs_reviewed || 0}/${overview?.docs_total || 0}`}
-          subtext={`${labelCompleteness}% complete`}
+          label="Doc Coverage"
+          value={`${overview?.docs_with_truth || 0}/${overview?.docs_total || 0}`}
+          subtext="docs with ground truth"
         />
         <KPICard
-          label="Doc Type Wrong"
-          value={overview?.docs_doc_type_wrong || 0}
-          variant={overview?.docs_doc_type_wrong ? "warning" : "default"}
+          label="Field Coverage"
+          value={`${overview?.confirmed_fields || 0}/${overview?.total_fields || 0}`}
+          subtext="confirmed fields"
         />
         <KPICard
-          label="Field Presence"
-          value={`${overview?.required_field_presence_rate || 0}%`}
-          variant={getScoreVariant(overview?.required_field_presence_rate || 0)}
-        />
-        <KPICard
-          label="Field Accuracy"
-          value={`${overview?.required_field_accuracy || 0}%`}
-          variant={getScoreVariant(overview?.required_field_accuracy || 0)}
+          label="Accuracy"
+          value={`${overview?.accuracy_rate || 0}%`}
+          subtext={`${overview?.match_count || 0} match / ${(overview?.match_count || 0) + (overview?.mismatch_count || 0) + (overview?.miss_count || 0)} total`}
+          variant={getScoreVariant(overview?.accuracy_rate || 0)}
         />
         <KPICard
           label="Evidence Rate"
           value={`${overview?.evidence_rate || 0}%`}
           variant={getScoreVariant(overview?.evidence_rate || 0)}
         />
+        <KPICard
+          label="Doc Type Wrong"
+          value={overview?.docs_doc_type_wrong || 0}
+          variant={overview?.docs_doc_type_wrong ? "warning" : "default"}
+        />
       </section>
 
       {/* Main row: Priorities + Scoreboard */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Calibration Priorities */}
+        {/* Top Error Drivers */}
         <section className="lg:col-span-3">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Calibration Priorities</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-2">Top Error Drivers</h2>
           <div className="bg-white rounded-lg border shadow-sm max-h-[400px] overflow-y-auto">
             {priorities.length === 0 ? (
               <div className="p-4 text-gray-500 text-center text-sm">
-                No priorities found. Review more documents to see insights.
+                No error drivers found. Add ground truth labels to see insights.
               </div>
             ) : (
               <div className="divide-y">
@@ -562,12 +556,11 @@ function InsightsTab({
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 ml-5 text-xs">
-                      <span className="text-gray-500">{item.affected_docs}/{item.total_labeled} affected</span>
+                      <span className="text-gray-500">{item.error_rate}% error rate</span>
                       <span className="text-gray-300">·</span>
-                      {item.extractor_miss > 0 && <span className="text-yellow-600">{item.extractor_miss} missing</span>}
-                      {item.incorrect > 0 && <span className="text-red-600">{item.incorrect} incorrect</span>}
-                      {item.evidence_missing > 0 && <span className="text-orange-500">{item.evidence_missing} no evidence</span>}
-                      <span className="ml-auto text-blue-600 truncate max-w-[160px]">{item.fix_bucket.replace("Improve ", "")}</span>
+                      {item.mismatch_count > 0 && <span className="text-red-600">{item.mismatch_count} mismatch</span>}
+                      {item.miss_count > 0 && <span className="text-yellow-600">{item.miss_count} miss</span>}
+                      <span className="ml-auto text-gray-500">{item.total_confirmed} confirmed</span>
                     </div>
                   </button>
                 ))}
@@ -670,11 +663,9 @@ function InsightsTab({
 
           {fieldDetails && (
             <div className="flex items-center gap-2 p-3 border-b">
-              <OutcomeChip label="Correct" count={fieldDetails.breakdown.correct} variant="success" selected={selectedOutcome === "correct"} onClick={() => onOutcomeFilter(selectedOutcome === "correct" ? null : "correct")} />
-              <OutcomeChip label="Incorrect" count={fieldDetails.breakdown.incorrect} variant="error" selected={selectedOutcome === "incorrect"} onClick={() => onOutcomeFilter(selectedOutcome === "incorrect" ? null : "incorrect")} />
-              <OutcomeChip label="Missing" count={fieldDetails.breakdown.extractor_miss} variant="warning" selected={selectedOutcome === "extractor_miss"} onClick={() => onOutcomeFilter(selectedOutcome === "extractor_miss" ? null : "extractor_miss")} />
-              <OutcomeChip label="No Evidence" count={fieldDetails.breakdown.evidence_missing} variant="info" selected={selectedOutcome === "evidence_missing"} onClick={() => onOutcomeFilter(selectedOutcome === "evidence_missing" ? null : "evidence_missing")} />
-              <OutcomeChip label="Unknown" count={fieldDetails.breakdown.cannot_verify} variant="neutral" selected={selectedOutcome === "cannot_verify"} onClick={() => onOutcomeFilter(selectedOutcome === "cannot_verify" ? null : "cannot_verify")} />
+              <OutcomeChip label="Match" count={fieldDetails.breakdown.correct} variant="success" selected={selectedOutcome === "match"} onClick={() => onOutcomeFilter(selectedOutcome === "match" ? null : "match")} />
+              <OutcomeChip label="Mismatch" count={fieldDetails.breakdown.incorrect} variant="error" selected={selectedOutcome === "mismatch"} onClick={() => onOutcomeFilter(selectedOutcome === "mismatch" ? null : "mismatch")} />
+              <OutcomeChip label="Miss" count={fieldDetails.breakdown.extractor_miss} variant="warning" selected={selectedOutcome === "miss"} onClick={() => onOutcomeFilter(selectedOutcome === "miss" ? null : "miss")} />
             </div>
           )}
 
@@ -1032,7 +1023,7 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
             <th className="text-left p-2 font-medium">Filename</th>
             {!selectedField && <th className="text-left p-2 font-medium">Field</th>}
             <th className="text-left p-2 font-medium">Extracted</th>
-            <th className="text-center p-2 font-medium">Label</th>
+            <th className="text-left p-2 font-medium">Truth</th>
             <th className="text-center p-2 font-medium">Evidence</th>
             <th className="text-center p-2 font-medium">Outcome</th>
             <th className="text-left p-2 font-medium w-12"></th>
@@ -1047,7 +1038,15 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
               <td className="p-2 font-mono text-[10px] truncate max-w-[120px]" title={ex.normalized_value || ex.predicted_value || ""}>
                 {ex.normalized_value || ex.predicted_value || <span className="text-gray-400">-</span>}
               </td>
-              <td className="p-2 text-center"><JudgementBadge judgement={ex.judgement} /></td>
+              <td className="p-2 font-mono text-[10px] truncate max-w-[120px]" title={ex.truth_value || ""}>
+                {ex.state === "CONFIRMED" ? (
+                  ex.truth_value || <span className="text-gray-400">-</span>
+                ) : ex.state === "UNVERIFIABLE" ? (
+                  <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded">Unverifiable</span>
+                ) : (
+                  <span className="text-gray-300">-</span>
+                )}
+              </td>
               <td className="p-2 text-center">
                 {ex.has_evidence ? <span className="text-green-600">Yes</span> : <span className="text-gray-300">-</span>}
               </td>
@@ -1066,26 +1065,33 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
   );
 }
 
-function JudgementBadge({ judgement }: { judgement: string | null }) {
-  if (!judgement) return <span className="text-gray-300">-</span>;
-  const styles: Record<string, string> = {
-    correct: "bg-green-100 text-green-700",
-    incorrect: "bg-red-100 text-red-700",
-    unknown: "bg-gray-100 text-gray-600",
-  };
-  const labels: Record<string, string> = { correct: "Correct", incorrect: "Incorrect", unknown: "Unknown" };
-  return <span className={cn("text-[10px] px-1 py-0.5 rounded font-medium", styles[judgement] || styles.unknown)}>{labels[judgement] || judgement}</span>;
-}
-
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
   if (!outcome) return <span className="text-gray-300">-</span>;
   const styles: Record<string, string> = {
+    // Truth-based outcomes (new)
+    match: "bg-green-100 text-green-700",
+    mismatch: "bg-red-100 text-red-700",
+    miss: "bg-yellow-100 text-yellow-700",
+    unverifiable: "bg-gray-100 text-gray-600",
+    // Legacy outcomes (backwards compatibility)
     correct: "bg-green-100 text-green-700",
     incorrect: "bg-red-100 text-red-700",
     extractor_miss: "bg-yellow-100 text-yellow-700",
     cannot_verify: "bg-gray-100 text-gray-600",
     correct_absent: "bg-gray-100 text-gray-600",
   };
-  const labels: Record<string, string> = { correct: "Correct", incorrect: "Incorrect", extractor_miss: "Missing", cannot_verify: "Unknown", correct_absent: "Correct" };
+  const labels: Record<string, string> = {
+    // Truth-based labels (new)
+    match: "Match",
+    mismatch: "Mismatch",
+    miss: "Miss",
+    unverifiable: "Unverifiable",
+    // Legacy labels
+    correct: "Correct",
+    incorrect: "Incorrect",
+    extractor_miss: "Missing",
+    cannot_verify: "Unknown",
+    correct_absent: "Correct",
+  };
   return <span className={cn("text-[10px] px-1 py-0.5 rounded font-medium", styles[outcome] || "bg-gray-100 text-gray-600")}>{labels[outcome] || outcome}</span>;
 }

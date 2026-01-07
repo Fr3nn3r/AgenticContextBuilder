@@ -113,13 +113,22 @@ export function getDocSourceUrl(docId: string, claimId: string): string {
 
 export interface InsightsOverview {
   docs_total: number;
+  docs_with_truth: number;        // NEW: docs with ≥1 CONFIRMED field
+  confirmed_fields: number;       // NEW: total CONFIRMED fields
+  total_fields: number;           // NEW: total fields across docs
+  accuracy_rate: number;          // NEW: match / (match + mismatch + miss)
+  evidence_rate: number;
+  // Accuracy breakdown
+  match_count: number;
+  mismatch_count: number;
+  miss_count: number;
+  // Legacy metrics (for backwards compatibility)
   docs_reviewed: number;
   docs_doc_type_wrong: number;
   required_field_presence_rate: number;
   required_field_accuracy: number;
-  evidence_rate: number;
-  run_coverage: number;
-  docs_with_extraction: number;
+  run_coverage?: number;           // Legacy
+  docs_with_extraction?: number;   // Legacy
 }
 
 export interface DocTypeMetrics {
@@ -137,14 +146,15 @@ export interface PriorityItem {
   doc_type: string;
   field_name: string;
   is_required: boolean;
+  // Truth-based metrics
+  mismatch_count: number;         // NEW: truth differs from extraction
+  miss_count: number;             // NEW: no extraction for confirmed truth
+  total_confirmed: number;        // NEW: total CONFIRMED fields
+  error_rate: number;             // NEW: (mismatch + miss) / total_confirmed
+  // Legacy fields for backwards compatibility
   affected_docs: number;
   total_labeled: number;
-  extractor_miss: number;
-  incorrect: number;
-  evidence_missing: number;
-  cannot_verify: number;
   priority_score: number;
-  fix_bucket: string;
 }
 
 export interface FieldDetails {
@@ -177,12 +187,15 @@ export interface InsightExample {
   field_name: string;
   predicted_value: string | null;
   normalized_value: string | null;
-  judgement: string | null;
+  truth_value: string | null;                              // NEW: ground truth value
+  state: "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED" | null; // NEW: label state
   has_evidence: boolean;
   gate_status: string | null;
-  outcome: string | null;
+  outcome: "match" | "mismatch" | "miss" | "unverifiable" | string | null;  // NEW outcomes
   doc_type_correct: boolean | null;
   review_url: string;
+  // Legacy field for backwards compatibility
+  judgement: string | null;
 }
 
 export async function getInsightsOverview(): Promise<InsightsOverview> {
