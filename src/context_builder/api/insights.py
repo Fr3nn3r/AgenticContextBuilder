@@ -3,7 +3,7 @@ Calibration Insights aggregation logic.
 
 Computes metrics from extraction results and labels to answer:
 - What is working? What is failing?
-- Why is it failing? (extractor miss, normalization, evidence, doc type, needs vision)
+- Why is it failing? (extractor miss, normalization, evidence, doc type)
 - What should we improve next? (highest ROI)
 
 Scope: 3 supported doc types (loss_notice, police_report, insurance_policy)
@@ -55,8 +55,6 @@ class FieldRecord:
     correct_value: Optional[str]
     # Doc-level data
     doc_type_correct: Optional[bool]  # True, False, or None (unsure/missing)
-    text_readable: Optional[str]  # "good", "warn", "poor"
-    needs_vision: bool
     gate_status: Optional[str]  # "pass", "warn", "fail"
     # Metadata
     filename: str
@@ -73,8 +71,6 @@ class DocRecord:
     doc_type: str
     filename: str
     doc_type_correct: Optional[bool]
-    text_readable: Optional[str]
-    needs_vision: bool
     gate_status: Optional[str]
     has_labels: bool
     field_count: int = 0
@@ -111,10 +107,6 @@ class DocTypeMetrics:
     doc_type: str
     docs_reviewed: int = 0
     docs_doc_type_wrong: int = 0
-    docs_needs_vision: int = 0
-    docs_text_good: int = 0
-    docs_text_warn: int = 0
-    docs_text_poor: int = 0
     docs_gate_pass: int = 0
     docs_gate_warn: int = 0
     docs_gate_fail: int = 0
@@ -155,9 +147,7 @@ class Example:
     normalized_value: Optional[str]
     judgement: Optional[str]
     has_evidence: bool
-    needs_vision: bool
     gate_status: Optional[str]
-    text_readable: Optional[str]
     outcome: str
     review_url: str
 
@@ -296,22 +286,16 @@ class InsightsAggregator:
         """Process a single document and create records."""
         # Extract doc-level info from extraction
         gate_status = None
-        needs_vision_from_extraction = False
         if extraction:
             qg = extraction.get("quality_gate", {})
             gate_status = qg.get("status")
-            needs_vision_from_extraction = qg.get("needs_vision_fallback", False)
 
         # Extract doc-level info from labels
         doc_type_correct = None
-        text_readable = None
-        needs_vision_from_label = None
         has_labels = labels is not None
 
         if labels:
             doc_labels = labels.get("doc_labels", {})
-            # Get needs_vision from label (takes precedence over extraction)
-            needs_vision_from_label = doc_labels.get("needs_vision")
             # Handle both bool and string formats
             dtc = doc_labels.get("doc_type_correct")
             if isinstance(dtc, bool):
@@ -321,13 +305,6 @@ class InsightsAggregator:
             elif dtc == "no" or dtc is False:
                 doc_type_correct = False
             # else: None (unsure or missing)
-            text_readable = doc_labels.get("text_readable")
-
-        # Compute final needs_vision: label takes precedence over extraction
-        if needs_vision_from_label is not None:
-            needs_vision = needs_vision_from_label
-        else:
-            needs_vision = needs_vision_from_extraction
 
         # Build field label lookup
         field_labels = {}
@@ -389,8 +366,6 @@ class InsightsAggregator:
                 judgement=judgement,
                 correct_value=correct_value,
                 doc_type_correct=doc_type_correct,
-                text_readable=text_readable,
-                needs_vision=needs_vision,
                 gate_status=gate_status,
                 filename=filename,
             )
@@ -403,8 +378,6 @@ class InsightsAggregator:
             doc_type=doc_type,
             filename=filename,
             doc_type_correct=doc_type_correct,
-            text_readable=text_readable,
-            needs_vision=needs_vision,
             gate_status=gate_status,
             has_labels=has_labels,
             field_count=field_count,
@@ -505,12 +478,6 @@ class InsightsAggregator:
         total_docs = len(self.doc_records)
         docs_reviewed = len([d for d in self.doc_records if d.has_labels])
         docs_doc_type_wrong = len([d for d in self.doc_records if d.doc_type_correct is False])
-        docs_needs_vision = len([d for d in self.doc_records if d.needs_vision])
-
-        # Text quality distribution
-        docs_text_good = len([d for d in self.doc_records if d.text_readable == "good"])
-        docs_text_warn = len([d for d in self.doc_records if d.text_readable == "warn"])
-        docs_text_poor = len([d for d in self.doc_records if d.text_readable == "poor"])
 
         # Field-level metrics (only for valid docs with labels)
         labeled_required = [r for r in valid_records if r.is_required and r.has_label]
@@ -548,10 +515,6 @@ class InsightsAggregator:
             "docs_total": total_docs,
             "docs_reviewed": docs_reviewed,
             "docs_doc_type_wrong": docs_doc_type_wrong,
-            "docs_needs_vision": docs_needs_vision,
-            "docs_text_good": docs_text_good,
-            "docs_text_warn": docs_text_warn,
-            "docs_text_poor": docs_text_poor,
             "required_field_presence_rate": round(presence_rate * 100, 1),
             "required_field_accuracy": round(accuracy * 100, 1),
             "evidence_rate": round(evidence_rate * 100, 1),
@@ -571,7 +534,6 @@ class InsightsAggregator:
 
             docs_reviewed = len([d for d in type_docs if d.has_labels])
             docs_doc_type_wrong = len([d for d in type_docs if d.doc_type_correct is False])
-            docs_needs_vision = len([d for d in type_docs if d.needs_vision])
 
             # Valid docs for field metrics
             valid_doc_ids = {d.doc_id for d in type_docs if d.doc_type_correct is True}
@@ -610,8 +572,6 @@ class InsightsAggregator:
                 "docs_reviewed": docs_reviewed,
                 "docs_doc_type_wrong": docs_doc_type_wrong,
                 "docs_doc_type_wrong_pct": round(docs_doc_type_wrong / len(type_docs) * 100, 1) if type_docs else 0,
-                "docs_needs_vision": docs_needs_vision,
-                "docs_needs_vision_pct": round(docs_needs_vision / len(type_docs) * 100, 1) if type_docs else 0,
                 "required_field_presence_pct": round(presence * 100, 1),
                 "required_field_accuracy_pct": round(accuracy * 100, 1),
                 "evidence_rate_pct": round(evidence * 100, 1),
@@ -655,21 +615,10 @@ class InsightsAggregator:
             score = (extractor_miss * 3) + (incorrect * 3) + (evidence_missing * 2) + (cannot_verify * 1)
 
             # Determine fix bucket
-            # Get text quality of affected docs
-            affected_doc_ids = {r.doc_id for r in records if r.outcome in (FieldOutcome.EXTRACTOR_MISS, FieldOutcome.INCORRECT)}
-            affected_doc_records = [d for d in self.doc_records if d.doc_id in affected_doc_ids]
-            needs_vision_count = len([d for d in affected_doc_records if d.needs_vision])
-            text_poor_count = len([d for d in affected_doc_records if d.text_readable in ("warn", "poor")])
-
             if evidence_missing > extractor_miss and evidence_missing > incorrect:
                 fix_bucket = "Improve provenance capture"
             elif extractor_miss > incorrect:
-                if needs_vision_count > len(affected_doc_ids) * 0.5:
-                    fix_bucket = "Improve OCR/vision fallback"
-                elif text_poor_count > len(affected_doc_ids) * 0.5:
-                    fix_bucket = "Improve text quality"
-                else:
-                    fix_bucket = "Improve span finding / extraction prompt"
+                fix_bucket = "Improve span finding / extraction prompt"
             else:
                 fix_bucket = "Improve extraction accuracy"
 
@@ -786,9 +735,7 @@ class InsightsAggregator:
                 "normalized_value": r.normalized_value,
                 "judgement": r.judgement,
                 "has_evidence": r.has_evidence,
-                "needs_vision": r.needs_vision,
                 "gate_status": r.gate_status,
-                "text_readable": r.text_readable,
                 "outcome": r.outcome.value if r.outcome else None,
                 "doc_type_correct": r.doc_type_correct,
                 "review_url": review_url,
@@ -812,7 +759,9 @@ class InsightsAggregator:
 
 def list_all_runs(data_dir: Path) -> List[Dict[str, Any]]:
     """
-    List all extraction runs across all claims with their metadata and KPIs.
+    List all extraction runs with their metadata and KPIs.
+    Reads from global runs directory (output/runs/) when available.
+    Falls back to scanning claim folders for backwards compatibility.
     Returns runs sorted by timestamp (newest first).
     """
     runs_map: Dict[str, Dict[str, Any]] = {}
@@ -820,6 +769,65 @@ def list_all_runs(data_dir: Path) -> List[Dict[str, Any]]:
     if not data_dir.exists():
         return []
 
+    # First, try global runs directory (new structure)
+    global_runs_dir = data_dir.parent / "runs"
+    if global_runs_dir.exists():
+        for run_dir in global_runs_dir.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+                continue
+            # Only include runs with .complete marker
+            if not (run_dir / ".complete").exists():
+                continue
+
+            run_id = run_dir.name
+            runs_map[run_id] = {
+                "run_id": run_id,
+                "timestamp": None,
+                "model": "",
+                "extractor_version": "",
+                "prompt_version": "",
+                "claims_count": 0,
+                "docs_count": 0,
+                "extracted_count": 0,
+                "labeled_count": 0,
+            }
+
+            # Read from global manifest
+            manifest_path = run_dir / "manifest.json"
+            if manifest_path.exists():
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                    runs_map[run_id]["model"] = manifest.get("model", "")
+                    runs_map[run_id]["claims_count"] = manifest.get("claims_count", 0)
+
+            # Read from global summary
+            summary_path = run_dir / "summary.json"
+            if summary_path.exists():
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+                    runs_map[run_id]["timestamp"] = summary.get("completed_at")
+                    runs_map[run_id]["docs_count"] = summary.get("docs_total", 0)
+                    runs_map[run_id]["extracted_count"] = summary.get("docs_success", 0)
+
+        # If we found global runs, use them
+        if runs_map:
+            runs = list(runs_map.values())
+            runs.sort(key=lambda r: r["timestamp"] or "", reverse=True)
+            # Calculate KPIs for each run
+            for run in runs:
+                aggregator = InsightsAggregator(data_dir, run_id=run["run_id"])
+                try:
+                    overview = aggregator.get_overview()
+                    run["presence_rate"] = overview.get("required_field_presence_rate", 0)
+                    run["accuracy_rate"] = overview.get("required_field_accuracy", 0)
+                    run["evidence_rate"] = overview.get("evidence_rate", 0)
+                except Exception:
+                    run["presence_rate"] = 0
+                    run["accuracy_rate"] = 0
+                    run["evidence_rate"] = 0
+            return runs
+
+    # Fallback: scan claim folders for backwards compatibility
     for claim_dir in data_dir.iterdir():
         if not claim_dir.is_dir() or claim_dir.name.startswith("."):
             continue
@@ -917,7 +925,7 @@ def compare_runs(data_dir: Path, baseline_run_id: str, current_run_id: str) -> D
     # Compute overview deltas
     overview_deltas = {}
     for key in ["required_field_presence_rate", "required_field_accuracy", "evidence_rate",
-                "docs_reviewed", "docs_doc_type_wrong", "docs_needs_vision"]:
+                "docs_reviewed", "docs_doc_type_wrong"]:
         baseline_val = baseline_overview.get(key, 0)
         current_val = current_overview.get(key, 0)
         delta = current_val - baseline_val if isinstance(current_val, (int, float)) else 0
@@ -1004,3 +1012,175 @@ def clear_baseline(data_dir: Path) -> None:
     baseline_path = data_dir / BASELINE_FILE
     if baseline_path.exists():
         baseline_path.unlink()
+
+
+def list_detailed_runs(data_dir: Path) -> List[Dict[str, Any]]:
+    """
+    List all extraction runs with detailed metadata including phase metrics.
+    Aggregates per-claim summaries to compute phase-level data.
+
+    Returns list of DetailedRunInfo sorted by timestamp (newest first).
+    """
+    detailed_runs = []
+
+    if not data_dir.exists():
+        return []
+
+    # Check global runs directory first
+    global_runs_dir = data_dir.parent / "runs"
+    if not global_runs_dir.exists():
+        return []
+
+    for run_dir in global_runs_dir.iterdir():
+        if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+            continue
+        # Only include runs with .complete marker
+        if not (run_dir / ".complete").exists():
+            continue
+
+        run_id = run_dir.name
+        run_info = {
+            "run_id": run_id,
+            "timestamp": None,
+            "model": "",
+            "status": "complete",
+            "duration_seconds": None,
+            "claims_count": 0,
+            "docs_total": 0,
+            "docs_success": 0,
+            "docs_failed": 0,
+            "phases": {
+                "ingestion": {
+                    "discovered": 0,
+                    "ingested": 0,
+                    "skipped": 0,
+                    "failed": 0,
+                    "duration_ms": None,
+                },
+                "classification": {
+                    "classified": 0,
+                    "low_confidence": 0,
+                    "distribution": {},
+                    "duration_ms": None,
+                },
+                "extraction": {
+                    "attempted": 0,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "duration_ms": None,
+                },
+                "quality_gate": {
+                    "pass": 0,
+                    "warn": 0,
+                    "fail": 0,
+                },
+            },
+        }
+
+        # Read from global manifest
+        manifest_path = run_dir / "manifest.json"
+        claim_run_paths = []
+        if manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+                run_info["model"] = manifest.get("model", "")
+                run_info["claims_count"] = manifest.get("claims_count", 0)
+                # Get list of claim run paths for aggregation
+                # Paths in manifest are relative to project root (e.g., output/claims/...)
+                for claim in manifest.get("claims", []):
+                    path_str = claim.get("claim_run_path", "")
+                    if path_str:
+                        claim_path = Path(path_str)
+                        # If path is not absolute, it's relative to project root
+                        if not claim_path.is_absolute():
+                            # Check if path already exists relative to cwd
+                            if not claim_path.exists():
+                                # Try relative to data_dir.parent.parent (project root)
+                                claim_path = data_dir.parent.parent / claim_path
+                        claim_run_paths.append(claim_path)
+
+        # Read from global summary
+        summary_path = run_dir / "summary.json"
+        if summary_path.exists():
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary = json.load(f)
+                run_info["timestamp"] = summary.get("completed_at")
+                run_info["docs_total"] = summary.get("docs_total", 0)
+                run_info["docs_success"] = summary.get("docs_success", 0)
+                run_info["docs_failed"] = summary.get("docs_total", 0) - summary.get("docs_success", 0)
+
+                # Determine status
+                if summary.get("status") == "success":
+                    run_info["status"] = "complete"
+                elif summary.get("claims_failed", 0) > 0:
+                    run_info["status"] = "partial"
+                else:
+                    run_info["status"] = "complete"
+
+        # Aggregate per-claim summaries for phase metrics
+        total_time_ms = 0
+        for claim_run_path in claim_run_paths:
+            claim_summary_path = claim_run_path / "logs" / "summary.json"
+            if not claim_summary_path.exists():
+                continue
+
+            try:
+                with open(claim_summary_path, "r", encoding="utf-8") as f:
+                    claim_summary = json.load(f)
+
+                # Ingestion metrics from aggregates
+                aggregates = claim_summary.get("aggregates", {})
+                run_info["phases"]["ingestion"]["discovered"] += aggregates.get("discovered", 0)
+                run_info["phases"]["ingestion"]["ingested"] += aggregates.get("processed", 0)
+                run_info["phases"]["ingestion"]["skipped"] += aggregates.get("skipped", 0)
+                run_info["phases"]["ingestion"]["failed"] += aggregates.get("failed", 0)
+
+                # Extraction metrics from stats
+                stats = claim_summary.get("stats", {})
+                run_info["phases"]["extraction"]["attempted"] += stats.get("total", 0)
+                run_info["phases"]["extraction"]["succeeded"] += stats.get("success", 0)
+                run_info["phases"]["extraction"]["failed"] += stats.get("errors", 0)
+
+                # Processing time
+                if claim_summary.get("processing_time_seconds"):
+                    total_time_ms += int(claim_summary["processing_time_seconds"] * 1000)
+
+                # Per-document data for classification and quality gate
+                for doc in claim_summary.get("documents", []):
+                    doc_type = doc.get("doc_type_predicted")
+                    if doc_type:
+                        run_info["phases"]["classification"]["classified"] += 1
+                        dist = run_info["phases"]["classification"]["distribution"]
+                        dist[doc_type] = dist.get(doc_type, 0) + 1
+
+                    # Quality gate from extraction results
+                    extraction_path = doc.get("output_paths", {}).get("extraction")
+                    if extraction_path:
+                        ext_full_path = claim_run_path / extraction_path
+                        if ext_full_path.exists():
+                            try:
+                                with open(ext_full_path, "r", encoding="utf-8") as ef:
+                                    ext_result = json.load(ef)
+                                    qg = ext_result.get("quality_gate", {})
+                                    gate_status = qg.get("status", "").lower()
+                                    if gate_status == "pass":
+                                        run_info["phases"]["quality_gate"]["pass"] += 1
+                                    elif gate_status == "warn":
+                                        run_info["phases"]["quality_gate"]["warn"] += 1
+                                    elif gate_status == "fail":
+                                        run_info["phases"]["quality_gate"]["fail"] += 1
+                            except (json.JSONDecodeError, IOError):
+                                pass
+
+            except (json.JSONDecodeError, IOError):
+                continue
+
+        # Set total duration
+        if total_time_ms > 0:
+            run_info["duration_seconds"] = round(total_time_ms / 1000, 1)
+
+        detailed_runs.append(run_info)
+
+    # Sort by timestamp (newest first)
+    detailed_runs.sort(key=lambda r: r["timestamp"] or "", reverse=True)
+    return detailed_runs

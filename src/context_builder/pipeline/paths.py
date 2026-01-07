@@ -49,6 +49,22 @@ class RunPaths:
     complete_marker: Path  # run_root/.complete
 
 
+@dataclass
+class WorkspaceRunPaths:
+    """Paths for workspace-scoped (global) run outputs.
+
+    These live at output/runs/<run_id>/ and aggregate across all claims.
+    """
+
+    run_root: Path  # <output_base>/runs/<run_id>
+    manifest_json: Path  # run_root/manifest.json (with claim pointers)
+    metrics_json: Path  # run_root/metrics.json (aggregated)
+    summary_json: Path  # run_root/summary.json (aggregated)
+    logs_dir: Path  # run_root/logs
+    run_log: Path  # logs/run.log
+    complete_marker: Path  # run_root/.complete
+
+
 def get_claim_paths(output_base: Path, claim_id: str) -> ClaimPaths:
     """Get paths for a claim (does not create directories)."""
     claim_root = output_base / claim_id
@@ -96,6 +112,47 @@ def get_run_paths(claim_paths: ClaimPaths, run_id: str) -> RunPaths:
         run_log=logs_dir / "run.log",
         complete_marker=run_root / ".complete",
     )
+
+
+def get_workspace_run_paths(output_base: Path, run_id: str) -> WorkspaceRunPaths:
+    """Get paths for a workspace-scoped (global) run (does not create directories).
+
+    Args:
+        output_base: Base output directory (e.g., output/claims)
+        run_id: Run identifier
+
+    Returns:
+        WorkspaceRunPaths with paths under output_base/../runs/<run_id>/
+    """
+    # Global runs live at output/runs/<run_id>/ (sibling to output/claims/)
+    runs_base = output_base.parent / "runs"
+    run_root = runs_base / run_id
+    logs_dir = run_root / "logs"
+    return WorkspaceRunPaths(
+        run_root=run_root,
+        manifest_json=run_root / "manifest.json",
+        metrics_json=run_root / "metrics.json",
+        summary_json=run_root / "summary.json",
+        logs_dir=logs_dir,
+        run_log=logs_dir / "run.log",
+        complete_marker=run_root / ".complete",
+    )
+
+
+def create_workspace_run_structure(output_base: Path, run_id: str) -> WorkspaceRunPaths:
+    """Create workspace-scoped run directory structure.
+
+    Args:
+        output_base: Base output directory (e.g., output/claims)
+        run_id: Run identifier
+
+    Returns:
+        WorkspaceRunPaths with all directories created
+    """
+    paths = get_workspace_run_paths(output_base, run_id)
+    paths.run_root.mkdir(parents=True, exist_ok=True)
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    return paths
 
 
 def create_doc_structure(

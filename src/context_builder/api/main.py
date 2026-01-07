@@ -58,7 +58,6 @@ class ClaimSummary(BaseModel):
     gate_pass_count: int = 0
     gate_warn_count: int = 0
     gate_fail_count: int = 0
-    needs_vision_count: int = 0
     last_processed: Optional[str] = None
     # Run context
     in_run: bool = True  # False if claim has no docs in the selected run
@@ -75,9 +74,7 @@ class DocSummary(BaseModel):
     quality_status: Optional[str] = None
     confidence: float = 0.0
     # Extraction-centric fields
-    text_quality: Optional[str] = None  # "good", "warn", "poor"
     missing_required_fields: List[str] = []
-    needs_vision: bool = False
 
 
 class DocPayload(BaseModel):
@@ -116,7 +113,7 @@ class SaveLabelsRequest(BaseModel):
 class DocReviewRequest(BaseModel):
     """Request body for simplified doc-level review."""
     claim_id: str
-    doc_type_correct: str  # "yes", "no", "unsure"
+    doc_type_correct: bool = True
     notes: str = ""
 
 
@@ -226,8 +223,32 @@ def get_run_dir_by_id(claim_dir: Path, run_id: str) -> Optional[Path]:
     return None
 
 
+def get_global_runs_dir() -> Path:
+    """Get the global runs directory (output/runs/)."""
+    # DATA_DIR is output/claims, so parent is output/
+    return DATA_DIR.parent / "runs"
+
+
 def get_all_run_ids() -> List[str]:
-    """Get all unique run IDs across all claims, sorted newest first."""
+    """Get all run IDs from the global runs directory, sorted newest first.
+
+    Reads from output/runs/ which contains workspace-scoped runs.
+    Falls back to scanning claim folders if global runs don't exist (backwards compatibility).
+    """
+    global_runs_dir = get_global_runs_dir()
+
+    # First, try global runs directory (new structure)
+    if global_runs_dir.exists():
+        run_ids = []
+        for run_dir in global_runs_dir.iterdir():
+            if run_dir.is_dir() and run_dir.name.startswith("run_"):
+                # Only include runs that have .complete marker
+                if (run_dir / ".complete").exists():
+                    run_ids.append(run_dir.name)
+        if run_ids:
+            return sorted(run_ids, reverse=True)
+
+    # Fallback: scan claim folders for backwards compatibility
     run_ids = set()
     if not DATA_DIR.exists():
         return []
@@ -390,7 +411,6 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
         gate_pass_count = 0
         gate_warn_count = 0
         gate_fail_count = 0
-        needs_vision_count = 0
 
         if run_dir:
             extraction_dir = run_dir / "extraction"
@@ -430,8 +450,6 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
                             gate_fail_count += 1
                             flags_count += 2
 
-                        # Note: needs_vision_count is calculated later, after checking labels
-
                         flags_count += len(quality.get("missing_required_fields", []))
 
                         # Extract amount
@@ -439,43 +457,12 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
                         if amount:
                             total_amount = max(total_amount, amount)
 
-        # Count labels and needs_vision (labels take precedence over extraction)
-        # Build a map of doc_id -> needs_vision from labels
-        label_needs_vision: dict[str, bool] = {}
+        # Count labels
         for doc_folder in docs_dir.iterdir():
             if doc_folder.is_dir():
                 labels_path = doc_folder / "labels" / "latest.json"
                 if labels_path.exists():
                     labeled_count += 1
-                    try:
-                        with open(labels_path, "r", encoding="utf-8") as f:
-                            label_data = json.load(f)
-                            doc_labels = label_data.get("doc_labels", {})
-                            nv = doc_labels.get("needs_vision")
-                            if nv is not None:
-                                label_needs_vision[doc_folder.name] = bool(nv)
-                    except (json.JSONDecodeError, IOError):
-                        pass
-
-        # Recalculate needs_vision_count: for each doc, label takes precedence
-        needs_vision_count = 0
-        for doc_meta in doc_metas:
-            doc_id = doc_meta.get("doc_id", "")
-            # Check label first
-            if doc_id in label_needs_vision:
-                if label_needs_vision[doc_id]:
-                    needs_vision_count += 1
-            elif run_dir:
-                # No label, check extraction
-                ext_path = run_dir / "extraction" / f"{doc_id}.json"
-                if ext_path.exists():
-                    try:
-                        with open(ext_path, "r", encoding="utf-8") as f:
-                            ext_data = json.load(f)
-                            if ext_data.get("quality_gate", {}).get("needs_vision_fallback"):
-                                needs_vision_count += 1
-                    except (json.JSONDecodeError, IOError):
-                        pass
 
         # Calculate average risk score
         avg_risk = total_risk_score // max(extracted_count, 1)
@@ -508,7 +495,6 @@ def list_claims(run_id: Optional[str] = Query(None, description="Filter by run I
             gate_pass_count=gate_pass_count,
             gate_warn_count=gate_warn_count,
             gate_fail_count=gate_fail_count,
-            needs_vision_count=needs_vision_count,
             last_processed=last_processed,
             # Run context
             in_run=in_run,
@@ -524,26 +510,46 @@ def list_claim_runs():
     List all available run IDs for the claims view.
 
     Returns list of run IDs sorted newest first, with metadata.
+    Reads from global runs directory (output/runs/) when available.
     """
     run_ids = get_all_run_ids()
     runs = []
+    global_runs_dir = get_global_runs_dir()
 
     for r_id in run_ids:
-        # Get metadata from first claim that has this run
         metadata = {"run_id": r_id, "timestamp": None, "model": None}
 
-        for claim_dir in DATA_DIR.iterdir():
-            if not claim_dir.is_dir() or claim_dir.name.startswith("."):
-                continue
-            run_dir = claim_dir / "runs" / r_id
-            if run_dir.exists():
-                summary_path = run_dir / "logs" / "summary.json"
-                if summary_path.exists():
-                    with open(summary_path, "r", encoding="utf-8") as f:
-                        summary = json.load(f)
-                        metadata["timestamp"] = summary.get("completed_at")
-                        metadata["model"] = summary.get("model")
-                    break
+        # First, try global runs directory (new structure)
+        global_run_dir = global_runs_dir / r_id
+        if global_run_dir.exists():
+            # Read from global summary.json
+            summary_path = global_run_dir / "summary.json"
+            if summary_path.exists():
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+                    metadata["timestamp"] = summary.get("completed_at")
+
+            # Read model from manifest.json
+            manifest_path = global_run_dir / "manifest.json"
+            if manifest_path.exists():
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                    metadata["model"] = manifest.get("model")
+                    metadata["claims_count"] = manifest.get("claims_count", 0)
+        else:
+            # Fallback: get metadata from first claim that has this run
+            for claim_dir in DATA_DIR.iterdir():
+                if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+                    continue
+                run_dir = claim_dir / "runs" / r_id
+                if run_dir.exists():
+                    summary_path = run_dir / "logs" / "summary.json"
+                    if summary_path.exists():
+                        with open(summary_path, "r", encoding="utf-8") as f:
+                            summary = json.load(f)
+                            metadata["timestamp"] = summary.get("completed_at")
+                            metadata["model"] = summary.get("model")
+                        break
 
         runs.append(metadata)
 
@@ -600,9 +606,7 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
         has_extraction = False
         quality_status = None
         confidence = 0.0
-        text_quality = None
         missing_required_fields: List[str] = []
-        needs_vision = False
 
         if extraction_dir:
             extraction_path = extraction_dir / f"{doc_id}.json"
@@ -613,34 +617,14 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
                     quality_gate = ext_data.get("quality_gate", {})
                     quality_status = quality_gate.get("status")
                     missing_required_fields = quality_gate.get("missing_required_fields", [])
-                    needs_vision = quality_gate.get("needs_vision_fallback", False)
                     # Calculate average field confidence
                     fields = ext_data.get("fields", [])
                     if fields:
                         confidence = sum(f.get("confidence", 0) for f in fields) / len(fields)
-                    # Determine text quality based on extraction quality
-                    if quality_status == "pass":
-                        text_quality = "good"
-                    elif quality_status == "warn":
-                        text_quality = "warn"
-                    elif quality_status == "fail":
-                        text_quality = "poor"
 
         # Check for labels (at docs/{doc_id}/labels/latest.json)
         labels_path = doc_folder / "labels" / "latest.json"
         has_labels = labels_path.exists()
-
-        # Override needs_vision from label if present (label takes precedence)
-        if has_labels:
-            try:
-                with open(labels_path, "r", encoding="utf-8") as f:
-                    label_data = json.load(f)
-                    doc_labels = label_data.get("doc_labels", {})
-                    nv = doc_labels.get("needs_vision")
-                    if nv is not None:
-                        needs_vision = bool(nv)
-            except (json.JSONDecodeError, IOError):
-                pass
 
         docs.append(DocSummary(
             doc_id=doc_id,
@@ -651,9 +635,7 @@ def list_docs(claim_id: str, run_id: Optional[str] = Query(None, description="Fi
             has_labels=has_labels,
             quality_status=quality_status,
             confidence=round(confidence, 2),
-            text_quality=text_quality,
             missing_required_fields=missing_required_fields,
-            needs_vision=needs_vision,
         ))
 
     return docs
@@ -787,9 +769,9 @@ def save_labels(doc_id: str, request: SaveLabelsRequest, claim_id: Optional[str]
     labels_dir = doc_folder / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build label result
+    # Build label result (label_v2 schema)
     label_data = {
-        "schema_version": "label_v1",
+        "schema_version": "label_v2",
         "doc_id": doc_id,
         "claim_id": extract_claim_number(claim_dir.name),
         "review": {
@@ -956,9 +938,7 @@ def get_claim_review(claim_id: str):
         has_extraction = False
         quality_status = None
         confidence = 0.0
-        text_quality = None
         missing_required_fields: List[str] = []
-        needs_vision = False
 
         if extraction_dir:
             extraction_path = extraction_dir / f"{doc_id}.json"
@@ -969,35 +949,19 @@ def get_claim_review(claim_id: str):
                     quality_gate = ext_data.get("quality_gate", {})
                     quality_status = quality_gate.get("status")
                     missing_required_fields = quality_gate.get("missing_required_fields", [])
-                    needs_vision = quality_gate.get("needs_vision_fallback", False)
                     fields = ext_data.get("fields", [])
                     if fields:
                         confidence = sum(f.get("confidence", 0) for f in fields) / len(fields)
                     if quality_status == "pass":
-                        text_quality = "good"
                         gate_counts["pass"] += 1
                     elif quality_status == "warn":
-                        text_quality = "warn"
                         gate_counts["warn"] += 1
                     elif quality_status == "fail":
-                        text_quality = "poor"
                         gate_counts["fail"] += 1
 
         # Check for labels (at docs/{doc_id}/labels/latest.json)
         labels_path = doc_folder / "labels" / "latest.json"
         has_labels = labels_path.exists()
-
-        # Override needs_vision from label if present (label takes precedence)
-        if has_labels:
-            try:
-                with open(labels_path, "r", encoding="utf-8") as f:
-                    label_data = json.load(f)
-                    doc_labels = label_data.get("doc_labels", {})
-                    nv = doc_labels.get("needs_vision")
-                    if nv is not None:
-                        needs_vision = bool(nv)
-            except (json.JSONDecodeError, IOError):
-                pass
 
         if not has_labels:
             unlabeled_count += 1
@@ -1011,9 +975,7 @@ def get_claim_review(claim_id: str):
             has_labels=has_labels,
             quality_status=quality_status,
             confidence=round(confidence, 2),
-            text_quality=text_quality,
             missing_required_fields=missing_required_fields,
-            needs_vision=needs_vision,
         ))
 
     # Sort docs: unlabeled first, then by gate status (FAIL, WARN, PASS)
@@ -1061,7 +1023,7 @@ def save_doc_review(doc_id: str, request: DocReviewRequest):
     """
     Save simplified doc-level review (no field labels, no reviewer name).
 
-    Saves doc_type_correct (yes/no/unsure) and optional notes.
+    Saves doc_type_correct and optional notes.
     Labels are stored at docs/{doc_id}/labels/latest.json (run-independent).
     """
     claim_id = request.claim_id
@@ -1087,11 +1049,7 @@ def save_doc_review(doc_id: str, request: DocReviewRequest):
     labels_dir = doc_folder / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
 
-    # Convert doc_type_correct to boolean for storage
-    doc_type_correct_map = {"yes": True, "no": False, "unsure": None}
-    doc_type_correct_value = doc_type_correct_map.get(request.doc_type_correct, None)
-
-    # Build label result (simplified schema)
+    # Build label result (label_v2 schema)
     label_data = {
         "schema_version": "label_v2",
         "doc_id": doc_id,
@@ -1103,9 +1061,7 @@ def save_doc_review(doc_id: str, request: DocReviewRequest):
         },
         "field_labels": [],  # No field-level labels in simplified flow
         "doc_labels": {
-            "doc_type_correct": doc_type_correct_value,
-            "doc_type_correct_raw": request.doc_type_correct,  # Keep original value
-            "text_readable": "good",
+            "doc_type_correct": request.doc_type_correct,
         },
     }
 
@@ -1349,6 +1305,25 @@ def get_insights_runs():
     from context_builder.api.insights import list_all_runs
 
     return list_all_runs(DATA_DIR)
+
+
+@app.get("/api/insights/runs/detailed")
+def get_insights_runs_detailed():
+    """
+    List all extraction runs with detailed metadata including phase metrics.
+
+    Returns list of runs sorted by timestamp (newest first), each with:
+    - run_id, timestamp, model, status (complete/partial/failed)
+    - duration_seconds, claims_count, docs_total, docs_success, docs_failed
+    - phases:
+      - ingestion: discovered, ingested, skipped, failed
+      - classification: classified, low_confidence, distribution
+      - extraction: attempted, succeeded, failed
+      - quality_gate: pass, warn, fail
+    """
+    from context_builder.api.insights import list_detailed_runs
+
+    return list_detailed_runs(DATA_DIR)
 
 
 @app.get("/api/insights/run/{run_id}/overview")

@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
-import { Dashboard } from "./components/Dashboard";
+import { ExtractionPage } from "./components/ExtractionPage";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
 import type { ClaimSummary, DocSummary } from "./types";
@@ -13,9 +13,11 @@ import {
   listClaimRuns,
   getRunOverview,
   getRunDocTypes,
+  getDetailedRuns,
   type ClaimRunInfo,
   type InsightsOverview,
   type DocTypeMetrics,
+  type DetailedRunInfo,
 } from "./api/client";
 
 function App() {
@@ -32,6 +34,10 @@ function App() {
   // Run state
   const [runs, setRuns] = useState<ClaimRunInfo[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  // Extraction page state (detailed runs with phase metrics)
+  const [detailedRuns, setDetailedRuns] = useState<DetailedRunInfo[]>([]);
+  const [selectedDetailedRun, setSelectedDetailedRun] = useState<DetailedRunInfo | null>(null);
 
   // Dashboard insights state
   const [dashboardOverview, setDashboardOverview] = useState<InsightsOverview | null>(null);
@@ -54,8 +60,11 @@ function App() {
     loadClaims(selectedRunId || undefined);
     if (selectedRunId) {
       loadDashboardData(selectedRunId);
+      // Update selected detailed run
+      const detailed = detailedRuns.find((r) => r.run_id === selectedRunId);
+      setSelectedDetailedRun(detailed || null);
     }
-  }, [selectedRunId]);
+  }, [selectedRunId, detailedRuns]);
 
   // Apply filters whenever claims or filters change
   useEffect(() => {
@@ -94,11 +103,16 @@ function App() {
 
   async function loadRuns() {
     try {
-      const data = await listClaimRuns();
-      setRuns(data);
+      const [claimRuns, detailed] = await Promise.all([
+        listClaimRuns(),
+        getDetailedRuns(),
+      ]);
+      setRuns(claimRuns);
+      setDetailedRuns(detailed);
       // Auto-select latest run if none selected
-      if (data.length > 0 && !selectedRunId) {
-        setSelectedRunId(data[0].run_id);
+      if (detailed.length > 0 && !selectedRunId) {
+        setSelectedRunId(detailed[0].run_id);
+        setSelectedDetailedRun(detailed[0]);
       }
     } catch (err) {
       console.error("Failed to load runs:", err);
@@ -158,7 +172,7 @@ function App() {
   // Get current page title based on route
   function getPageTitle(): string {
     const path = location.pathname;
-    if (path === "/" || path === "/dashboard") return "Calibration Home";
+    if (path === "/" || path === "/dashboard") return "Extraction";
     if (path === "/claims") return "Claim Document Pack";
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Pack Review";
     if (path === "/insights") return "Calibration Insights";
@@ -226,10 +240,11 @@ function App() {
               <Route
                 path="/"
                 element={
-                  <Dashboard
-                    runs={runs}
+                  <ExtractionPage
+                    runs={detailedRuns}
                     selectedRunId={selectedRunId}
                     onRunChange={setSelectedRunId}
+                    selectedRun={selectedDetailedRun}
                     overview={dashboardOverview}
                     docTypes={dashboardDocTypes}
                     loading={dashboardLoading}
@@ -239,10 +254,11 @@ function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <Dashboard
-                    runs={runs}
+                  <ExtractionPage
+                    runs={detailedRuns}
                     selectedRunId={selectedRunId}
                     onRunChange={setSelectedRunId}
+                    selectedRun={selectedDetailedRun}
                     overview={dashboardOverview}
                     docTypes={dashboardDocTypes}
                     loading={dashboardLoading}

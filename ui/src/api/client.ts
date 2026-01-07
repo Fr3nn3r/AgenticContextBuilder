@@ -42,6 +42,7 @@ export interface ClaimRunInfo {
   run_id: string;
   timestamp: string | null;
   model: string | null;
+  claims_count?: number;  // Only present for global (workspace-scoped) runs
 }
 
 export async function listClaimRuns(): Promise<ClaimRunInfo[]> {
@@ -114,10 +115,6 @@ export interface InsightsOverview {
   docs_total: number;
   docs_reviewed: number;
   docs_doc_type_wrong: number;
-  docs_needs_vision: number;
-  docs_text_good: number;
-  docs_text_warn: number;
-  docs_text_poor: number;
   required_field_presence_rate: number;
   required_field_accuracy: number;
   evidence_rate: number;
@@ -130,8 +127,6 @@ export interface DocTypeMetrics {
   docs_reviewed: number;
   docs_doc_type_wrong: number;
   docs_doc_type_wrong_pct: number;
-  docs_needs_vision: number;
-  docs_needs_vision_pct: number;
   required_field_presence_pct: number;
   required_field_accuracy_pct: number;
   evidence_rate_pct: number;
@@ -184,9 +179,7 @@ export interface InsightExample {
   normalized_value: string | null;
   judgement: string | null;
   has_evidence: boolean;
-  needs_vision: boolean;
   gate_status: string | null;
-  text_readable: string | null;
   outcome: string | null;
   doc_type_correct: boolean | null;
   review_url: string;
@@ -261,6 +254,51 @@ export interface RunComparison {
   overview_deltas: Record<string, { baseline: number; current: number; delta: number }>;
   priority_changes: Array<{ doc_type: string; field_name: string; status: string; delta?: number }>;
   doc_type_deltas: Array<{ doc_type: string; presence_delta: number; accuracy_delta: number; evidence_delta: number }>;
+}
+
+// Detailed run info with phase metrics for Extraction page
+export interface PhaseMetrics {
+  ingestion: {
+    discovered: number;
+    ingested: number;
+    skipped: number;
+    failed: number;
+    duration_ms?: number | null;
+  };
+  classification: {
+    classified: number;
+    low_confidence: number;
+    distribution: Record<string, number>;
+    duration_ms?: number | null;
+  };
+  extraction: {
+    attempted: number;
+    succeeded: number;
+    failed: number;
+    duration_ms?: number | null;
+  };
+  quality_gate: {
+    pass: number;
+    warn: number;
+    fail: number;
+  };
+}
+
+export interface DetailedRunInfo {
+  run_id: string;
+  timestamp: string | null;
+  model: string;
+  status: "complete" | "partial" | "failed";
+  duration_seconds: number | null;
+  claims_count: number;
+  docs_total: number;
+  docs_success: number;
+  docs_failed: number;
+  phases: PhaseMetrics;
+}
+
+export async function getDetailedRuns(): Promise<DetailedRunInfo[]> {
+  return fetchJson<DetailedRunInfo[]>(`${API_BASE}/insights/runs/detailed`);
 }
 
 export async function getInsightsRuns(): Promise<RunInfo[]> {

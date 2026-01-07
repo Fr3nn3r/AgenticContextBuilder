@@ -25,6 +25,8 @@ from context_builder.ingestion import (
 # Import pipeline components for the new pipeline command
 from context_builder.pipeline.discovery import discover_claims
 from context_builder.pipeline.run import process_claim
+from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
+from context_builder.extraction.base import generate_run_id
 
 # Ensure Azure DI implementation is imported so it auto-registers
 try:
@@ -1269,10 +1271,15 @@ def main():
             # Build command string for manifest
             command_str = " ".join(sys.argv)
 
+            # Generate run_id once for all claims (if not provided)
+            run_id = args.run_id or generate_run_id()
+            logger.info(f"Using run ID: {run_id}")
+
             # Process each claim
             total_docs = 0
             success_docs = 0
             failed_claims = []
+            claim_results = []  # Track results for global run manifest
 
             for i, claim in enumerate(claims, 1):
                 logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
@@ -1284,7 +1291,7 @@ def main():
                         claim=claim,
                         output_base=output_dir,
                         classifier=None,  # Will be created by process_claim
-                        run_id=args.run_id,
+                        run_id=run_id,  # Use consistent run_id for all claims
                         force=args.force,
                         command=command_str,
                         model=args.model,
@@ -1293,6 +1300,7 @@ def main():
 
                     total_docs += len(result.documents)
                     success_docs += sum(1 for d in result.documents if d.status == "success")
+                    claim_results.append(result)  # Store for global manifest
 
                     if result.status in ("success", "partial"):
                         logger.info(f"Claim {claim.claim_id}: {result.status} - {result.stats}")
@@ -1303,6 +1311,79 @@ def main():
                 except Exception as e:
                     logger.error(f"Failed to process claim {claim.claim_id}: {e}")
                     failed_claims.append(claim.claim_id)
+
+            # Create global (workspace-scoped) run
+            if claim_results:
+                logger.info(f"Creating global run at output/runs/{run_id}/")
+                workspace_paths = create_workspace_run_structure(output_dir, run_id)
+
+                # Build global manifest with claim pointers
+                global_manifest = {
+                    "run_id": run_id,
+                    "started_at": datetime.now().isoformat() + "Z",
+                    "ended_at": datetime.now().isoformat() + "Z",
+                    "command": command_str,
+                    "model": args.model,
+                    "claims_count": len(claims),
+                    "claims": [
+                        {
+                            "claim_id": r.claim_id,
+                            "status": r.status,
+                            "docs_count": len(r.documents),
+                            "claim_run_path": str(
+                                output_dir / r.claim_id / "runs" / run_id
+                            ),
+                        }
+                        for r in claim_results
+                    ],
+                }
+
+                # Write manifest
+                with open(workspace_paths.manifest_json, "w", encoding="utf-8") as f:
+                    json.dump(global_manifest, f, indent=2, ensure_ascii=False)
+
+                # Build aggregated summary
+                global_summary = {
+                    "run_id": run_id,
+                    "status": "success" if not failed_claims else ("partial" if success_docs > 0 else "failed"),
+                    "claims_discovered": len(claims),
+                    "claims_processed": len(claim_results),
+                    "claims_failed": len(failed_claims),
+                    "docs_total": total_docs,
+                    "docs_success": success_docs,
+                    "completed_at": datetime.now().isoformat() + "Z",
+                }
+
+                # Write summary
+                with open(workspace_paths.summary_json, "w", encoding="utf-8") as f:
+                    json.dump(global_summary, f, indent=2, ensure_ascii=False)
+
+                # Aggregate metrics from all claims if available
+                if not args.no_metrics:
+                    aggregated_metrics = {
+                        "run_id": run_id,
+                        "claims_count": len(claim_results),
+                        "docs_total": total_docs,
+                        "docs_success": success_docs,
+                        "per_claim": [],
+                    }
+                    for r in claim_results:
+                        claim_paths = get_claim_paths(output_dir, r.claim_id)
+                        metrics_path = claim_paths.runs_dir / run_id / "logs" / "metrics.json"
+                        if metrics_path.exists():
+                            with open(metrics_path, "r", encoding="utf-8") as f:
+                                claim_metrics = json.load(f)
+                                aggregated_metrics["per_claim"].append({
+                                    "claim_id": r.claim_id,
+                                    "metrics": claim_metrics,
+                                })
+
+                    with open(workspace_paths.metrics_json, "w", encoding="utf-8") as f:
+                        json.dump(aggregated_metrics, f, indent=2, ensure_ascii=False)
+
+                # Mark run complete
+                workspace_paths.complete_marker.touch()
+                logger.info(f"Global run created at: {workspace_paths.run_root}")
 
             # Print summary
             if not args.quiet:

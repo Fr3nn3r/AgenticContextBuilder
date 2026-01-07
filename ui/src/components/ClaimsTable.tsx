@@ -79,7 +79,6 @@ export function ClaimsTable({
   const totalDocsLabeled = claims.reduce((sum, c) => sum + c.labeled_count, 0);  // Labels are run-independent
   const totalDocs = claims.reduce((sum, c) => sum + c.doc_count, 0);
   const totalGateFail = claimsInRunData.reduce((sum, c) => sum + c.gate_fail_count, 0);  // Run-dependent
-  const totalNeedsVision = claimsInRunData.reduce((sum, c) => sum + c.needs_vision_count, 0);  // Run-dependent
 
   return (
     <div className="p-6">
@@ -99,11 +98,11 @@ export function ClaimsTable({
                 data-testid="run-selector"
                 value={selectedRunId || ""}
                 onChange={(e) => onRunChange(e.target.value || null)}
-                className="border rounded px-2 py-1 text-sm min-w-[180px]"
+                className="border rounded px-2 py-1 text-sm min-w-[220px]"
               >
                 {runs.map((run, idx) => (
                   <option key={run.run_id} value={run.run_id}>
-                    {run.run_id} {idx === 0 ? "(Latest)" : ""}
+                    {run.run_id.replace("run_", "")} {run.claims_count ? `(${run.claims_count} claims)` : ""} {idx === 0 ? "★" : ""}
                   </option>
                 ))}
               </select>
@@ -127,7 +126,7 @@ export function ClaimsTable({
       </div>
 
       {/* KPI Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-lg border p-4">
           <div className="text-2xl font-semibold text-gray-900">{totalCount}</div>
           <div className="text-sm text-gray-500">Claims</div>
@@ -147,13 +146,6 @@ export function ClaimsTable({
             {totalGateFail}
           </div>
           <div className="text-sm text-gray-500">Docs failing gate</div>
-          <div className="text-xs text-gray-400 mt-1">In selected run</div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-semibold text-amber-600">
-            {totalNeedsVision}
-          </div>
-          <div className="text-sm text-gray-500">Needs vision</div>
           <div className="text-xs text-gray-400 mt-1">In selected run</div>
         </div>
         <div className="bg-white rounded-lg border p-4">
@@ -185,7 +177,6 @@ export function ClaimsTable({
           >
             <option value="all">All Claims</option>
             <option value="has_unlabeled">Has unlabeled docs</option>
-            <option value="needs_vision">Needs vision</option>
           </select>
 
           {/* Risk Filter (kept for backwards compatibility) */}
@@ -313,22 +304,11 @@ export function ClaimsTable({
                   </td>
                   <td className="px-4 py-3 text-center">
                     {claim.in_run ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <GateSummary
-                          pass={claim.gate_pass_count}
-                          warn={claim.gate_warn_count}
-                          fail={claim.gate_fail_count}
-                        />
-                        {/* Needs Vision indicator (non-column badge) */}
-                        {claim.needs_vision_count > 0 && (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600" title={`${claim.needs_vision_count} doc(s) need vision`}>
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                          </span>
-                        )}
-                      </div>
+                      <GateSummary
+                        pass={claim.gate_pass_count}
+                        warn={claim.gate_warn_count}
+                        fail={claim.gate_fail_count}
+                      />
                     ) : (
                       <span className="text-gray-400">-</span>
                     )}
@@ -396,7 +376,6 @@ export function ClaimsTable({
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       {doc.doc_type} &middot; {Math.round(doc.confidence * 100)}%
-                                      {doc.text_quality && ` &middot; Text: ${doc.text_quality}`}
                                     </div>
                                     {doc.missing_required_fields && doc.missing_required_fields.length > 0 && (
                                       <div className="text-xs text-red-600 mt-0.5">
@@ -416,12 +395,6 @@ export function ClaimsTable({
                                   ) : (
                                     <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
                                       Unlabeled
-                                    </span>
-                                  )}
-                                  {/* Needs Vision Badge */}
-                                  {doc.needs_vision && (
-                                    <span className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded">
-                                      Needs Vision
                                     </span>
                                   )}
                                   <svg
