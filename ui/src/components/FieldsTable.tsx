@@ -11,7 +11,6 @@ interface FieldsTableProps {
   onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number, extractedValue?: string) => void;
   readOnly?: boolean;
   docType?: string;
-  runId?: string;
   showOptionalFields?: boolean;
   onToggleOptionalFields?: () => void;
 }
@@ -66,7 +65,6 @@ export function FieldsTable({
   onQuoteClick,
   readOnly = false,
   docType,
-  runId,
   showOptionalFields = false,
   onToggleOptionalFields,
 }: FieldsTableProps) {
@@ -210,86 +208,60 @@ export function FieldsTable({
               </div>
             </div>
 
-            {/* EXTRACTED VALUE SECTION */}
-            <div className="mb-3 p-2 bg-slate-50 rounded border border-slate-200">
-              <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
-                Extracted {runId && <span className="font-normal normal-case">({runId.slice(0, 20)}...)</span>}
-              </div>
-
-              <div className="flex items-center gap-2 mb-2">
-                {isNotExpected ? (
-                  <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
-                    Not expected for {docType}
-                  </span>
-                ) : (
-                  <StatusBadge status={field.status} />
-                )}
-                {field.value_is_placeholder && (
-                  <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
-                    Placeholder
-                  </span>
-                )}
-              </div>
-
-              {/* Value */}
-              <div className="mb-2">
-                {field.value ? (
-                  <div className="font-mono text-sm bg-white px-2 py-1 rounded border">
+            {/* Extracted value line */}
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm text-gray-600">Extracted:</span>
+              {field.value ? (
+                <>
+                  <span className="font-mono text-sm">
                     {field.normalized_value || field.value}
-                    {field.normalized_value &&
-                      field.normalized_value !== field.value && (
-                        <span className="text-muted-foreground ml-2">
-                          (raw: {field.value})
-                        </span>
-                      )}
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground italic text-sm">
-                    Not found
                   </span>
-                )}
-              </div>
-
-              {/* Evidence link with hover preview */}
-              {provenance && (
-                <div
-                  className="relative"
-                  onMouseEnter={() => setHoveredEvidence(field.name)}
-                  onMouseLeave={() => setHoveredEvidence(null)}
-                >
-                  <button
-                    data-testid="evidence-link"
-                    onClick={() => onQuoteClick(
-                      provenance.text_quote,
-                      provenance.page,
-                      provenance.char_start,
-                      provenance.char_end,
-                      field.normalized_value || field.value || undefined
-                    )}
-                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                  >
-                    Evidence: Page {provenance.page}
-                  </button>
-                  {/* Hover preview tooltip */}
-                  {hoveredEvidence === field.name && (
-                    <div className="absolute bottom-full left-0 mb-1 p-2 bg-white border rounded shadow-lg z-20 max-w-xs">
-                      <div className="text-xs text-gray-500 mb-1">Quote:</div>
-                      <div className="text-sm text-gray-700 italic">"{provenance.text_quote}"</div>
-                    </div>
+                  {field.value_is_placeholder && (
+                    <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                      Placeholder
+                    </span>
                   )}
-                </div>
+                </>
+              ) : (
+                <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+                  Missing
+                </span>
               )}
             </div>
 
-            {/* GROUND TRUTH SECTION */}
-            {!readOnly && (
-              <div className="p-2 bg-blue-50 rounded border border-blue-200">
-                <div className="mb-2">
-                  <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">
-                    Ground Truth
-                  </span>
-                </div>
+            {/* Evidence link with hover preview */}
+            {provenance && (
+              <div
+                className="relative mb-3"
+                onMouseEnter={() => setHoveredEvidence(field.name)}
+                onMouseLeave={() => setHoveredEvidence(null)}
+              >
+                <button
+                  data-testid="evidence-link"
+                  onClick={() => onQuoteClick(
+                    provenance.text_quote,
+                    provenance.page,
+                    provenance.char_start,
+                    provenance.char_end,
+                    field.normalized_value || field.value || undefined
+                  )}
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Evidence: Page {provenance.page}
+                </button>
+                {/* Hover preview tooltip */}
+                {hoveredEvidence === field.name && (
+                  <div className="absolute bottom-full left-0 mb-1 p-2 bg-white border rounded shadow-lg z-20 max-w-xs">
+                    <div className="text-xs text-gray-500 mb-1">Quote:</div>
+                    <div className="text-sm text-gray-700 italic">"{provenance.text_quote}"</div>
+                  </div>
+                )}
+              </div>
+            )}
 
+            {/* Ground truth actions (no title) */}
+            {!readOnly && (
+              <div>
                 {/* UNLABELED state - show action buttons */}
                 {(!label || label.state === "UNLABELED") && (
                   <div className="space-y-2">
@@ -365,9 +337,9 @@ export function FieldsTable({
                   </div>
                 )}
 
-                {/* CONFIRMED state - show truth value and comparison */}
+                {/* CONFIRMED state - show truth value */}
                 {label?.state === "CONFIRMED" && (
-                  <div className="space-y-2">
+                  <div>
                     {editingField === field.name ? (
                       // Editing mode
                       <div className="space-y-2">
@@ -402,21 +374,18 @@ export function FieldsTable({
                         </div>
                       </div>
                     ) : (
-                      // Display mode
-                      <>
-                        <div className="flex items-center justify-between">
-                          <div className="font-mono text-sm bg-white px-2 py-1 rounded border flex-1">
-                            <span className="text-green-700">Truth:</span> {label.truth_value || "(empty)"}
-                          </div>
-                          <button
-                            onClick={() => handleEditStart(field.name, label.truth_value)}
-                            className="ml-2 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50"
-                          >
-                            Edit ground truth
-                          </button>
-                        </div>
-                        <ComparisonBadge result={comparisonResult} />
-                      </>
+                      // Display mode - single line
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Truth:</span>
+                        <span className="font-mono text-sm text-green-700">{label.truth_value || "(empty)"}</span>
+                        <button
+                          onClick={() => handleEditStart(field.name, label.truth_value)}
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <ComparisonBadge result={comparisonResult} compact />
+                      </div>
                     )}
                   </div>
                 )}
@@ -476,26 +445,6 @@ export function FieldsTable({
         );
       })}
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: "present" | "missing" | "uncertain" }) {
-  const styles: Record<string, string> = {
-    present: "bg-green-100 text-green-700",
-    missing: "bg-red-100 text-red-700",
-    uncertain: "bg-yellow-100 text-yellow-700",
-  };
-
-  const labels: Record<string, string> = {
-    present: "Extracted",
-    missing: "Missing",
-    uncertain: "Uncertain",
-  };
-
-  return (
-    <span className={cn("text-xs px-1.5 py-0.5 rounded", styles[status])}>
-      {labels[status]}
-    </span>
   );
 }
 

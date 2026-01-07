@@ -377,7 +377,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
                 onEditTruth={handleEditTruth}
                 onQuoteClick={handleQuoteClick}
                 docType={currentDoc.doc_type}
-                runId={currentDoc.extraction.run.run_id}
               />
             ) : (
               <div className="p-4 text-gray-500">

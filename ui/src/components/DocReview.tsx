@@ -238,7 +238,14 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         <div className="bg-white rounded-lg border overflow-hidden flex flex-col">
           <div className="p-3 border-b bg-gray-50">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Extracted Fields</h3>
+              <div>
+                <h3 className="font-medium text-gray-900">Field Extraction</h3>
+                {extraction && (
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Run: {extraction.run.run_id}
+                  </div>
+                )}
+              </div>
               {/* Label Status Summary */}
               <div className="flex items-center gap-3 text-xs">
                 <span className={cn(
@@ -249,7 +256,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 </span>
                 {extraction && (
                   <span className="text-gray-500">
-                    Fields labeled: {fieldLabels.filter(l => l.state !== "UNLABELED").length}/{fieldLabels.length}
+                    {fieldLabels.filter(l => l.state !== "UNLABELED").length}/{fieldLabels.length} labeled
                   </span>
                 )}
               </div>
@@ -267,7 +274,6 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 onEditTruth={handleEditTruth}
                 onQuoteClick={handleQuoteClick}
                 docType={doc.doc_type}
-                runId={extraction.run.run_id}
                 showOptionalFields={showOptionalFields}
                 onToggleOptionalFields={() => setShowOptionalFields(!showOptionalFields)}
               />
