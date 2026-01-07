@@ -1,11 +1,13 @@
 import { useState } from "react";
-import type { ExtractedField, FieldLabel } from "../types";
+import type { ExtractedField, FieldLabel, UnverifiableReason } from "../types";
 import { cn } from "../lib/utils";
 
 interface FieldsTableProps {
   fields: ExtractedField[];
   labels: FieldLabel[];
-  onLabelChange: (fieldName: string, judgement: "correct" | "incorrect" | "unknown") => void;
+  onConfirm: (fieldName: string, truthValue: string) => void;
+  onUnverifiable: (fieldName: string, reason: UnverifiableReason) => void;
+  onEditTruth: (fieldName: string, newTruthValue: string) => void;
   onQuoteClick: (quote: string, page: number, charStart?: number, charEnd?: number, extractedValue?: string) => void;
   readOnly?: boolean;
   docType?: string;
@@ -32,16 +34,42 @@ function getDisplayName(fieldName: string): string {
   return fieldDisplayNames[fieldName] || fieldName.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Unverifiable reason labels
+const unverifiableReasonLabels: Record<UnverifiableReason, string> = {
+  not_present_in_doc: "Not present in doc",
+  unreadable_text: "Unreadable text",
+  wrong_doc_type: "Wrong doc type",
+  cannot_verify: "Cannot verify",
+  other: "Other",
+};
+
+// Compare extracted value to truth value (normalized comparison)
+function compareValues(extracted: string | null, truth: string | null | undefined): "match" | "mismatch" | "missing" | "unlabeled" {
+  if (truth === null || truth === undefined) return "unlabeled";
+  if (extracted === null || extracted === "") return "missing";
+
+  // Normalize both values for comparison
+  const normExtracted = (extracted || "").trim().toLowerCase();
+  const normTruth = (truth || "").trim().toLowerCase();
+
+  return normExtracted === normTruth ? "match" : "mismatch";
+}
+
 export function FieldsTable({
   fields,
   labels,
-  onLabelChange,
+  onConfirm,
+  onUnverifiable,
+  onEditTruth,
   onQuoteClick,
   readOnly = false,
   docType,
   runId,
 }: FieldsTableProps) {
   const [focusedFieldIndex, setFocusedFieldIndex] = useState(0);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [showUnverifiableDropdown, setShowUnverifiableDropdown] = useState<string | null>(null);
 
   function getLabel(fieldName: string): FieldLabel | undefined {
     return labels.find((l) => l.field_name === fieldName);
@@ -61,6 +89,34 @@ export function FieldsTable({
 
   const expectedFields = docType ? expectedFieldsByDocType[docType] || [] : [];
 
+  function handleConfirmClick(fieldName: string, extractedValue: string | null) {
+    // Use normalized value if available, otherwise raw value
+    const field = fields.find(f => f.name === fieldName);
+    const valueToConfirm = field?.normalized_value || extractedValue || "";
+    onConfirm(fieldName, valueToConfirm);
+  }
+
+  function handleUnverifiableSelect(fieldName: string, reason: UnverifiableReason) {
+    onUnverifiable(fieldName, reason);
+    setShowUnverifiableDropdown(null);
+  }
+
+  function handleEditStart(fieldName: string, currentTruth: string | undefined) {
+    setEditingField(fieldName);
+    setEditValue(currentTruth || "");
+  }
+
+  function handleEditSave(fieldName: string) {
+    onEditTruth(fieldName, editValue);
+    setEditingField(null);
+    setEditValue("");
+  }
+
+  function handleEditCancel() {
+    setEditingField(null);
+    setEditValue("");
+  }
+
   return (
     <div className="divide-y">
       {fields.map((field, index) => {
@@ -69,6 +125,11 @@ export function FieldsTable({
         const isFocused = index === focusedFieldIndex;
         const isExpectedForDocType = expectedFields.length === 0 || expectedFields.includes(field.name);
         const isNotExpected = !isExpectedForDocType && field.status === "missing";
+
+        // Compute comparison result for CONFIRMED fields
+        const comparisonResult = label?.state === "CONFIRMED"
+          ? compareValues(field.normalized_value || field.value, label.truth_value)
+          : "unlabeled";
 
         return (
           <div
@@ -91,10 +152,10 @@ export function FieldsTable({
               </div>
             </div>
 
-            {/* PREDICTION SECTION */}
+            {/* EXTRACTED VALUE SECTION */}
             <div className="mb-3 p-2 bg-slate-50 rounded border border-slate-200">
               <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
-                Prediction {runId && <span className="font-normal normal-case">({runId.slice(0, 20)}...)</span>}
+                Extracted {runId && <span className="font-normal normal-case">({runId.slice(0, 20)}...)</span>}
               </div>
 
               <div className="flex items-center gap-2 mb-2">
@@ -155,42 +216,116 @@ export function FieldsTable({
               )}
             </div>
 
-            {/* LABEL SECTION */}
+            {/* GROUND TRUTH SECTION */}
             {!readOnly && (
               <div className="p-2 bg-blue-50 rounded border border-blue-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">
-                    Label (Truth)
+                    Ground Truth
                   </span>
-                  {label?.judgement && label.judgement !== "unknown" && (
-                    <span className={cn(
-                      "text-xs px-1.5 py-0.5 rounded",
-                      label.judgement === "correct" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                    )}>
-                      Current: {label.judgement}
-                    </span>
-                  )}
+                  <StateBadge state={label?.state || "UNLABELED"} />
                 </div>
-                <div className="flex gap-2">
-                  <LabelButton
-                    label="correct"
-                    selected={label?.judgement === "correct"}
-                    onClick={() => onLabelChange(field.name, "correct")}
-                    color="green"
-                  />
-                  <LabelButton
-                    label="wrong"
-                    selected={label?.judgement === "incorrect"}
-                    onClick={() => onLabelChange(field.name, "incorrect")}
-                    color="red"
-                  />
-                  <LabelButton
-                    label="cannot verify"
-                    selected={label?.judgement === "unknown"}
-                    onClick={() => onLabelChange(field.name, "unknown")}
-                    color="gray"
-                  />
-                </div>
+
+                {/* UNLABELED state - show action buttons */}
+                {(!label || label.state === "UNLABELED") && (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleConfirmClick(field.name, field.normalized_value || field.value)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-green-500 text-white text-sm font-medium rounded hover:bg-green-600 transition-colors"
+                      >
+                        <span>✓</span> Confirm
+                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowUnverifiableDropdown(
+                            showUnverifiableDropdown === field.name ? null : field.name
+                          )}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-gray-500 text-white text-sm font-medium rounded hover:bg-gray-600 transition-colors"
+                        >
+                          <span>✗</span> Mark Unverifiable
+                        </button>
+                        {showUnverifiableDropdown === field.name && (
+                          <div className="absolute top-full left-0 mt-1 bg-white border rounded-md shadow-lg z-10 min-w-[180px]">
+                            {(Object.keys(unverifiableReasonLabels) as UnverifiableReason[]).map((reason) => (
+                              <button
+                                key={reason}
+                                onClick={() => handleUnverifiableSelect(field.name, reason)}
+                                className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                              >
+                                {unverifiableReasonLabels[reason]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* CONFIRMED state - show truth value and comparison */}
+                {label?.state === "CONFIRMED" && (
+                  <div className="space-y-2">
+                    {editingField === field.name ? (
+                      // Editing mode
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          className="flex-1 px-2 py-1 text-sm border rounded"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleEditSave(field.name)}
+                          className="px-2 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleEditCancel}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      // Display mode
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="font-mono text-sm bg-white px-2 py-1 rounded border flex-1">
+                            <span className="text-green-700">Truth:</span> {label.truth_value || "(empty)"}
+                          </div>
+                          <button
+                            onClick={() => handleEditStart(field.name, label.truth_value)}
+                            className="ml-2 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <ComparisonBadge result={comparisonResult} />
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* UNVERIFIABLE state - show reason */}
+                {label?.state === "UNVERIFIABLE" && (
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Reason:</span>{" "}
+                      {label.unverifiable_reason
+                        ? unverifiableReasonLabels[label.unverifiable_reason]
+                        : "Unknown"}
+                    </div>
+                    <button
+                      onClick={() => handleConfirmClick(field.name, field.normalized_value || field.value)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Change to Confirmed
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -220,41 +355,40 @@ function StatusBadge({ status }: { status: "present" | "missing" | "uncertain" }
   );
 }
 
-interface LabelButtonProps {
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-  color: "green" | "red" | "gray";
-}
-
-function LabelButton({ label, selected, onClick, color }: LabelButtonProps) {
-  const colors = {
-    green: selected
-      ? "bg-green-500 text-white"
-      : "bg-green-100 text-green-700 hover:bg-green-200",
-    red: selected
-      ? "bg-red-500 text-white"
-      : "bg-red-100 text-red-700 hover:bg-red-200",
-    gray: selected
-      ? "bg-gray-500 text-white"
-      : "bg-gray-100 text-gray-700 hover:bg-gray-200",
-  };
-
-  const icons: Record<string, string> = {
-    correct: "✓",
-    wrong: "✗",
-    "cannot verify": "?",
+function StateBadge({ state }: { state: "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED" }) {
+  const styles: Record<string, string> = {
+    CONFIRMED: "bg-green-100 text-green-700",
+    UNVERIFIABLE: "bg-gray-100 text-gray-600",
+    UNLABELED: "bg-amber-100 text-amber-700",
   };
 
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "px-3 py-1 rounded text-sm font-medium transition-colors flex items-center gap-1",
-        colors[color]
-      )}
-    >
-      {icons[label]} {label}
-    </button>
+    <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium", styles[state])}>
+      {state}
+    </span>
+  );
+}
+
+function ComparisonBadge({ result }: { result: "match" | "mismatch" | "missing" | "unlabeled" }) {
+  const config: Record<string, { bg: string; text: string; icon: string }> = {
+    match: { bg: "bg-green-100", text: "text-green-700", icon: "✓" },
+    mismatch: { bg: "bg-red-100", text: "text-red-700", icon: "✗" },
+    missing: { bg: "bg-amber-100", text: "text-amber-700", icon: "?" },
+    unlabeled: { bg: "bg-gray-100", text: "text-gray-500", icon: "-" },
+  };
+
+  const { bg, text, icon } = config[result];
+  const labels: Record<string, string> = {
+    match: "MATCH",
+    mismatch: "MISMATCH",
+    missing: "MISSING",
+    unlabeled: "Not labeled",
+  };
+
+  return (
+    <div className={cn("flex items-center gap-1 text-xs px-2 py-1 rounded", bg, text)}>
+      <span>{icon}</span>
+      <span className="font-medium">Result: {labels[result]}</span>
+    </div>
   );
 }

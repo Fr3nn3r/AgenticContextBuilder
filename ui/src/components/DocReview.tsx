@@ -21,8 +21,6 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
   const [fieldLabels, setFieldLabels] = useState<FieldLabel[]>([]);
   const [docLabels, setDocLabels] = useState<DocLabels>({
     doc_type_correct: true,
-    text_readable: "good",
-    needs_vision: false,
   });
   const [reviewer, setReviewer] = useState("");
   const [notes, setNotes] = useState("");
@@ -51,11 +49,11 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         setReviewer(data.labels.review.reviewer);
         setNotes(data.labels.review.notes);
       } else if (data.extraction) {
-        // Initialize field labels from extraction fields
+        // Initialize field labels from extraction fields with UNLABELED state
         setFieldLabels(
           data.extraction.fields.map((f) => ({
             field_name: f.name,
-            judgement: "unknown" as const,
+            state: "UNLABELED" as const,
             notes: "",
           }))
         );
@@ -67,13 +65,47 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
     }
   }
 
-  function handleLabelChange(
+  function handleConfirmField(fieldName: string, truthValue: string) {
+    setFieldLabels((prev) =>
+      prev.map((l) =>
+        l.field_name === fieldName
+          ? {
+              ...l,
+              state: "CONFIRMED" as const,
+              truth_value: truthValue,
+              unverifiable_reason: undefined,
+              updated_at: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+  }
+
+  function handleUnverifiableField(
     fieldName: string,
-    judgement: "correct" | "incorrect" | "unknown"
+    reason: "not_present_in_doc" | "unreadable_text" | "wrong_doc_type" | "cannot_verify" | "other"
   ) {
     setFieldLabels((prev) =>
       prev.map((l) =>
-        l.field_name === fieldName ? { ...l, judgement } : l
+        l.field_name === fieldName
+          ? {
+              ...l,
+              state: "UNVERIFIABLE" as const,
+              truth_value: undefined,
+              unverifiable_reason: reason,
+              updated_at: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+  }
+
+  function handleEditTruth(fieldName: string, newTruthValue: string) {
+    setFieldLabels((prev) =>
+      prev.map((l) =>
+        l.field_name === fieldName && l.state === "CONFIRMED"
+          ? { ...l, truth_value: newTruthValue, updated_at: new Date().toISOString() }
+          : l
       )
     );
   }
@@ -214,7 +246,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 </span>
                 {extraction && (
                   <span className="text-gray-500">
-                    Fields labeled: {fieldLabels.filter(l => l.judgement !== "unknown").length}/{fieldLabels.length}
+                    Fields labeled: {fieldLabels.filter(l => l.state !== "UNLABELED").length}/{fieldLabels.length}
                   </span>
                 )}
               </div>
@@ -227,7 +259,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
               <FieldsTable
                 fields={extraction.fields}
                 labels={fieldLabels}
-                onLabelChange={handleLabelChange}
+                onConfirm={handleConfirmField}
+                onUnverifiable={handleUnverifiableField}
+                onEditTruth={handleEditTruth}
                 onQuoteClick={handleQuoteClick}
                 docType={doc.doc_type}
                 runId={extraction.run.run_id}
@@ -256,21 +290,6 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 />
                 <span className="text-sm text-gray-700">Doc type correct</span>
               </label>
-
-              <select
-                value={docLabels.text_readable}
-                onChange={(e) =>
-                  setDocLabels((prev) => ({
-                    ...prev,
-                    text_readable: e.target.value as "good" | "warn" | "poor",
-                  }))
-                }
-                className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-              >
-                <option value="good">Text: Good</option>
-                <option value="warn">Text: Warn</option>
-                <option value="poor">Text: Poor</option>
-              </select>
             </div>
 
             <div className="flex gap-2">

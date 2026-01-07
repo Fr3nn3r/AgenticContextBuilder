@@ -20,7 +20,6 @@ export interface ClaimSummary {
   gate_pass_count: number;
   gate_warn_count: number;
   gate_fail_count: number;
-  needs_vision_count: number;
   last_processed: string | null;
   // Run context
   in_run: boolean;
@@ -36,9 +35,7 @@ export interface DocSummary {
   quality_status: string | null;
   confidence: number;
   // Extraction-centric fields
-  text_quality: "good" | "warn" | "poor" | null;
   missing_required_fields: string[];
-  needs_vision: boolean;
 }
 
 export interface PageContent {
@@ -69,7 +66,6 @@ export interface QualityGate {
   status: "pass" | "warn" | "fail";
   reasons: string[];
   missing_required_fields: string[];
-  needs_vision_fallback: boolean;
 }
 
 export interface ExtractionResult {
@@ -94,17 +90,28 @@ export interface ExtractionResult {
   quality_gate: QualityGate;
 }
 
+// Ground Truth Label Types (label_v2)
+
+export type FieldState = "CONFIRMED" | "UNVERIFIABLE" | "UNLABELED";
+
+export type UnverifiableReason =
+  | "not_present_in_doc"
+  | "unreadable_text"
+  | "wrong_doc_type"
+  | "cannot_verify"
+  | "other";
+
 export interface FieldLabel {
   field_name: string;
-  judgement: "correct" | "incorrect" | "unknown";
-  correct_value?: string;
+  state: FieldState;
+  truth_value?: string;
+  unverifiable_reason?: UnverifiableReason;
   notes: string;
+  updated_at?: string;
 }
 
 export interface DocLabels {
   doc_type_correct: boolean;
-  text_readable: "good" | "warn" | "poor";
-  needs_vision: boolean;
 }
 
 export interface LabelResult {
@@ -167,7 +174,7 @@ export interface ClaimReviewPayload {
 }
 
 export interface DocReviewRequest {
-  doc_type_correct: "yes" | "no" | "unsure";
+  doc_type_correct: boolean;
   notes: string;
 }
 
@@ -192,4 +199,15 @@ export interface TemplateSpec {
   optional_fields: string[];
   field_rules: Record<string, FieldRule>;
   quality_gate: QualityGateRules;
+}
+
+// Comparison result for ground truth vs extraction
+export type ComparisonResult = "match" | "mismatch" | "missing" | "unlabeled" | "unverifiable";
+
+export interface FieldComparison {
+  field_name: string;
+  extracted_value: string | null;
+  truth_value: string | null;
+  state: FieldState;
+  result: ComparisonResult;
 }

@@ -503,7 +503,7 @@ function InsightsTab({
   return (
     <div className="space-y-4">
       {/* Overview KPIs */}
-      <section className="grid grid-cols-3 md:grid-cols-6 gap-3">
+      <section className="grid grid-cols-3 md:grid-cols-5 gap-3">
         <KPICard
           label="Reviewed"
           value={`${overview?.docs_reviewed || 0}/${overview?.docs_total || 0}`}
@@ -528,12 +528,6 @@ function InsightsTab({
           label="Evidence Rate"
           value={`${overview?.evidence_rate || 0}%`}
           variant={getScoreVariant(overview?.evidence_rate || 0)}
-        />
-        <KPICard
-          label="Needs Vision"
-          value={overview?.docs_needs_vision || 0}
-          subtext="candidates"
-          variant="neutral"
         />
       </section>
 
@@ -609,11 +603,6 @@ function InsightsTab({
                   >
                     <td className="p-2 font-medium">
                       {getDocTypeName(dt.doc_type)}
-                      {dt.docs_needs_vision > 0 && (
-                        <span className="ml-1 text-purple-500" title={`${dt.docs_needs_vision} need vision`}>
-                          <VisionIcon className="w-3 h-3 inline" />
-                        </span>
-                      )}
                     </td>
                     <td className="p-2 text-right text-gray-600">{dt.docs_reviewed}</td>
                     <td className="p-2 text-right">
@@ -917,7 +906,6 @@ function formatKpiLabel(key: string): string {
     evidence_rate: "Evidence",
     docs_reviewed: "Reviewed",
     docs_doc_type_wrong: "Type Wrong",
-    docs_needs_vision: "Needs Vision",
   };
   return labels[key] || key;
 }
@@ -1062,7 +1050,6 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
               <td className="p-2 text-center"><JudgementBadge judgement={ex.judgement} /></td>
               <td className="p-2 text-center">
                 {ex.has_evidence ? <span className="text-green-600">Yes</span> : <span className="text-gray-300">-</span>}
-                {ex.needs_vision && <VisionIcon className="w-3 h-3 inline ml-1 text-purple-500" />}
               </td>
               <td className="p-2 text-center"><OutcomeBadge outcome={ex.outcome} /></td>
               <td className="p-2">
@@ -1101,13 +1088,4 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
   };
   const labels: Record<string, string> = { correct: "Correct", incorrect: "Incorrect", extractor_miss: "Missing", cannot_verify: "Unknown", correct_absent: "Correct" };
   return <span className={cn("text-[10px] px-1 py-0.5 rounded font-medium", styles[outcome] || "bg-gray-100 text-gray-600")}>{labels[outcome] || outcome}</span>;
-}
-
-function VisionIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    </svg>
-  );
 }

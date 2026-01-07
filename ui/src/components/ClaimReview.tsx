@@ -25,7 +25,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
   // Review state
   const [notes, setNotes] = useState("");
   const [docTypeCorrect, setDocTypeCorrect] = useState<"yes" | "no" | "unsure">("yes");
-  const [needsVision, setNeedsVision] = useState<boolean>(false);
 
   // Field-level labels state
   const [fieldLabels, setFieldLabels] = useState<FieldLabel[]>([]);
@@ -83,24 +82,21 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
         setFieldLabels(data.labels.field_labels || []);
         setNotes(data.labels.review.notes || "");
         setDocTypeCorrect(data.labels.doc_labels.doc_type_correct ? "yes" : "no");
-        setNeedsVision(data.labels.doc_labels.needs_vision ?? false);
       } else if (data.extraction) {
-        // Initialize field labels from extraction fields with "unknown" judgement
+        // Initialize field labels from extraction fields with UNLABELED state
         setFieldLabels(
           data.extraction.fields.map((f) => ({
             field_name: f.name,
-            judgement: "unknown" as const,
+            state: "UNLABELED" as const,
             notes: "",
           }))
         );
         setNotes("");
         setDocTypeCorrect("yes");
-        setNeedsVision(data.extraction.quality_gate?.needs_vision_fallback || false);
       } else {
         setFieldLabels([]);
         setNotes("");
         setDocTypeCorrect("yes");
-        setNeedsVision(false);
       }
     } catch (err) {
       console.error("Failed to load document:", err);
@@ -121,13 +117,47 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     setHighlightValue(extractedValue);
   }
 
-  function handleFieldLabelChange(
+  function handleConfirmField(fieldName: string, truthValue: string) {
+    setFieldLabels((prev) =>
+      prev.map((l) =>
+        l.field_name === fieldName
+          ? {
+              ...l,
+              state: "CONFIRMED" as const,
+              truth_value: truthValue,
+              unverifiable_reason: undefined,
+              updated_at: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+  }
+
+  function handleUnverifiableField(
     fieldName: string,
-    judgement: "correct" | "incorrect" | "unknown"
+    reason: "not_present_in_doc" | "unreadable_text" | "wrong_doc_type" | "cannot_verify" | "other"
   ) {
     setFieldLabels((prev) =>
       prev.map((l) =>
-        l.field_name === fieldName ? { ...l, judgement } : l
+        l.field_name === fieldName
+          ? {
+              ...l,
+              state: "UNVERIFIABLE" as const,
+              truth_value: undefined,
+              unverifiable_reason: reason,
+              updated_at: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+  }
+
+  function handleEditTruth(fieldName: string, newTruthValue: string) {
+    setFieldLabels((prev) =>
+      prev.map((l) =>
+        l.field_name === fieldName && l.state === "CONFIRMED"
+          ? { ...l, truth_value: newTruthValue, updated_at: new Date().toISOString() }
+          : l
       )
     );
   }
@@ -139,8 +169,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
       setSavingDocId(docId);
       const docLabels: DocLabels = {
         doc_type_correct: docTypeCorrect === "yes",
-        text_readable: "good",
-        needs_vision: needsVision,
       };
       // Use "system" as reviewer until accounts are implemented
       await saveLabels(docId, "system", notes, fieldLabels, docLabels);
@@ -344,8 +372,12 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
               <FieldsTable
                 fields={currentDoc.extraction.fields}
                 labels={fieldLabels}
-                onLabelChange={handleFieldLabelChange}
+                onConfirm={handleConfirmField}
+                onUnverifiable={handleUnverifiableField}
+                onEditTruth={handleEditTruth}
                 onQuoteClick={handleQuoteClick}
+                docType={currentDoc.doc_type}
+                runId={currentDoc.extraction.run.run_id}
               />
             ) : (
               <div className="p-4 text-gray-500">
@@ -383,17 +415,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
                   ))}
                 </div>
               </div>
-
-              {/* Needs vision */}
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={needsVision}
-                  onChange={(e) => setNeedsVision(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                <span className="text-sm text-gray-700">Needs vision extraction</span>
-              </label>
 
               {/* Notes */}
               <input
