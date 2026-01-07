@@ -12,6 +12,8 @@ interface FieldsTableProps {
   readOnly?: boolean;
   docType?: string;
   runId?: string;
+  showOptionalFields?: boolean;
+  onToggleOptionalFields?: () => void;
 }
 
 // Human-readable field names mapping
@@ -65,11 +67,16 @@ export function FieldsTable({
   readOnly = false,
   docType,
   runId,
+  showOptionalFields = false,
+  onToggleOptionalFields,
 }: FieldsTableProps) {
   const [focusedFieldIndex, setFocusedFieldIndex] = useState(0);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showUnverifiableDropdown, setShowUnverifiableDropdown] = useState<string | null>(null);
+  const [settingTruthField, setSettingTruthField] = useState<string | null>(null);
+  const [newTruthValue, setNewTruthValue] = useState("");
+  const [hoveredEvidence, setHoveredEvidence] = useState<string | null>(null);
 
   function getLabel(fieldName: string): FieldLabel | undefined {
     return labels.find((l) => l.field_name === fieldName);
