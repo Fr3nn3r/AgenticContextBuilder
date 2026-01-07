@@ -333,3 +333,29 @@ export async function setBaseline(runId: string): Promise<{ status: string }> {
 export async function clearBaseline(): Promise<{ status: string }> {
   return fetchJson<{ status: string }>(`${API_BASE}/insights/baseline`, { method: "DELETE" });
 }
+
+// Azure DI API for bounding box highlighting
+
+import type { AzureDIOutput } from "../types";
+
+// Cache for Azure DI data to avoid repeated fetches
+const azureDICache = new Map<string, AzureDIOutput | null>();
+
+export async function getAzureDI(docId: string, claimId: string): Promise<AzureDIOutput | null> {
+  const cacheKey = `${claimId}/${docId}`;
+  if (azureDICache.has(cacheKey)) {
+    return azureDICache.get(cacheKey) || null;
+  }
+
+  try {
+    const data = await fetchJson<AzureDIOutput>(
+      `${API_BASE}/docs/${docId}/azure-di?claim_id=${claimId}`
+    );
+    azureDICache.set(cacheKey, data);
+    return data;
+  } catch {
+    // Not available - cache the null result to avoid repeated 404s
+    azureDICache.set(cacheKey, null);
+    return null;
+  }
+}

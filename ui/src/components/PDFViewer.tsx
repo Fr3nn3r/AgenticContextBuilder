@@ -3,6 +3,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 import { cn } from "../lib/utils";
+import { BboxOverlay } from "./BboxOverlay";
+import type { BoundingBox } from "../types";
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -17,10 +19,11 @@ interface PDFViewerProps {
   url: string;
   currentPage?: number;
   highlightText?: string;
+  highlightBboxes?: BoundingBox[];  // Bounding boxes for visual highlighting
 }
 
 export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
-  function PDFViewer({ url, currentPage, highlightText: initialHighlight }, ref) {
+  function PDFViewer({ url, currentPage, highlightText: initialHighlight, highlightBboxes }, ref) {
     const [numPages, setNumPages] = useState<number>(0);
     const [pageNumber, setPageNumber] = useState<number>(currentPage || 1);
     const [loading, setLoading] = useState(true);
@@ -28,6 +31,7 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     const [containerWidth, setContainerWidth] = useState<number>(600);
     const [highlightQuery, setHighlightQuery] = useState<string>(initialHighlight || "");
     const [pageRendered, setPageRendered] = useState(false);
+    const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(null);
 
     // Function to clean evidence text (strip HTML tags, normalize whitespace)
     const cleanEvidenceText = (text: string): string => {
@@ -339,6 +343,12 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
 
     function onPageRenderSuccess() {
       setPageRendered(true);
+      // Capture rendered page dimensions for bbox overlay
+      const pageCanvas = document.querySelector(".react-pdf__Page__canvas") as HTMLCanvasElement;
+      if (pageCanvas) {
+        const rect = pageCanvas.getBoundingClientRect();
+        setPageDimensions({ width: rect.width, height: rect.height });
+      }
     }
 
     function goToPrevPage() {
@@ -404,14 +414,23 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
             error=""
             className="shadow-lg"
           >
-            <Page
-              pageNumber={pageNumber}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              className="bg-white"
-              width={containerWidth}
-              onRenderSuccess={onPageRenderSuccess}
-            />
+            <div style={{ position: "relative" }}>
+              <Page
+                pageNumber={pageNumber}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                className="bg-white"
+                width={containerWidth}
+                onRenderSuccess={onPageRenderSuccess}
+              />
+              {highlightBboxes && highlightBboxes.length > 0 && pageDimensions && (
+                <BboxOverlay
+                  bboxes={highlightBboxes.filter((b) => b.pageNumber === pageNumber)}
+                  canvasWidth={pageDimensions.width}
+                  canvasHeight={pageDimensions.height}
+                />
+              )}
+            </div>
           </Document>
         </div>
       </div>

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import type { PageContent } from "../types";
+import type { PageContent, AzureDIOutput, BoundingBox } from "../types";
 import { PageViewer } from "./PageViewer";
 import { PDFViewer, PDFViewerHandle } from "./PDFViewer";
 import { cn } from "../lib/utils";
+import { getAzureDI } from "../api/client";
+import { computeBoundingBoxes } from "../lib/bboxUtils";
 
 type ViewerTab = "text" | "pdf" | "image" | "json";
 
@@ -19,6 +21,9 @@ interface DocumentViewerProps {
   highlightCharEnd?: number;
   // Extracted value to highlight in PDF (prioritized over quote)
   highlightValue?: string;
+  // For Azure DI bbox highlighting
+  claimId?: string;
+  docId?: string;
 }
 
 export function DocumentViewer({
@@ -32,17 +37,66 @@ export function DocumentViewer({
   highlightCharStart,
   highlightCharEnd,
   highlightValue,
+  claimId,
+  docId,
 }: DocumentViewerProps) {
   // Default to PDF if available, otherwise text
   const defaultTab: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
   const [activeTab, setActiveTab] = useState<ViewerTab>(defaultTab);
   const pdfViewerRef = useRef<PDFViewerHandle>(null);
 
+  // Azure DI state for bbox highlighting
+  const [azureDI, setAzureDI] = useState<AzureDIOutput | null>(null);
+  const [azureDILoading, setAzureDILoading] = useState(false);
+  const [highlightBboxes, setHighlightBboxes] = useState<BoundingBox[]>([]);
+
   // Update default tab when document changes
   useEffect(() => {
     const newDefault: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
     setActiveTab(newDefault);
   }, [hasPdf, sourceUrl]);
+
+  // Reset Azure DI when document changes
+  useEffect(() => {
+    setAzureDI(null);
+    setHighlightBboxes([]);
+  }, [docId]);
+
+  // Lazy load Azure DI when highlight is triggered (for bbox highlighting)
+  useEffect(() => {
+    async function loadAzureDI() {
+      if (!claimId || !docId) return;
+      if (highlightPage === undefined) return;
+      if (azureDI !== null || azureDILoading) return;
+
+      setAzureDILoading(true);
+      const data = await getAzureDI(docId, claimId);
+      setAzureDI(data);
+      setAzureDILoading(false);
+    }
+
+    loadAzureDI();
+  }, [highlightPage, claimId, docId, azureDI, azureDILoading]);
+
+  // Compute bounding boxes when Azure DI or highlight changes
+  useEffect(() => {
+    if (!azureDI || highlightPage === undefined) {
+      setHighlightBboxes([]);
+      return;
+    }
+
+    if (highlightCharStart !== undefined && highlightCharEnd !== undefined) {
+      const bboxes = computeBoundingBoxes(
+        azureDI,
+        highlightPage,
+        highlightCharStart,
+        highlightCharEnd
+      );
+      setHighlightBboxes(bboxes);
+    } else {
+      setHighlightBboxes([]);
+    }
+  }, [azureDI, highlightPage, highlightCharStart, highlightCharEnd]);
 
   // When highlight changes (evidence clicked), navigate PDF to that page and highlight text
   useEffect(() => {
@@ -125,6 +179,7 @@ export function DocumentViewer({
             url={sourceUrl}
             currentPage={highlightPage}
             highlightText={highlightValue || highlightQuote}
+            highlightBboxes={highlightBboxes}
           />
         )}
 

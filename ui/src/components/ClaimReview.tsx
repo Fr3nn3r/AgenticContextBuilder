@@ -348,6 +348,8 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
                 highlightCharStart={highlightCharStart}
                 highlightCharEnd={highlightCharEnd}
                 highlightValue={highlightValue}
+                claimId={claimId}
+                docId={currentDoc.doc_id}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">

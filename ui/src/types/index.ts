@@ -211,3 +211,37 @@ export interface FieldComparison {
   state: FieldState;
   result: ComparisonResult;
 }
+
+// Azure DI types for bounding box highlighting
+
+export interface AzureDIWord {
+  content: string;
+  polygon: number[];  // 8 elements: [x1, y1, x2, y2, x3, y3, x4, y4] in inches
+  confidence: number;
+  span: {
+    offset: number;
+    length: number;
+  };
+}
+
+export interface AzureDIPage {
+  pageNumber: number;
+  width: number;   // in inches
+  height: number;  // in inches
+  unit: string;
+  words: AzureDIWord[];
+}
+
+export interface AzureDIOutput {
+  raw_azure_di_output: {
+    pages: AzureDIPage[];
+    content: string;
+  };
+}
+
+export interface BoundingBox {
+  pageNumber: number;
+  polygon: number[];  // 8 elements in inches
+  pageWidthInches: number;
+  pageHeightInches: number;
+}

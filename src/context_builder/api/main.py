@@ -1184,6 +1184,41 @@ def get_doc_source(doc_id: str, claim_id: Optional[str] = Query(None)):
     )
 
 
+@app.get("/api/docs/{doc_id}/azure-di")
+def get_doc_azure_di(doc_id: str, claim_id: Optional[str] = Query(None)):
+    """
+    Get Azure DI raw output for bounding box highlighting.
+
+    Returns the azure_di.json if available, containing word-level
+    polygon coordinates for visual highlighting on PDF.
+    """
+    # Find the document across all claims (same pattern as get_doc_source)
+    doc_folder = None
+
+    for claim in DATA_DIR.iterdir():
+        if not claim.is_dir():
+            continue
+
+        if claim_id and extract_claim_number(claim.name) != claim_id and claim.name != claim_id:
+            continue
+
+        candidate = claim / "docs" / doc_id
+        if candidate.exists():
+            doc_folder = candidate
+            break
+
+    if not doc_folder:
+        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+    # Look for azure_di.json
+    azure_di_path = doc_folder / "text" / "raw" / "azure_di.json"
+    if not azure_di_path.exists():
+        raise HTTPException(status_code=404, detail="Azure DI data not available")
+
+    with open(azure_di_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 # =============================================================================
 # INSIGHTS ENDPOINTS
 # =============================================================================
