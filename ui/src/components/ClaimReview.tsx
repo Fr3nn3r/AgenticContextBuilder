@@ -360,11 +360,18 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
         {/* Right: Extracted fields + Review controls */}
         <div className="w-96 border-l overflow-hidden flex flex-col">
           <div className="p-3 border-b bg-white">
-            <h3 className="font-medium text-gray-900">Document Pack Review</h3>
+            <h3 className="font-medium text-gray-900">Field Extraction</h3>
             {currentDoc && (
-              <div className="text-xs text-gray-500 mt-0.5">
-                {currentDoc.filename}
-              </div>
+              <>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {currentDoc.filename}
+                </div>
+                {currentDoc.extraction && (
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    Run: {currentDoc.extraction.run.run_id}
+                  </div>
+                )}
+              </>
             )}
           </div>
           <div className="flex-1 overflow-auto">

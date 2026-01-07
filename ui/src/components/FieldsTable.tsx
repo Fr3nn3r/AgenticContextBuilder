@@ -194,12 +194,9 @@ export function FieldsTable({
             )}
             onClick={() => setFocusedFieldIndex(index)}
           >
-            {/* Field header with human label + technical key + status badge */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{getDisplayName(field.name)}</span>
-                <code className="text-xs text-gray-400 bg-gray-100 px-1 rounded">{field.name}</code>
-              </div>
+            {/* Field header with name + status badges */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-gray-900">{getDisplayName(field.name)}</span>
               <div className="flex items-center gap-2">
                 <StateBadge state={label?.state || "UNLABELED"} />
                 {label?.state === "CONFIRMED" && (
@@ -208,22 +205,20 @@ export function FieldsTable({
               </div>
             </div>
 
-            {/* Extracted value line */}
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-sm text-gray-600">Extracted:</span>
+            {/* Extracted value - prominent display */}
+            <div className="mb-2 p-2 bg-slate-100 rounded border border-slate-200">
+              <div className="text-xs text-slate-500 mb-1">Extracted</div>
               {field.value ? (
-                <>
-                  <span className="font-mono text-sm">
-                    {field.normalized_value || field.value}
-                  </span>
+                <div className="font-mono text-base font-medium text-slate-900">
+                  {field.normalized_value || field.value}
                   {field.value_is_placeholder && (
-                    <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                    <span className="ml-2 text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-normal">
                       Placeholder
                     </span>
                   )}
-                </>
+                </div>
               ) : (
-                <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+                <span className="text-sm px-2 py-0.5 bg-red-100 text-red-700 rounded">
                   Missing
                 </span>
               )}
