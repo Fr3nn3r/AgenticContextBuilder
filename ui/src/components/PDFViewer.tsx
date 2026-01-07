@@ -41,6 +41,11 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
       return cleaned;
     };
 
+    // Function to normalize to alphanumeric only (strips punctuation like hyphens)
+    const normalizeAlphanumeric = (text: string): string => {
+      return text.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+    };
+
     // Function to highlight text in the PDF text layer
     const applyHighlight = useCallback((searchText: string) => {
       if (!searchText) {
@@ -130,12 +135,45 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         }
       }
 
-      // If still no match, try finding significant substrings
+      // Tier 2.5: Alphanumeric-only matching
+      // Handles cases where punctuation (hyphens, slashes) breaks matching
+      // e.g., "24-02-VH-7053819" matches even if split as "24-02-VH" + "-7053819"
+      if (matchIndex === -1) {
+        const searchAlphaNum = normalizeAlphanumeric(cleanedSearch);
+        const fullTextAlphaNum = normalizeAlphanumeric(fullText);
+
+        if (searchAlphaNum.length >= 4) {
+          const alphaNumIndex = fullTextAlphaNum.indexOf(searchAlphaNum);
+          if (alphaNumIndex !== -1) {
+            // Map back to original text position
+            let origPos = 0;
+            let alphaPos = 0;
+            while (alphaPos < alphaNumIndex && origPos < fullText.length) {
+              if (/[a-zA-Z0-9]/.test(fullText[origPos])) {
+                alphaPos++;
+              }
+              origPos++;
+            }
+            matchIndex = origPos;
+            // Find end position
+            const endAlphaPos = alphaPos + searchAlphaNum.length;
+            while (alphaPos < endAlphaPos && origPos < fullText.length) {
+              if (/[a-zA-Z0-9]/.test(fullText[origPos])) {
+                alphaPos++;
+              }
+              origPos++;
+            }
+            matchLength = origPos - matchIndex;
+          }
+        }
+      }
+
+      // Tier 3: Significant substrings
       if (matchIndex === -1) {
         // Try to find the longest significant word/number sequence
         const significantParts = normalizedSearch
           .split(/[\s:,;]+/)
-          .filter(p => p.length >= 4)
+          .filter(p => p.length >= 3)  // Lowered from 4 to catch shorter values
           .sort((a, b) => b.length - a.length); // Longest first
 
         for (const part of significantParts) {
@@ -144,6 +182,22 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
             matchIndex = partIndex;
             matchLength = part.length;
             break;
+          }
+        }
+      }
+
+      // Tier 3.5: Number-sequence matching for dates, policy numbers, IDs
+      if (matchIndex === -1) {
+        const numberSequences = cleanedSearch.match(/\d{3,}/g);  // 3+ digit sequences
+        if (numberSequences) {
+          // Sort by length (longest first) for best match
+          for (const numSeq of numberSequences.sort((a, b) => b.length - a.length)) {
+            const seqIndex = fullText.indexOf(numSeq);
+            if (seqIndex !== -1) {
+              matchIndex = seqIndex;
+              matchLength = numSeq.length;
+              break;
+            }
           }
         }
       }
@@ -211,8 +265,14 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     useImperativeHandle(ref, () => ({
       goToPage: (page: number) => {
         if (numPages > 0 && page >= 1 && page <= numPages) {
-          setPageRendered(false);  // Reset to trigger highlight on new page
-          setPageNumber(page);
+          if (page === pageNumber) {
+            // Already on this page - force highlight refresh via state toggle
+            setPageRendered(false);
+            setTimeout(() => setPageRendered(true), 50);
+          } else {
+            setPageRendered(false);  // Reset to trigger highlight on new page
+            setPageNumber(page);
+          }
         }
       },
       highlightText: (text: string) => {
