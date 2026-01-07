@@ -31,6 +31,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
   const [highlightCharStart, setHighlightCharStart] = useState<number | undefined>();
   const [highlightCharEnd, setHighlightCharEnd] = useState<number | undefined>();
 
+  // Optional fields toggle
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
+
   useEffect(() => {
     loadDoc();
   }, [docId]);
@@ -265,6 +268,8 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 onQuoteClick={handleQuoteClick}
                 docType={doc.doc_type}
                 runId={extraction.run.run_id}
+                showOptionalFields={showOptionalFields}
+                onToggleOptionalFields={() => setShowOptionalFields(!showOptionalFields)}
               />
             ) : (
               <div className="p-4 text-gray-500">
