@@ -10,6 +10,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 export interface PDFViewerHandle {
   goToPage: (page: number) => void;
   highlightText: (text: string) => void;
+  isLoaded: () => boolean;
 }
 
 interface PDFViewerProps {
@@ -209,15 +210,15 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     // Expose methods via ref
     useImperativeHandle(ref, () => ({
       goToPage: (page: number) => {
-        if (page >= 1 && page <= numPages) {
-          setPageNumber(page);
-        } else if (page >= 1) {
+        if (numPages > 0 && page >= 1 && page <= numPages) {
+          setPageRendered(false);  // Reset to trigger highlight on new page
           setPageNumber(page);
         }
       },
       highlightText: (text: string) => {
         setHighlightQuery(text);
       },
+      isLoaded: () => numPages > 0,
     }));
 
     // Apply highlight when query or page changes
@@ -238,12 +239,16 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
       }
     }, [initialHighlight]);
 
-    // Navigate to highlighted page when it changes
+    // Set initial page from prop only once when document loads
+    // NOTE: We intentionally do NOT continuously sync currentPage prop to state
+    // because that would overwrite ref-based navigation (goToPage calls from parent)
     useEffect(() => {
-      if (currentPage && currentPage >= 1 && currentPage <= numPages) {
+      if (currentPage && currentPage >= 1 && numPages > 0 && pageNumber === 1) {
+        // Only set initial page if we're still on page 1 (not navigated yet)
         setPageNumber(currentPage);
       }
-    }, [currentPage, numPages]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [numPages]);  // Only trigger when document finishes loading
 
     // Measure container width for responsive PDF scaling
     useEffect(() => {

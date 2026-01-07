@@ -47,15 +47,28 @@ export function DocumentViewer({
   // When highlight changes (evidence clicked), navigate PDF to that page and highlight text
   useEffect(() => {
     if (highlightPage !== undefined && activeTab === "pdf" && pdfViewerRef.current) {
-      pdfViewerRef.current.goToPage(highlightPage);
-      // Prioritize highlighting the extracted value over the full quote
-      const textToHighlight = highlightValue || highlightQuote;
-      if (textToHighlight) {
-        // Small delay to allow page navigation
-        setTimeout(() => {
-          pdfViewerRef.current?.highlightText(textToHighlight);
-        }, 300);
-      }
+      const navigateAndHighlight = () => {
+        if (!pdfViewerRef.current) return;
+
+        // Check if PDF is loaded before navigating
+        if (!pdfViewerRef.current.isLoaded()) {
+          // PDF not loaded yet, retry after a delay
+          setTimeout(navigateAndHighlight, 200);
+          return;
+        }
+
+        pdfViewerRef.current.goToPage(highlightPage);
+        // Prioritize highlighting the extracted value over the full quote
+        const textToHighlight = highlightValue || highlightQuote;
+        if (textToHighlight) {
+          // Small delay to allow page navigation and render
+          setTimeout(() => {
+            pdfViewerRef.current?.highlightText(textToHighlight);
+          }, 300);
+        }
+      };
+
+      navigateAndHighlight();
     }
   }, [highlightPage, highlightQuote, highlightValue, activeTab]);
 
