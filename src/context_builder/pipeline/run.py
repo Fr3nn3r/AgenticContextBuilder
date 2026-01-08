@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from context_builder.classification import ClassifierFactory
 from context_builder.extraction.base import ExtractorFactory, generate_run_id
@@ -731,6 +731,7 @@ def process_claim(
     model: str = "gpt-4o",
     compute_metrics: bool = True,
     stage_config: Optional[StageConfig] = None,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> ClaimResult:
     """
     Process all documents in a claim through selected pipeline stages.
@@ -745,6 +746,7 @@ def process_claim(
         model: Model name for manifest
         compute_metrics: If True, compute metrics.json at end
         stage_config: Configuration for which stages to run (default: all)
+        progress_callback: Optional callback(idx, total, filename) for progress reporting
 
     Returns:
         ClaimResult with aggregated stats
@@ -797,7 +799,7 @@ def process_claim(
 
         # Process each document
         results: List[DocResult] = []
-        for doc in claim.documents:
+        for idx, doc in enumerate(claim.documents):
             logger.info(f"Processing document: {doc.original_filename}")
 
             # Create document structure
@@ -815,6 +817,10 @@ def process_claim(
                 stage_config=stage_config,
             )
             results.append(result)
+
+            # Report progress after document completion
+            if progress_callback:
+                progress_callback(idx + 1, len(claim.documents), doc.original_filename)
 
             logger.info(
                 f"Document {doc.original_filename}: {result.status} "

@@ -15,6 +15,7 @@ from typing import Optional
 import colorlog
 from dotenv import load_dotenv
 from rich.console import Console
+from tqdm import tqdm
 
 from context_builder.ingestion import (
     IngestionFactory,
@@ -551,6 +552,11 @@ Examples:
     )
     pipeline_logging_group.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+    pipeline_logging_group.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable progress bars (useful for CI/logging)",
     )
 
     # ========== INDEX SUBCOMMAND (NEW) ==========
@@ -1361,16 +1367,60 @@ def main():
                 print(f"[!] Invalid --stages argument: {e}")
                 sys.exit(1)
 
+            # Determine if progress bars should be shown
+            show_progress = (
+                not args.quiet
+                and not getattr(args, "no_progress", False)
+                and sys.stdout.isatty()
+            )
+
             # Process each claim
             total_docs = 0
             success_docs = 0
             failed_claims = []
             claim_results = []  # Track results for global run manifest
 
-            for i, claim in enumerate(claims, 1):
-                logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
-                if not args.quiet:
-                    print(f"\n[{i}/{len(claims)}] Processing claim: {claim.claim_id} ({len(claim.documents)} docs)")
+            # Set up claims iterator with optional progress bar
+            if show_progress:
+                print(f"\nProcessing pipeline (run_id: {run_id})")
+                claims_pbar = tqdm(
+                    claims,
+                    desc="Claims",
+                    unit="claim",
+                    position=0,
+                    leave=True,
+                )
+            else:
+                claims_pbar = claims
+
+            for i, claim in enumerate(claims_pbar, 1):
+                if not show_progress:
+                    logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
+                    if not args.quiet:
+                        print(f"\n[{i}/{len(claims)}] Processing claim: {claim.claim_id} ({len(claim.documents)} docs)")
+
+                # Create document progress bar if showing progress
+                doc_pbar = None
+
+                def make_progress_callback(pbar):
+                    """Create a progress callback that updates the given progress bar."""
+                    def callback(idx, total, filename):
+                        if pbar:
+                            pbar.update(1)
+                    return callback
+
+                if show_progress:
+                    # Truncate long claim IDs for display
+                    display_id = claim.claim_id[:20] if len(claim.claim_id) > 20 else claim.claim_id
+                    doc_pbar = tqdm(
+                        total=len(claim.documents),
+                        desc=f"  {display_id}",
+                        unit="doc",
+                        position=1,
+                        leave=False,
+                    )
+
+                progress_callback = make_progress_callback(doc_pbar) if show_progress else None
 
                 try:
                     result = process_claim(
@@ -1383,6 +1433,7 @@ def main():
                         model=args.model,
                         compute_metrics=not args.no_metrics,
                         stage_config=stage_config,
+                        progress_callback=progress_callback,
                     )
 
                     total_docs += len(result.documents)
@@ -1398,6 +1449,13 @@ def main():
                 except Exception as e:
                     logger.error(f"Failed to process claim {claim.claim_id}: {e}")
                     failed_claims.append(claim.claim_id)
+                finally:
+                    if doc_pbar:
+                        doc_pbar.close()
+
+            # Close claims progress bar if used
+            if show_progress and hasattr(claims_pbar, "close"):
+                claims_pbar.close()
 
             # Create global (workspace-scoped) run
             if claim_results:
