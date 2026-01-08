@@ -71,6 +71,11 @@ function App() {
   useEffect(() => {
     let result = [...claims];
 
+    // Filter by run - only show claims that are in the selected run
+    if (selectedRunId) {
+      result = result.filter((c) => c.in_run);
+    }
+
     // Search filter
     if (searchQuery) {
       result = result.filter((c) =>
@@ -100,7 +105,7 @@ function App() {
     }
 
     setFilteredClaims(result);
-  }, [claims, searchQuery, lobFilter, statusFilter, riskFilter]);
+  }, [claims, searchQuery, lobFilter, statusFilter, riskFilter, selectedRunId]);
 
   async function loadRuns() {
     try {
@@ -174,10 +179,10 @@ function App() {
   function getPageTitle(): string {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "Extraction";
-    if (path === "/claims") return "Claim Document Pack";
-    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Pack Review";
+    if (path === "/claims") return "Document Review";
+    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Review";
     if (path === "/classification") return "Classification Review";
-    if (path === "/insights") return "Calibration Insights";
+    if (path === "/insights") return "Benchmark";
     if (path === "/templates") return "Extraction Templates";
     return "ContextBuilder";
   }
@@ -295,7 +300,7 @@ function App() {
               />
               <Route
                 path="/claims/:claimId/review"
-                element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} />}
+                element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} selectedRunId={selectedRunId} />}
               />
               <Route path="/classification" element={<ClassificationReview />} />
               <Route path="/insights" element={<InsightsPage />} />

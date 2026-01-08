@@ -6,7 +6,7 @@ import { cn } from "../lib/utils";
 import { getAzureDI } from "../api/client";
 import { computeBoundingBoxes } from "../lib/bboxUtils";
 
-type ViewerTab = "text" | "pdf" | "image" | "json";
+type ViewerTab = "text" | "pdf" | "image";
 
 interface DocumentViewerProps {
   pages: PageContent[];
@@ -31,7 +31,7 @@ export function DocumentViewer({
   sourceUrl,
   hasPdf = false,
   hasImage = false,
-  extraction,
+  extraction: _extraction,
   highlightQuote,
   highlightPage,
   highlightCharStart,
@@ -40,6 +40,7 @@ export function DocumentViewer({
   claimId,
   docId,
 }: DocumentViewerProps) {
+  void _extraction; // Kept for backwards compatibility
   // Default to PDF if available, otherwise text
   const defaultTab: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
   const [activeTab, setActiveTab] = useState<ViewerTab>(defaultTab);
@@ -137,9 +138,6 @@ export function DocumentViewer({
   if (hasImage && sourceUrl) {
     availableTabs.push({ id: "image", label: "Image" });
   }
-  if (extraction) {
-    availableTabs.push({ id: "json", label: "JSON" });
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -190,14 +188,6 @@ export function DocumentViewer({
               alt="Document"
               className="max-w-full h-auto mx-auto shadow-lg"
             />
-          </div>
-        )}
-
-        {activeTab === "json" && extraction && (
-          <div className="h-full overflow-auto p-4 bg-gray-900">
-            <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
-              {JSON.stringify(extraction, null, 2)}
-            </pre>
           </div>
         )}
       </div>

@@ -9,8 +9,8 @@ interface SidebarProps {
 
 const navItems = [
   { id: "dashboard" as View, label: "Extraction", path: "/dashboard", icon: DashboardIcon },
-  { id: "claims" as View, label: "Claim Document Pack", path: "/claims", icon: ClaimsIcon },
   { id: "classification" as View, label: "Classification Review", path: "/classification", icon: ClassificationIcon },
+  { id: "claims" as View, label: "Document Review", path: "/claims", icon: ClaimsIcon },
   { id: "insights" as View, label: "Benchmark", path: "/insights", icon: InsightsIcon },
   { id: "templates" as View, label: "Extraction Templates", path: "/templates", icon: TemplatesIcon },
 ];

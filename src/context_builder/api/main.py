@@ -666,12 +666,10 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None), run_id: Optional
     doc_text = storage.get_doc_text(doc_id)
     pages = doc_text.pages if doc_text else []
 
-    # Get extraction for latest or specific run
+    # Get extraction for specific run only (run_id is required for extraction lookup)
     extraction = None
-    runs = storage.list_runs()
-    if runs:
-        target_run_id = run_id or runs[-1].run_id  # Use latest run (index is oldest-first)
-        extraction = storage.get_extraction(target_run_id, doc_id, claim_id=resolved_claim_id)
+    if run_id:
+        extraction = storage.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
 
     # Load labels (uses index for fast lookup if available)
     labels = storage.get_label(doc_id)

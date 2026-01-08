@@ -49,9 +49,13 @@ export async function listClaimRuns(): Promise<ClaimRunInfo[]> {
   return fetchJson<ClaimRunInfo[]>(`${API_BASE}/claims/runs`);
 }
 
-export async function getDoc(docId: string, claimId?: string): Promise<DocPayload> {
-  const url = claimId
-    ? `${API_BASE}/docs/${docId}?claim_id=${claimId}`
+export async function getDoc(docId: string, claimId?: string, runId?: string): Promise<DocPayload> {
+  const params = new URLSearchParams();
+  if (claimId) params.set("claim_id", claimId);
+  if (runId) params.set("run_id", runId);
+  const queryString = params.toString();
+  const url = queryString
+    ? `${API_BASE}/docs/${docId}?${queryString}`
     : `${API_BASE}/docs/${docId}`;
   return fetchJson<DocPayload>(url);
 }

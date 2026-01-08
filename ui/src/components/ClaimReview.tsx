@@ -8,9 +8,10 @@ import { cn } from "../lib/utils";
 
 interface ClaimReviewProps {
   onSaved: () => void;
+  selectedRunId: string | null;
 }
 
-export function ClaimReview({ onSaved }: ClaimReviewProps) {
+export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
   const { claimId } = useParams<{ claimId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,7 +25,6 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
 
   // Review state
   const [notes, setNotes] = useState("");
-  const [docTypeCorrect, setDocTypeCorrect] = useState<"yes" | "no" | "unsure">("yes");
 
   // Field-level labels state
   const [fieldLabels, setFieldLabels] = useState<FieldLabel[]>([]);
@@ -49,12 +49,12 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     }
   }, [claimId]);
 
-  // Load document when activeDocId changes
+  // Load document when activeDocId or selectedRunId changes
   useEffect(() => {
     if (activeDocId && claimId) {
       loadDocument(activeDocId);
     }
-  }, [activeDocId, claimId]);
+  }, [activeDocId, claimId, selectedRunId]);
 
   async function loadClaimData() {
     if (!claimId) return;
@@ -74,14 +74,13 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     if (!claimId) return;
     try {
       setDocLoading(true);
-      const data = await getDoc(docId, claimId);
+      const data = await getDoc(docId, claimId, selectedRunId || undefined);
       setCurrentDoc(data);
 
       // Initialize review state from existing labels or extraction fields
       if (data.labels) {
         setFieldLabels(data.labels.field_labels || []);
         setNotes(data.labels.review.notes || "");
-        setDocTypeCorrect(data.labels.doc_labels.doc_type_correct ? "yes" : "no");
       } else if (data.extraction) {
         // Initialize field labels from extraction fields with UNLABELED state
         setFieldLabels(
@@ -92,11 +91,9 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
           }))
         );
         setNotes("");
-        setDocTypeCorrect("yes");
       } else {
         setFieldLabels([]);
         setNotes("");
-        setDocTypeCorrect("yes");
       }
     } catch (err) {
       console.error("Failed to load document:", err);
@@ -168,7 +165,7 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
     try {
       setSavingDocId(docId);
       const docLabels: DocLabels = {
-        doc_type_correct: docTypeCorrect === "yes",
+        doc_type_correct: true,
       };
       // Use "system" as reviewer until accounts are implemented
       await saveLabels(docId, "system", notes, fieldLabels, docLabels);
@@ -389,51 +386,14 @@ export function ClaimReview({ onSaved }: ClaimReviewProps) {
               />
             ) : (
               <div className="p-4 text-gray-500">
-                {docLoading ? "Loading..." : "No extraction results available"}
+                {docLoading ? "Loading..." : selectedRunId ? "No extraction available in this run" : "No extraction results available"}
               </div>
             )}
           </div>
 
-          {/* Bottom: Review controls */}
+          {/* Bottom: Save button */}
           {currentDoc && (
-            <div className="border-t p-3 bg-gray-50 space-y-3">
-              {/* Doc type correct */}
-              <div>
-                <div className="text-sm text-gray-700 mb-1">
-                  Document type "<span className="font-medium">{currentDoc.doc_type}</span>" correct?
-                </div>
-                <div className="flex gap-2">
-                  {(["yes", "no", "unsure"] as const).map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setDocTypeCorrect(option)}
-                      className={cn(
-                        "px-3 py-1 text-sm rounded border transition-colors",
-                        docTypeCorrect === option
-                          ? option === "yes"
-                            ? "bg-green-100 border-green-500 text-green-700"
-                            : option === "no"
-                            ? "bg-red-100 border-red-500 text-red-700"
-                            : "bg-yellow-100 border-yellow-500 text-yellow-700"
-                          : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
-                      )}
-                    >
-                      {option.charAt(0).toUpperCase() + option.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Notes */}
-              <input
-                type="text"
-                placeholder="Notes (optional)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
-              />
-
-              {/* Save button */}
+            <div className="border-t p-3 bg-gray-50">
               <button
                 data-testid="save-labels-btn"
                 onClick={() => activeDocId && handleSaveReview(activeDocId)}

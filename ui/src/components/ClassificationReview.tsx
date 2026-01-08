@@ -1,5 +1,17 @@
 import { useState, useEffect } from "react";
 import { cn } from "../lib/utils";
+import { formatDocType } from "../lib/formatters";
+import {
+  MetricCard,
+  MetricCardRow,
+  ScoreBadge,
+  StatusBadge,
+  PendingBadge,
+  ConfirmedBadge,
+  SelectToViewEmptyState,
+  Spinner,
+  NoDocumentsEmptyState,
+} from "./shared";
 import type {
   ClassificationDoc,
   ClassificationDetail,
@@ -54,6 +66,20 @@ export function ClassificationReview() {
 
   // Filter
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reviewed">("all");
+
+  // Sorting state
+  type SortColumn = "filename" | "predicted_type" | "confidence" | "review_status";
+  const [sortColumn, setSortColumn] = useState<SortColumn>("filename");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
 
   // Load runs on mount
   useEffect(() => {
@@ -164,12 +190,31 @@ export function ClassificationReview() {
     }
   }
 
-  // Filter docs
-  const filteredDocs = docs.filter((d) => {
-    if (statusFilter === "pending") return d.review_status === "pending";
-    if (statusFilter === "reviewed") return d.review_status !== "pending";
-    return true;
-  });
+  // Filter and sort docs
+  const filteredDocs = docs
+    .filter((d) => {
+      if (statusFilter === "pending") return d.review_status === "pending";
+      if (statusFilter === "reviewed") return d.review_status !== "pending";
+      return true;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortColumn) {
+        case "filename":
+          comparison = a.filename.localeCompare(b.filename);
+          break;
+        case "predicted_type":
+          comparison = a.predicted_type.localeCompare(b.predicted_type);
+          break;
+        case "confidence":
+          comparison = a.confidence - b.confidence;
+          break;
+        case "review_status":
+          comparison = a.review_status.localeCompare(b.review_status);
+          break;
+      }
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
 
   return (
     <div className="h-full flex flex-col">
@@ -207,28 +252,29 @@ export function ClassificationReview() {
 
         {/* KPI Cards */}
         {stats && (
-          <div className="grid grid-cols-4 gap-4">
-            <KPICard
+          <MetricCardRow columns={4}>
+            <MetricCard
               label="Documents"
               value={stats.docs_total}
               subtext={`${stats.docs_reviewed} reviewed`}
             />
-            <KPICard
+            <MetricCard
               label="Reviewed"
               value={`${stats.docs_total > 0 ? Math.round((stats.docs_reviewed / stats.docs_total) * 100) : 0}%`}
               subtext={`${stats.docs_reviewed} of ${stats.docs_total}`}
             />
-            <KPICard
+            <MetricCard
               label="Overrides"
               value={stats.overrides_count}
               subtext={stats.docs_reviewed > 0 ? `${Math.round((stats.overrides_count / stats.docs_reviewed) * 100)}% of reviewed` : ""}
+              variant={stats.overrides_count > 0 ? "warning" : "default"}
             />
-            <KPICard
+            <MetricCard
               label="Avg Confidence"
               value={`${Math.round(stats.avg_confidence * 100)}%`}
               subtext="classification confidence"
             />
-          </div>
+          </MetricCardRow>
         )}
       </div>
 
@@ -237,17 +283,49 @@ export function ClassificationReview() {
         {/* Doc List */}
         <div className="w-1/2 border-r overflow-auto bg-white">
           {docsLoading ? (
-            <div className="p-8 text-center text-gray-500">Loading...</div>
+            <div className="p-8 flex justify-center"><Spinner /></div>
           ) : filteredDocs.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No documents found</div>
+            <NoDocumentsEmptyState />
           ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Doc</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conf.</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("filename")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Doc
+                      <SortIcon active={sortColumn === "filename"} direction={sortDirection} />
+                    </div>
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("predicted_type")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Type
+                      <SortIcon active={sortColumn === "predicted_type"} direction={sortDirection} />
+                    </div>
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("confidence")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Conf.
+                      <SortIcon active={sortColumn === "confidence"} direction={sortDirection} />
+                    </div>
+                  </th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("review_status")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Status
+                      <SortIcon active={sortColumn === "review_status"} direction={sortDirection} />
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -275,10 +353,10 @@ export function ClassificationReview() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <ConfidenceBadge confidence={doc.confidence} />
+                      <ScoreBadge value={Math.round(doc.confidence * 100)} />
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={doc.review_status} />
+                      <ReviewStatusBadge status={doc.review_status} />
                     </td>
                   </tr>
                 ))}
@@ -290,12 +368,12 @@ export function ClassificationReview() {
         {/* Detail Panel */}
         <div className="w-1/2 overflow-auto bg-gray-50 p-6">
           {detailLoading ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              Loading...
+            <div className="flex items-center justify-center h-full">
+              <Spinner />
             </div>
           ) : !detail ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              Select a document to review
+            <div className="flex items-center justify-center h-full">
+              <SelectToViewEmptyState itemType="document" />
             </div>
           ) : (
             <div className="space-y-6">
@@ -447,43 +525,28 @@ export function ClassificationReview() {
 
 // Helper components
 
-function KPICard({ label, value, subtext }: { label: string; value: string | number; subtext?: string }) {
+function ReviewStatusBadge({ status }: { status: "pending" | "confirmed" | "overridden" }) {
+  if (status === "pending") return <PendingBadge />;
+  if (status === "confirmed") return <ConfirmedBadge />;
+  // Overridden
+  return <StatusBadge variant="warning">Overridden</StatusBadge>;
+}
+
+function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
+  if (!active) {
+    return (
+      <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+      </svg>
+    );
+  }
   return (
-    <div className="bg-gray-50 rounded-lg p-4">
-      <div className="text-sm text-gray-600 mb-1">{label}</div>
-      <div className="text-2xl font-semibold text-gray-900">{value}</div>
-      {subtext && <div className="text-xs text-gray-500 mt-1">{subtext}</div>}
-    </div>
+    <svg className="w-3 h-3 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {direction === "asc" ? (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      ) : (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      )}
+    </svg>
   );
-}
-
-function ConfidenceBadge({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100);
-  const color = pct >= 90 ? "text-green-600" : pct >= 70 ? "text-amber-600" : "text-red-600";
-  return <span className={cn("text-sm font-medium", color)}>{pct}%</span>;
-}
-
-function StatusBadge({ status }: { status: "pending" | "confirmed" | "overridden" }) {
-  const styles = {
-    pending: "bg-gray-100 text-gray-700",
-    confirmed: "bg-green-100 text-green-700",
-    overridden: "bg-amber-100 text-amber-700",
-  };
-  const labels = {
-    pending: "Pending",
-    confirmed: "Confirmed",
-    overridden: "Overridden",
-  };
-  return (
-    <span className={cn("px-2 py-1 rounded-full text-xs font-medium", styles[status])}>
-      {labels[status]}
-    </span>
-  );
-}
-
-function formatDocType(type: string): string {
-  return type
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }

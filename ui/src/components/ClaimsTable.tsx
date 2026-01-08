@@ -1,7 +1,17 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import type { ClaimSummary, DocSummary } from "../types";
 import type { ClaimRunInfo } from "../api/client";
 import { cn } from "../lib/utils";
+import { formatTimestamp, formatDocType } from "../lib/formatters";
+import {
+  MetricCard,
+  MetricCardRow,
+  LabeledBadge,
+  UnlabeledBadge,
+  GateStatusBadge,
+  NotInRunBadge,
+  NoSearchResultsEmptyState,
+} from "./shared";
 
 interface ClaimsTableProps {
   claims: ClaimSummary[];
@@ -26,15 +36,6 @@ interface ClaimsTableProps {
   onNavigateToReview: (claimId: string) => void;
 }
 
-function formatTimestamp(ts: string | null): string {
-  if (!ts) return "Unknown";
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return ts;
-  }
-}
-
 export function ClaimsTable({
   claims,
   totalCount,
@@ -57,6 +58,44 @@ export function ClaimsTable({
 }: ClaimsTableProps) {
   void _selectedClaim; // Used for future features
   const [expandedClaim, setExpandedClaim] = useState<string | null>(null);
+
+  // Sorting state
+  type SortColumn = "claim_id" | "doc_count" | "labeled" | "gate" | "last_processed";
+  const [sortColumn, setSortColumn] = useState<SortColumn>("claim_id");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
+
+  // Sort claims
+  const sortedClaims = [...claims].sort((a, b) => {
+    let comparison = 0;
+    switch (sortColumn) {
+      case "claim_id":
+        comparison = a.claim_id.localeCompare(b.claim_id);
+        break;
+      case "doc_count":
+        comparison = a.doc_count - b.doc_count;
+        break;
+      case "labeled":
+        comparison = a.labeled_count - b.labeled_count;
+        break;
+      case "gate":
+        // Sort by fail count (higher = worse = later in asc)
+        comparison = a.gate_fail_count - b.gate_fail_count;
+        break;
+      case "last_processed":
+        comparison = (a.last_processed || "").localeCompare(b.last_processed || "");
+        break;
+    }
+    return sortDirection === "asc" ? comparison : -comparison;
+  });
 
   // Get selected run metadata
   const selectedRun = runs.find((r) => r.run_id === selectedRunId);
@@ -86,7 +125,7 @@ export function ClaimsTable({
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Claim Document Pack</h2>
+            <h2 className="text-2xl font-semibold text-gray-900">Document Review</h2>
             <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
           </div>
 
@@ -126,33 +165,29 @@ export function ClaimsTable({
       </div>
 
       {/* KPI Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-semibold text-gray-900">{totalCount}</div>
-          <div className="text-sm text-gray-500">Claims</div>
-          {claimsNotInRun > 0 && (
-            <div className="text-xs text-amber-600 mt-1">{claimsNotInRun} not in run</div>
-          )}
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-semibold text-gray-900">
-            {totalDocsLabeled} / {totalDocs}
-          </div>
-          <div className="text-sm text-gray-500">Docs labeled</div>
-          <div className="text-xs text-gray-400 mt-1">Run-independent</div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-semibold text-red-600">
-            {totalGateFail}
-          </div>
-          <div className="text-sm text-gray-500">Docs failing gate</div>
-          <div className="text-xs text-gray-400 mt-1">In selected run</div>
-        </div>
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-semibold text-blue-600">{claimsInRun}</div>
-          <div className="text-sm text-gray-500">Claims in run</div>
-        </div>
-      </div>
+      <MetricCardRow columns={4} className="mb-6">
+        <MetricCard
+          label="Claims"
+          value={totalCount}
+          subtext={claimsNotInRun > 0 ? `${claimsNotInRun} not in run` : undefined}
+          variant={claimsNotInRun > 0 ? "warning" : "default"}
+        />
+        <MetricCard
+          label="Docs labeled"
+          value={`${totalDocsLabeled} / ${totalDocs}`}
+          subtext="Run-independent"
+        />
+        <MetricCard
+          label="Docs failing gate"
+          value={totalGateFail}
+          subtext="In selected run"
+          variant={totalGateFail > 0 ? "error" : "default"}
+        />
+        <MetricCard
+          label="Claims in run"
+          value={claimsInRun}
+        />
+      </MetricCardRow>
 
       {/* Filters and Search */}
       <div className="flex items-center justify-between mb-6">
@@ -223,34 +258,59 @@ export function ClaimsTable({
           <thead>
             <tr className="border-b bg-gray-50">
               <th className="w-10 px-4 py-3"></th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+              <th
+                className="px-4 py-3 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("claim_id")}
+              >
                 <div className="flex items-center gap-1">
                   Claim ID
-                  <SortIcon />
+                  <SortIcon active={sortColumn === "claim_id"} direction={sortDirection} />
                 </div>
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">LOB</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Docs</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Labeled</th>
               <th
-                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-help"
+                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("doc_count")}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  Docs
+                  <SortIcon active={sortColumn === "doc_count"} direction={sortDirection} />
+                </div>
+              </th>
+              <th
+                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("labeled")}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  Labeled
+                  <SortIcon active={sortColumn === "labeled"} direction={sortDirection} />
+                </div>
+              </th>
+              <th
+                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("gate")}
                 title="Extraction Gate (Run): PASS/WARN/FAIL based on required fields presence, evidence quality, and extraction errors for the selected run"
               >
-                Extraction Gate
+                <div className="flex items-center justify-center gap-1">
+                  Extraction Gate
+                  <SortIcon active={sortColumn === "gate"} direction={sortDirection} />
+                </div>
               </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">
+              <th
+                className="px-4 py-3 text-right text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort("last_processed")}
+              >
                 <div className="flex items-center justify-end gap-1">
                   Last processed
-                  <SortIcon />
+                  <SortIcon active={sortColumn === "last_processed"} direction={sortDirection} />
                 </div>
               </th>
             </tr>
           </thead>
           <tbody>
-            {claims.map((claim) => (
-              <>
+            {sortedClaims.map((claim) => (
+              <Fragment key={claim.claim_id}>
                 <tr
-                  key={claim.claim_id}
                   onClick={() => handleClaimClick(claim)}
                   className={cn(
                     "border-b cursor-pointer hover:bg-gray-50 transition-colors",
@@ -281,11 +341,7 @@ export function ClaimsTable({
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900">{claim.claim_id}</span>
-                      {!claim.in_run && (
-                        <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
-                          Not in run
-                        </span>
-                      )}
+                      {!claim.in_run && <NotInRunBadge />}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -375,7 +431,7 @@ export function ClaimsTable({
                                       {doc.filename}
                                     </div>
                                     <div className="text-xs text-gray-500">
-                                      {doc.doc_type} &middot; {Math.round(doc.confidence * 100)}%
+                                      {formatDocType(doc.doc_type)} &middot; {Math.round(doc.confidence * 100)}%
                                     </div>
                                     {doc.missing_required_fields && doc.missing_required_fields.length > 0 && (
                                       <div className="text-xs text-red-600 mt-0.5">
@@ -386,17 +442,9 @@ export function ClaimsTable({
                                 </div>
                                 <div className="flex items-center gap-2">
                                   {/* Gate Badge */}
-                                  <GateBadge status={doc.quality_status} />
+                                  {doc.quality_status && <GateStatusBadge status={doc.quality_status as "pass" | "warn" | "fail"} />}
                                   {/* Labeled/Unlabeled Badge */}
-                                  {doc.has_labels ? (
-                                    <span className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded">
-                                      Labeled
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                                      Unlabeled
-                                    </span>
-                                  )}
+                                  {doc.has_labels ? <LabeledBadge /> : <UnlabeledBadge />}
                                   <svg
                                     className="w-4 h-4 text-gray-400"
                                     fill="none"
@@ -419,25 +467,33 @@ export function ClaimsTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
 
-        {claims.length === 0 && (
-          <div className="py-12 text-center text-gray-500">
-            No claims found matching your filters.
-          </div>
-        )}
+        {claims.length === 0 && <NoSearchResultsEmptyState />}
       </div>
     </div>
   );
 }
 
-function SortIcon() {
+function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
+  if (!active) {
+    return (
+      <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+      </svg>
+    );
+  }
+  // Show single arrow for active sort
   return (
-    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {direction === "asc" ? (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      ) : (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      )}
     </svg>
   );
 }
@@ -482,22 +538,6 @@ function GateSummary({ pass, warn, fail }: { pass: number; warn: number; fail: n
         <span className="text-gray-400">-</span>
       )}
     </div>
-  );
-}
-
-function GateBadge({ status }: { status: string | null }) {
-  if (!status) return null;
-
-  const styles: Record<string, string> = {
-    pass: "bg-green-100 text-green-700",
-    warn: "bg-yellow-100 text-yellow-700",
-    fail: "bg-red-100 text-red-700",
-  };
-
-  return (
-    <span className={cn("text-xs px-2 py-1 rounded font-medium", styles[status])}>
-      Gate: {status.toUpperCase()}
-    </span>
   );
 }
 

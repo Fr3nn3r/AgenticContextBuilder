@@ -1,19 +1,16 @@
 import { useState, useMemo } from "react";
 import { cn } from "../lib/utils";
+import { formatDocType } from "../lib/formatters";
+import {
+  ScoreBadge,
+  CompleteBadge,
+  PartialBadge,
+  FailBadge,
+  LatestBadge,
+  PageLoadingSkeleton,
+  SelectToViewEmptyState,
+} from "./shared";
 import type { DetailedRunInfo, InsightsOverview, DocTypeMetrics } from "../api/client";
-
-// Human-readable doc type names
-const docTypeNames: Record<string, string> = {
-  loss_notice: "Loss Notice",
-  police_report: "Police Report",
-  insurance_policy: "Insurance Policy",
-  certificate: "Certificate",
-  other: "Other",
-};
-
-function getDocTypeName(docType: string): string {
-  return docTypeNames[docType] || docType.replace(/_/g, " ");
-}
 
 interface ExtractionPageProps {
   runs: DetailedRunInfo[];
@@ -124,11 +121,9 @@ export function ExtractionPage({
                     </span>
                     <div className="flex items-center gap-1">
                       {idx === 0 && date === "Today" && runs[0]?.run_id === run.run_id && (
-                        <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
-                          Latest
-                        </span>
+                        <LatestBadge />
                       )}
-                      <StatusBadge status={run.status} size="sm" />
+                      <RunStatusBadge status={run.status} />
                     </div>
                   </div>
                   <div className="text-xs text-gray-500 mt-1 truncate" title={run.run_id}>
@@ -158,12 +153,10 @@ export function ExtractionPage({
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-gray-500">Loading extraction data...</div>
-            </div>
+            <PageLoadingSkeleton message="Loading extraction data..." />
           ) : !selectedRun ? (
             <div className="flex items-center justify-center h-64">
-              <div className="text-gray-400">Select a run from the left panel</div>
+              <SelectToViewEmptyState itemType="run" />
             </div>
           ) : (
             <>
@@ -194,7 +187,7 @@ export function ExtractionPage({
                           ? new Date(selectedRun.timestamp).toLocaleString()
                           : "Unknown time"}
                       </span>
-                      <StatusBadge status={selectedRun.status} />
+                      <RunStatusBadge status={selectedRun.status} />
                       <span>
                         Duration:{" "}
                         {selectedRun.duration_seconds
@@ -278,7 +271,7 @@ export function ExtractionPage({
                             key={type}
                             className="flex justify-between text-xs text-gray-500"
                           >
-                            <span>{getDocTypeName(type)}</span>
+                            <span>{formatDocType(type)}</span>
                             <span>{count}</span>
                           </div>
                         ))}
@@ -401,7 +394,7 @@ export function ExtractionPage({
                               return (
                                 <tr key={docType} className="border-b last:border-0">
                                   <td className="py-2 text-gray-900">
-                                    {getDocTypeName(docType)}
+                                    {formatDocType(docType)}
                                   </td>
                                   <td className="py-2 text-right text-gray-600">
                                     {classifiedCount}
@@ -442,31 +435,10 @@ export function ExtractionPage({
 
 // Helper Components
 
-interface StatusBadgeProps {
-  status: "complete" | "partial" | "failed";
-  size?: "sm" | "md";
-}
-
-function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
-  const colors = {
-    complete: "bg-green-100 text-green-700",
-    partial: "bg-amber-100 text-amber-700",
-    failed: "bg-red-100 text-red-700",
-  };
-
-  const labels = {
-    complete: "Complete",
-    partial: "Partial",
-    failed: "Failed",
-  };
-
-  const sizeClasses = size === "sm" ? "text-xs px-1.5 py-0.5" : "text-xs px-2 py-1";
-
-  return (
-    <span className={cn("rounded font-medium", colors[status], sizeClasses)}>
-      {labels[status]}
-    </span>
-  );
+function RunStatusBadge({ status }: { status: "complete" | "partial" | "failed" }) {
+  if (status === "complete") return <CompleteBadge />;
+  if (status === "partial") return <PartialBadge />;
+  return <FailBadge />;
 }
 
 interface PhaseCardProps {
@@ -575,12 +547,6 @@ function ProgressBar({ label, description, value, total, percentage, color }: Pr
       </div>
     </div>
   );
-}
-
-function ScoreBadge({ value }: { value: number }) {
-  const color =
-    value >= 80 ? "text-green-600" : value >= 60 ? "text-amber-600" : "text-red-600";
-  return <span className={cn("font-medium", color)}>{value}%</span>;
 }
 
 // Icons

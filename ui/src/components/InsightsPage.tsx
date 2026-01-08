@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "../lib/utils";
+import { formatDocType, formatFieldName, formatTimestamp } from "../lib/formatters";
+import {
+  MetricCard,
+  MetricCardRow,
+  DeltaMetricCard,
+  getScoreVariant,
+  ScoreBadge,
+  LatestBadge,
+  BaselineBadge,
+  OutcomeBadge,
+  PageLoadingSkeleton,
+  NoLabelsEmptyState,
+} from "./shared";
 import {
   getInsightsFieldDetails,
   getInsightsExamples,
@@ -22,51 +35,6 @@ import {
   type RunComparison,
   type DetailedRunInfo,
 } from "../api/client";
-
-// Human-readable doc type names
-const docTypeNames: Record<string, string> = {
-  loss_notice: "Loss Notice",
-  police_report: "Police Report",
-  insurance_policy: "Insurance Policy",
-};
-
-// Human-readable field names
-const fieldDisplayNames: Record<string, string> = {
-  incident_date: "Incident Date",
-  incident_location: "Incident Location",
-  policy_number: "Policy Number",
-  claimant_name: "Claimant Name",
-  vehicle_plate: "Vehicle Plate",
-  vehicle_make: "Vehicle Make",
-  vehicle_model: "Vehicle Model",
-  vehicle_year: "Vehicle Year",
-  loss_description: "Loss Description",
-  reported_date: "Report Date",
-  report_date: "Report Date",
-  report_number: "Report Number",
-  officer_name: "Officer Name",
-  badge_number: "Badge Number",
-  location: "Location",
-  claim_number: "Claim Number",
-  coverage_start: "Coverage Start",
-};
-
-function getDocTypeName(docType: string): string {
-  return docTypeNames[docType] || docType.replace(/_/g, " ");
-}
-
-function getFieldName(field: string): string {
-  return fieldDisplayNames[field] || field.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function formatTimestamp(ts: string | null): string {
-  if (!ts) return "Unknown";
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return ts;
-  }
-}
 
 type ViewTab = "insights" | "history" | "compare";
 
@@ -285,11 +253,7 @@ export function InsightsPage() {
   }
 
   if (loading && !overview) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading insights...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton message="Loading benchmark data..." />;
   }
 
   if (error) {
@@ -513,34 +477,34 @@ function InsightsTab({
   return (
     <div className="space-y-4">
       {/* Overview KPIs */}
-      <section className="grid grid-cols-3 md:grid-cols-5 gap-3">
-        <KPICard
+      <MetricCardRow columns={5}>
+        <MetricCard
           label="Doc Coverage"
           value={`${overview?.docs_with_truth || 0}/${overview?.docs_total || 0}`}
           subtext="docs with truth labels"
         />
-        <KPICard
+        <MetricCard
           label="Field Coverage"
           value={`${overview?.labeled_fields || overview?.confirmed_fields || 0}/${overview?.total_fields || 0}`}
           subtext="labeled fields"
         />
-        <KPICard
+        <MetricCard
           label="Accuracy"
           value={`${overview?.accuracy_rate || 0}%`}
           subtext={`${overview?.correct_count || overview?.match_count || 0} correct / ${(overview?.correct_count || overview?.match_count || 0) + (overview?.incorrect_count || overview?.mismatch_count || 0) + (overview?.missing_count || overview?.miss_count || 0)} total`}
           variant={getScoreVariant(overview?.accuracy_rate || 0)}
         />
-        <KPICard
+        <MetricCard
           label="Evidence Rate"
           value={`${overview?.evidence_rate || 0}%`}
           variant={getScoreVariant(overview?.evidence_rate || 0)}
         />
-        <KPICard
+        <MetricCard
           label="Doc Type Wrong"
           value={overview?.docs_doc_type_wrong || 0}
           variant={overview?.docs_doc_type_wrong ? "warning" : "default"}
         />
-      </section>
+      </MetricCardRow>
 
       {/* Main row: Priorities + Scoreboard */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -549,9 +513,7 @@ function InsightsTab({
           <h2 className="text-sm font-semibold text-gray-700 mb-2">Top Error Drivers</h2>
           <div className="bg-white rounded-lg border shadow-sm max-h-[400px] overflow-y-auto">
             {priorities.length === 0 ? (
-              <div className="p-4 text-gray-500 text-center text-sm">
-                No error drivers found. Add truth labels to see insights.
-              </div>
+              <NoLabelsEmptyState />
             ) : (
               <div className="divide-y">
                 {priorities.map((item, idx) => (
@@ -565,9 +527,9 @@ function InsightsTab({
                   >
                     <div className="flex items-center gap-1.5 text-sm">
                       <span className="text-gray-400 font-mono w-5">{idx + 1}.</span>
-                      <span className="font-medium text-gray-900">{getDocTypeName(item.doc_type)}</span>
+                      <span className="font-medium text-gray-900">{formatDocType(item.doc_type)}</span>
                       <span className="text-gray-400">·</span>
-                      <span className="text-gray-700">{getFieldName(item.field_name)}</span>
+                      <span className="text-gray-700">{formatFieldName(item.field_name)}</span>
                       {item.is_required && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">Required</span>
                       )}
@@ -619,7 +581,7 @@ function InsightsTab({
                           )}
                         >
                           <td className="p-2 font-medium">
-                            {getDocTypeName(docType)}
+                            {formatDocType(docType)}
                           </td>
                           <td className="p-2 text-right text-gray-600">{classifiedCount}</td>
                           <td className="p-2 text-right text-gray-600">
@@ -647,7 +609,7 @@ function InsightsTab({
                             )}
                           </td>
                           <td className="p-2 text-gray-600 truncate max-w-[80px]" title={extractionMetrics?.top_failing_field || ""}>
-                            {extractionMetrics?.top_failing_field ? getFieldName(extractionMetrics.top_failing_field) : "-"}
+                            {extractionMetrics?.top_failing_field ? formatFieldName(extractionMetrics.top_failing_field) : "-"}
                           </td>
                         </tr>
                       );
@@ -663,7 +625,7 @@ function InsightsTab({
                       )}
                     >
                       <td className="p-2 font-medium">
-                        {getDocTypeName(dt.doc_type)}
+                        {formatDocType(dt.doc_type)}
                       </td>
                       <td className="p-2 text-right text-gray-600">—</td>
                       <td className="p-2 text-right text-gray-600">{dt.docs_total}</td>
@@ -677,7 +639,7 @@ function InsightsTab({
                         <ScoreBadge value={dt.evidence_rate_pct} />
                       </td>
                       <td className="p-2 text-gray-600 truncate max-w-[80px]" title={dt.top_failing_field || ""}>
-                        {dt.top_failing_field ? getFieldName(dt.top_failing_field) : "-"}
+                        {dt.top_failing_field ? formatFieldName(dt.top_failing_field) : "-"}
                       </td>
                     </tr>
                   ))
@@ -701,9 +663,9 @@ function InsightsTab({
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold">
                 {fieldDetails
-                  ? `${getDocTypeName(fieldDetails.doc_type)} · ${getFieldName(fieldDetails.field_name)}`
+                  ? `${formatDocType(fieldDetails.doc_type)} · ${formatFieldName(fieldDetails.field_name)}`
                   : selectedDocType
-                  ? `${getDocTypeName(selectedDocType)} Examples`
+                  ? `${formatDocType(selectedDocType)} Examples`
                   : "Details"}
               </h2>
               {fieldDetails && (
@@ -785,8 +747,8 @@ function RunHistoryTab({ runs, baselineRunId, selectedRunId, onSelectRun, onSetB
             >
               <td className="p-3 font-mono text-xs">
                 {run.run_id}
-                {idx === 0 && <span className="ml-2 text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Latest</span>}
-                {run.run_id === baselineRunId && <span className="ml-2 text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Baseline</span>}
+                {idx === 0 && <span className="ml-2"><LatestBadge /></span>}
+                {run.run_id === baselineRunId && <span className="ml-2"><BaselineBadge /></span>}
               </td>
               <td className="p-3 text-gray-600">{formatTimestamp(run.timestamp)}</td>
               <td className="p-3 text-gray-600">{run.model || "-"}</td>
@@ -881,11 +843,18 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
           {/* Overview Deltas */}
           <div className="bg-white rounded-lg border shadow-sm p-4">
             <h3 className="text-sm font-semibold mb-3">KPI Changes</h3>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+            <MetricCardRow columns={6}>
               {Object.entries(comparison.overview_deltas).map(([key, val]) => (
-                <DeltaCard key={key} label={formatKpiLabel(key)} baseline={val.baseline} current={val.current} delta={val.delta} />
+                <DeltaMetricCard
+                  key={key}
+                  label={formatKpiLabel(key)}
+                  baseline={val.baseline}
+                  current={val.current}
+                  delta={val.delta}
+                  isPercent={key.includes("presence") || key.includes("accuracy") || key.includes("evidence")}
+                />
               ))}
-            </div>
+            </MetricCardRow>
           </div>
 
           {/* Doc Type Deltas */}
@@ -903,7 +872,7 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
               <tbody>
                 {comparison.doc_type_deltas.map((dt) => (
                   <tr key={dt.doc_type} className="border-b">
-                    <td className="p-2 font-medium">{getDocTypeName(dt.doc_type)}</td>
+                    <td className="p-2 font-medium">{formatDocType(dt.doc_type)}</td>
                     <td className="p-2 text-right"><DeltaBadge delta={dt.presence_delta} /></td>
                     <td className="p-2 text-right"><DeltaBadge delta={dt.accuracy_delta} /></td>
                     <td className="p-2 text-right"><DeltaBadge delta={dt.evidence_delta} /></td>
@@ -926,9 +895,9 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
                     <span className={change.status === "improved" ? "text-green-600" : "text-red-600"}>
                       {change.status === "improved" ? "↑" : "↓"}
                     </span>
-                    <span className="font-medium">{getDocTypeName(change.doc_type)}</span>
+                    <span className="font-medium">{formatDocType(change.doc_type)}</span>
                     <span className="text-gray-400">·</span>
-                    <span>{getFieldName(change.field_name)}</span>
+                    <span>{formatFieldName(change.field_name)}</span>
                     {change.delta !== undefined && (
                       <span className="text-gray-500 ml-auto">
                         {change.delta > 0 ? `+${change.delta}` : change.delta} affected
@@ -970,66 +939,6 @@ function formatKpiLabel(key: string): string {
   return labels[key] || key;
 }
 
-function getScoreVariant(score: number): "success" | "warning" | "error" | "default" | "neutral" {
-  if (score >= 80) return "success";
-  if (score >= 60) return "warning";
-  if (score > 0) return "error";
-  return "default";
-}
-
-interface KPICardProps {
-  label: string;
-  value: string | number;
-  subtext?: string;
-  variant?: "default" | "success" | "warning" | "error" | "neutral";
-}
-
-function KPICard({ label, value, subtext, variant = "default" }: KPICardProps) {
-  const variants = {
-    default: "bg-white",
-    success: "bg-green-50 border-green-200",
-    warning: "bg-yellow-50 border-yellow-200",
-    error: "bg-red-50 border-red-200",
-    neutral: "bg-gray-50",
-  };
-
-  return (
-    <div className={cn("rounded-lg border p-3 shadow-sm", variants[variant])}>
-      <div className="text-xl font-bold">{value}</div>
-      <div className="text-xs text-gray-600">{label}</div>
-      {subtext && <div className="text-[10px] text-gray-400">{subtext}</div>}
-    </div>
-  );
-}
-
-interface DeltaCardProps {
-  label: string;
-  baseline: number;
-  current: number;
-  delta: number;
-}
-
-function DeltaCard({ label, baseline, current, delta }: DeltaCardProps) {
-  const isPositive = delta > 0;
-  const isNegative = delta < 0;
-  const isPercent = label.includes("Presence") || label.includes("Accuracy") || label.includes("Evidence");
-
-  return (
-    <div className="rounded-lg border p-3 shadow-sm bg-white">
-      <div className="text-lg font-bold">
-        {current}{isPercent ? "%" : ""}
-        {delta !== 0 && (
-          <span className={cn("ml-2 text-sm", isPositive ? "text-green-600" : isNegative ? "text-red-600" : "text-gray-400")}>
-            {isPositive ? "+" : ""}{delta}{isPercent ? "%" : ""}
-          </span>
-        )}
-      </div>
-      <div className="text-xs text-gray-600">{label}</div>
-      <div className="text-[10px] text-gray-400">was {baseline}{isPercent ? "%" : ""}</div>
-    </div>
-  );
-}
-
 function DeltaBadge({ delta }: { delta: number }) {
   if (delta === 0) return <span className="text-gray-400">-</span>;
   const isPositive = delta > 0;
@@ -1038,11 +947,6 @@ function DeltaBadge({ delta }: { delta: number }) {
       {isPositive ? "+" : ""}{delta}%
     </span>
   );
-}
-
-function ScoreBadge({ value }: { value: number }) {
-  const color = value >= 80 ? "text-green-600" : value >= 60 ? "text-yellow-600" : "text-red-600";
-  return <span className={cn("font-medium", color)}>{value}%</span>;
 }
 
 interface OutcomeChipProps {
@@ -1103,7 +1007,7 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
             <tr key={`${ex.doc_id}-${ex.field_name}-${idx}`} className="border-b hover:bg-gray-50">
               <td className="p-2 font-mono text-[10px]">{ex.claim_id}</td>
               <td className="p-2 truncate max-w-[140px]" title={ex.filename}>{ex.filename}</td>
-              {!selectedField && <td className="p-2">{getFieldName(ex.field_name)}</td>}
+              {!selectedField && <td className="p-2">{formatFieldName(ex.field_name)}</td>}
               <td className="p-2 font-mono text-[10px] truncate max-w-[120px]" title={ex.normalized_value || ex.predicted_value || ""}>
                 {ex.normalized_value || ex.predicted_value || <span className="text-gray-400">-</span>}
               </td>
@@ -1132,37 +1036,4 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
       </table>
     </div>
   );
-}
-
-function OutcomeBadge({ outcome }: { outcome: string | null }) {
-  if (!outcome) return <span className="text-gray-300">-</span>;
-  const styles: Record<string, string> = {
-    // Truth-based outcomes (v3)
-    correct: "bg-green-100 text-green-700",
-    incorrect: "bg-red-100 text-red-700",
-    missing: "bg-yellow-100 text-yellow-700",
-    unverifiable: "bg-gray-100 text-gray-600",
-    // Legacy outcomes (backwards compatibility)
-    match: "bg-green-100 text-green-700",
-    mismatch: "bg-red-100 text-red-700",
-    miss: "bg-yellow-100 text-yellow-700",
-    extractor_miss: "bg-yellow-100 text-yellow-700",
-    cannot_verify: "bg-gray-100 text-gray-600",
-    correct_absent: "bg-gray-100 text-gray-600",
-  };
-  const labels: Record<string, string> = {
-    // Truth-based labels (v3)
-    correct: "Correct",
-    incorrect: "Incorrect",
-    missing: "Missing",
-    unverifiable: "Unverifiable",
-    // Legacy labels (backwards compatibility)
-    match: "Correct",
-    mismatch: "Incorrect",
-    miss: "Missing",
-    extractor_miss: "Missing",
-    cannot_verify: "Unknown",
-    correct_absent: "Correct",
-  };
-  return <span className={cn("text-[10px] px-1 py-0.5 rounded font-medium", styles[outcome] || "bg-gray-100 text-gray-600")}>{labels[outcome] || outcome}</span>;
 }
