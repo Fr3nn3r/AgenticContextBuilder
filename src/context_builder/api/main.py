@@ -117,6 +117,14 @@ class DocReviewRequest(BaseModel):
     notes: str = ""
 
 
+class ClassificationLabelRequest(BaseModel):
+    """Request body for saving classification review."""
+    claim_id: str
+    doc_type_correct: bool = True
+    doc_type_truth: Optional[str] = None  # Required if doc_type_correct=False
+    notes: str = ""
+
+
 class GateCounts(BaseModel):
     """Gate status counts."""
     pass_count: int = 0  # renamed from 'pass' to avoid Python keyword
@@ -1348,3 +1356,328 @@ def clear_baseline_endpoint():
 
     clear_baseline(DATA_DIR)
     return {"status": "ok"}
+
+
+# =============================================================================
+# CLASSIFICATION REVIEW ENDPOINTS
+# =============================================================================
+
+@app.get("/api/classification/docs")
+def list_classification_docs(run_id: str = Query(..., description="Run ID to get classification data for")):
+    """
+    List all documents with classification data for review.
+
+    Returns doc_id, claim_id, filename, predicted_type, confidence, signals,
+    review_status (pending/confirmed/overridden), and doc_type_truth.
+    """
+    storage = get_storage()
+    global_runs_dir = get_global_runs_dir()
+
+    # Build list of docs from all claims
+    docs = []
+
+    for claim_dir in DATA_DIR.iterdir():
+        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+            continue
+
+        docs_dir = claim_dir / "docs"
+        run_dir = claim_dir / "runs" / run_id
+
+        if not docs_dir.exists() or not run_dir.exists():
+            continue
+
+        context_dir = run_dir / "context"
+        if not context_dir.exists():
+            continue
+
+        claim_id = extract_claim_number(claim_dir.name)
+
+        for doc_folder in docs_dir.iterdir():
+            if not doc_folder.is_dir():
+                continue
+
+            doc_id = doc_folder.name
+            meta_path = doc_folder / "meta" / "doc.json"
+            context_path = context_dir / f"{doc_id}.json"
+
+            if not meta_path.exists() or not context_path.exists():
+                continue
+
+            # Load metadata
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+
+            # Load classification context
+            with open(context_path, "r", encoding="utf-8") as f:
+                context = json.load(f)
+
+            classification = context.get("classification", {})
+            predicted_type = classification.get("document_type", meta.get("doc_type", "unknown"))
+            confidence = classification.get("confidence", meta.get("doc_type_confidence", 0.0))
+            signals = classification.get("signals", [])
+
+            # Check for existing label
+            labels_path = doc_folder / "labels" / "latest.json"
+            review_status = "pending"
+            doc_type_truth = None
+
+            if labels_path.exists():
+                with open(labels_path, "r", encoding="utf-8") as f:
+                    label_data = json.load(f)
+                    doc_labels = label_data.get("doc_labels", {})
+                    doc_type_correct = doc_labels.get("doc_type_correct", True)
+                    doc_type_truth = doc_labels.get("doc_type_truth")
+
+                    if doc_type_correct and doc_type_truth is None:
+                        review_status = "confirmed"
+                    elif not doc_type_correct and doc_type_truth:
+                        review_status = "overridden"
+                    elif doc_type_correct:
+                        review_status = "confirmed"
+
+            docs.append({
+                "doc_id": doc_id,
+                "claim_id": claim_id,
+                "filename": meta.get("original_filename", "Unknown"),
+                "predicted_type": predicted_type,
+                "confidence": round(confidence, 2) if confidence else 0.0,
+                "signals": signals[:5] if signals else [],  # Limit to 5
+                "review_status": review_status,
+                "doc_type_truth": doc_type_truth,
+            })
+
+    # Sort by confidence ascending (lowest confidence first for review priority)
+    docs.sort(key=lambda d: (d["review_status"] != "pending", d["confidence"]))
+
+    return docs
+
+
+@app.get("/api/classification/doc/{doc_id}")
+def get_classification_detail(doc_id: str, run_id: str = Query(..., description="Run ID")):
+    """
+    Get full classification context for a document.
+
+    Returns classification (signals, summary, key_hints), text preview,
+    source url info, and existing label if any.
+    """
+    storage = get_storage()
+
+    # Get document bundle
+    doc_bundle = storage.get_doc(doc_id)
+    if not doc_bundle:
+        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+    claim_dir = doc_bundle.doc_root.parent.parent
+    claim_id = extract_claim_number(claim_dir.name)
+
+    # Load classification context
+    context_path = claim_dir / "runs" / run_id / "context" / f"{doc_id}.json"
+    if not context_path.exists():
+        raise HTTPException(status_code=404, detail=f"Classification context not found for run: {run_id}")
+
+    with open(context_path, "r", encoding="utf-8") as f:
+        context = json.load(f)
+
+    classification = context.get("classification", {})
+
+    # Load text preview
+    doc_text = storage.get_doc_text(doc_id)
+    pages_preview = ""
+    if doc_text and doc_text.pages:
+        # Get first 1000 chars across pages
+        full_text = "\n\n".join(p.get("text", "") for p in doc_text.pages)
+        pages_preview = full_text[:1000] + ("..." if len(full_text) > 1000 else "")
+
+    # Check for source file
+    has_pdf = False
+    has_image = False
+    source_dir = doc_bundle.doc_root / "source"
+    if source_dir.exists():
+        for source_file in source_dir.iterdir():
+            ext = source_file.suffix.lower()
+            if ext == ".pdf":
+                has_pdf = True
+            elif ext in {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".bmp", ".webp"}:
+                has_image = True
+
+    # Load existing label
+    existing_label = None
+    labels_path = doc_bundle.doc_root / "labels" / "latest.json"
+    if labels_path.exists():
+        with open(labels_path, "r", encoding="utf-8") as f:
+            label_data = json.load(f)
+            doc_labels = label_data.get("doc_labels", {})
+            existing_label = {
+                "doc_type_correct": doc_labels.get("doc_type_correct", True),
+                "doc_type_truth": doc_labels.get("doc_type_truth"),
+                "notes": label_data.get("review", {}).get("notes", ""),
+            }
+
+    return {
+        "doc_id": doc_id,
+        "claim_id": claim_id,
+        "filename": doc_bundle.metadata.get("original_filename", "Unknown"),
+        "predicted_type": classification.get("document_type", "unknown"),
+        "confidence": classification.get("confidence", 0.0),
+        "signals": classification.get("signals", []),
+        "summary": classification.get("summary", ""),
+        "key_hints": classification.get("key_hints"),
+        "pages_preview": pages_preview,
+        "has_pdf": has_pdf,
+        "has_image": has_image,
+        "existing_label": existing_label,
+    }
+
+
+@app.post("/api/classification/doc/{doc_id}/label")
+def save_classification_label(doc_id: str, request: ClassificationLabelRequest):
+    """
+    Save classification review result.
+
+    Updates doc_labels in the label file with doc_type_correct and doc_type_truth.
+    """
+    storage = get_storage()
+
+    # Get document bundle
+    doc_bundle = storage.get_doc(doc_id)
+    if not doc_bundle:
+        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+    claim_dir = doc_bundle.doc_root.parent.parent
+    resolved_claim_id = extract_claim_number(claim_dir.name)
+
+    # Validate: if doc_type_correct is False, doc_type_truth must be provided
+    if not request.doc_type_correct and not request.doc_type_truth:
+        raise HTTPException(
+            status_code=400,
+            detail="doc_type_truth is required when doc_type_correct is False"
+        )
+
+    # Load existing label or create new
+    labels_path = doc_bundle.doc_root / "labels" / "latest.json"
+    if labels_path.exists():
+        with open(labels_path, "r", encoding="utf-8") as f:
+            label_data = json.load(f)
+    else:
+        label_data = {
+            "schema_version": "label_v3",
+            "doc_id": doc_id,
+            "claim_id": resolved_claim_id,
+            "review": {
+                "reviewed_at": None,
+                "reviewer": "",
+                "notes": "",
+            },
+            "field_labels": [],
+            "doc_labels": {},
+        }
+
+    # Update doc_labels with classification review
+    label_data["doc_labels"]["doc_type_correct"] = request.doc_type_correct
+    label_data["doc_labels"]["doc_type_truth"] = request.doc_type_truth if not request.doc_type_correct else None
+    label_data["review"]["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
+    if request.notes:
+        label_data["review"]["notes"] = request.notes
+
+    # Save using Storage's atomic write
+    try:
+        storage.save_label(doc_id, label_data)
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save label: {e}")
+
+    return {"status": "saved", "doc_id": doc_id}
+
+
+@app.get("/api/classification/stats")
+def get_classification_stats(run_id: str = Query(..., description="Run ID to get stats for")):
+    """
+    Get classification review KPIs.
+
+    Returns docs_total, docs_reviewed, overrides_count, avg_confidence,
+    and confusion_matrix (predicted vs truth).
+    """
+    docs_total = 0
+    docs_reviewed = 0
+    overrides_count = 0
+    total_confidence = 0.0
+    by_predicted_type: Dict[str, Dict[str, int]] = {}
+    confusion_entries: Dict[tuple, int] = {}  # (predicted, truth) -> count
+
+    for claim_dir in DATA_DIR.iterdir():
+        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+            continue
+
+        docs_dir = claim_dir / "docs"
+        run_dir = claim_dir / "runs" / run_id
+
+        if not docs_dir.exists() or not run_dir.exists():
+            continue
+
+        context_dir = run_dir / "context"
+        if not context_dir.exists():
+            continue
+
+        for doc_folder in docs_dir.iterdir():
+            if not doc_folder.is_dir():
+                continue
+
+            doc_id = doc_folder.name
+            meta_path = doc_folder / "meta" / "doc.json"
+            context_path = context_dir / f"{doc_id}.json"
+
+            if not meta_path.exists() or not context_path.exists():
+                continue
+
+            docs_total += 1
+
+            # Load classification context for confidence
+            with open(context_path, "r", encoding="utf-8") as f:
+                context = json.load(f)
+
+            classification = context.get("classification", {})
+            predicted_type = classification.get("document_type", "unknown")
+            confidence = classification.get("confidence", 0.0)
+            total_confidence += confidence if confidence else 0.0
+
+            # Track by predicted type
+            if predicted_type not in by_predicted_type:
+                by_predicted_type[predicted_type] = {"count": 0, "override_count": 0}
+            by_predicted_type[predicted_type]["count"] += 1
+
+            # Check for existing label
+            labels_path = doc_folder / "labels" / "latest.json"
+            if labels_path.exists():
+                with open(labels_path, "r", encoding="utf-8") as f:
+                    label_data = json.load(f)
+                    doc_labels = label_data.get("doc_labels", {})
+
+                    # Check if classification was reviewed
+                    if "doc_type_correct" in doc_labels:
+                        docs_reviewed += 1
+                        doc_type_correct = doc_labels.get("doc_type_correct", True)
+                        doc_type_truth = doc_labels.get("doc_type_truth")
+
+                        if not doc_type_correct and doc_type_truth:
+                            overrides_count += 1
+                            by_predicted_type[predicted_type]["override_count"] += 1
+
+                            # Add to confusion matrix
+                            key = (predicted_type, doc_type_truth)
+                            confusion_entries[key] = confusion_entries.get(key, 0) + 1
+
+    avg_confidence = round(total_confidence / max(docs_total, 1), 2)
+
+    # Build confusion matrix list
+    confusion_matrix = [
+        {"predicted": pred, "truth": truth, "count": count}
+        for (pred, truth), count in sorted(confusion_entries.items(), key=lambda x: -x[1])
+    ]
+
+    return {
+        "docs_total": docs_total,
+        "docs_reviewed": docs_reviewed,
+        "overrides_count": overrides_count,
+        "avg_confidence": avg_confidence,
+        "by_predicted_type": by_predicted_type,
+        "confusion_matrix": confusion_matrix,
+    }

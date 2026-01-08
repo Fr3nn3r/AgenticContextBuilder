@@ -378,3 +378,46 @@ export async function getAzureDI(docId: string, claimId: string): Promise<AzureD
     return null;
   }
 }
+
+// =============================================================================
+// CLASSIFICATION REVIEW API
+// =============================================================================
+
+import type {
+  ClassificationDoc,
+  ClassificationDetail,
+  ClassificationLabelRequest,
+  ClassificationStats,
+} from "../types";
+
+export async function listClassificationDocs(runId: string): Promise<ClassificationDoc[]> {
+  return fetchJson<ClassificationDoc[]>(
+    `${API_BASE}/classification/docs?run_id=${encodeURIComponent(runId)}`
+  );
+}
+
+export async function getClassificationDetail(
+  docId: string,
+  runId: string
+): Promise<ClassificationDetail> {
+  return fetchJson<ClassificationDetail>(
+    `${API_BASE}/classification/doc/${docId}?run_id=${encodeURIComponent(runId)}`
+  );
+}
+
+export async function saveClassificationLabel(
+  docId: string,
+  data: ClassificationLabelRequest
+): Promise<{ status: string; doc_id: string }> {
+  return fetchJson(`${API_BASE}/classification/doc/${docId}/label`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getClassificationStats(runId: string): Promise<ClassificationStats> {
+  return fetchJson<ClassificationStats>(
+    `${API_BASE}/classification/stats?run_id=${encodeURIComponent(runId)}`
+  );
+}

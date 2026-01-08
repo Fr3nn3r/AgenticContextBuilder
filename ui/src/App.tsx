@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
+import { ClassificationReview } from "./components/ClassificationReview";
 import { ExtractionPage } from "./components/ExtractionPage";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
@@ -175,15 +176,17 @@ function App() {
     if (path === "/" || path === "/dashboard") return "Extraction";
     if (path === "/claims") return "Claim Document Pack";
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "Document Pack Review";
+    if (path === "/classification") return "Classification Review";
     if (path === "/insights") return "Calibration Insights";
     if (path === "/templates") return "Extraction Templates";
     return "ContextBuilder";
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "dashboard" | "claims" | "insights" | "templates" {
+  function getCurrentView(): "dashboard" | "claims" | "classification" | "insights" | "templates" {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
+    if (path === "/classification") return "classification";
     if (path === "/insights") return "insights";
     if (path === "/templates") return "templates";
     return "claims"; // /claims and /claims/:id/review both highlight claims
@@ -294,6 +297,7 @@ function App() {
                 path="/claims/:claimId/review"
                 element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} />}
               />
+              <Route path="/classification" element={<ClassificationReview />} />
               <Route path="/insights" element={<InsightsPage />} />
               <Route path="/templates" element={<TemplatesPage />} />
             </Routes>

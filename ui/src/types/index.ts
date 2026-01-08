@@ -112,6 +112,7 @@ export interface FieldLabel {
 
 export interface DocLabels {
   doc_type_correct: boolean;
+  doc_type_truth?: string | null;  // Corrected doc type when doc_type_correct=false
 }
 
 export interface LabelResult {
@@ -244,4 +245,62 @@ export interface BoundingBox {
   polygon: number[];  // 8 elements in inches
   pageWidthInches: number;
   pageHeightInches: number;
+}
+
+// =============================================================================
+// CLASSIFICATION REVIEW TYPES
+// =============================================================================
+
+export type ClassificationReviewStatus = "pending" | "confirmed" | "overridden";
+
+export interface ClassificationDoc {
+  doc_id: string;
+  claim_id: string;
+  filename: string;
+  predicted_type: string;
+  confidence: number;
+  signals: string[];
+  review_status: ClassificationReviewStatus;
+  doc_type_truth: string | null;
+}
+
+export interface ClassificationDetail {
+  doc_id: string;
+  claim_id: string;
+  filename: string;
+  predicted_type: string;
+  confidence: number;
+  signals: string[];
+  summary: string;
+  key_hints: Record<string, string> | null;
+  pages_preview: string;
+  has_pdf: boolean;
+  has_image: boolean;
+  existing_label: {
+    doc_type_correct: boolean;
+    doc_type_truth: string | null;
+    notes: string;
+  } | null;
+}
+
+export interface ClassificationLabelRequest {
+  claim_id: string;
+  doc_type_correct: boolean;
+  doc_type_truth?: string | null;
+  notes?: string;
+}
+
+export interface ConfusionMatrixEntry {
+  predicted: string;
+  truth: string;
+  count: number;
+}
+
+export interface ClassificationStats {
+  docs_total: number;
+  docs_reviewed: number;
+  overrides_count: number;
+  avg_confidence: number;
+  by_predicted_type: Record<string, { count: number; override_count: number }>;
+  confusion_matrix: ConfusionMatrixEntry[];
 }

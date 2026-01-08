@@ -69,6 +69,10 @@ class DocLabels(BaseModel):
     doc_type_correct: bool = Field(
         default=True, description="Whether the classified document type is correct"
     )
+    doc_type_truth: Optional[str] = Field(
+        default=None,
+        description="Corrected doc type when doc_type_correct=False; None means use predicted"
+    )
 
 
 class ReviewMetadata(BaseModel):
