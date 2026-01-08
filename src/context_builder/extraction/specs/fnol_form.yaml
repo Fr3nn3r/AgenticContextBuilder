@@ -1,0 +1,84 @@
+doc_type: fnol_form
+version: v1
+
+required_fields:
+  - event_date
+  - loss_type
+optional_fields:
+  - policy_number
+  - claim_number
+  - claimant_name
+  - claimant_email
+  - claimant_phone
+  - event_location
+  - vehicle_plate
+  - total_amount_claimed
+  - trip_start_date
+  - trip_end_date
+  - destination
+  - expense_items 
+
+field_rules:
+  policy_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["confirmation/policy number", "policy number", "confirmation number", "poliza", "póliza"]
+
+  claim_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["claim number", "claim reference", "siniestro", "claim", "reclamo", "número", "no."]
+
+  event_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints: ["date of loss", "incident date", "date of delay", "when did it happen", "fecha del siniestro"]
+
+  claim_type:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["choose the type of claim", "trip delay", "trip cancellation", "trip interruption", "claim type"]
+
+  total_amount_claimed:
+    normalize: money_to_decimal
+    validate: is_money
+    hints: ["total amount requested", "total amount claimed", "amount requested", "monto", "total"]
+
+  claimant_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["name", "claimant", "insured name", "asegurado"]
+
+  claimant_email:
+    normalize: email_normalize
+    validate: is_email
+    hints: ["email", "e-mail", "correo"]
+
+  claimant_phone:
+    normalize: phone_normalize
+    validate: is_phone
+    hints: ["mobile", "phone", "tel", "celular"]
+
+  trip_start_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints: ["departure date", "trip start", "start date"]
+
+  trip_end_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints: ["return date", "trip end", "end date"]
+
+  vehicle_plate:
+    normalize: plate_normalize
+    validate: plate_like
+    hints: ["placa", "plate", "matrícula", "placas", "license plate", "vehicle plate"]
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.7
+  warn_if:
+    - evidence_rate < 0.7
+  fail_if:
+    - required_present_ratio < 1.0
