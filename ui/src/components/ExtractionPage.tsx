@@ -102,6 +102,7 @@ export function ExtractionPage({
               {dateRuns.map((run, idx) => (
                 <button
                   key={run.run_id}
+                  data-testid={`run-item-${run.run_id}`}
                   onClick={() => onRunChange(run.run_id)}
                   className={cn(
                     "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
@@ -226,6 +227,7 @@ export function ExtractionPage({
                   title="Ingestion"
                   icon={<DownloadIcon />}
                   color="blue"
+                  testId="phase-ingestion"
                   metrics={[
                     { label: "Discovered", value: selectedRun.phases.ingestion.discovered },
                     { label: "Ingested", value: selectedRun.phases.ingestion.ingested },
@@ -248,6 +250,7 @@ export function ExtractionPage({
                   title="Classification"
                   icon={<TagIcon />}
                   color="purple"
+                  testId="phase-classification"
                   metrics={[
                     {
                       label: "Classified",
@@ -284,6 +287,7 @@ export function ExtractionPage({
                   title="Extraction"
                   icon={<ExtractIcon />}
                   color="green"
+                  testId="phase-extraction"
                   metrics={[
                     { label: "Attempted", value: selectedRun.phases.extraction.attempted },
                     {
@@ -305,6 +309,7 @@ export function ExtractionPage({
                   title="Quality Gate"
                   icon={<ShieldIcon />}
                   color="amber"
+                  testId="phase-quality-gate"
                   metrics={[
                     {
                       label: "Pass",
@@ -337,10 +342,11 @@ export function ExtractionPage({
               {/* Coverage + Doc Type Scoreboard */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Coverage Section */}
-                <div className="bg-white rounded-lg border p-6">
+                <div className="bg-white rounded-lg border p-6" data-testid="coverage-section">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Coverage</h3>
                   <div className="space-y-4">
                     <ProgressBar
+                      testId="label-coverage"
                       label="Label Coverage (truth)"
                       description="Labeled docs / total docs in run"
                       value={overview?.docs_reviewed || 0}
@@ -349,6 +355,7 @@ export function ExtractionPage({
                       color="green"
                     />
                     <ProgressBar
+                      testId="extraction-coverage"
                       label="Extraction Coverage"
                       description="Docs with extraction / total docs in run"
                       value={overview?.docs_with_extraction || 0}
@@ -360,12 +367,12 @@ export function ExtractionPage({
                 </div>
 
                 {/* Doc Type Scoreboard */}
-                <div className="bg-white rounded-lg border p-6">
+                <div className="bg-white rounded-lg border p-6" data-testid="doc-type-scoreboard">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">
                     Doc Type Scoreboard
                   </h3>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm" data-testid="scoreboard-table">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 font-medium text-gray-600">Type</th>
@@ -455,9 +462,10 @@ interface PhaseCardProps {
   }>;
   duration?: number | null;
   children?: React.ReactNode;
+  testId?: string;
 }
 
-function PhaseCard({ title, icon, color, metrics, duration, children }: PhaseCardProps) {
+function PhaseCard({ title, icon, color, metrics, duration, children, testId }: PhaseCardProps) {
   const colorClasses = {
     blue: "bg-blue-50 text-blue-600",
     purple: "bg-purple-50 text-purple-600",
@@ -466,7 +474,7 @@ function PhaseCard({ title, icon, color, metrics, duration, children }: PhaseCar
   };
 
   return (
-    <div className="bg-white rounded-lg border p-4">
+    <div className="bg-white rounded-lg border p-4" data-testid={testId}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div
@@ -518,16 +526,17 @@ interface ProgressBarProps {
   total: number;
   percentage: number;
   color: "green" | "blue";
+  testId?: string;
 }
 
-function ProgressBar({ label, description, value, total, percentage, color }: ProgressBarProps) {
+function ProgressBar({ label, description, value, total, percentage, color, testId }: ProgressBarProps) {
   const colorClasses = {
     green: "bg-green-500",
     blue: "bg-blue-500",
   };
 
   return (
-    <div>
+    <div data-testid={testId}>
       <div className="flex justify-between text-sm mb-1">
         <div>
           <span className="text-gray-700 font-medium">{label}</span>
@@ -535,7 +544,7 @@ function ProgressBar({ label, description, value, total, percentage, color }: Pr
             <span className="text-gray-400 text-xs block">{description}</span>
           )}
         </div>
-        <span className="text-gray-600">
+        <span className="text-gray-600" data-testid={testId ? `${testId}-value` : undefined}>
           {value} / {total} ({percentage}%)
         </span>
       </div>

@@ -14,6 +14,7 @@ const docPayloadFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "doc
 const templatesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "templates.json"), "utf-8"));
 const runsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.json"), "utf-8"));
 const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "insights-overview.json"), "utf-8"));
+const multiRunFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
 
 export async function setupApiMocks(page: Page) {
   // Mock GET /api/claims
@@ -150,6 +151,123 @@ export async function setupApiMocks(page: Page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(runsFixture),
+    });
+  });
+}
+
+/**
+ * Setup API mocks for multi-run testing scenarios.
+ * This function mocks APIs with run-specific data to test that UI
+ * correctly displays run-scoped metrics when switching between runs.
+ */
+export async function setupMultiRunMocks(page: Page) {
+  // Mock GET /api/claims (same as base)
+  await page.route("**/api/claims", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(claimsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/insights/runs - return multi-run data
+  await page.route("**/api/insights/runs", async (route) => {
+    const url = route.request().url();
+    // Check if this is the detailed endpoint
+    if (url.includes("/detailed")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(multiRunFixture.detailedRuns),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(multiRunFixture.runs),
+      });
+    }
+  });
+
+  // Mock GET /api/insights/runs/detailed
+  await page.route("**/api/insights/runs/detailed", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(multiRunFixture.detailedRuns),
+    });
+  });
+
+  // Mock GET /api/insights/run/:runId/overview - return run-specific data
+  await page.route(/\/api\/insights\/run\/([^/]+)\/overview/, async (route) => {
+    const url = route.request().url();
+    const match = url.match(/\/api\/insights\/run\/([^/]+)\/overview/);
+    const runId = match ? match[1] : "run-small";
+
+    const overview = multiRunFixture.overviews[runId] || multiRunFixture.overviews["run-small"];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(overview),
+    });
+  });
+
+  // Mock GET /api/insights/run/:runId/doc-types - return run-specific data
+  await page.route(/\/api\/insights\/run\/([^/]+)\/doc-types/, async (route) => {
+    const url = route.request().url();
+    const match = url.match(/\/api\/insights\/run\/([^/]+)\/doc-types/);
+    const runId = match ? match[1] : "run-small";
+
+    const docTypes = multiRunFixture.docTypes[runId] || multiRunFixture.docTypes["run-small"];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(docTypes),
+    });
+  });
+
+  // Mock GET /api/insights/run/:runId/priorities - return empty for simplicity
+  await page.route(/\/api\/insights\/run\/([^/]+)\/priorities/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+
+  // Mock GET /api/insights/baseline
+  await page.route("**/api/insights/baseline", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ baseline_run_id: null }),
+    });
+  });
+
+  // Mock GET /api/claims/runs - for Extraction page run selector
+  await page.route("**/api/claims/runs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(multiRunFixture.runs.map((r: { run_id: string; timestamp: string; model: string; claims_count: number }) => ({
+        run_id: r.run_id,
+        timestamp: r.timestamp,
+        model: r.model,
+        claims_count: r.claims_count,
+      }))),
+    });
+  });
+
+  // Mock GET /api/templates
+  await page.route("**/api/templates", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(templatesFixture),
     });
   });
 }

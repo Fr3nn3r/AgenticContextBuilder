@@ -15,6 +15,8 @@ interface MetricCardProps {
   /** Optional click handler */
   onClick?: () => void;
   className?: string;
+  /** Test ID for e2e tests */
+  testId?: string;
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
@@ -59,6 +61,7 @@ export function MetricCard({
   size = "md",
   onClick,
   className,
+  testId,
 }: MetricCardProps) {
   const styles = sizeStyles[size];
   const Component = onClick ? "button" : "div";
@@ -66,6 +69,7 @@ export function MetricCard({
   return (
     <Component
       onClick={onClick}
+      data-testid={testId}
       className={cn(
         "rounded-lg border shadow-sm text-left",
         styles.container,
@@ -145,9 +149,11 @@ interface MetricCardRowProps {
   children: React.ReactNode;
   columns?: 3 | 4 | 5 | 6;
   className?: string;
+  /** Test ID for e2e tests */
+  testId?: string;
 }
 
-export function MetricCardRow({ children, columns = 5, className }: MetricCardRowProps) {
+export function MetricCardRow({ children, columns = 5, className, testId }: MetricCardRowProps) {
   const gridCols = {
     3: "grid-cols-3",
     4: "grid-cols-2 md:grid-cols-4",
@@ -156,7 +162,7 @@ export function MetricCardRow({ children, columns = 5, className }: MetricCardRo
   };
 
   return (
-    <div className={cn("grid gap-3", gridCols[columns], className)}>
+    <div data-testid={testId} className={cn("grid gap-3", gridCols[columns], className)}>
       {children}
     </div>
   );

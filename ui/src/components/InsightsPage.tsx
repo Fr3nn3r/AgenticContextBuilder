@@ -477,29 +477,34 @@ function InsightsTab({
   return (
     <div className="space-y-4">
       {/* Overview KPIs */}
-      <MetricCardRow columns={5}>
+      <MetricCardRow columns={5} testId="kpi-row">
         <MetricCard
+          testId="kpi-doc-coverage"
           label="Doc Coverage"
           value={`${overview?.docs_with_truth || 0}/${overview?.docs_total || 0}`}
           subtext="docs with truth labels"
         />
         <MetricCard
+          testId="kpi-field-coverage"
           label="Field Coverage"
           value={`${overview?.labeled_fields || overview?.confirmed_fields || 0}/${overview?.total_fields || 0}`}
           subtext="labeled fields"
         />
         <MetricCard
+          testId="kpi-accuracy"
           label="Accuracy"
           value={`${overview?.accuracy_rate || 0}%`}
           subtext={`${overview?.correct_count || overview?.match_count || 0} correct / ${(overview?.correct_count || overview?.match_count || 0) + (overview?.incorrect_count || overview?.mismatch_count || 0) + (overview?.missing_count || overview?.miss_count || 0)} total`}
           variant={getScoreVariant(overview?.accuracy_rate || 0)}
         />
         <MetricCard
+          testId="kpi-evidence-rate"
           label="Evidence Rate"
           value={`${overview?.evidence_rate || 0}%`}
           variant={getScoreVariant(overview?.evidence_rate || 0)}
         />
         <MetricCard
+          testId="kpi-doc-type-wrong"
           label="Doc Type Wrong"
           value={overview?.docs_doc_type_wrong || 0}
           variant={overview?.docs_doc_type_wrong ? "warning" : "default"}
@@ -549,10 +554,10 @@ function InsightsTab({
         </section>
 
         {/* Doc Type Scoreboard */}
-        <section className="lg:col-span-2">
+        <section className="lg:col-span-2" data-testid="doc-type-scoreboard">
           <h2 className="text-sm font-semibold text-gray-700 mb-2">Doc Type Scoreboard</h2>
           <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" data-testid="scoreboard-table">
               <thead>
                 <tr className="border-b bg-gray-50">
                   <th className="text-left p-2 font-medium">Type</th>

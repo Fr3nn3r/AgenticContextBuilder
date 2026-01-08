@@ -1,0 +1,242 @@
+{
+  "detailedRuns": [
+    {
+      "run_id": "run-small",
+      "timestamp": "2024-01-20T10:00:00Z",
+      "model": "gpt-4o",
+      "status": "complete",
+      "duration_seconds": 45,
+      "claims_count": 1,
+      "docs_total": 3,
+      "docs_success": 2,
+      "docs_failed": 0,
+      "phases": {
+        "ingestion": {
+          "discovered": 3,
+          "ingested": 3,
+          "skipped": 0,
+          "failed": 0,
+          "duration_ms": 1500
+        },
+        "classification": {
+          "classified": 3,
+          "low_confidence": 0,
+          "distribution": {
+            "fnol_form": 1,
+            "insurance_policy": 1,
+            "police_report": 1
+          },
+          "duration_ms": 2000
+        },
+        "extraction": {
+          "attempted": 2,
+          "succeeded": 2,
+          "failed": 0,
+          "skipped_unsupported": 1,
+          "duration_ms": 3000
+        },
+        "quality_gate": {
+          "pass": 2,
+          "warn": 0,
+          "fail": 0
+        }
+      }
+    },
+    {
+      "run_id": "run-large",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "model": "gpt-4o",
+      "status": "complete",
+      "duration_seconds": 600,
+      "claims_count": 50,
+      "docs_total": 130,
+      "docs_success": 35,
+      "docs_failed": 0,
+      "phases": {
+        "ingestion": {
+          "discovered": 130,
+          "ingested": 130,
+          "skipped": 0,
+          "failed": 0,
+          "duration_ms": 45000
+        },
+        "classification": {
+          "classified": 130,
+          "low_confidence": 5,
+          "distribution": {
+            "fnol_form": 30,
+            "id_document": 24,
+            "insurance_policy": 28,
+            "invoice": 15,
+            "police_report": 18,
+            "vehicle_registration": 15
+          },
+          "duration_ms": 60000
+        },
+        "extraction": {
+          "attempted": 35,
+          "succeeded": 35,
+          "failed": 0,
+          "skipped_unsupported": 95,
+          "duration_ms": 120000
+        },
+        "quality_gate": {
+          "pass": 30,
+          "warn": 3,
+          "fail": 2
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "run-small",
+      "timestamp": "2024-01-20T10:00:00Z",
+      "model": "gpt-4o",
+      "extractor_version": "1.0.0",
+      "prompt_version": "v1",
+      "claims_count": 1,
+      "docs_count": 3,
+      "extracted_count": 2,
+      "labeled_count": 1,
+      "presence_rate": 90,
+      "accuracy_rate": 100,
+      "evidence_rate": 85
+    },
+    {
+      "run_id": "run-large",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "model": "gpt-4o",
+      "extractor_version": "1.0.0",
+      "prompt_version": "v1",
+      "claims_count": 50,
+      "docs_count": 130,
+      "extracted_count": 35,
+      "labeled_count": 20,
+      "presence_rate": 85,
+      "accuracy_rate": 92,
+      "evidence_rate": 78
+    }
+  ],
+  "overviews": {
+    "run-small": {
+      "run_metadata": {
+        "run_id": "run-small",
+        "timestamp": "2024-01-20T10:00:00Z",
+        "model": "gpt-4o",
+        "extractor_version": "1.0.0",
+        "prompt_version": "v1",
+        "docs_processed": 2,
+        "docs_total": 3,
+        "docs_reviewed": 1
+      },
+      "overview": {
+        "docs_total": 3,
+        "docs_with_truth": 1,
+        "labeled_fields": 5,
+        "total_fields": 12,
+        "accuracy_rate": 100,
+        "evidence_rate": 85,
+        "correct_count": 5,
+        "incorrect_count": 0,
+        "missing_count": 0,
+        "docs_reviewed": 1,
+        "docs_doc_type_wrong": 0,
+        "required_field_presence_rate": 90,
+        "required_field_accuracy": 100,
+        "docs_with_extraction": 2,
+        "run_coverage": 66.7
+      }
+    },
+    "run-large": {
+      "run_metadata": {
+        "run_id": "run-large",
+        "timestamp": "2024-01-15T10:00:00Z",
+        "model": "gpt-4o",
+        "extractor_version": "1.0.0",
+        "prompt_version": "v1",
+        "docs_processed": 35,
+        "docs_total": 130,
+        "docs_reviewed": 20
+      },
+      "overview": {
+        "docs_total": 130,
+        "docs_with_truth": 20,
+        "labeled_fields": 85,
+        "total_fields": 350,
+        "accuracy_rate": 92,
+        "evidence_rate": 78,
+        "correct_count": 78,
+        "incorrect_count": 5,
+        "missing_count": 2,
+        "docs_reviewed": 20,
+        "docs_doc_type_wrong": 2,
+        "required_field_presence_rate": 85,
+        "required_field_accuracy": 92,
+        "docs_with_extraction": 35,
+        "run_coverage": 26.9
+      }
+    }
+  },
+  "docTypes": {
+    "run-small": [
+      {
+        "doc_type": "insurance_policy",
+        "docs_total": 1,
+        "docs_reviewed": 1,
+        "docs_doc_type_wrong": 0,
+        "docs_doc_type_wrong_pct": 0,
+        "required_field_presence_pct": 95,
+        "required_field_accuracy_pct": 100,
+        "evidence_rate_pct": 90,
+        "top_failing_field": null
+      },
+      {
+        "doc_type": "police_report",
+        "docs_total": 1,
+        "docs_reviewed": 0,
+        "docs_doc_type_wrong": 0,
+        "docs_doc_type_wrong_pct": 0,
+        "required_field_presence_pct": 85,
+        "required_field_accuracy_pct": 0,
+        "evidence_rate_pct": 80,
+        "top_failing_field": "badge_number"
+      }
+    ],
+    "run-large": [
+      {
+        "doc_type": "insurance_policy",
+        "docs_total": 18,
+        "docs_reviewed": 10,
+        "docs_doc_type_wrong": 1,
+        "docs_doc_type_wrong_pct": 10,
+        "required_field_presence_pct": 88,
+        "required_field_accuracy_pct": 94,
+        "evidence_rate_pct": 82,
+        "top_failing_field": "coverage_end"
+      },
+      {
+        "doc_type": "police_report",
+        "docs_total": 12,
+        "docs_reviewed": 8,
+        "docs_doc_type_wrong": 1,
+        "docs_doc_type_wrong_pct": 12.5,
+        "required_field_presence_pct": 80,
+        "required_field_accuracy_pct": 88,
+        "evidence_rate_pct": 75,
+        "top_failing_field": "badge_number"
+      },
+      {
+        "doc_type": "invoice",
+        "docs_total": 5,
+        "docs_reviewed": 2,
+        "docs_doc_type_wrong": 0,
+        "docs_doc_type_wrong_pct": 0,
+        "required_field_presence_pct": 92,
+        "required_field_accuracy_pct": 96,
+        "evidence_rate_pct": 88,
+        "top_failing_field": null
+      }
+    ]
+  }
+}
