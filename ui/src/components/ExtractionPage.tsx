@@ -405,7 +405,7 @@ export function ExtractionPage({
                                 {getDocTypeName(dt.doc_type)}
                               </td>
                               <td className="py-2 text-right text-gray-600">
-                                {dt.docs_reviewed}
+                                {dt.docs_total}
                               </td>
                               <td className="py-2 text-right">
                                 <ScoreBadge value={dt.required_field_presence_pct} />

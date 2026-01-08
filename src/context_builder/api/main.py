@@ -326,22 +326,17 @@ DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 
 # Storage abstraction layer (uses indexes when available)
 from context_builder.storage import FileStorage
-_storage: Optional[FileStorage] = None
 
 
 def get_storage() -> FileStorage:
-    """Get or create the Storage instance."""
-    global _storage
-    if _storage is None:
-        _storage = FileStorage(DATA_DIR)
-    return _storage
+    """Get Storage instance (fresh for each request to see new runs)."""
+    return FileStorage(DATA_DIR)
 
 
 def set_data_dir(path: Path):
     """Set the data directory for the API."""
-    global DATA_DIR, _storage
+    global DATA_DIR
     DATA_DIR = path
-    _storage = None  # Reset storage to use new path
 
 
 # =============================================================================
@@ -675,7 +670,7 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None), run_id: Optional
     extraction = None
     runs = storage.list_runs()
     if runs:
-        target_run_id = run_id or runs[0].run_id
+        target_run_id = run_id or runs[-1].run_id  # Use latest run (index is oldest-first)
         extraction = storage.get_extraction(target_run_id, doc_id, claim_id=resolved_claim_id)
 
     # Load labels (uses index for fast lookup if available)

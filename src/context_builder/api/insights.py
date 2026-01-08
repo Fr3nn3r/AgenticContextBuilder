@@ -6,7 +6,7 @@ Computes metrics from extraction results and labels to answer:
 - Why is it failing? (extractor miss, normalization, evidence, doc type)
 - What should we improve next? (highest ROI)
 
-Scope: 3 supported doc types (loss_notice, police_report, insurance_policy)
+Scope: Doc types defined in SUPPORTED_DOC_TYPES (synced with extraction/specs/*.yaml)
 """
 
 import json
@@ -24,8 +24,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Supported doc types for insights
-SUPPORTED_DOC_TYPES = ["loss_notice", "police_report", "insurance_policy"]
+# Supported doc types for insights (must match extraction/specs/*.yaml)
+SUPPORTED_DOC_TYPES = [
+    "fnol_form",
+    "id_document",
+    "insurance_policy",
+    "invoice",
+    "police_report",
+    "vehicle_registration",
+]
 
 # Baseline settings file
 BASELINE_FILE = ".insights_baseline.json"
@@ -293,6 +300,11 @@ class InsightsAggregator:
                 if active_run_id:
                     extraction = storage.get_extraction(active_run_id, doc_id, claim_id)
 
+                # When a specific run is requested, only process docs that have extraction in that run
+                # This ensures run-scoped metrics (Extraction page) only count docs from the selected run
+                if active_run_id and extraction is None:
+                    continue
+
                 # Load labels using Storage (run-independent)
                 labels = storage.get_label(doc_id)
 
@@ -517,6 +529,11 @@ class InsightsAggregator:
         else:
             presence_rate = 0.0
 
+        # Run coverage: docs with at least one extracted field
+        doc_ids_with_prediction = {r.doc_id for r in self.field_records if r.has_prediction}
+        docs_with_extraction = len(doc_ids_with_prediction)
+        run_coverage = round(docs_with_extraction / total_docs * 100, 1) if total_docs > 0 else 0.0
+
         return {
             "docs_total": total_docs,
             "docs_with_truth": docs_with_truth,  # Doc coverage numerator
@@ -538,6 +555,9 @@ class InsightsAggregator:
             "match_count": correct_count,
             "mismatch_count": incorrect_count,
             "miss_count": missing_count,
+            # Run coverage metrics (for Extraction page)
+            "docs_with_extraction": docs_with_extraction,
+            "run_coverage": run_coverage,
         }
 
     def get_doc_type_metrics(self) -> List[Dict[str, Any]]:
@@ -550,18 +570,19 @@ class InsightsAggregator:
             if not type_docs:
                 continue
 
+            docs_total = len(type_docs)
             docs_reviewed = len([d for d in type_docs if d.has_labels])
             docs_doc_type_wrong = len([d for d in type_docs if d.doc_type_correct is False])
 
-            # Valid docs for field metrics
-            valid_doc_ids = {d.doc_id for d in type_docs if d.doc_type_correct is True}
+            # Valid docs: include docs not marked as wrong (True or None/not-reviewed)
+            valid_doc_ids = {d.doc_id for d in type_docs if d.doc_type_correct is not False}
             type_records = [r for r in self.field_records
                            if r.doc_type == doc_type and r.doc_id in valid_doc_ids]
 
-            # Required fields
-            required_records = [r for r in type_records if r.is_required and r.has_label]
+            # Required fields - for presence, use all required fields (not just labeled)
+            required_records = [r for r in type_records if r.is_required]
 
-            # Presence
+            # Presence: required fields with predictions / total required fields
             if required_records:
                 presence = sum(1 for r in required_records if r.has_prediction) / len(required_records)
             else:
@@ -587,9 +608,10 @@ class InsightsAggregator:
 
             results.append({
                 "doc_type": doc_type,
-                "docs_reviewed": docs_reviewed,
+                "docs_total": docs_total,  # Total docs of this type in run
+                "docs_reviewed": docs_reviewed,  # Docs with labels (for benchmark)
                 "docs_doc_type_wrong": docs_doc_type_wrong,
-                "docs_doc_type_wrong_pct": round(docs_doc_type_wrong / len(type_docs) * 100, 1) if type_docs else 0,
+                "docs_doc_type_wrong_pct": round(docs_doc_type_wrong / docs_total * 100, 1) if docs_total else 0,
                 "required_field_presence_pct": round(presence * 100, 1),
                 "required_field_accuracy_pct": round(accuracy * 100, 1),
                 "evidence_rate_pct": round(evidence * 100, 1),

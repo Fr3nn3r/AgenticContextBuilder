@@ -137,7 +137,8 @@ export interface InsightsOverview {
 
 export interface DocTypeMetrics {
   doc_type: string;
-  docs_reviewed: number;
+  docs_total: number;  // Total docs of this type in run
+  docs_reviewed: number;  // Docs with labels (for benchmark)
   docs_doc_type_wrong: number;
   docs_doc_type_wrong_pct: number;
   required_field_presence_pct: number;

@@ -1541,6 +1541,17 @@ def main():
                     print(f"Failed claims: {', '.join(failed_claims)}")
                 print(f"Output: {output_dir}")
 
+            # Auto-build indexes after pipeline completes
+            if success_docs > 0:
+                from context_builder.storage.index_builder import build_all_indexes
+                try:
+                    logger.info("Building indexes...")
+                    stats = build_all_indexes(output_dir)
+                    if not args.quiet:
+                        print(f"Indexes updated: {stats['doc_count']} docs, {stats['run_count']} runs")
+                except Exception as e:
+                    logger.warning(f"Index build failed (non-fatal): {e}")
+
         elif args.command == "index":
             # ========== INDEX COMMAND ==========
             if args.index_command == "build":

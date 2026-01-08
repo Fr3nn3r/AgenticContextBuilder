@@ -577,7 +577,7 @@ function InsightsTab({
               <thead>
                 <tr className="border-b bg-gray-50">
                   <th className="text-left p-2 font-medium">Type</th>
-                  <th className="text-right p-2 font-medium">Reviewed</th>
+                  <th className="text-right p-2 font-medium">Docs</th>
                   <th className="text-right p-2 font-medium">Presence</th>
                   <th className="text-right p-2 font-medium">Accuracy</th>
                   <th className="text-right p-2 font-medium">Evidence</th>
@@ -597,7 +597,7 @@ function InsightsTab({
                     <td className="p-2 font-medium">
                       {getDocTypeName(dt.doc_type)}
                     </td>
-                    <td className="p-2 text-right text-gray-600">{dt.docs_reviewed}</td>
+                    <td className="p-2 text-right text-gray-600">{dt.docs_total}</td>
                     <td className="p-2 text-right">
                       <ScoreBadge value={dt.required_field_presence_pct} />
                     </td>

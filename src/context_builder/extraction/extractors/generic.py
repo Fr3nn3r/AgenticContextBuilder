@@ -317,9 +317,10 @@ class GenericFieldExtractor(FieldExtractor):
 
 # Auto-register for supported doc types
 def _register_extractors():
-    """Register GenericFieldExtractor for all supported doc types."""
-    supported_types = ["loss_notice", "police_report", "insurance_policy"]
-    for doc_type in supported_types:
+    """Register GenericFieldExtractor for all doc types with specs."""
+    from context_builder.extraction.spec_loader import list_available_specs
+
+    for doc_type in list_available_specs():
         ExtractorFactory.register(doc_type, GenericFieldExtractor)
 
 
