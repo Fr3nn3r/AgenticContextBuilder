@@ -8,6 +8,7 @@ import {
   getRunOverview,
   getRunDocTypes,
   getRunPriorities,
+  getDetailedRuns,
   compareRuns,
   getBaseline,
   setBaseline,
@@ -19,6 +20,7 @@ import {
   type InsightExample,
   type RunInfo,
   type RunComparison,
+  type DetailedRunInfo,
 } from "../api/client";
 
 // Human-readable doc type names
@@ -78,7 +80,9 @@ export function InsightsPage() {
 
   // Run state
   const [runs, setRuns] = useState<RunInfo[]>([]);
+  const [detailedRuns, setDetailedRuns] = useState<DetailedRunInfo[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedDetailedRun, setSelectedDetailedRun] = useState<DetailedRunInfo | null>(null);
   const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
   const [runMetadata, setRunMetadata] = useState<Record<string, unknown> | null>(null);
 
@@ -144,11 +148,17 @@ export function InsightsPage() {
 
   async function loadRuns() {
     try {
-      const data = await getInsightsRuns();
-      setRuns(data);
+      const [runsData, detailedData] = await Promise.all([
+        getInsightsRuns(),
+        getDetailedRuns(),
+      ]);
+      setRuns(runsData);
+      setDetailedRuns(detailedData);
       // Auto-select latest run if none selected
-      if (data.length > 0 && !selectedRunId) {
-        setSelectedRunId(data[0].run_id);
+      if (runsData.length > 0 && !selectedRunId) {
+        setSelectedRunId(runsData[0].run_id);
+        const detailed = detailedData.find((r) => r.run_id === runsData[0].run_id);
+        setSelectedDetailedRun(detailed || null);
       }
     } catch (err) {
       console.error("Failed to load runs:", err);
@@ -180,6 +190,10 @@ export function InsightsPage() {
       setOverview(overviewData.overview);
       setDocTypes(docTypesData);
       setPriorities(prioritiesData);
+
+      // Update selected detailed run for classification distribution
+      const detailed = detailedRuns.find((r) => r.run_id === runId);
+      setSelectedDetailedRun(detailed || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load insights");
     } finally {
@@ -414,6 +428,7 @@ export function InsightsPage() {
           selectedField={selectedField}
           selectedOutcome={selectedOutcome}
           baselineRunId={baselineRunId}
+          selectedDetailedRun={selectedDetailedRun}
           onDocTypeClick={handleDocTypeClick}
           onPriorityClick={handlePriorityClick}
           onOutcomeFilter={handleOutcomeFilter}
@@ -467,6 +482,7 @@ interface InsightsTabProps {
   selectedField: string | null;
   selectedOutcome: string | null;
   baselineRunId: string | null;
+  selectedDetailedRun: DetailedRunInfo | null;
   onDocTypeClick: (docType: string) => void;
   onPriorityClick: (item: PriorityItem) => void;
   onOutcomeFilter: (outcome: string | null) => void;
@@ -485,6 +501,7 @@ function InsightsTab({
   selectedDocType,
   selectedField,
   selectedOutcome,
+  selectedDetailedRun,
   onDocTypeClick,
   onPriorityClick,
   onOutcomeFilter,
@@ -577,7 +594,8 @@ function InsightsTab({
               <thead>
                 <tr className="border-b bg-gray-50">
                   <th className="text-left p-2 font-medium">Type</th>
-                  <th className="text-right p-2 font-medium">Docs</th>
+                  <th className="text-right p-2 font-medium">Classified</th>
+                  <th className="text-right p-2 font-medium">Extracted</th>
                   <th className="text-right p-2 font-medium">Presence</th>
                   <th className="text-right p-2 font-medium">Accuracy</th>
                   <th className="text-right p-2 font-medium">Evidence</th>
@@ -585,36 +603,87 @@ function InsightsTab({
                 </tr>
               </thead>
               <tbody>
-                {docTypes.map((dt) => (
-                  <tr
-                    key={dt.doc_type}
-                    onClick={() => onDocTypeClick(dt.doc_type)}
-                    className={cn(
-                      "border-b cursor-pointer hover:bg-gray-50 transition-colors",
-                      selectedDocType === dt.doc_type && "bg-blue-50"
-                    )}
-                  >
-                    <td className="p-2 font-medium">
-                      {getDocTypeName(dt.doc_type)}
-                    </td>
-                    <td className="p-2 text-right text-gray-600">{dt.docs_total}</td>
-                    <td className="p-2 text-right">
-                      <ScoreBadge value={dt.required_field_presence_pct} />
-                    </td>
-                    <td className="p-2 text-right">
-                      <ScoreBadge value={dt.required_field_accuracy_pct} />
-                    </td>
-                    <td className="p-2 text-right">
-                      <ScoreBadge value={dt.evidence_rate_pct} />
-                    </td>
-                    <td className="p-2 text-gray-600 truncate max-w-[80px]" title={dt.top_failing_field || ""}>
-                      {dt.top_failing_field ? getFieldName(dt.top_failing_field) : "-"}
-                    </td>
-                  </tr>
-                ))}
-                {docTypes.length === 0 && (
+                {selectedDetailedRun && Object.keys(selectedDetailedRun.phases.classification.distribution).length > 0 ? (
+                  Object.entries(selectedDetailedRun.phases.classification.distribution)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([docType, classifiedCount]) => {
+                      const extractionMetrics = docTypes.find((dt) => dt.doc_type === docType);
+                      return (
+                        <tr
+                          key={docType}
+                          onClick={() => extractionMetrics && onDocTypeClick(docType)}
+                          className={cn(
+                            "border-b transition-colors",
+                            extractionMetrics && "cursor-pointer hover:bg-gray-50",
+                            selectedDocType === docType && "bg-blue-50"
+                          )}
+                        >
+                          <td className="p-2 font-medium">
+                            {getDocTypeName(docType)}
+                          </td>
+                          <td className="p-2 text-right text-gray-600">{classifiedCount}</td>
+                          <td className="p-2 text-right text-gray-600">
+                            {extractionMetrics?.docs_total || 0}
+                          </td>
+                          <td className="p-2 text-right">
+                            {extractionMetrics ? (
+                              <ScoreBadge value={extractionMetrics.required_field_presence_pct} />
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-right">
+                            {extractionMetrics ? (
+                              <ScoreBadge value={extractionMetrics.required_field_accuracy_pct} />
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-right">
+                            {extractionMetrics ? (
+                              <ScoreBadge value={extractionMetrics.evidence_rate_pct} />
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-gray-600 truncate max-w-[80px]" title={extractionMetrics?.top_failing_field || ""}>
+                            {extractionMetrics?.top_failing_field ? getFieldName(extractionMetrics.top_failing_field) : "-"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                ) : docTypes.length > 0 ? (
+                  docTypes.map((dt) => (
+                    <tr
+                      key={dt.doc_type}
+                      onClick={() => onDocTypeClick(dt.doc_type)}
+                      className={cn(
+                        "border-b cursor-pointer hover:bg-gray-50 transition-colors",
+                        selectedDocType === dt.doc_type && "bg-blue-50"
+                      )}
+                    >
+                      <td className="p-2 font-medium">
+                        {getDocTypeName(dt.doc_type)}
+                      </td>
+                      <td className="p-2 text-right text-gray-600">—</td>
+                      <td className="p-2 text-right text-gray-600">{dt.docs_total}</td>
+                      <td className="p-2 text-right">
+                        <ScoreBadge value={dt.required_field_presence_pct} />
+                      </td>
+                      <td className="p-2 text-right">
+                        <ScoreBadge value={dt.required_field_accuracy_pct} />
+                      </td>
+                      <td className="p-2 text-right">
+                        <ScoreBadge value={dt.evidence_rate_pct} />
+                      </td>
+                      <td className="p-2 text-gray-600 truncate max-w-[80px]" title={dt.top_failing_field || ""}>
+                        {dt.top_failing_field ? getFieldName(dt.top_failing_field) : "-"}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
-                    <td colSpan={6} className="p-3 text-center text-gray-500">
+                    <td colSpan={7} className="p-3 text-center text-gray-500">
                       No data
                     </td>
                   </tr>

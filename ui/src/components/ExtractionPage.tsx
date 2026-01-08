@@ -75,12 +75,6 @@ export function ExtractionPage({
     return groups;
   }, [runs]);
 
-  // Calculate coverage metrics
-  const labelCoverage =
-    overview && overview.docs_total > 0
-      ? Math.round((overview.docs_reviewed / overview.docs_total) * 100)
-      : 0;
-
   const copyRunId = () => {
     if (selectedRun) {
       navigator.clipboard.writeText(selectedRun.run_id);
@@ -355,18 +349,18 @@ export function ExtractionPage({
                   <div className="space-y-4">
                     <ProgressBar
                       label="Label Coverage (truth)"
-                      description="Labeled docs / total docs (run-agnostic)"
+                      description="Labeled docs / total docs in run"
                       value={overview?.docs_reviewed || 0}
-                      total={overview?.docs_total || 0}
-                      percentage={labelCoverage}
+                      total={selectedRun.docs_total}
+                      percentage={selectedRun.docs_total > 0 ? Math.round((overview?.docs_reviewed || 0) / selectedRun.docs_total * 100) : 0}
                       color="green"
                     />
                     <ProgressBar
-                      label="Run Coverage (predictions)"
-                      description="Docs with extraction in this run / total docs"
+                      label="Extraction Coverage"
+                      description="Docs with extraction / total docs in run"
                       value={overview?.docs_with_extraction || 0}
-                      total={overview?.docs_total || 0}
-                      percentage={overview?.run_coverage || 0}
+                      total={selectedRun.docs_total}
+                      percentage={selectedRun.docs_total > 0 ? Math.round((overview?.docs_with_extraction || 0) / selectedRun.docs_total * 100) : 0}
                       color="blue"
                     />
                   </div>
@@ -382,7 +376,8 @@ export function ExtractionPage({
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 font-medium text-gray-600">Type</th>
-                          <th className="text-right py-2 font-medium text-gray-600">Docs</th>
+                          <th className="text-right py-2 font-medium text-gray-600">Classified</th>
+                          <th className="text-right py-2 font-medium text-gray-600">Extracted</th>
                           <th className="text-right py-2 font-medium text-gray-600">
                             Presence
                           </th>
@@ -392,29 +387,45 @@ export function ExtractionPage({
                         </tr>
                       </thead>
                       <tbody>
-                        {docTypes.length === 0 ? (
+                        {Object.keys(selectedRun.phases.classification.distribution).length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="py-4 text-center text-gray-400">
-                              No doc types evaluated yet
+                            <td colSpan={5} className="py-4 text-center text-gray-400">
+                              No doc types classified yet
                             </td>
                           </tr>
                         ) : (
-                          docTypes.map((dt) => (
-                            <tr key={dt.doc_type} className="border-b last:border-0">
-                              <td className="py-2 text-gray-900">
-                                {getDocTypeName(dt.doc_type)}
-                              </td>
-                              <td className="py-2 text-right text-gray-600">
-                                {dt.docs_total}
-                              </td>
-                              <td className="py-2 text-right">
-                                <ScoreBadge value={dt.required_field_presence_pct} />
-                              </td>
-                              <td className="py-2 text-right">
-                                <ScoreBadge value={dt.evidence_rate_pct} />
-                              </td>
-                            </tr>
-                          ))
+                          Object.entries(selectedRun.phases.classification.distribution)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([docType, classifiedCount]) => {
+                              const extractionMetrics = docTypes.find((dt) => dt.doc_type === docType);
+                              return (
+                                <tr key={docType} className="border-b last:border-0">
+                                  <td className="py-2 text-gray-900">
+                                    {getDocTypeName(docType)}
+                                  </td>
+                                  <td className="py-2 text-right text-gray-600">
+                                    {classifiedCount}
+                                  </td>
+                                  <td className="py-2 text-right text-gray-600">
+                                    {extractionMetrics?.docs_total || 0}
+                                  </td>
+                                  <td className="py-2 text-right">
+                                    {extractionMetrics ? (
+                                      <ScoreBadge value={extractionMetrics.required_field_presence_pct} />
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="py-2 text-right">
+                                    {extractionMetrics ? (
+                                      <ScoreBadge value={extractionMetrics.evidence_rate_pct} />
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
                         )}
                       </tbody>
                     </table>
