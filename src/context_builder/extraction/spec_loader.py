@@ -57,13 +57,17 @@ class DocTypeSpec:
         return field_name in self.required_fields
 
 
-def load_spec(doc_type: str, version: str = "v0") -> DocTypeSpec:
+def load_spec(doc_type: str, version: str = None) -> DocTypeSpec:
     """
     Load a DocTypeSpec from YAML file.
 
+    Supports two naming conventions:
+    1. New format: {doc_type}.yaml (version in metadata)
+    2. Legacy format: {doc_type}_{version}.yaml
+
     Args:
-        doc_type: Document type name (e.g., 'loss_notice')
-        version: Spec version (default 'v0')
+        doc_type: Document type name (e.g., 'fnol_form')
+        version: Spec version (optional, ignored for new format)
 
     Returns:
         DocTypeSpec loaded from YAML
@@ -72,12 +76,17 @@ def load_spec(doc_type: str, version: str = "v0") -> DocTypeSpec:
         FileNotFoundError: If spec file doesn't exist
         ValueError: If spec file is invalid
     """
-    # Find specs directory relative to this file
     specs_dir = Path(__file__).parent / "specs"
-    spec_file = specs_dir / f"{doc_type}_{version}.yaml"
+
+    # Try new format first: {doc_type}.yaml
+    spec_file = specs_dir / f"{doc_type}.yaml"
+    if not spec_file.exists():
+        # Fall back to legacy format: {doc_type}_{version}.yaml
+        version = version or "v0"
+        spec_file = specs_dir / f"{doc_type}_{version}.yaml"
 
     if not spec_file.exists():
-        raise FileNotFoundError(f"Spec file not found: {spec_file}")
+        raise FileNotFoundError(f"Spec file not found for doc_type: {doc_type}")
 
     with open(spec_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
@@ -122,14 +131,29 @@ def list_available_specs() -> List[str]:
     if not specs_dir.exists():
         return []
 
-    specs = []
+    specs = set()
+
+    # New format: {doc_type}.yaml (exclude special files like doc_type_catalog.yaml)
+    for spec_file in specs_dir.glob("*.yaml"):
+        name = spec_file.stem
+        # Skip catalog and other non-spec files
+        if name in ("doc_type_catalog",) or "_v" in name:
+            continue
+        # Verify it's a valid spec by checking for doc_type key
+        try:
+            with open(spec_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if data and "doc_type" in data:
+                specs.add(name)
+        except Exception:
+            pass
+
+    # Legacy format: {doc_type}_{version}.yaml
     for spec_file in specs_dir.glob("*_v*.yaml"):
-        # Extract doc_type from filename (e.g., loss_notice_v0.yaml -> loss_notice)
         name = spec_file.stem
         if "_v" in name:
             doc_type = name.rsplit("_v", 1)[0]
-            if doc_type not in specs:
-                specs.append(doc_type)
+            specs.add(doc_type)
 
     return sorted(specs)
 
@@ -138,19 +162,19 @@ def list_available_specs() -> List[str]:
 _spec_cache: Dict[str, DocTypeSpec] = {}
 
 
-def get_spec(doc_type: str, version: str = "v0", use_cache: bool = True) -> DocTypeSpec:
+def get_spec(doc_type: str, version: str = None, use_cache: bool = True) -> DocTypeSpec:
     """
     Get a DocTypeSpec, using cache by default.
 
     Args:
         doc_type: Document type name
-        version: Spec version
+        version: Spec version (optional, for legacy format)
         use_cache: Whether to use cached specs
 
     Returns:
         DocTypeSpec instance
     """
-    cache_key = f"{doc_type}_{version}"
+    cache_key = doc_type
 
     if use_cache and cache_key in _spec_cache:
         return _spec_cache[cache_key]

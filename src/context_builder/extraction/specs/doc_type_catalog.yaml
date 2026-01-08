@@ -1,0 +1,159 @@
+# Document Type Catalog - Single Source of Truth for Classification
+# This catalog defines all document types supported by the classification router.
+# Each entry provides cues to help the classifier identify the document type.
+
+doc_types:
+  - doc_type: fnol_form
+    description: "First notice of loss, claim report, or incident notification filed by policyholder"
+    cues:
+      - "loss notice"
+      - "claim report"
+      - "FNOL"
+      - "first notice of loss"
+      - "incident report"
+      - "claim notification"
+      - "aviso de perdida"
+      - "aviso de siniestro"
+      - "siniestro"
+      - "reporte de reclamo"
+
+  - doc_type: insurance_policy
+    description: "Insurance policy document showing coverage details, terms, and conditions"
+    cues:
+      - "policy number"
+      - "coverage"
+      - "premium"
+      - "insured"
+      - "beneficiary"
+      - "effective date"
+      - "expiry date"
+      - "poliza"
+      - "póliza"
+      - "vigencia"
+      - "cobertura"
+
+  - doc_type: police_report
+    description: "Official police or law enforcement report documenting an incident"
+    cues:
+      - "police report"
+      - "incident report"
+      - "case number"
+      - "officer"
+      - "badge number"
+      - "parte policial"
+      - "denuncia"
+      - "comisaria"
+      - "agente"
+
+  - doc_type: invoice
+    description: "Invoice, receipt, or bill for goods or services"
+    cues:
+      - "invoice"
+      - "receipt"
+      - "bill"
+      - "total"
+      - "amount due"
+      - "payment"
+      - "factura"
+      - "recibo"
+      - "comprobante"
+      - "subtotal"
+      - "tax"
+      - "IVA"
+
+  - doc_type: id_document
+    description: "Personal identification document such as ID card, passport, or driver's license"
+    cues:
+      - "identification"
+      - "ID number"
+      - "passport"
+      - "driver license"
+      - "cedula"
+      - "cédula"
+      - "DNI"
+      - "national ID"
+      - "date of birth"
+      - "nationality"
+
+  - doc_type: vehicle_registration
+    description: "Vehicle registration or title document"
+    cues:
+      - "vehicle registration"
+      - "registration certificate"
+      - "plate number"
+      - "license plate"
+      - "VIN"
+      - "chassis"
+      - "matricula"
+      - "matrícula"
+      - "placa"
+      - "tarjeta de circulacion"
+
+  - doc_type: certificate
+    description: "Official certificate or attestation document"
+    cues:
+      - "certificate"
+      - "certification"
+      - "attestation"
+      - "certified"
+      - "certificado"
+      - "constancia"
+      - "tracking certificate"
+      - "gravamen"
+
+  - doc_type: medical_report
+    description: "Medical documentation including doctor's reports, diagnoses, hospital records, or medical bills"
+    cues:
+      - "medical report"
+      - "diagnosis"
+      - "treatment"
+      - "hospital"
+      - "doctor"
+      - "physician"
+      - "patient"
+      - "prescription"
+      - "medical certificate"
+      - "informe medico"
+      - "diagnostico"
+      - "historia clinica"
+
+  - doc_type: travel_itinerary
+    description: "Travel booking confirmations including flights, hotels, or trip details"
+    cues:
+      - "itinerary"
+      - "booking confirmation"
+      - "flight"
+      - "reservation"
+      - "hotel"
+      - "departure"
+      - "arrival"
+      - "passenger"
+      - "PNR"
+      - "confirmation number"
+      - "e-ticket"
+
+  - doc_type: customer_comm
+    description: "Customer communications including emails, letters, or correspondence"
+    cues:
+      - "dear"
+      - "sincerely"
+      - "regards"
+      - "email"
+      - "subject"
+      - "from"
+      - "to"
+      - "sent"
+      - "correspondence"
+      - "letter"
+      - "estimado"
+      - "atentamente"
+
+  - doc_type: supporting_document
+    description: "Other supporting documents that do not fit specific categories"
+    cues:
+      - "attachment"
+      - "document"
+      - "supporting"
+      - "additional"
+      - "anexo"
+      - "adjunto"

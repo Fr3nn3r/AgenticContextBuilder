@@ -4,8 +4,10 @@ import json
 import logging
 import os
 import time
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Dict, Any, Optional, List
 
+import yaml
 from pydantic import ValidationError
 
 from context_builder.classification import (
@@ -19,6 +21,55 @@ from context_builder.schemas.document_classification import DocumentClassificati
 
 logger = logging.getLogger(__name__)
 
+# Path to doc type catalog
+SPECS_DIR = Path(__file__).parent.parent / "extraction" / "specs"
+DOC_TYPE_CATALOG_PATH = SPECS_DIR / "doc_type_catalog.yaml"
+
+
+def load_doc_type_catalog() -> List[Dict[str, Any]]:
+    """
+    Load the document type catalog from YAML file.
+
+    Returns:
+        List of doc type entries with doc_type, description, and cues.
+
+    Raises:
+        ConfigurationError: If catalog file is missing or invalid.
+    """
+    if not DOC_TYPE_CATALOG_PATH.exists():
+        raise ConfigurationError(
+            f"Document type catalog not found: {DOC_TYPE_CATALOG_PATH}"
+        )
+
+    try:
+        with open(DOC_TYPE_CATALOG_PATH, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data.get("doc_types", [])
+    except Exception as e:
+        raise ConfigurationError(f"Failed to load doc type catalog: {e}")
+
+
+def format_doc_type_catalog(doc_types: List[Dict[str, Any]]) -> str:
+    """
+    Format the doc type catalog for prompt injection.
+
+    Args:
+        doc_types: List of doc type entries from catalog.
+
+    Returns:
+        Formatted string suitable for prompt injection.
+    """
+    lines = []
+    for entry in doc_types:
+        doc_type = entry.get("doc_type", "unknown")
+        description = entry.get("description", "")
+        cues = entry.get("cues", [])
+        cues_str = ", ".join(cues[:5])  # Limit to 5 cues for brevity
+        lines.append(f"- {doc_type}: {description}")
+        if cues_str:
+            lines.append(f"  Cues: {cues_str}")
+    return "\n".join(lines)
+
 
 class OpenAIDocumentClassifier(DocumentClassifier):
     """
@@ -29,8 +80,8 @@ class OpenAIDocumentClassifier(DocumentClassifier):
     - Prompt: Configurable .md file defines instructions and configuration
     - Runner: This class orchestrates the API calls
 
-    Uses json_object mode to allow flexible key_information structures based
-    on document type.
+    Acts as a router that identifies document type with signals/evidence,
+    providing optional key_hints without deep field extraction.
     """
 
     def __init__(self, prompt_name: str = "claims_document_classification"):
@@ -75,9 +126,13 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         self.prompt_name = prompt_name
         self._load_prompt_config()
 
+        # Load document type catalog
+        self._load_doc_type_catalog()
+
         logger.debug(
             f"Classifier initialized: model={self.model}, "
-            f"max_tokens={self.max_tokens}, prompt={self.prompt_name}"
+            f"max_tokens={self.max_tokens}, prompt={self.prompt_name}, "
+            f"doc_types={len(self.doc_types)}"
         )
 
     def _load_prompt_config(self):
@@ -95,15 +150,22 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         except Exception as e:
             raise ConfigurationError(f"Failed to load prompt configuration: {e}")
 
+    def _load_doc_type_catalog(self):
+        """Load and format the document type catalog for prompt injection."""
+        self.doc_types = load_doc_type_catalog()
+        self.doc_type_catalog_str = format_doc_type_catalog(self.doc_types)
+        logger.debug(f"Loaded {len(self.doc_types)} document types from catalog")
+
     def _build_messages(
         self, text_content: str, filename: str
     ) -> list:
         """Build messages for API call using prompt template."""
-        # Load and render prompt with variables
+        # Load and render prompt with variables including doc type catalog
         prompt_data = load_prompt(
             self.prompt_name,
             text_content=text_content,
             filename=filename,
+            doc_type_catalog=self.doc_type_catalog_str,
         )
         return prompt_data["messages"]
 
@@ -202,7 +264,7 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             filename: Original filename (hint for classification)
 
         Returns:
-            Dict with document_type, language, summary, key_information
+            Dict with document_type, language, confidence, summary, signals, key_hints
         """
         # Build messages from prompt template
         messages = self._build_messages(text_content, filename)

@@ -1,0 +1,115 @@
+doc_type: vehicle_registration
+version: v1
+
+required_fields:
+  - plate_number
+  - owner_name
+
+optional_fields:
+  - vin
+  - make
+  - model
+  - year
+  - color
+  - registration_date
+  - expiry_date
+
+field_rules:
+  plate_number:
+    normalize: plate_normalize
+    validate: plate_like
+    hints:
+      - "plate"
+      - "license plate"
+      - "placa"
+      - "matrícula"
+      - "registration number"
+      - "placas"
+
+  owner_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "owner"
+      - "registered owner"
+      - "propietario"
+      - "nombre"
+      - "titular"
+      - "owner name"
+
+  vin:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "VIN"
+      - "vehicle identification number"
+      - "chassis"
+      - "chasis"
+      - "número de serie"
+      - "serial number"
+
+  make:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "make"
+      - "manufacturer"
+      - "marca"
+      - "brand"
+      - "fabricante"
+
+  model:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "model"
+      - "modelo"
+      - "type"
+      - "tipo"
+
+  year:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "year"
+      - "año"
+      - "model year"
+      - "año modelo"
+      - "fabricación"
+
+  color:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "color"
+      - "colour"
+      - "vehicle color"
+
+  registration_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "registration date"
+      - "date registered"
+      - "fecha de registro"
+      - "matriculación"
+      - "issued"
+
+  expiry_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "expiry date"
+      - "valid until"
+      - "vencimiento"
+      - "vigencia"
+      - "expires"
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.7
+  warn_if:
+    - evidence_rate < 0.7
+  fail_if:
+    - required_present_ratio < 1.0

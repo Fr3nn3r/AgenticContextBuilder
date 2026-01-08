@@ -41,7 +41,7 @@ class DocumentClassifier(ABC):
             filename: Original filename (hint for classification)
 
         Returns:
-            Dict with document_type, language, summary, key_information
+            Dict with document_type, language, confidence, summary, signals, key_hints
 
         Raises:
             ClassificationError: If classification fails
@@ -50,14 +50,14 @@ class DocumentClassifier(ABC):
 
     def classify(self, text_content: str, filename: str = "") -> Dict[str, Any]:
         """
-        Classify document and extract key information.
+        Classify document and route to appropriate extractor.
 
         Args:
             text_content: Extracted text from document
             filename: Original filename (hint for classification)
 
         Returns:
-            Dict with document_type, language, summary, key_information
+            Dict with document_type, language, confidence, summary, signals, key_hints
 
         Raises:
             ClassificationError: If classification fails

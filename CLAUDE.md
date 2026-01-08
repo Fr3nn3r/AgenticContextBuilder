@@ -25,7 +25,7 @@
 
 **ContextBuilder** is an **insurance claims document processing pipeline** that:
 1. **Ingests** documents (PDFs, images, text) via Azure DI or OpenAI Vision
-2. **Classifies** document types (loss_notice, police_report, insurance_policy)
+2. **Classifies** document types via generic router (LOB-agnostic, supports motor/travel/etc.)
 3. **Extracts** structured fields with provenance tracking
 4. **Assesses** quality with automated gates (pass/warn/fail)
 5. **Enables** human QA labeling via React UI
@@ -117,6 +117,51 @@ Document → Discovery → Ingestion → pages.json → Classification → Extra
                                                                       ↓
                                                               Human QA Labels
 ```
+
+---
+
+## Classification System
+
+The classifier acts as a **router** that identifies document types using a catalog-driven approach. It provides lightweight hints without deep field extraction (extraction is handled separately).
+
+### Document Type Catalog (SSOT)
+**File:** `src/context_builder/extraction/specs/doc_type_catalog.yaml`
+
+All document types are **LOB-agnostic** (work across motor, travel, health, etc.):
+
+| Doc Type | Description |
+|----------|-------------|
+| `fnol_form` | First notice of loss, claim reports, incident notifications |
+| `insurance_policy` | Policy documents with coverage details |
+| `police_report` | Official police/law enforcement reports |
+| `invoice` | Invoices, receipts, bills (all payment documents) |
+| `id_document` | ID cards, passports, driver's licenses |
+| `vehicle_registration` | Vehicle registration/title documents |
+| `certificate` | Official certificates and attestations |
+| `medical_report` | Medical documentation, doctor's reports, hospital records |
+| `travel_itinerary` | Flight/hotel bookings, trip confirmations |
+| `customer_comm` | Customer emails, letters, correspondence |
+| `supporting_document` | Catch-all for other documents |
+
+### Classification Output
+```python
+{
+  "document_type": "fnol_form",
+  "language": "en",
+  "confidence": 0.95,
+  "summary": "First notice of loss for travel delay claim",
+  "signals": ["FNOL header", "claim number field", "incident date present"],
+  "key_hints": {"claim_reference": "CLM-12345"}  # Optional, max 3 hints
+}
+```
+
+### Key Files
+- `extraction/specs/doc_type_catalog.yaml` - Document type definitions with cues
+- `prompts/claims_document_classification.md` - Router prompt template
+- `classification/openai_classifier.py` - Classifier with catalog injection
+- `schemas/document_classification.py` - Output schema (Pydantic)
+
+---
 
 ### Key Data Structures
 
@@ -217,10 +262,13 @@ AZURE_DI_API_KEY=...
 
 **Backend Core:**
 - `src/context_builder/pipeline/run.py` - Main orchestration
+- `src/context_builder/classification/openai_classifier.py` - Document classification router
 - `src/context_builder/extraction/extractors/generic.py` - Field extraction
 - `src/context_builder/extraction/spec_loader.py` - Field specs (YAML)
+- `src/context_builder/extraction/specs/doc_type_catalog.yaml` - Document type catalog (SSOT)
 - `src/context_builder/api/main.py` - FastAPI endpoints
 - `src/context_builder/schemas/extraction_result.py` - Output schema
+- `src/context_builder/schemas/document_classification.py` - Classification schema
 
 **Frontend Core:**
 - `ui/src/App.tsx` - Main app with routing
@@ -240,4 +288,88 @@ AZURE_DI_API_KEY=...
 
 - **scratch/ folder**: Contains temporary working notes - IGNORE unless explicitly referenced with full path
 - **Extraction specs**: Located in `src/context_builder/extraction/specs/*.yaml`
+  - Naming: `{doc_type}.yaml` (e.g., `fnol_form.yaml`, `invoice.yaml`)
+  - Version stored in file metadata, not filename
+  - Special file: `doc_type_catalog.yaml` defines all document types (SSOT for classification)
 - **Prompts**: Located in `src/context_builder/prompts/*.md` (Jinja2 templates)
+
+# Glossary (crisp definitions)
+
+### Run
+
+A single execution of the pipeline on a dataset with specific versions (extractor/templates/model). Produces extraction outputs, gates, logs, and metrics for that run.
+
+### Global run
+
+A run scoped across multiple claims/documents (the dataset-level run), used for UI selection and benchmarking.
+
+### Extraction output
+
+The values produced by the system for a document in a specific run, including provenance/evidence.
+
+### Extraction Gate
+
+A run-scoped quality status for a document: PASS/WARN/FAIL, derived from extraction health (required fields present, schema validity, evidence, unreadable text, etc.).
+
+### Label
+
+A human-authored record stored per document+field indicating whether we have established truth and what it is.
+
+### Labeled
+
+Label state meaning: a truth_value exists for that document+field. This is the benchmark “ground truth”.
+
+### Unlabeled
+
+Label state meaning: no truth decision/value has been recorded yet for that document+field.
+
+### Unverifiable
+
+Label state meaning: a reviewer explicitly cannot establish truth for that field from the available document(s). Should include a reason.
+
+### Truth value
+
+The human-authoritative correct value for a field in a given document (stored when state is LABELED).
+
+### Extracted value
+
+The system-produced value for a field from the selected run.
+
+### Correct
+
+Computed outcome (not stored as truth): extracted value equals truth value after normalization.
+
+### Incorrect
+
+Computed outcome (not stored as truth): extracted value exists but does not equal truth value.
+
+### Missing
+
+Computed outcome (not stored as truth): truth value exists but extracted value is missing/empty.
+
+### Accuracy
+
+Run-level metric computed over LABELED fields only:
+Correct / (Correct + Incorrect + Missing)
+
+### Coverage (Doc-level)
+
+Docs with at least one LABELED field / total docs in scope.
+
+### Coverage (Field-level)
+
+Number of LABELED fields / total target fields (e.g., required+optional per template, or required only—must specify).
+
+### Evidence / Provenance
+
+Information that allows a human to verify an extracted value in the source (page reference, anchor/quote, offsets). Evidence is typically attached to extraction outputs.
+
+### Target fields
+
+The set of fields defined by the document template/spec for that doc type (required and optionally optional).
+
+### Doc type override
+
+A reviewer flag indicating the predicted doc type is wrong/unsure; used to exclude documents from benchmark scoring until corrected.
+
+
