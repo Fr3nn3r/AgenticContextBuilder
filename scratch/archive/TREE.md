@@ -1,0 +1,81 @@
+# src Directory Structure
+
+`src/`
+- `context_builder/` — Core Python package that orchestrates document ingestion, AI-driven extraction, and runtime evaluation utilities.
+  - `__init__.py` — Exposes package version plus the `DataIngestion` base interface and factory helpers.
+  - `ingestion.py` — Defines ingestion exception hierarchy, the abstract `DataIngestion` contract, and a registry-based factory for concrete providers.
+  - `cli.py` — Implements the command-line interface for acquiring documents, extracting symbols or logic, and saving structured outputs with rich logging.
+  - `execution/` — Components that turn extracted logic into executable forms and enriched metadata.
+    - `__init__.py` — Re-exports the form generator, type inference engine, and UDM enricher utilities.
+    - `form_generator.py` — Builds claim-input schemas (custom and JSON Schema) by analyzing policy logic and enriching fields.
+    - `schema_enrichment.py` — Loads and caches the UDM markdown schema to decorate inferred fields with descriptions, categorisation, and repeatable metadata.
+    - `type_inference.py` — Inspects normalized JSON Logic trees to infer field types, usage counts, and operator contexts for downstream schema building.
+  - `extraction/` — AI extraction pipeline for chunking markdown, linting rules, and refining outputs.
+    - `__init__.py` — Package marker documenting extraction capabilities.
+    - `chunk_refinement_orchestrator.py` — Coordinates the extract → lint → refine loop for each chunk and merges corrected rules back in place.
+    - `chunking.py` — Implements header-aware markdown chunking, token counting, and symbol filtering to keep LLM calls within limits.
+    - `openai_logic_extraction.py` — Orchestrates OpenAI Structured Output calls to produce normalized policy logic and transpiles it to standard JSON Logic.
+    - `openai_symbol_extraction.py` — Uses OpenAI to extract defined terms and explicit variables from markdown, emitting JSON and markdown symbol tables.
+    - `policy_logic_linter.py` — Validates normalized logic for syntax issues, schema vocabulary violations, and enum mismatches before refinement.
+    - `policy_logic_refiner.py` — Calls OpenAI with linter feedback to automatically repair failing rules while preserving schema guarantees.
+    - `progress_callback.py` — Declares the progress-reporting abstraction and a no-op implementation for extraction workflows.
+    - `tqdm_progress_callback.py` — Concrete progress callback that feeds extraction status into `tqdm` progress bars.
+  - `impl/` — Concrete ingestion providers for different OCR and vision backends.
+    - `__init__.py` — Package marker for ingestion implementations.
+    - `azure_di_ingestion.py` — Integration with Azure Document Intelligence to produce markdown plus rich document metadata.
+    - `openai_vision_ingestion.py` — OpenAI Vision-based ingestion that renders pages, sends them to the API, and validates results with Pydantic schemas.
+    - `tesseract_ingestion.py` — Local Tesseract OCR adapter that extracts text and metadata without external APIs.
+  - `pipeline/` — Orchestration entry points for end-to-end PDF processing.
+    - `__init__.py` — Re-exports the policy processing orchestrator.
+    - `processing_orchestrator.py` — Coordinates PDF copying, Azure ingestion, symbol extraction, logic extraction, and summary artifact generation.
+  - `prompts/` — Markdown prompt templates with YAML frontmatter used by the extraction services.
+    - `document_analysis.md` — Prompt plus configuration for vision ingestion of general documents.
+    - `policy_logic_extraction.md` — Instructions for extracting normalized policy rules with micro chain-of-thought metadata.
+    - `policy_logic_refiner.md` — Prompt that guides the refiner through fixing linter-detected issues in individual rules.
+    - `policy_symbol_extraction.md` — Prompt template for pulling defined terms and explicit policy variables into a structured symbol table.
+  - `runtime/` — Runtime components for evaluating logic against claim data and presenting results.
+    - `__init__.py` — Documents the four runtime layers and re-exports evaluators, mappers, and loaders.
+    - `claim_mapper.py` — Inflates flat UI data into nested JSON structures and validates inputs against generated schemas.
+    - `evaluator.py` — Declares the evaluator interface and provides a JSON Logic-backed implementation for executing policy rules.
+    - `result_interpreter.py` — Translates raw evaluator output into user-friendly summaries, financial results, and reasoning traces.
+    - `schema_loader.py` — Loads and sanity-checks schema and logic JSON files, providing helpers to enumerate fields and rules.
+    - `validators.py` — Performs schema-driven validation of flat claim data, including type and enum enforcement.
+  - `schemas/` — Pydantic models and JSON definitions that constrain LLM outputs and runtime data.
+    - `__init__.py` — Exposes the document analysis schema package-wide.
+    - `complex_claim_schema.json` — Extended form schema capturing rich claim fields for advanced policies.
+    - `document_analysis.py` — Pydantic model describing structured output from document vision analysis.
+    - `extended_standard_claim_schema.json` — JSON schema enumerating claim variables plus enum vocab used by the linter.
+    - `policy_logic_extraction.py` — Pydantic schema defining normalized logic nodes, rule types, and reasoning metadata.
+    - `policy_symbol_extraction.py` — Pydantic schema describing symbol table outputs (defined terms and explicit variables).
+    - `standard_claim_schema.json` — Baseline claim input schema used for standardised form rendering.
+    - `udm_schema.md` — Markdown reference for the Unified Data Model, consumed by the schema enricher.
+  - `utils/` — Shared helper modules supporting file handling, prompt rendering, and schema transformation.
+    - `__init__.py` — Package marker for utility helpers.
+    - `file_utils.py` — Provides file metadata extraction and timestamped output folder creation.
+    - `filename_utils.py` — Sanitises filenames and generates deterministic processing folder names.
+    - `hashing.py` — Calculates MD5 checksums for files with logging on failure.
+    - `json_logic_transpiler.py` — Converts normalized `op/args` logic into standard JSON Logic dictionaries.
+    - `prompt_loader.py` — Loads markdown prompts with YAML frontmatter and renders them into OpenAI message lists.
+    - `schema_renderer.py` — Renders JSON schema definitions into markdown UDM context snippets for prompt injection.
+    - `symbol_table_renderer.py` — Converts symbol table JSON into compact markdown for LLM consumption.
+    - `udm_bridge.py` — Normalises explicit variables into UDM paths and renders dynamic policy variable context.
+- `context_builder.egg-info/` — Packaging metadata produced by setuptools for the `context-builder` distribution.
+  - `dependency_links.txt` — Placeholder for legacy dependency links (typically empty).
+  - `PKG-INFO` — Generated package metadata including version, dependencies, and README content.
+  - `requires.txt` — Lists runtime dependency requirements captured during packaging.
+  - `SOURCES.txt` — Enumerates source files included in the built distribution.
+  - `top_level.txt` — Specifies the top-level package name exposed by the distribution.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
