@@ -59,3 +59,11 @@ class TextReadability(str, Enum):
     GOOD = "good"
     WARN = "warn"
     BAD = "bad"
+
+
+class PipelineStage(str, Enum):
+    """Pipeline stages that can be selectively executed."""
+
+    INGEST = "ingest"
+    CLASSIFY = "classify"
+    EXTRACT = "extract"

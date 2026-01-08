@@ -31,7 +31,7 @@ from context_builder.schemas.extraction_result import (
     DocumentMetadata,
     ExtractionRunMetadata,
 )
-from context_builder.schemas.run_errors import DocStatus, RunErrorCode, TextSource
+from context_builder.schemas.run_errors import DocStatus, PipelineStage, RunErrorCode, TextSource
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,42 @@ class PhaseTimings:
     classification_ms: int = 0
     extraction_ms: int = 0
     total_ms: int = 0
+
+
+@dataclass
+class StageConfig:
+    """Configuration for stage-selective execution."""
+
+    stages: List[PipelineStage] = field(
+        default_factory=lambda: [PipelineStage.INGEST, PipelineStage.CLASSIFY, PipelineStage.EXTRACT]
+    )
+
+    @property
+    def run_ingest(self) -> bool:
+        return PipelineStage.INGEST in self.stages
+
+    @property
+    def run_classify(self) -> bool:
+        return PipelineStage.CLASSIFY in self.stages
+
+    @property
+    def run_extract(self) -> bool:
+        return PipelineStage.EXTRACT in self.stages
+
+    @property
+    def run_kind(self) -> str:
+        """Determine run kind based on stages."""
+        if self.run_ingest and self.run_classify and self.run_extract:
+            return "full"
+        elif self.run_classify and self.run_extract:
+            return "classify_extract"
+        elif self.run_extract:
+            return "extract_only"
+        elif self.run_classify:
+            return "classify_only"
+        elif self.run_ingest:
+            return "ingest_only"
+        return "custom"
 
 
 @dataclass
@@ -64,6 +100,9 @@ class DocResult:
     timings: Optional[PhaseTimings] = None
     failed_phase: Optional[str] = None  # "ingestion", "classification", "extraction"
     quality_gate_status: Optional[str] = None  # "pass", "warn", "fail"
+    # Stage reuse tracking
+    ingestion_reused: bool = False
+    classification_reused: bool = False
 
 
 @dataclass
@@ -156,8 +195,13 @@ def _write_manifest(
     command: str,
     doc_count: int,
     model: str,
+    stage_config: Optional[StageConfig] = None,
 ) -> Dict[str, Any]:
     """Write manifest.json at run start. Returns manifest dict for later update."""
+    # Default to full pipeline if no config
+    if stage_config is None:
+        stage_config = StageConfig()
+
     manifest = {
         "run_id": run_id,
         "started_at": datetime.utcnow().isoformat() + "Z",
@@ -180,6 +224,8 @@ def _write_manifest(
         "counters_expected": {
             "docs": doc_count,
         },
+        "run_kind": stage_config.run_kind,
+        "stages_executed": [s.value for s in stage_config.stages],
     }
     _write_json_atomic(run_paths.manifest_json, manifest)
     return manifest
@@ -266,6 +312,63 @@ def _ingest_document(
         raise ValueError(f"Unknown source type: {doc.source_type}")
 
 
+def _load_existing_ingestion(
+    doc_paths: DocPaths,
+) -> tuple[str, Dict[str, Any]]:
+    """
+    Load existing ingestion output from pages.json.
+
+    Args:
+        doc_paths: Document paths
+
+    Returns:
+        Tuple of (text_content, pages_data)
+
+    Raises:
+        FileNotFoundError: If pages.json doesn't exist
+        ValueError: If pages.json is invalid
+    """
+    if not doc_paths.pages_json.exists():
+        raise FileNotFoundError(f"pages.json not found: {doc_paths.pages_json}")
+
+    with open(doc_paths.pages_json, "r", encoding="utf-8") as f:
+        pages_data = json.load(f)
+
+    # Reconstruct text content from pages
+    pages = pages_data.get("pages", [])
+    text_content = "\n\n".join(p.get("text", "") for p in pages)
+
+    return text_content, pages_data
+
+
+def _load_existing_classification(
+    doc_paths: DocPaths,
+) -> tuple[str, str, float]:
+    """
+    Load existing classification from doc.json.
+
+    Args:
+        doc_paths: Document paths
+
+    Returns:
+        Tuple of (doc_type, language, confidence)
+
+    Raises:
+        FileNotFoundError: If doc.json doesn't exist
+    """
+    if not doc_paths.doc_json.exists():
+        raise FileNotFoundError(f"doc.json not found: {doc_paths.doc_json}")
+
+    with open(doc_paths.doc_json, "r", encoding="utf-8") as f:
+        doc_meta = json.load(f)
+
+    return (
+        doc_meta.get("doc_type", "unknown"),
+        doc_meta.get("language", "es"),
+        doc_meta.get("doc_type_confidence", 0.8),
+    )
+
+
 def process_document(
     doc: DiscoveredDocument,
     claim_id: str,
@@ -273,19 +376,17 @@ def process_document(
     run_paths: RunPaths,
     classifier: Any,
     run_id: str,
+    stage_config: Optional[StageConfig] = None,
 ) -> DocResult:
     """
-    Process a single document through the full pipeline.
+    Process a single document through selected pipeline stages.
 
-    Steps:
-    1. Copy source file (PDF/image) or write text to source/
-    2. Ingest if needed (Azure DI for PDF, OpenAI Vision for images)
-    3. Build and write text/pages.json
-    4. Classify document
-    5. Write context/<doc_id>.json
-    6. Write meta/doc.json
-    7. If doc_type supported, run extraction
-    8. Write extraction/<doc_id>.json
+    Stages:
+    - INGEST: Copy source, extract text, write pages.json
+    - CLASSIFY: Classify document type, write context and doc.json
+    - EXTRACT: Run field extraction if doc_type supported
+
+    When stages are skipped, existing outputs are loaded from disk.
 
     Args:
         doc: Discovered document
@@ -294,45 +395,78 @@ def process_document(
         run_paths: Run-scoped output paths
         classifier: Document classifier instance
         run_id: Current run identifier
+        stage_config: Configuration for which stages to run (default: all)
 
     Returns:
         DocResult with processing status and paths
     """
     start_time = time.time()
     timings = PhaseTimings()
-    current_phase = "ingestion"
+    current_phase = "setup"
+
+    # Default to full pipeline if no config provided
+    if stage_config is None:
+        stage_config = StageConfig()
+
+    # Track reuse
+    ingestion_reused = False
+    classification_reused = False
 
     try:
+        text_content = None
+        pages_data = None
+        doc_type = None
+        language = None
+        confidence = None
+        content_md5 = None
+
         # ========== INGESTION PHASE ==========
+        current_phase = "ingestion"
         ingestion_start = time.time()
 
-        # Step 1: Copy/write source file
-        if doc.source_type in ("pdf", "image"):
-            # Copy binary file to source/
-            dest_path = doc_paths.source_dir / f"original{doc.source_path.suffix}"
-            shutil.copy2(doc.source_path, dest_path)
+        if stage_config.run_ingest:
+            # Step 1: Copy/write source file
+            if doc.source_type in ("pdf", "image"):
+                dest_path = doc_paths.source_dir / f"original{doc.source_path.suffix}"
+                shutil.copy2(doc.source_path, dest_path)
+            else:
+                doc_paths.original_txt.write_text(doc.content, encoding="utf-8")
+
+            # Step 2: Ingest or use existing content
+            if doc.needs_ingestion:
+                text_content = _ingest_document(doc, doc_paths)
+            else:
+                text_content = doc.content
+
+            # Write source text
+            doc_paths.source_txt.write_text(text_content, encoding="utf-8")
+
+            # Step 3: Build and write pages.json
+            pages_data = build_pages_json(
+                text_content,
+                doc.doc_id,
+                source_type="azure_di" if doc.source_type == "pdf" else (
+                    "vision_ocr" if doc.source_type == "image" else "preextracted_txt"
+                ),
+            )
+            _write_json(doc_paths.pages_json, pages_data)
         else:
-            # Write text content
-            doc_paths.original_txt.write_text(doc.content, encoding="utf-8")
-
-        # Step 2: Ingest or use existing content
-        if doc.needs_ingestion:
-            text_content = _ingest_document(doc, doc_paths)
-        else:
-            text_content = doc.content
-
-        # Write source text
-        doc_paths.source_txt.write_text(text_content, encoding="utf-8")
-
-        # Step 3: Build and write pages.json
-        pages_data = build_pages_json(
-            text_content,
-            doc.doc_id,
-            source_type="azure_di" if doc.source_type == "pdf" else (
-                "vision_ocr" if doc.source_type == "image" else "preextracted_txt"
-            ),
-        )
-        _write_json(doc_paths.pages_json, pages_data)
+            # Load existing ingestion
+            try:
+                text_content, pages_data = _load_existing_ingestion(doc_paths)
+                ingestion_reused = True
+                logger.info(f"Reusing existing ingestion for {doc.original_filename}")
+            except FileNotFoundError:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                return DocResult(
+                    doc_id=doc.doc_id,
+                    original_filename=doc.original_filename,
+                    status="skipped",
+                    source_type=doc.source_type,
+                    error="TEXT_MISSING: No pages.json found and --stages excludes ingest",
+                    time_ms=elapsed_ms,
+                    failed_phase="ingestion",
+                )
 
         timings.ingestion_ms = int((time.time() - ingestion_start) * 1000)
 
@@ -340,43 +474,67 @@ def process_document(
         current_phase = "classification"
         classification_start = time.time()
 
-        # Step 4: Classify document
-        classification = classifier.classify(text_content, doc.original_filename)
-        doc_type = classification.get("document_type", "unknown")
-        language = classification.get("language", "es")
-        confidence = classification.get("confidence")
-        if confidence is None:
-            confidence = 0.8
+        if stage_config.run_classify:
+            # Step 4: Classify document
+            classification = classifier.classify(text_content, doc.original_filename)
+            doc_type = classification.get("document_type", "unknown")
+            language = classification.get("language", "es")
+            confidence = classification.get("confidence")
+            if confidence is None:
+                confidence = 0.8
 
-        # Step 5: Write context JSON
-        context_data = {
-            "doc_id": doc.doc_id,
-            "original_filename": doc.original_filename,
-            "source_type": doc.source_type,
-            "classification": classification,
-            "classified_at": datetime.utcnow().isoformat() + "Z",
-        }
-        context_path = run_paths.context_dir / f"{doc.doc_id}.json"
-        _write_json(context_path, context_data)
+            # Step 5: Write context JSON
+            context_data = {
+                "doc_id": doc.doc_id,
+                "original_filename": doc.original_filename,
+                "source_type": doc.source_type,
+                "classification": classification,
+                "classified_at": datetime.utcnow().isoformat() + "Z",
+            }
+            context_path = run_paths.context_dir / f"{doc.doc_id}.json"
+            _write_json(context_path, context_data)
 
-        # Step 6: Write meta/doc.json
-        import hashlib
-        content_md5 = hashlib.md5(text_content.encode("utf-8")).hexdigest()
+            # Step 6: Write meta/doc.json
+            content_md5 = hashlib.md5(text_content.encode("utf-8")).hexdigest()
 
-        doc_meta = {
-            "doc_id": doc.doc_id,
-            "claim_id": claim_id,
-            "original_filename": doc.original_filename,
-            "source_type": doc.source_type,
-            "doc_type": doc_type,
-            "doc_type_confidence": confidence,
-            "language": language,
-            "file_md5": doc.file_md5,
-            "content_md5": content_md5,
-            "page_count": pages_data["page_count"],
-            "created_at": datetime.utcnow().isoformat() + "Z",
-        }
-        _write_json(doc_paths.doc_json, doc_meta)
+            doc_meta = {
+                "doc_id": doc.doc_id,
+                "claim_id": claim_id,
+                "original_filename": doc.original_filename,
+                "source_type": doc.source_type,
+                "doc_type": doc_type,
+                "doc_type_confidence": confidence,
+                "language": language,
+                "file_md5": doc.file_md5,
+                "content_md5": content_md5,
+                "page_count": pages_data["page_count"],
+                "created_at": datetime.utcnow().isoformat() + "Z",
+            }
+            _write_json(doc_paths.doc_json, doc_meta)
+        else:
+            # Load existing classification
+            try:
+                doc_type, language, confidence = _load_existing_classification(doc_paths)
+                classification_reused = True
+                logger.info(f"Reusing existing classification for {doc.original_filename}: {doc_type}")
+                # Get content_md5 from existing doc.json
+                with open(doc_paths.doc_json, "r", encoding="utf-8") as f:
+                    existing_meta = json.load(f)
+                content_md5 = existing_meta.get("content_md5", "")
+            except FileNotFoundError:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                timings.ingestion_ms = int((time.time() - ingestion_start) * 1000)
+                return DocResult(
+                    doc_id=doc.doc_id,
+                    original_filename=doc.original_filename,
+                    status="skipped",
+                    source_type=doc.source_type,
+                    error="CLASSIFICATION_MISSING: No doc.json found and --stages excludes classify",
+                    time_ms=elapsed_ms,
+                    timings=timings,
+                    failed_phase="classification",
+                    ingestion_reused=ingestion_reused,
+                )
 
         timings.classification_ms = int((time.time() - classification_start) * 1000)
 
@@ -386,12 +544,11 @@ def process_document(
         extraction_path = None
         quality_gate_status = None
 
-        # Step 7-8: Run extraction if supported
-        if ExtractorFactory.is_supported(doc_type):
+        if stage_config.run_extract and ExtractorFactory.is_supported(doc_type):
             extraction_path, quality_gate_status = _run_extraction(
                 doc_id=doc.doc_id,
                 file_md5=doc.file_md5,
-                content_md5=content_md5,
+                content_md5=content_md5 or "",
                 claim_id=claim_id,
                 pages_data=pages_data,
                 doc_type=doc_type,
@@ -401,6 +558,8 @@ def process_document(
                 run_id=run_id,
             )
             logger.info(f"Extracted {doc_type}: {doc.original_filename}")
+        elif not stage_config.run_extract:
+            logger.debug(f"Extraction skipped by --stages: {doc.original_filename}")
         else:
             logger.debug(f"No extractor for {doc_type}: {doc.original_filename}")
 
@@ -419,6 +578,8 @@ def process_document(
             time_ms=timings.total_ms,
             timings=timings,
             quality_gate_status=quality_gate_status,
+            ingestion_reused=ingestion_reused,
+            classification_reused=classification_reused,
         )
 
     except Exception as e:
@@ -434,6 +595,8 @@ def process_document(
             time_ms=elapsed_ms,
             timings=timings,
             failed_phase=current_phase,
+            ingestion_reused=ingestion_reused,
+            classification_reused=classification_reused,
         )
 
 
@@ -567,9 +730,10 @@ def process_claim(
     command: str = "",
     model: str = "gpt-4o",
     compute_metrics: bool = True,
+    stage_config: Optional[StageConfig] = None,
 ) -> ClaimResult:
     """
-    Process all documents in a claim through the full pipeline.
+    Process all documents in a claim through selected pipeline stages.
 
     Args:
         claim: Discovered claim with documents
@@ -580,6 +744,7 @@ def process_claim(
         command: CLI command string for manifest
         model: Model name for manifest
         compute_metrics: If True, compute metrics.json at end
+        stage_config: Configuration for which stages to run (default: all)
 
     Returns:
         ClaimResult with aggregated stats
@@ -623,6 +788,7 @@ def process_claim(
             command=command,
             doc_count=len(claim.documents),
             model=model,
+            stage_config=stage_config,
         )
 
         # Create classifier if not provided
@@ -646,6 +812,7 @@ def process_claim(
                 run_paths=run_paths,
                 classifier=classifier,
                 run_id=run_id,
+                stage_config=stage_config,
             )
             results.append(result)
 
@@ -686,6 +853,12 @@ def process_claim(
         # Compute aggregate phase metrics
         phases = _compute_phase_aggregates(results)
 
+        # Compute reuse stats
+        ingestion_reused_count = sum(1 for r in results if r.ingestion_reused)
+        classification_reused_count = sum(1 for r in results if r.classification_reused)
+        skipped_text_missing = sum(1 for r in results if r.error and "TEXT_MISSING" in r.error)
+        skipped_classification_missing = sum(1 for r in results if r.error and "CLASSIFICATION_MISSING" in r.error)
+
         # Write enhanced summary with error codes and phase metrics
         summary = {
             "claim_id": claim.claim_id,
@@ -695,10 +868,22 @@ def process_claim(
             "aggregates": {
                 "discovered": total_count,
                 "processed": success_count,
-                "skipped": 0,
+                "skipped": sum(1 for r in results if r.status == "skipped"),
                 "failed": error_count,
             },
             "phases": phases,
+            "stage_reuse": {
+                "ingestion": {
+                    "executed": total_count - ingestion_reused_count - skipped_text_missing,
+                    "reused": ingestion_reused_count,
+                    "skipped_missing": skipped_text_missing,
+                },
+                "classification": {
+                    "executed": total_count - classification_reused_count - skipped_classification_missing,
+                    "reused": classification_reused_count,
+                    "skipped_missing": skipped_classification_missing,
+                },
+            },
             "documents": [
                 {
                     "claim_id": claim.claim_id,
@@ -724,6 +909,8 @@ def process_claim(
                         "total_ms": r.timings.total_ms if r.timings else r.time_ms,
                     },
                     "quality_gate_status": r.quality_gate_status,
+                    "ingestion_reused": r.ingestion_reused,
+                    "classification_reused": r.classification_reused,
                     "output_paths": {
                         "extraction": f"extraction/{r.doc_id}.json" if r.extraction_path else None,
                         "context": f"context/{r.doc_id}.json",

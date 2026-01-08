@@ -1,11 +1,12 @@
 """Discovery module: find claims and documents in input folders."""
 
 import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +214,37 @@ def discover_claims(input_path: Path) -> List[DiscoveredClaim]:
 
     logger.info(f"Multi-claim mode: found {len(claims)} claims")
     return claims
+
+
+def check_existing_ingestion(
+    output_base: Path,
+    claim_id: str,
+    doc_id: str,
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    Check if document has existing ingestion and classification outputs.
+
+    Args:
+        output_base: Base output directory
+        claim_id: Claim identifier
+        doc_id: Document identifier
+
+    Returns:
+        Tuple of (has_pages_json, doc_meta_dict or None)
+    """
+    from context_builder.pipeline.paths import get_claim_paths, get_doc_paths
+
+    claim_paths = get_claim_paths(output_base, claim_id)
+    doc_paths = get_doc_paths(claim_paths, doc_id)
+
+    has_pages = doc_paths.pages_json.exists()
+    doc_meta = None
+
+    if doc_paths.doc_json.exists():
+        try:
+            with open(doc_paths.doc_json, "r", encoding="utf-8") as f:
+                doc_meta = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to read doc.json for {doc_id}: {e}")
+
+    return has_pages, doc_meta

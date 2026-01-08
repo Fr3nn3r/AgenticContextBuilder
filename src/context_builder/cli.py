@@ -24,9 +24,10 @@ from context_builder.ingestion import (
 
 # Import pipeline components for the new pipeline command
 from context_builder.pipeline.discovery import discover_claims
-from context_builder.pipeline.run import process_claim
+from context_builder.pipeline.run import process_claim, StageConfig
 from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
 from context_builder.extraction.base import generate_run_id
+from context_builder.schemas.run_errors import PipelineStage
 
 # Ensure Azure DI implementation is imported so it auto-registers
 try:
@@ -69,6 +70,33 @@ def setup_colored_logging(verbose: bool = False):
     # Also filter out other noisy loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+def parse_stages(stages_str: str) -> list[PipelineStage]:
+    """
+    Parse comma-separated stages string into PipelineStage list.
+
+    Args:
+        stages_str: Comma-separated stages (e.g., "ingest,classify,extract")
+
+    Returns:
+        List of PipelineStage enums
+
+    Raises:
+        ValueError: If invalid stage name provided
+    """
+    valid_stages = {s.value for s in PipelineStage}
+    stages = []
+
+    for s in stages_str.split(","):
+        s = s.strip().lower()
+        if s not in valid_stages:
+            raise ValueError(
+                f"Invalid stage '{s}'. Valid stages: {', '.join(valid_stages)}"
+            )
+        stages.append(PipelineStage(s))
+
+    return stages
 
 
 # Set up basic logging initially
@@ -508,6 +536,12 @@ Examples:
         "--no-metrics",
         action="store_true",
         help="Skip metrics computation at end of run",
+    )
+    pipeline_run_group.add_argument(
+        "--stages",
+        metavar="STAGES",
+        default="ingest,classify,extract",
+        help="Comma-separated stages to run: ingest,classify,extract (default: all)",
     )
 
     # Logging options for pipeline
@@ -1318,6 +1352,15 @@ def main():
             run_id = args.run_id or generate_run_id()
             logger.info(f"Using run ID: {run_id}")
 
+            # Parse stages argument
+            try:
+                stages = parse_stages(args.stages)
+                stage_config = StageConfig(stages=stages)
+                logger.info(f"Pipeline stages: {[s.value for s in stages]} (run_kind={stage_config.run_kind})")
+            except ValueError as e:
+                print(f"[!] Invalid --stages argument: {e}")
+                sys.exit(1)
+
             # Process each claim
             total_docs = 0
             success_docs = 0
@@ -1339,6 +1382,7 @@ def main():
                         command=command_str,
                         model=args.model,
                         compute_metrics=not args.no_metrics,
+                        stage_config=stage_config,
                     )
 
                     total_docs += len(result.documents)
