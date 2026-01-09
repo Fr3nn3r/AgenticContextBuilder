@@ -1,28 +1,33 @@
-# 🚀 ContextBuilder
+# 🦉 ContextBuilder
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![React 18](https://img.shields.io/badge/react-18-61dafb.svg)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
 
-🦉 Transforms documents into LLM consumable JSON using AI vision APIs to extract structured information from images and PDFs. Built with modularity and extensibility in mind.
+**Insurance claims document processing pipeline** that ingests, classifies, extracts, and enables human QA labeling of documents. Built with modularity and extensibility in mind.
 
 <p align="center">
   <img src="media/Overview.jpg" alt="ContextBuilder High level overview" width="800">
 </p>
 
-## ✨ Features 🦉
+## 🦉 What is ContextBuilder?
 
-- 🎯 **Multi-format support**: Process images (JPG, JPEG, PNG, GIF, BMP, TIFF, TIF) and PDF documents
-- 🔍 **Case-insensitive file discovery**: Automatically finds files regardless of extension case
-- 🤖 **AI-powered extraction**: Uses OpenAI Vision API, Azure Document Intelligence, and Tesseract OCR for text extraction
-- 📁 **Batch processing**: Process entire directories recursively
-- 🔄 **Resilient API calls**: Built-in retry logic with exponential backoff for rate limits and timeouts
-- 💾 **Memory-efficient PDF processing**: Streams pages one-by-one to minimize memory usage
-- 🆔 **Session tracking**: Unique session IDs for tracking processing runs
-- ⚙️ **Highly configurable**: Extensive CLI options for customizing behavior
-- 🎨 **Rich CLI output**: Beautiful colored logging and progress indicators
+ContextBuilder is an end-to-end document processing system designed for insurance claims workflows:
 
-## 🚀 Quick Start 🦉
+1. **Ingests** documents (PDFs, images, text) via Azure Document Intelligence or OpenAI Vision
+2. **Classifies** document types using a catalog-driven AI router (LOB-agnostic)
+3. **Extracts** structured fields with provenance tracking and quality gates
+4. **Enables** human QA labeling via a React-based console
+
+**Tech Stack:**
+- **Backend**: Python 3.9+, FastAPI, OpenAI/Azure APIs, Pydantic
+- **Frontend**: React 18, TypeScript, Tailwind CSS, Vite
+- **Storage**: File-based JSON with JSONL indexes (no database required)
+
+---
+
+## 🚀 Quick Start
 
 ### Installation
 
@@ -31,11 +36,14 @@
 git clone https://github.com/Fr3nn3r/AgenticContextBuilder.git
 cd AgenticContextBuilder
 
-# Install dependencies using uv (recommended)
+# Install Python dependencies using uv (recommended)
 uv pip install -e .
 
 # Or using pip
 pip install -e .
+
+# Install frontend dependencies
+cd ui && npm install && cd ..
 ```
 
 ### Configuration
@@ -43,325 +51,328 @@ pip install -e .
 Create a `.env` file in the project root:
 
 ```env
-# For OpenAI Vision API
-OPENAI_API_KEY=your-api-key-here
+# Required for classification and extraction
+OPENAI_API_KEY=sk-...
 
-# For Azure Document Intelligence (optional)
+# Optional: Azure Document Intelligence for ingestion
 AZURE_DI_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
-AZURE_DI_API_KEY=your-api-key-here
+AZURE_DI_API_KEY=...
 ```
 
-## 📖 Usage Examples 🦉
-
-### 1. Simple Python API Usage
-
-#### Using OpenAI Vision API
-
-```python
-import os
-from pathlib import Path
-from context_builder.ingestion import IngestionFactory
-from rich.console import Console
-
-# Set your API key
-os.environ["OPENAI_API_KEY"] = "your-key-here"
-
-# Create OpenAI vision processor
-openai_vision = IngestionFactory.create("openai")
-
-# Process a document
-file_path = Path("document.pdf")
-result = openai_vision.process(file_path)
-
-# Display results with rich formatting
-console = Console()
-console.print(result)
-```
-
-#### Using Azure Document Intelligence
-
-```python
-import os
-from pathlib import Path
-from context_builder.ingestion import IngestionFactory
-from rich.console import Console
-
-# Set your Azure credentials
-os.environ["AZURE_DI_ENDPOINT"] = "https://your-resource.cognitiveservices.azure.com/"
-os.environ["AZURE_DI_API_KEY"] = "your-key-here"
-
-# Create Azure DI processor
-azure_di = IngestionFactory.create("azure-di")
-azure_di.output_dir = Path("./output")  # Set output directory for markdown files
-
-# Process a document
-file_path = Path("document.pdf")
-result = azure_di.process(file_path)
-
-# Display results (JSON metadata + separate .md file created)
-console = Console()
-console.print(result)
-```
-
-> **Note**: Azure Document Intelligence free tier only processes the first 2 pages. Upgrade to a paid tier to process full documents (up to 2000 pages).
-
-#### Using Tesseract OCR
-
-```python
-from pathlib import Path
-from context_builder.ingestion import IngestionFactory
-from rich.console import Console
-
-# Create Tesseract processor (default provider)
-tesseract = IngestionFactory.create("tesseract")
-tesseract.languages = ["eng"]  # Set language(s)
-
-# Process a document
-file_path = Path("document.pdf")
-result = tesseract.process(file_path)
-
-# Display results
-console = Console()
-console.print(result)
-```
-
-### 2. Command Line Interface
-
-#### Basic Usage
+### 🦉 Run the Pipeline
 
 ```bash
-# Process a single file (uses tesseract by default)
-python -m context_builder.cli document.pdf
+# Process claims from a folder
+python -m context_builder.cli pipeline claims_folder/ -o output/claims
 
-# Process with Azure Document Intelligence
-python -m context_builder.cli document.pdf -p azure-di -o ./output/
+# Dry-run to see what would be processed
+python -m context_builder.cli pipeline claims_folder/ -o output/claims --dry-run
 
-# Process with OpenAI Vision API
-python -m context_builder.cli document.pdf -p openai
-
-# Process a directory
-python -m context_builder.cli /path/to/documents/
-
-# Process recursively with verbose output
-python -m context_builder.cli /path/to/documents/ -r -v
+# Use a specific model
+python -m context_builder.cli pipeline claims_folder/ -o output/claims --model gpt-4o
 ```
 
-#### Advanced Configuration
+### Start the QA Console
 
 ```bash
-# Custom model and settings
-python -m context_builder.cli document.pdf \
-  --model gpt-4o \
-  --max-tokens 2048 \
-  --temperature 0.1 \
-  --max-pages 10
+# Terminal 1: Start the API backend
+cd src/context_builder
+uvicorn api.main:app --reload --port 8000
 
-# Batch processing with custom output
-python -m context_builder.cli /batch/folder/ \
-  -r \
-  --timeout 180 \
-  --retries 5 \
-  -o ./output/
+# Terminal 2: Start the React frontend
+cd ui
+npm run dev
 ```
 
-## 🛠️ CLI Options 🦉
+Open http://localhost:5173 to access the QA Console.
 
-### Required Arguments
-- `input_path`: Path to file or folder to process
-
-### Optional Arguments
-
-#### Output Options
-- `-o, --output-dir DIR`: Output directory for JSON results (default: current directory)
-- `-r, --recursive`: Process folders recursively
-
-#### Provider Options
-- `-p, --provider NAME`: Vision API provider to use (default: tesseract)
-  - `tesseract`: Local OCR with Tesseract (no API key required)
-  - `openai`: OpenAI Vision API (requires `OPENAI_API_KEY`)
-  - `azure-di`: Azure Document Intelligence (requires `AZURE_DI_ENDPOINT` and `AZURE_DI_API_KEY`)
-
-#### Model Configuration
-- `--model MODEL`: Model name to use (e.g., 'gpt-4o' for OpenAI)
-- `--max-tokens N`: Maximum tokens for response (default: 4096)
-- `--temperature T`: Temperature for response generation (0.0-2.0, default: 0.2)
-
-#### PDF Processing
-- `--max-pages N`: Maximum pages to process from PDFs (default: 20)
-- `--render-scale S`: Render scale for PDF to image conversion (default: 2.0)
-
-#### API Resilience
-- `--timeout N`: API request timeout in seconds (default: 120)
-- `--retries N`: Maximum number of retries for API calls (default: 3)
-
-#### Logging Options
-- `-v, --verbose`: Enable verbose logging
-- `-q, --quiet`: Minimal console output
-
-## 📊 Output Format 🦉
-
-The tool generates JSON files with extracted context. Output format varies by provider.
-
-### OpenAI Vision Output
-
-```json
-{
-  "file_name": "document.pdf",
-  "file_path": "/absolute/path/to/document.pdf",
-  "file_extension": ".pdf",
-  "file_size_bytes": 1024000,
-  "mime_type": "application/pdf",
-  "md5": "abc123...",
-  "session_id": "a1b2c3d4",
-  "total_pages": 3,
-  "pages": [
-    {
-      "page_number": 1,
-      "document_type": "invoice",
-      "language": "en",
-      "summary": "Invoice from Company XYZ",
-      "key_information": {
-        "invoice_number": "INV-001",
-        "date": "2024-01-15",
-        "total": "$1,234.56"
-      },
-      "visual_elements": ["company logo", "signature"],
-      "text_content": "Full extracted text..."
-    }
-  ],
-  "_usage": {
-    "prompt_tokens": 1000,
-    "completion_tokens": 500,
-    "total_tokens": 1500
-  }
-}
-```
-
-### Azure Document Intelligence Output
-
-Azure DI creates two files: a JSON metadata file and a separate markdown file with the extracted text.
-
-**JSON Metadata (`document-context.json`):**
-```json
-{
-  "file_name": "document.pdf",
-  "file_path": "/absolute/path/to/document.pdf",
-  "file_extension": ".pdf",
-  "file_size_bytes": 1024000,
-  "mime_type": "application/pdf",
-  "md5": "abc123...",
-  "session_id": "a1b2c3d4",
-  "markdown_file": "document_extracted.md",
-  "model_id": "prebuilt-layout",
-  "processing_time_ms": 5432,
-  "total_pages": 10,
-  "language": "en",
-  "paragraph_count": 45,
-  "table_count": 2,
-  "tables": [
-    {"table_index": 0, "row_count": 5, "column_count": 3},
-    {"table_index": 1, "row_count": 8, "column_count": 4}
-  ]
-}
-```
-
-**Markdown Content (`document_extracted.md`):**
-```markdown
-# Document Title
-
-Extracted text content in markdown format with:
-- Preserved document structure
-- Tables rendered as markdown tables
-- Headers and paragraphs maintained
-```
+---
 
 ## 🏗️ Architecture 🦉
 
-### Core Components
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        INPUT DOCUMENTS                          │
+│                   (PDFs, Images, Text files)                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ PIPELINE (src/context_builder/pipeline/)                        │
+│  discovery.py → run.py → paths.py → text.py → state.py          │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌───────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   INGESTION   │   │ CLASSIFICATION  │   │   EXTRACTION    │
+│   (impl/)     │   │(classification/)│   │  (extraction/)  │
+├───────────────┤   ├─────────────────┤   ├─────────────────┤
+│ Azure DI      │   │ OpenAI Router   │   │ GenericExtractor│
+│ OpenAI Vision │   │ Doc Type Catalog│   │ Field Specs     │
+│ Tesseract     │   │ Language Detect │   │ Quality Gates   │
+└───────────────┘   └─────────────────┘   └─────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ OUTPUT: output/claims/{claim_id}/                               │
+│  ├─ docs/{doc_id}/meta/, text/, source/, labels/                │
+│  └─ runs/{run_id}/extraction/, context/, logs/                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ QA CONSOLE (api/ + ui/)                                         │
+│  FastAPI Backend → React Frontend (Claim Workspace)             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-- **Ingestion Layer**: Abstract base classes and factory pattern for different providers
-- **Implementation Layer**: OpenAI Vision and Tesseract OCR implementations
-- **CLI Interface**: Rich command-line interface with colored output
-- **Utilities**: File operations, hashing, and helper functions
+---
 
-### Supported Providers
+## 📁 Output Structure 🦉
 
-- **OpenAI Vision API**: Advanced AI-powered document analysis with structured JSON output
-- **Azure Document Intelligence**: Microsoft's cloud-based document processing with markdown output
-- **Tesseract OCR**: Open-source OCR engine for local text extraction (no API key required)
+```
+output/
+├── claims/{claim_id}/
+│   ├── docs/{doc_id}/
+│   │   ├── source/           # Original files (PDF, images)
+│   │   ├── text/pages.json   # Extracted text per page
+│   │   ├── meta/doc.json     # Document metadata
+│   │   └── labels/latest.json # Human QA labels (run-independent)
+│   └── runs/{run_id}/
+│       ├── manifest.json     # Run metadata (git, versions, timing)
+│       ├── extraction/{doc_id}.json  # Extraction results
+│       ├── context/{doc_id}.json     # Classification context
+│       ├── logs/summary.json         # Run summary
+│       └── .complete                  # Marker file
+├── runs/{run_id}/            # Global run metadata
+│   ├── manifest.json
+│   ├── summary.json
+│   └── metrics.json
+└── registry/                 # JSONL indexes for fast lookups
+    ├── doc_index.jsonl
+    ├── label_index.jsonl
+    └── run_index.jsonl
+```
 
-### Roadmap
+---
 
-- **Extraction Validator**: Internal tool for validating extraction quality, comparing methods, and building ground truth datasets
+## 🛠️ CLI Commands
 
-## ⚡ Performance Tips 🦉
+### `pipeline` - Main Processing Command
 
-### PDF Processing
-- Use `--max-pages` to limit processing for large PDFs
-- Adjust `--render-scale` to balance quality vs. processing time
-  - Lower values (1.0-1.5) for faster processing
-  - Higher values (2.0-3.0) for better text extraction quality
+```bash
+# Process all claims in a folder
+python -m context_builder.cli pipeline <input_path> -o <output_dir> [options]
 
-### API Rate Limits
-- The tool automatically retries on rate limits with exponential backoff
-- Use `--retries` to increase retry attempts for busy periods
-- Consider `--timeout` for slow network connections
+# Options:
+#   --model MODEL      LLM model (default: gpt-4o)
+#   --run-id ID        Custom run ID (default: auto-generated)
+#   --stages STAGES    Comma-separated: ingest,classify,extract (default: all)
+#   --force            Overwrite existing run folder
+#   --dry-run          Preview what would be processed
+#   --no-metrics       Skip metrics computation
+#   -v, --verbose      Enable verbose logging
+```
 
-### Memory Optimization
-- PDFs are processed page-by-page to minimize memory usage
-- Large batches are processed file-by-file without accumulation
+### `acquire` - Document Ingestion (Legacy)
+
+```bash
+# Ingest documents using different providers
+python -m context_builder.cli acquire <input_path> -p <provider> -o <output_dir>
+
+# Providers:
+#   azure-di   - Azure Document Intelligence (recommended)
+#   openai     - OpenAI Vision API
+#   tesseract  - Local OCR (no API key required)
+```
+
+### `index` - Build Search Indexes
+
+```bash
+# Rebuild JSONL indexes for fast lookups
+python -m context_builder.cli index build --root output
+```
+
+---
+
+## 🖥️ QA Console 🦉
+
+The QA Console is a React-based interface for reviewing and labeling document extractions.
+
+### Features
+
+- **Claims Workspace**: Browse claims with filtering by run, doc type, gate status
+- **Extraction Review**: Split-view for labeling fields (keyboard shortcuts: 1/2/3, n/p)
+- **Classification Review**: Verify AI-predicted document types
+- **Insights Dashboard**: Run metrics, accuracy rates, priority improvements
+- **PDF Viewer**: Side-by-side document viewing with bounding box overlays
+
+### Key Screens
+
+| Screen | Purpose |
+|--------|---------|
+| `/` | Claims list with KPIs and Document Pack Queue |
+| `/claims/:id` | Claim-level review with doc navigation |
+| `/docs/:id` | Extraction review with field labeling |
+| `/classification` | Document type review queue |
+| `/insights` | Metrics dashboard with run comparison |
+| `/templates` | View extraction field specifications |
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/claims` | List claims with run-scoped metrics |
+| `GET /api/claims/:id/docs` | List documents for a claim |
+| `GET /api/docs/:id` | Get document with extraction & labels |
+| `POST /api/docs/:id/labels` | Save human QA labels |
+| `GET /api/insights/overview` | Dashboard KPIs |
+| `GET /api/insights/runs` | List all extraction runs |
+
+---
+
+## 📋 Document Types 🦉
+
+ContextBuilder uses a **catalog-driven classification** system. All document types are LOB-agnostic (work across motor, travel, health, etc.):
+
+| Doc Type | Description |
+|----------|-------------|
+| `fnol_form` | First notice of loss, claim reports |
+| `insurance_policy` | Policy documents with coverage details |
+| `police_report` | Official police/law enforcement reports |
+| `invoice` | Invoices, receipts, bills |
+| `id_document` | ID cards, passports, driver's licenses |
+| `vehicle_registration` | Vehicle registration/title documents |
+| `certificate` | Official certificates and attestations |
+| `medical_report` | Medical documentation, doctor's reports |
+| `travel_itinerary` | Flight/hotel bookings, trip confirmations |
+| `customer_comm` | Customer emails, letters, correspondence |
+| `supporting_document` | Catch-all for other documents |
+
+See `src/context_builder/extraction/specs/doc_type_catalog.yaml` for the full catalog.
+
+---
+
+## 📊 Key Data Structures
+
+### ExtractionResult (per document, per run)
+
+```json
+{
+  "schema_version": "extraction_result_v1",
+  "run": { "run_id", "model", "extractor_version" },
+  "doc": { "doc_id", "doc_type", "confidence", "language" },
+  "fields": [{
+    "name": "claim_number",
+    "value": "CLM-12345",
+    "normalized_value": "CLM-12345",
+    "confidence": 0.95,
+    "status": "present",
+    "provenance": [{ "page": 1, "char_start": 100, "char_end": 110 }]
+  }],
+  "quality_gate": { "status": "pass", "missing_required_fields": [] }
+}
+```
+
+### LabelResult (human QA output)
+
+```json
+{
+  "schema_version": "label_v3",
+  "doc_id": "doc_abc123",
+  "claim_id": "CLM-12345",
+  "review": { "reviewer": "john", "reviewed_at": "2024-01-15T10:30:00Z" },
+  "field_labels": [
+    { "field_name": "claim_number", "judgement": "correct" }
+  ],
+  "doc_labels": { "doc_type_correct": true }
+}
+```
+
+---
+
+## 🧩 Key Modules
+
+### Backend (`src/context_builder/`)
+
+| Module | Purpose |
+|--------|---------|
+| `pipeline/` | Orchestration: discovery, run management, metrics |
+| `impl/` | Ingestion providers (Azure DI, OpenAI, Tesseract) |
+| `classification/` | Document type classification with catalog |
+| `extraction/` | Field extraction with specs and quality gates |
+| `schemas/` | Pydantic models (ExtractionResult, Label, etc.) |
+| `api/` | FastAPI backend for QA Console |
+| `storage/` | File storage with JSONL index support |
+
+### Frontend (`ui/src/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `ClaimsTable.tsx` | Claims list with filtering and KPIs |
+| `DocReview.tsx` | Split-view extraction review |
+| `FieldsTable.tsx` | Field labeling with keyboard shortcuts |
+| `PageViewer.tsx` | Document text with provenance highlighting |
+| `PDFViewer.tsx` | PDF rendering with bounding boxes |
+| `InsightsPage.tsx` | Metrics dashboard |
+| `ClassificationReview.tsx` | Doc type verification |
+
+---
 
 ## 🧪 Development 🦉
 
 ### Running Tests
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+# Backend tests
+pytest tests/ -v
 
-# Run with coverage
-python -m pytest tests/ --cov=context_builder --cov-report=html
+# With coverage
+pytest tests/ --cov=context_builder --cov-report=html
 
-# Run specific test categories
-python -m pytest tests/unit/ -v
-python -m pytest tests/cli/ -v
+# Frontend E2E tests
+cd ui && npm run test:e2e
 ```
 
 ### Project Structure
 
 ```
-context_builder/
-├── ingestion.py            # Base classes and factory
-├── cli.py                 # Command-line interface
-├── impl/
-│   ├── openai_vision_ingestion.py      # OpenAI implementation
-│   ├── azure_di_ingestion.py           # Azure Document Intelligence implementation
-│   └── tesseract_ingestion.py          # Tesseract implementation
-├── schemas/
-│   └── document_analysis.py  # Pydantic output schemas
-├── prompts/
-│   └── document_analysis.md  # Prompt templates
-├── utils/
-│   ├── file_utils.py      # File operations
-│   ├── hashing.py         # Hashing utilities
-│   └── prompt_loader.py   # Prompt template loader
-examples/
-├── simple_openai_vision.py  # OpenAI example
-└── simple_tesseract.py      # Tesseract example
-tests/
-├── unit/                  # Unit tests
-├── cli/                   # CLI tests
-└── assets/                # Test files
+AgenticContextBuilder/
+├── src/context_builder/
+│   ├── api/              # FastAPI backend
+│   ├── classification/   # Document type classification
+│   ├── extraction/       # Field extraction
+│   │   ├── extractors/   # Extractor implementations
+│   │   └── specs/        # YAML field specifications
+│   ├── impl/             # Ingestion providers
+│   ├── pipeline/         # Orchestration
+│   ├── prompts/          # Jinja2 prompt templates
+│   ├── schemas/          # Pydantic models
+│   ├── storage/          # File storage & indexes
+│   └── utils/            # Helpers
+├── ui/                   # React frontend
+│   └── src/components/   # UI components
+├── tests/                # Test suites
+├── output/               # Processing output (gitignored)
+└── pyproject.toml        # Python dependencies
 ```
 
-## 🔧 Error Handling 🦉
+---
 
-The tool includes robust error handling:
-- **Automatic retries** for rate limits (429) and server errors (5xx)
-- **Exponential backoff** to respect API limits
-- **Graceful interruption** handling (Ctrl+C)
-- **Clear error messages** for configuration issues
-- **Session IDs** for tracking and debugging
+## 🦉 Glossary
+
+| Term | Definition |
+|------|------------|
+| **Run** | Single pipeline execution with specific versions |
+| **Extraction Output** | Values produced for a document in a run |
+| **Quality Gate** | Run-scoped status: PASS/WARN/FAIL |
+| **Label** | Human-authored ground truth for a field |
+| **Provenance** | Evidence linking extracted value to source text |
+| **Truth Value** | Human-authoritative correct value |
+| **Accuracy** | Correct / (Correct + Incorrect + Missing) |
+
+---
 
 ## 📄 License
 
@@ -370,22 +381,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🤝 Contributing
 
 Contributions are welcome! Please ensure:
-1. Code follows the SOLID principles outlined in [CLAUDE.md](CLAUDE.md)
+1. Code follows principles in [CLAUDE.md](CLAUDE.md)
 2. All tests pass
 3. New features include tests
 4. Documentation is updated
-
-## 📞 Support
-
-For issues or questions, please open an issue on GitHub.
 
 ---
 
 ```
   ,_,
- (O,O)
+ (O,O)  🦉
  (   )
  -"-"-
 ```
 
-**Made with ❤️ and 🦉 for the AI community**
+**Made with ❤️ and 🦉 for the insurance AI community**
