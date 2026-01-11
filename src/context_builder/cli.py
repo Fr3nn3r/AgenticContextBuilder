@@ -1371,7 +1371,6 @@ def main():
             show_progress = (
                 not args.quiet
                 and not getattr(args, "no_progress", False)
-                and sys.stdout.isatty()
             )
 
             # Process each claim

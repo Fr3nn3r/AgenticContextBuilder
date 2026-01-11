@@ -7,7 +7,6 @@ required_fields:
 optional_fields:
   - vendor_name
   - purchase_date
-  - line_items
 
 field_rules:
   total_amount:
