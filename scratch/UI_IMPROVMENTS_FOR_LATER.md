@@ -6,9 +6,9 @@ Document sets must indicate the number of extracted document that are not labele
 Field review planel
 The "Evidence: Page 1" must be renamed "Show evidence"
 The "✓ Match" badge on the top right is too much: remove it
-Let's rename the status CONFIRMED into LABELED if there is a match with the truth, INCORRECT if there is a missmatch
 The edit button should allow to mark unverifiable as well
 The save lavel button should indicate when it requires 
+The panel Document type "XXXX" correct? YES/NO UNSURE and optional notes should be removed
 
 the columns on the screen must be sortable
 Certain date values are extracted but not normalized (I'm talling about dates with spanish month name for instance, maybe good to see how we go about fixing this)
