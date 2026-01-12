@@ -9,6 +9,9 @@ Tests for:
 """
 
 import json
+from pathlib import Path
+import shutil
+from uuid import uuid4
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,6 +24,16 @@ from context_builder.pipeline.run import (
     _load_existing_classification,
 )
 from context_builder.cli import parse_stages
+
+
+@pytest.fixture
+def tmp_path() -> Path:
+    base = Path.cwd() / "output" / "pytest-tmp"
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"tmp-{uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=True)
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
 
 
 class TestPipelineStage:

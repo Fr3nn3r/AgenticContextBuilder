@@ -99,7 +99,7 @@ Open http://localhost:5173 to access the QA Console.
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ PIPELINE (src/context_builder/pipeline/)                        │
-│  discovery.py → run.py → paths.py → text.py → state.py          │
+│  discovery.py → run.py → stages.py → writer.py → paths.py → text.py → state.py          │
 └─────────────────────────────────────────────────────────────────┘
                               │
         ┌─────────────────────┼─────────────────────┐
@@ -298,7 +298,7 @@ See `src/context_builder/extraction/specs/doc_type_catalog.yaml` for the full ca
 
 | Module | Purpose |
 |--------|---------|
-| `pipeline/` | Orchestration: discovery, run management, metrics |
+| `pipeline/` | Orchestration: discovery, stage runner, run management, metrics |
 | `impl/` | Ingestion providers (Azure DI, OpenAI, Tesseract) |
 | `classification/` | Document type classification with catalog |
 | `extraction/` | Field extraction with specs and quality gates |
@@ -333,6 +333,11 @@ pytest tests/ --cov=context_builder --cov-report=html
 
 # Frontend E2E tests
 cd ui && npm run test:e2e
+```
+
+Windows note: if pytest temp dirs hit permission errors, run with the tmpdir plugin disabled:
+```bash
+python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
 ```
 
 ### Project Structure

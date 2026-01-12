@@ -27,7 +27,6 @@ from context_builder.ingestion import (
 from context_builder.pipeline.discovery import discover_claims
 from context_builder.pipeline.run import process_claim, StageConfig
 from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
-from context_builder.extraction.base import generate_run_id
 from context_builder.schemas.run_errors import PipelineStage
 
 # Ensure Azure DI implementation is imported so it auto-registers
@@ -868,7 +867,11 @@ def main():
             command_str = " ".join(sys.argv)
 
             # Generate run_id once for all claims (if not provided)
-            run_id = args.run_id or generate_run_id()
+            if args.run_id:
+                run_id = args.run_id
+            else:
+                from context_builder.extraction.base import generate_run_id
+                run_id = generate_run_id()
             logger.info(f"Using run ID: {run_id}")
 
             # Parse stages argument

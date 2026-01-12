@@ -72,6 +72,11 @@ python -m context_builder.cli classify -o output/claims
 python -m context_builder.cli extract -o output/claims --model gpt-4o
 ```
 
+Windows note: if pytest temp dirs hit permission errors, run:
+```bash
+python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
+```
+
 ## Folders
 
 - `plans/` - save implementation plans here

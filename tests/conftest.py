@@ -1,7 +1,9 @@
 """Shared test fixtures and utilities."""
 
 import os
+import shutil
 from pathlib import Path
+from uuid import uuid4
 import pytest
 from unittest.mock import Mock, patch
 
@@ -14,6 +16,31 @@ def cleanup_env():
     # Restore original environment
     os.environ.clear()
     os.environ.update(original_env)
+
+
+class _TmpPathFactory:
+    def __init__(self, base: Path) -> None:
+        self._base = base
+
+    def mktemp(self, name: str, numbered: bool = True) -> Path:
+        suffix = f"-{uuid4().hex}" if numbered else ""
+        path = self._base / f"{name}{suffix}"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+
+@pytest.fixture(scope="session")
+def tmp_path_factory() -> _TmpPathFactory:
+    base = Path.cwd() / "output" / "pytest-tmp"
+    base.mkdir(parents=True, exist_ok=True)
+    return _TmpPathFactory(base)
+
+
+@pytest.fixture
+def tmp_path(tmp_path_factory: _TmpPathFactory) -> Path:
+    path = tmp_path_factory.mktemp("tmp")
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture

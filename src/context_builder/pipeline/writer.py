@@ -1,0 +1,36 @@
+"""Result writer utilities for pipeline outputs."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+from typing import Any
+
+
+class ResultWriter:
+    """Centralized filesystem writes for pipeline outputs."""
+
+    def write_json(self, path: Path, data: Any) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+
+    def write_json_atomic(self, path: Path, data: Any) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+        tmp_path.replace(path)
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def copy_file(self, src: Path, dest: Path) -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+
+    def touch(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()

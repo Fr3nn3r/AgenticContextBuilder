@@ -16,12 +16,10 @@ from context_builder.pipeline.paths import (
 )
 from context_builder.pipeline.text import build_pages_json
 from context_builder.pipeline.state import is_claim_processed, get_latest_run
-from context_builder.pipeline.run import (
-    process_claim,
-    process_document,
-    ClaimResult,
-    DocResult,
-)
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from context_builder.pipeline.run import ClaimResult, DocResult, process_claim, process_document
 
 __all__ = [
     "DiscoveredDocument",
@@ -40,3 +38,10 @@ __all__ = [
     "ClaimResult",
     "DocResult",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"process_claim", "process_document", "ClaimResult", "DocResult"}:
+        from context_builder.pipeline import run as _run
+        return getattr(_run, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
