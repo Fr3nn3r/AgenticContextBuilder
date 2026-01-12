@@ -69,3 +69,6 @@ ui/test-results/
 
 # Windows artifacts
 nul
+
+# Claude Code temp files (subagent cwd markers)
+tmpclaude-*-cwd
