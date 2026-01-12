@@ -221,20 +221,26 @@ export async function getInsightsPriorities(limit = 10): Promise<PriorityItem[]>
   return fetchJson<PriorityItem[]>(`${API_BASE}/insights/priorities?limit=${limit}`);
 }
 
-export async function getInsightsFieldDetails(docType: string, field: string): Promise<FieldDetails> {
-  return fetchJson<FieldDetails>(`${API_BASE}/insights/field-details?doc_type=${encodeURIComponent(docType)}&field=${encodeURIComponent(field)}`);
+export async function getInsightsFieldDetails(docType: string, field: string, runId?: string): Promise<FieldDetails> {
+  const params = new URLSearchParams();
+  params.set("doc_type", docType);
+  params.set("field", field);
+  if (runId) params.set("run_id", runId);
+  return fetchJson<FieldDetails>(`${API_BASE}/insights/field-details?${params.toString()}`);
 }
 
 export async function getInsightsExamples(params: {
   doc_type?: string;
   field?: string;
   outcome?: string;
+  run_id?: string;
   limit?: number;
 }): Promise<InsightExample[]> {
   const query = new URLSearchParams();
   if (params.doc_type) query.set("doc_type", params.doc_type);
   if (params.field) query.set("field", params.field);
   if (params.outcome) query.set("outcome", params.outcome);
+  if (params.run_id) query.set("run_id", params.run_id);
   if (params.limit) query.set("limit", params.limit.toString());
   return fetchJson<InsightExample[]>(`${API_BASE}/insights/examples?${query.toString()}`);
 }

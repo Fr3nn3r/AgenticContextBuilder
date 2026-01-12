@@ -121,7 +121,7 @@ export function InsightsPage({
     }
   }
 
-  // Load field details and examples when selection changes
+  // Load field details and examples when selection or run changes
   useEffect(() => {
     if (selectedDocType && selectedField) {
       loadFieldDetails(selectedDocType, selectedField);
@@ -136,7 +136,7 @@ export function InsightsPage({
       setFieldDetails(null);
       setExamples([]);
     }
-  }, [selectedDocType, selectedField, selectedOutcome]);
+  }, [selectedDocType, selectedField, selectedOutcome, selectedRunId]);
 
   // Load comparison when both runs selected
   useEffect(() => {
@@ -185,7 +185,7 @@ export function InsightsPage({
 
   async function loadFieldDetails(docType: string, field: string) {
     try {
-      const data = await getInsightsFieldDetails(docType, field);
+      const data = await getInsightsFieldDetails(docType, field, selectedRunId || undefined);
       setFieldDetails(data);
     } catch {
       setFieldDetails(null);
@@ -194,7 +194,7 @@ export function InsightsPage({
 
   async function loadExamples(params: { doc_type?: string; field?: string; outcome?: string }) {
     try {
-      const data = await getInsightsExamples({ ...params, limit: 30 });
+      const data = await getInsightsExamples({ ...params, run_id: selectedRunId || undefined, limit: 30 });
       setExamples(data);
     } catch {
       setExamples([]);

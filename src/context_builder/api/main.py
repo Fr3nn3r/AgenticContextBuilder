@@ -1195,6 +1195,7 @@ def get_insights_priorities(limit: int = Query(10, ge=1, le=50)):
 def get_insights_field_details(
     doc_type: str = Query(..., description="Document type"),
     field: str = Query(..., alias="field", description="Field name"),
+    run_id: Optional[str] = Query(None, description="Run ID to scope data to"),
 ):
     """
     Get detailed breakdown for a specific (doc_type, field).
@@ -1206,7 +1207,7 @@ def get_insights_field_details(
     """
     from context_builder.api.insights import InsightsAggregator
 
-    aggregator = InsightsAggregator(DATA_DIR)
+    aggregator = InsightsAggregator(DATA_DIR, run_id=run_id)
     return aggregator.get_field_details(doc_type, field)
 
 
@@ -1215,6 +1216,7 @@ def get_insights_examples(
     doc_type: Optional[str] = Query(None, description="Filter by doc type"),
     field: Optional[str] = Query(None, description="Filter by field name"),
     outcome: Optional[str] = Query(None, description="Filter by outcome"),
+    run_id: Optional[str] = Query(None, description="Run ID to scope data to"),
     limit: int = Query(30, ge=1, le=100),
 ):
     """
@@ -1224,12 +1226,13 @@ def get_insights_examples(
     - doc_type: loss_notice, police_report, insurance_policy
     - field: specific field name
     - outcome: correct, incorrect, extractor_miss, cannot_verify, evidence_missing
+    - run_id: scope examples to a specific run
 
     Returns list with claim_id, doc_id, values, judgement, and review_url.
     """
     from context_builder.api.insights import InsightsAggregator
 
-    aggregator = InsightsAggregator(DATA_DIR)
+    aggregator = InsightsAggregator(DATA_DIR, run_id=run_id)
     return aggregator.get_examples(
         doc_type=doc_type,
         field_name=field,
