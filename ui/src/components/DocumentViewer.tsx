@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { PageContent, AzureDIOutput, BoundingBox } from "../types";
 import { PageViewer } from "./PageViewer";
 import { PDFViewer, PDFViewerHandle } from "./PDFViewer";
+import { ImageViewer } from "./ImageViewer";
 import { cn } from "../lib/utils";
 import { getAzureDI } from "../api/client";
 import { computeBoundingBoxes } from "../lib/bboxUtils";
@@ -182,13 +183,7 @@ export function DocumentViewer({
         )}
 
         {activeTab === "image" && sourceUrl && (
-          <div className="h-full overflow-auto p-4 bg-gray-100">
-            <img
-              src={sourceUrl}
-              alt="Document"
-              className="max-w-full h-auto mx-auto shadow-lg"
-            />
-          </div>
+          <ImageViewer url={sourceUrl} alt="Document" />
         )}
       </div>
     </div>

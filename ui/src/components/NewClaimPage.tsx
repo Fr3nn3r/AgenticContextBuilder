@@ -1,0 +1,334 @@
+/**
+ * New Claim page for batch upload and pipeline execution.
+ *
+ * Features:
+ * - Create multiple claims with documents
+ * - Real-time pipeline progress via WebSocket
+ * - Cancel with confirmation
+ * - Results summary
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import {
+  cancelPipeline,
+  deletePendingClaim,
+  deletePendingDocument,
+  listPendingClaims,
+  startPipeline,
+  uploadDocuments,
+} from '../api/client';
+
+// Generate claim ID locally with date + random suffix for uniqueness
+function generateLocalClaimId(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `CLM-${dateStr}-${randomSuffix}`;
+}
+import { usePipelineWebSocket } from '../hooks/usePipelineWebSocket';
+import type { DocProgress, PendingClaim, PipelineRun, PipelineRunStatus } from '../types';
+import { PendingClaimCard } from './PendingClaimCard';
+import { PipelineProgress } from './PipelineProgress';
+
+type PageState = 'uploading' | 'running' | 'complete';
+
+export function NewClaimPage() {
+  const [pageState, setPageState] = useState<PageState>('uploading');
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
+  const [uploadingClaim, setUploadingClaim] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // Pipeline state
+  const [currentRun, setCurrentRun] = useState<PipelineRun | null>(null);
+  const [docs, setDocs] = useState<Record<string, DocProgress>>({});
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  // WebSocket connection
+  const { isConnected } = usePipelineWebSocket({
+    runId: currentRun?.run_id || null,
+    onDocProgress: (docId, phase, error) => {
+      setDocs((prev) => ({
+        ...prev,
+        [docId]: { ...prev[docId], phase: phase as DocProgress['phase'], error },
+      }));
+    },
+    onRunComplete: (summary) => {
+      setCurrentRun((prev) =>
+        prev ? { ...prev, status: 'completed', summary } : null
+      );
+      setPageState('complete');
+    },
+    onRunCancelled: () => {
+      setCurrentRun((prev) =>
+        prev ? { ...prev, status: 'cancelled' } : null
+      );
+      setPageState('complete');
+    },
+    onSync: (status, syncedDocs) => {
+      setCurrentRun((prev) =>
+        prev ? { ...prev, status } : null
+      );
+      setDocs(syncedDocs);
+    },
+  });
+
+  // Load pending claims on mount, auto-create one if none exist
+  useEffect(() => {
+    loadPendingClaims();
+  }, []);
+
+  const loadPendingClaims = async () => {
+    try {
+      const claims = await listPendingClaims();
+      setPendingClaims(claims);
+
+      // Auto-create a claim if none exist so user has a drop zone ready
+      if (claims.length === 0) {
+        const newClaimId = generateLocalClaimId();
+        setPendingClaims([
+          { claim_id: newClaimId, created_at: new Date().toISOString(), documents: [] },
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to load pending claims:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddClaim = () => {
+    const newClaimId = generateLocalClaimId();
+    setPendingClaims((prev) => [
+      ...prev,
+      { claim_id: newClaimId, created_at: new Date().toISOString(), documents: [] },
+    ]);
+  };
+
+  const handleUpload = useCallback(async (claimId: string, files: File[]) => {
+    setUploadingClaim(claimId);
+    setUploadProgress(0);
+
+    try {
+      await uploadDocuments(claimId, files, (progress) => {
+        setUploadProgress(progress);
+      });
+      await loadPendingClaims();
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploadingClaim(null);
+      setUploadProgress(0);
+    }
+  }, []);
+
+  const handleRemoveDocument = useCallback(async (claimId: string, docId: string) => {
+    try {
+      await deletePendingDocument(claimId, docId);
+      await loadPendingClaims();
+    } catch (err) {
+      console.error('Failed to remove document:', err);
+    }
+  }, []);
+
+  const handleRemoveClaim = useCallback(async (claimId: string) => {
+    try {
+      await deletePendingClaim(claimId);
+      await loadPendingClaims();
+    } catch (err) {
+      console.error('Failed to remove claim:', err);
+    }
+  }, []);
+
+  const handleRunPipeline = async () => {
+    const claimsWithDocs = pendingClaims.filter((c) => c.documents.length > 0);
+    if (claimsWithDocs.length === 0) return;
+
+    try {
+      const result = await startPipeline(claimsWithDocs.map((c) => c.claim_id));
+
+      // Initialize docs state from pending claims
+      const initialDocs: Record<string, DocProgress> = {};
+      claimsWithDocs.forEach((claim) => {
+        claim.documents.forEach((doc) => {
+          initialDocs[doc.doc_id] = {
+            doc_id: doc.doc_id,
+            claim_id: claim.claim_id,
+            filename: doc.original_filename,
+            phase: 'pending',
+          };
+        });
+      });
+
+      setCurrentRun({
+        run_id: result.run_id,
+        status: result.status as PipelineRunStatus,
+        claim_ids: claimsWithDocs.map((c) => c.claim_id),
+      });
+      setDocs(initialDocs);
+      setPageState('running');
+    } catch (err) {
+      console.error('Failed to start pipeline:', err);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!currentRun) return;
+
+    try {
+      await cancelPipeline(currentRun.run_id);
+      setShowCancelConfirm(false);
+    } catch (err) {
+      console.error('Failed to cancel pipeline:', err);
+    }
+  };
+
+  const handleReset = () => {
+    setCurrentRun(null);
+    setDocs({});
+    setPendingClaims([]);
+    setPageState('uploading');
+  };
+
+  const totalDocs = pendingClaims.reduce((sum, c) => sum + c.documents.length, 0);
+  const canRun = totalDocs > 0 && !uploadingClaim;
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-auto bg-gray-100">
+      <div className="max-w-4xl mx-auto py-8 px-4">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">New Claim</h1>
+          <p className="text-gray-600 mt-1">
+            {pageState === 'uploading' && 'Upload documents and run the extraction pipeline.'}
+            {pageState === 'running' && 'Processing documents...'}
+            {pageState === 'complete' && 'Pipeline completed.'}
+          </p>
+        </div>
+
+        {/* Upload State */}
+        {pageState === 'uploading' && (
+          <div className="space-y-6">
+            {/* Add Claim Button */}
+            <div className="flex justify-start">
+              <button
+                onClick={handleAddClaim}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <PlusIcon className="w-5 h-5" />
+                Add New Claim File
+              </button>
+            </div>
+
+            {/* Pending Claims List */}
+            {pendingClaims.length > 0 ? (
+              <div className="space-y-4">
+                {pendingClaims.map((claim) => (
+                  <PendingClaimCard
+                    key={claim.claim_id}
+                    claimId={claim.claim_id}
+                    documents={claim.documents}
+                    onUpload={handleUpload}
+                    onRemoveDocument={handleRemoveDocument}
+                    onRemoveClaim={handleRemoveClaim}
+                    uploading={uploadingClaim === claim.claim_id}
+                    uploadProgress={uploadingClaim === claim.claim_id ? uploadProgress : 0}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border p-8 text-center text-gray-500">
+                No claim files yet. Click "Add New Claim File" to create one.
+              </div>
+            )}
+
+            {/* Run Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleRunPipeline}
+                disabled={!canRun}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                Run Pipeline ({totalDocs} {totalDocs === 1 ? 'document' : 'documents'})
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Running / Complete State */}
+        {(pageState === 'running' || pageState === 'complete') && currentRun && (
+          <div className="space-y-6">
+            <PipelineProgress
+              runId={currentRun.run_id}
+              status={currentRun.status}
+              docs={docs}
+              summary={currentRun.summary}
+              onCancel={() => setShowCancelConfirm(true)}
+              isConnected={isConnected}
+            />
+
+            {pageState === 'complete' && (
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={handleReset}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Upload More Claims
+                </button>
+                <a
+                  href="/claims"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  View in Claims Review
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Cancel Confirmation Modal */}
+        {showCancelConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+              <h3 className="text-lg font-semibold mb-2">Cancel Pipeline?</h3>
+              <p className="text-gray-600 mb-4">
+                Documents that have already been processed will be saved.
+                Are you sure you want to cancel?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Keep Running
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Cancel Pipeline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  );
+}

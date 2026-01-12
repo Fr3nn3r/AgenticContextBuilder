@@ -25,8 +25,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+import asyncio
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from context_builder.api.models import (
     ClaimReviewPayload,
@@ -39,7 +41,15 @@ from context_builder.api.models import (
     SaveLabelsRequest,
     TemplateSpec,
 )
-from context_builder.api.services import ClaimsService, DocumentsService, InsightsService, LabelsService
+from context_builder.api.services import (
+    ClaimsService,
+    DocPhase,
+    DocumentsService,
+    InsightsService,
+    LabelsService,
+    PipelineService,
+    UploadService,
+)
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
 
 
@@ -66,6 +76,9 @@ app.add_middleware(
 # Compute path relative to project root (3 levels up from this file)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
+
+# Staging directory for pending uploads
+STAGING_DIR: Path = _PROJECT_ROOT / "output" / ".pending"
 
 # Storage abstraction layer (uses indexes when available)
 from context_builder.storage import FileStorage, StorageFacade
@@ -100,6 +113,65 @@ def get_labels_service() -> LabelsService:
 def get_insights_service() -> InsightsService:
     """Get InsightsService instance."""
     return InsightsService(DATA_DIR)
+
+
+def get_upload_service() -> UploadService:
+    """Get UploadService instance."""
+    return UploadService(STAGING_DIR, DATA_DIR)
+
+
+# Global PipelineService instance (needs to maintain state across requests)
+_pipeline_service: Optional[PipelineService] = None
+
+
+def get_pipeline_service() -> PipelineService:
+    """Get PipelineService singleton instance."""
+    global _pipeline_service
+    if _pipeline_service is None:
+        _pipeline_service = PipelineService(DATA_DIR, get_upload_service())
+    return _pipeline_service
+
+
+# =============================================================================
+# WEBSOCKET CONNECTION MANAGER
+# =============================================================================
+
+
+class ConnectionManager:
+    """Manage WebSocket connections for pipeline progress updates."""
+
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, run_id: str) -> None:
+        """Accept and track a WebSocket connection."""
+        await websocket.accept()
+        if run_id not in self.active_connections:
+            self.active_connections[run_id] = []
+        self.active_connections[run_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, run_id: str) -> None:
+        """Remove a WebSocket connection."""
+        if run_id in self.active_connections:
+            if websocket in self.active_connections[run_id]:
+                self.active_connections[run_id].remove(websocket)
+
+    async def broadcast(self, run_id: str, message: dict) -> None:
+        """Broadcast message to all connections for a run."""
+        if run_id not in self.active_connections:
+            return
+        disconnected = []
+        for connection in self.active_connections[run_id]:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.append(connection)
+        # Clean up disconnected
+        for conn in disconnected:
+            self.disconnect(conn, run_id)
+
+
+ws_manager = ConnectionManager()
 
 
 # =============================================================================
@@ -768,3 +840,404 @@ def get_classification_stats(run_id: str = Query(..., description="Run ID to get
         "by_predicted_type": by_predicted_type,
         "confusion_matrix": confusion_matrix,
     }
+
+
+# =============================================================================
+# UPLOAD ENDPOINTS
+# =============================================================================
+
+
+@app.post("/api/upload/claim/{claim_id}")
+async def upload_documents(
+    claim_id: str,
+    files: List[UploadFile] = File(..., description="Files to upload"),
+):
+    """
+    Upload documents to a pending claim.
+
+    Creates the claim in staging if it doesn't exist.
+    Validates file types (PDF, PNG, JPG, TXT) and size (max 100MB).
+
+    Returns the claim_id and list of uploaded documents.
+    """
+    upload_service = get_upload_service()
+    results = []
+
+    for file in files:
+        doc = await upload_service.add_document(claim_id, file)
+        results.append({
+            "doc_id": doc.doc_id,
+            "original_filename": doc.original_filename,
+            "file_size": doc.file_size,
+            "content_type": doc.content_type,
+            "upload_time": doc.upload_time,
+        })
+
+    return {"claim_id": claim_id, "documents": results}
+
+
+@app.delete("/api/upload/claim/{claim_id}")
+def delete_pending_claim(claim_id: str):
+    """
+    Remove a pending claim and all its documents from staging.
+    """
+    upload_service = get_upload_service()
+
+    if upload_service.remove_claim(claim_id):
+        return {"status": "deleted", "claim_id": claim_id}
+
+    raise HTTPException(status_code=404, detail=f"Pending claim not found: {claim_id}")
+
+
+@app.delete("/api/upload/claim/{claim_id}/doc/{doc_id}")
+def delete_pending_document(claim_id: str, doc_id: str):
+    """
+    Remove a single document from a pending claim.
+    """
+    upload_service = get_upload_service()
+
+    if upload_service.remove_document(claim_id, doc_id):
+        return {"status": "deleted", "doc_id": doc_id}
+
+    raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+
+
+@app.get("/api/upload/pending")
+def list_pending_claims():
+    """
+    List all pending claims in the staging area.
+
+    Returns claims with their documents, sorted by creation time (newest first).
+    """
+    upload_service = get_upload_service()
+    claims = upload_service.list_pending_claims()
+
+    return [
+        {
+            "claim_id": c.claim_id,
+            "created_at": c.created_at,
+            "documents": [
+                {
+                    "doc_id": d.doc_id,
+                    "original_filename": d.original_filename,
+                    "file_size": d.file_size,
+                    "content_type": d.content_type,
+                    "upload_time": d.upload_time,
+                }
+                for d in c.documents
+            ],
+        }
+        for c in claims
+    ]
+
+
+@app.post("/api/upload/generate-claim-id")
+def generate_claim_id():
+    """
+    Generate a unique claim file number.
+
+    Format: CLM-YYYYMMDD-XXX where XXX is a sequential number.
+    Checks both finalized claims and pending claims to ensure uniqueness.
+    """
+    from datetime import datetime
+
+    upload_service = get_upload_service()
+    today = datetime.now()
+    date_str = today.strftime("%Y%m%d")
+    prefix = f"CLM-{date_str}-"
+
+    # Get all existing claim IDs (finalized + pending)
+    existing_ids = set()
+
+    # Check finalized claims directory
+    if upload_service.claims_dir.exists():
+        for item in upload_service.claims_dir.iterdir():
+            if item.is_dir() and item.name.startswith(prefix):
+                existing_ids.add(item.name)
+
+    # Check pending claims
+    for claim in upload_service.list_pending_claims():
+        if claim.claim_id.startswith(prefix):
+            existing_ids.add(claim.claim_id)
+
+    # Find next available number
+    max_num = 0
+    for claim_id in existing_ids:
+        try:
+            num = int(claim_id[len(prefix):])
+            max_num = max(max_num, num)
+        except ValueError:
+            pass
+
+    next_num = max_num + 1
+    new_claim_id = f"{prefix}{str(next_num).zfill(3)}"
+
+    return {"claim_id": new_claim_id}
+
+
+@app.put("/api/upload/claim/{claim_id}/reorder")
+def reorder_documents(claim_id: str, doc_ids: List[str]):
+    """
+    Reorder documents within a pending claim.
+
+    Pass the full list of doc_ids in the desired order.
+    """
+    upload_service = get_upload_service()
+
+    if upload_service.reorder_documents(claim_id, doc_ids):
+        return {"status": "reordered", "claim_id": claim_id}
+
+    raise HTTPException(status_code=404, detail=f"Pending claim not found: {claim_id}")
+
+
+@app.get("/api/upload/claim/{claim_id}")
+def get_pending_claim(claim_id: str):
+    """
+    Get a single pending claim by ID.
+    """
+    upload_service = get_upload_service()
+    claim = upload_service.get_pending_claim(claim_id)
+
+    if claim is None:
+        raise HTTPException(status_code=404, detail=f"Pending claim not found: {claim_id}")
+
+    return {
+        "claim_id": claim.claim_id,
+        "created_at": claim.created_at,
+        "documents": [
+            {
+                "doc_id": d.doc_id,
+                "original_filename": d.original_filename,
+                "file_size": d.file_size,
+                "content_type": d.content_type,
+                "upload_time": d.upload_time,
+            }
+            for d in claim.documents
+        ],
+    }
+
+
+@app.post("/api/upload/claim/{claim_id}/validate")
+def validate_claim_id(claim_id: str):
+    """
+    Validate that a claim ID is acceptable (doesn't already exist).
+
+    Returns status: valid or error details.
+    """
+    upload_service = get_upload_service()
+
+    try:
+        upload_service.validate_claim_id(claim_id)
+        return {"status": "valid", "claim_id": claim_id}
+    except HTTPException as e:
+        raise e
+
+
+# =============================================================================
+# PIPELINE ENDPOINTS
+# =============================================================================
+
+
+class PipelineRunRequest(BaseModel):
+    claim_ids: List[str]
+    model: str = "gpt-4o"
+
+
+@app.post("/api/pipeline/run")
+async def start_pipeline_run(request: PipelineRunRequest):
+    """
+    Start pipeline execution for pending claims.
+
+    Args:
+        request: Pipeline run request with claim_ids and model
+
+    Returns:
+        run_id for tracking progress
+    """
+    pipeline_service = get_pipeline_service()
+    upload_service = get_upload_service()
+
+    # Validate all claims exist in staging
+    for claim_id in request.claim_ids:
+        if not upload_service.claim_exists_staging(claim_id):
+            raise HTTPException(status_code=404, detail=f"Pending claim not found: {claim_id}")
+
+    # Create progress callback that broadcasts to WebSocket
+    async def broadcast_progress(run_id: str, doc_id: str, phase: DocPhase, error: Optional[str]):
+        await ws_manager.broadcast(run_id, {
+            "type": "doc_progress",
+            "doc_id": doc_id,
+            "phase": phase.value,
+            "error": error,
+        })
+
+    run_id = await pipeline_service.start_pipeline(
+        claim_ids=request.claim_ids,
+        model=request.model,
+        progress_callback=broadcast_progress,
+    )
+
+    return {"run_id": run_id, "status": "running"}
+
+
+@app.post("/api/pipeline/cancel/{run_id}")
+async def cancel_pipeline(run_id: str):
+    """
+    Cancel a running pipeline.
+
+    Args:
+        run_id: Run ID to cancel
+
+    Returns:
+        Cancellation status
+    """
+    pipeline_service = get_pipeline_service()
+
+    if await pipeline_service.cancel_pipeline(run_id):
+        # Broadcast cancellation
+        await ws_manager.broadcast(run_id, {
+            "type": "run_cancelled",
+            "run_id": run_id,
+        })
+        return {"status": "cancelled", "run_id": run_id}
+
+    raise HTTPException(status_code=404, detail=f"Run not found or not running: {run_id}")
+
+
+@app.get("/api/pipeline/status/{run_id}")
+def get_pipeline_status(run_id: str):
+    """
+    Get current status of a pipeline run.
+
+    Args:
+        run_id: Run ID to check
+
+    Returns:
+        Run status with document progress
+    """
+    pipeline_service = get_pipeline_service()
+    run = pipeline_service.get_run_status(run_id)
+
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+
+    return {
+        "run_id": run.run_id,
+        "status": run.status.value,
+        "claim_ids": run.claim_ids,
+        "started_at": run.started_at,
+        "completed_at": run.completed_at,
+        "summary": run.summary,
+        "docs": {
+            key: {
+                "doc_id": doc.doc_id,
+                "claim_id": doc.claim_id,
+                "filename": doc.filename,
+                "phase": doc.phase.value,
+                "error": doc.error,
+            }
+            for key, doc in run.docs.items()
+        },
+    }
+
+
+@app.get("/api/pipeline/runs")
+def list_pipeline_runs():
+    """
+    List all tracked pipeline runs.
+
+    Returns:
+        List of run summaries
+    """
+    pipeline_service = get_pipeline_service()
+    runs = pipeline_service.get_all_runs()
+
+    return [
+        {
+            "run_id": run.run_id,
+            "status": run.status.value,
+            "claim_ids": run.claim_ids,
+            "started_at": run.started_at,
+            "completed_at": run.completed_at,
+            "doc_count": len(run.docs),
+            "summary": run.summary,
+        }
+        for run in runs
+    ]
+
+
+# =============================================================================
+# WEBSOCKET ENDPOINT
+# =============================================================================
+
+
+@app.websocket("/api/pipeline/ws/{run_id}")
+async def pipeline_websocket(websocket: WebSocket, run_id: str):
+    """
+    WebSocket endpoint for real-time pipeline progress updates.
+
+    Messages sent to client:
+    - {"type": "sync", "status": "...", "docs": {...}} - Full state on connect
+    - {"type": "doc_progress", "doc_id": "...", "phase": "...", "error": ...}
+    - {"type": "run_complete", "run_id": "...", "summary": {...}}
+    - {"type": "run_cancelled", "run_id": "..."}
+    - {"type": "ping"} - Keepalive
+
+    Messages from client:
+    - "pong" - Keepalive response
+    """
+    await ws_manager.connect(websocket, run_id)
+
+    try:
+        # Send current state on connect (for reconnection sync)
+        pipeline_service = get_pipeline_service()
+        run = pipeline_service.get_run_status(run_id)
+
+        if run:
+            await websocket.send_json({
+                "type": "sync",
+                "run_id": run.run_id,
+                "status": run.status.value,
+                "docs": {
+                    key: {
+                        "doc_id": doc.doc_id,
+                        "claim_id": doc.claim_id,
+                        "filename": doc.filename,
+                        "phase": doc.phase.value,
+                        "error": doc.error,
+                    }
+                    for key, doc in run.docs.items()
+                },
+            })
+
+        # Keep connection alive
+        while True:
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=30.0,
+                )
+                # Handle ping/pong
+                if data == "pong":
+                    continue
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
+
+            # Check if run is complete
+            run = pipeline_service.get_run_status(run_id)
+            if run and run.status.value in ("completed", "failed", "cancelled"):
+                await websocket.send_json({
+                    "type": "run_complete",
+                    "run_id": run_id,
+                    "status": run.status.value,
+                    "summary": run.summary,
+                })
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_manager.disconnect(websocket, run_id)

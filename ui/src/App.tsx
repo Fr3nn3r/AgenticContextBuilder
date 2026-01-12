@@ -8,6 +8,7 @@ import { DocumentReview } from "./components/DocumentReview";
 import { ExtractionPage } from "./components/ExtractionPage";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
+import { NewClaimPage } from "./components/NewClaimPage";
 import type { ClaimSummary, DocSummary } from "./types";
 import {
   listClaims,
@@ -180,6 +181,7 @@ function App() {
   function getPageTitle(): string {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "Extraction";
+    if (path === "/claims/new") return "New Claim";
     if (path === "/claims") return "Claims Review";
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "Claims Review";
     if (path === "/classification") return "Classification Review";
@@ -190,9 +192,10 @@ function App() {
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" {
+  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
+    if (path === "/claims/new") return "new-claim";
     if (path === "/classification") return "classification";
     if (path === "/documents") return "documents";
     if (path === "/insights") return "insights";
@@ -275,6 +278,10 @@ function App() {
                     loading={dashboardLoading}
                   />
                 }
+              />
+              <Route
+                path="/claims/new"
+                element={<NewClaimPage />}
               />
               <Route
                 path="/claims"

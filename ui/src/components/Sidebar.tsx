@@ -1,13 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
-type View = "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates";
+type View = "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates";
 
 interface SidebarProps {
   currentView: View;
 }
 
 const navItems = [
+  { id: "new-claim" as View, label: "New Claim", path: "/claims/new", icon: PlusIcon },
   { id: "dashboard" as View, label: "Extraction", path: "/dashboard", icon: DashboardIcon },
   { id: "classification" as View, label: "Classification Review", path: "/classification", icon: ClassificationIcon },
   { id: "documents" as View, label: "Document Review", path: "/documents", icon: DocumentsIcon },
@@ -107,6 +108,14 @@ function DocumentsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+    </svg>
+  );
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   );
 }

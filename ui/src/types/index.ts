@@ -304,3 +304,81 @@ export interface ClassificationStats {
   by_predicted_type: Record<string, { count: number; override_count: number }>;
   confusion_matrix: ConfusionMatrixEntry[];
 }
+
+// =============================================================================
+// UPLOAD & PIPELINE TYPES
+// =============================================================================
+
+export interface PendingDocument {
+  doc_id: string;
+  original_filename: string;
+  file_size: number;
+  content_type: string;
+  upload_time: string;
+}
+
+export interface PendingClaim {
+  claim_id: string;
+  created_at: string;
+  documents: PendingDocument[];
+}
+
+export type DocPipelinePhase =
+  | "pending"
+  | "ingesting"
+  | "classifying"
+  | "extracting"
+  | "done"
+  | "failed";
+
+export interface DocProgress {
+  doc_id: string;
+  claim_id: string;
+  filename: string;
+  phase: DocPipelinePhase;
+  error?: string;
+}
+
+export type PipelineRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface PipelineRun {
+  run_id: string;
+  status: PipelineRunStatus;
+  claim_ids: string[];
+  started_at?: string;
+  completed_at?: string;
+  doc_count?: number;
+  summary?: {
+    total: number;
+    success: number;
+    failed: number;
+  };
+  docs?: Record<string, DocProgress>;
+}
+
+export type WebSocketMessageType =
+  | "sync"
+  | "doc_progress"
+  | "run_complete"
+  | "run_cancelled"
+  | "ping";
+
+export interface WebSocketMessage {
+  type: WebSocketMessageType;
+  run_id?: string;
+  doc_id?: string;
+  phase?: DocPipelinePhase;
+  error?: string;
+  status?: PipelineRunStatus;
+  docs?: Record<string, DocProgress>;
+  summary?: {
+    total: number;
+    success: number;
+    failed: number;
+  };
+}

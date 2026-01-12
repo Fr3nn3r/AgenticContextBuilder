@@ -432,3 +432,135 @@ export async function getClassificationStats(runId: string): Promise<Classificat
     `${API_BASE}/classification/stats?run_id=${encodeURIComponent(runId)}`
   );
 }
+
+// =============================================================================
+// UPLOAD API
+// =============================================================================
+
+import type { PendingClaim, PendingDocument, PipelineRun } from "../types";
+
+export interface UploadResult {
+  claim_id: string;
+  documents: PendingDocument[];
+}
+
+export async function uploadDocuments(
+  claimId: string,
+  files: File[],
+  onProgress?: (progress: number) => void
+): Promise<UploadResult> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/upload/claim/${encodeURIComponent(claimId)}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const progress = Math.round((event.loaded / event.total) * 100);
+        onProgress(progress);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.detail || `HTTP ${xhr.status}`));
+        } catch {
+          reject(new Error(`HTTP ${xhr.status}`));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(formData);
+  });
+}
+
+export async function listPendingClaims(): Promise<PendingClaim[]> {
+  return fetchJson<PendingClaim[]>(`${API_BASE}/upload/pending`);
+}
+
+export async function getPendingClaim(claimId: string): Promise<PendingClaim> {
+  return fetchJson<PendingClaim>(`${API_BASE}/upload/claim/${encodeURIComponent(claimId)}`);
+}
+
+export async function deletePendingClaim(claimId: string): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/upload/claim/${encodeURIComponent(claimId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function deletePendingDocument(
+  claimId: string,
+  docId: string
+): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/upload/claim/${encodeURIComponent(claimId)}/doc/${encodeURIComponent(docId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function reorderDocuments(
+  claimId: string,
+  docIds: string[]
+): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/upload/claim/${encodeURIComponent(claimId)}/reorder`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(docIds),
+    }
+  );
+}
+
+export async function validateClaimId(
+  claimId: string
+): Promise<{ status: string; claim_id: string }> {
+  return fetchJson<{ status: string; claim_id: string }>(
+    `${API_BASE}/upload/claim/${encodeURIComponent(claimId)}/validate`,
+    { method: "POST" }
+  );
+}
+
+export async function generateClaimId(): Promise<{ claim_id: string }> {
+  return fetchJson<{ claim_id: string }>(`${API_BASE}/upload/generate-claim-id`, {
+    method: "POST",
+  });
+}
+
+// =============================================================================
+// PIPELINE API
+// =============================================================================
+
+export async function startPipeline(
+  claimIds: string[],
+  model: string = "gpt-4o"
+): Promise<{ run_id: string; status: string }> {
+  return fetchJson<{ run_id: string; status: string }>(`${API_BASE}/pipeline/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ claim_ids: claimIds, model }),
+  });
+}
+
+export async function cancelPipeline(runId: string): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/pipeline/cancel/${encodeURIComponent(runId)}`,
+    { method: "POST" }
+  );
+}
+
+export async function getPipelineStatus(runId: string): Promise<PipelineRun> {
+  return fetchJson<PipelineRun>(`${API_BASE}/pipeline/status/${encodeURIComponent(runId)}`);
+}
+
+export async function listPipelineRuns(): Promise<PipelineRun[]> {
+  return fetchJson<PipelineRun[]>(`${API_BASE}/pipeline/runs`);
+}
