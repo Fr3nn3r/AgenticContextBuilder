@@ -2,7 +2,7 @@ import { useState, Fragment } from "react";
 import type { ClaimSummary, DocSummary } from "../types";
 import type { ClaimRunInfo } from "../api/client";
 import { cn } from "../lib/utils";
-import { formatTimestamp, formatDocType } from "../lib/formatters";
+import { formatDocType } from "../lib/formatters";
 import {
   MetricCard,
   MetricCardRow,
@@ -11,6 +11,7 @@ import {
   GateStatusBadge,
   NotInRunBadge,
   NoSearchResultsEmptyState,
+  RunSelector,
 } from "./shared";
 
 interface ClaimsTableProps {
@@ -97,9 +98,6 @@ export function ClaimsTable({
     return sortDirection === "asc" ? comparison : -comparison;
   });
 
-  // Get selected run metadata
-  const selectedRun = runs.find((r) => r.run_id === selectedRunId);
-
   // Count claims in run vs not in run
   const claimsInRun = claims.filter((c) => c.in_run).length;
   const claimsNotInRun = claims.filter((c) => !c.in_run).length;
@@ -121,47 +119,15 @@ export function ClaimsTable({
 
   return (
     <div className="p-6">
-      {/* Header with Run Context */}
+      {/* Run Selector Header */}
       <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Document Review</h2>
-            <p className="text-sm text-gray-500">Document extraction calibration and labeling</p>
-          </div>
-
-          {/* Run Selector and Metadata */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Run:</label>
-              <select
-                data-testid="run-selector"
-                value={selectedRunId || ""}
-                onChange={(e) => onRunChange(e.target.value || null)}
-                className="border rounded px-2 py-1 text-sm min-w-[220px]"
-              >
-                {runs.map((run, idx) => (
-                  <option key={run.run_id} value={run.run_id}>
-                    {run.run_id.replace("run_", "")} {run.claims_count ? `(${run.claims_count} claims)` : ""} {idx === 0 ? "★" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Run Metadata */}
-            {selectedRun && (
-              <div className="flex items-center gap-3 text-xs text-gray-500 border-l pl-4">
-                <span>
-                  <strong>Time:</strong> {formatTimestamp(selectedRun.timestamp)}
-                </span>
-                {selectedRun.model && (
-                  <span>
-                    <strong>Model:</strong> {selectedRun.model}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <RunSelector
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onRunChange={(id) => onRunChange(id || null)}
+          showMetadata
+          testId="run-selector"
+        />
       </div>
 
       {/* KPI Stats */}

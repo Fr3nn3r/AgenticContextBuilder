@@ -11,18 +11,22 @@ import {
   SelectToViewEmptyState,
   Spinner,
   NoDocumentsEmptyState,
+  RunSelector,
 } from "./shared";
+import { DocumentViewer } from "./DocumentViewer";
 import type {
   ClassificationDoc,
   ClassificationDetail,
   ClassificationStats,
+  DocPayload,
 } from "../types";
 import {
-  listClaimRuns,
   listClassificationDocs,
   getClassificationDetail,
   saveClassificationLabel,
   getClassificationStats,
+  getDoc,
+  getDocSourceUrl,
   type ClaimRunInfo,
 } from "../api/client";
 
@@ -41,10 +45,17 @@ const DOC_TYPES = [
   "supporting_document",
 ];
 
-export function ClassificationReview() {
-  // Run selection
-  const [runs, setRuns] = useState<ClaimRunInfo[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+interface ClassificationReviewProps {
+  runs: ClaimRunInfo[];
+  selectedRunId: string | null;
+  onRunChange: (runId: string | null) => void;
+}
+
+export function ClassificationReview({
+  runs,
+  selectedRunId,
+  onRunChange,
+}: ClassificationReviewProps) {
 
   // Doc list state
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
@@ -53,6 +64,7 @@ export function ClassificationReview() {
   // Selected doc detail
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ClassificationDetail | null>(null);
+  const [docPayload, setDocPayload] = useState<DocPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // Review state
@@ -81,11 +93,6 @@ export function ClassificationReview() {
     }
   }
 
-  // Load runs on mount
-  useEffect(() => {
-    loadRuns();
-  }, []);
-
   // Load docs when run changes
   useEffect(() => {
     if (selectedRunId) {
@@ -100,20 +107,9 @@ export function ClassificationReview() {
       loadDetail(selectedDocId, selectedRunId);
     } else {
       setDetail(null);
+      setDocPayload(null);
     }
   }, [selectedDocId, selectedRunId]);
-
-  async function loadRuns() {
-    try {
-      const data = await listClaimRuns();
-      setRuns(data);
-      if (data.length > 0) {
-        setSelectedRunId(data[0].run_id);
-      }
-    } catch (err) {
-      console.error("Failed to load runs:", err);
-    }
-  }
 
   async function loadDocs(runId: string) {
     try {
@@ -139,13 +135,19 @@ export function ClassificationReview() {
   async function loadDetail(docId: string, runId: string) {
     try {
       setDetailLoading(true);
-      const data = await getClassificationDetail(docId, runId);
-      setDetail(data);
+      // Fetch classification detail first
+      const classificationData = await getClassificationDetail(docId, runId);
+      setDetail(classificationData);
+
+      // Then fetch full doc payload for PDF viewer
+      const docData = await getDoc(docId, classificationData.claim_id, runId);
+      setDocPayload(docData);
+
       // Pre-populate form from existing label
-      if (data.existing_label) {
-        setReviewAction(data.existing_label.doc_type_correct ? "confirm" : "change");
-        setNewDocType(data.existing_label.doc_type_truth || "");
-        setNotes(data.existing_label.notes || "");
+      if (classificationData.existing_label) {
+        setReviewAction(classificationData.existing_label.doc_type_correct ? "confirm" : "change");
+        setNewDocType(classificationData.existing_label.doc_type_truth || "");
+        setNotes(classificationData.existing_label.notes || "");
       } else {
         setReviewAction("confirm");
         setNewDocType("");
@@ -221,20 +223,12 @@ export function ClassificationReview() {
       {/* Header with run selector and KPIs */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <label className="text-sm text-gray-600">Run:</label>
-            <select
-              value={selectedRunId || ""}
-              onChange={(e) => setSelectedRunId(e.target.value || null)}
-              className="border rounded-md px-3 py-1.5 text-sm"
-            >
-              {runs.map((run) => (
-                <option key={run.run_id} value={run.run_id}>
-                  {run.run_id} {run.timestamp ? `(${new Date(run.timestamp).toLocaleDateString()})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <RunSelector
+            runs={runs}
+            selectedRunId={selectedRunId}
+            onRunChange={(id) => onRunChange(id || null)}
+            showMetadata
+          />
 
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">Show:</label>
@@ -365,157 +359,137 @@ export function ClassificationReview() {
           )}
         </div>
 
-        {/* Detail Panel */}
-        <div className="w-1/2 overflow-auto bg-gray-50 p-6">
+        {/* Detail Panel - Split View */}
+        <div className="w-1/2 flex flex-col overflow-hidden">
           {detailLoading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full bg-gray-50">
               <Spinner />
             </div>
           ) : !detail ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full bg-gray-50">
               <SelectToViewEmptyState itemType="document" />
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Doc Info */}
-              <div className="bg-white rounded-lg p-4 shadow-sm">
-                <h3 className="font-medium text-gray-900 mb-2">{detail.filename}</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Claim:</span>{" "}
-                    <span className="text-gray-900">{detail.claim_id}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Confidence:</span>{" "}
-                    <span className="text-gray-900">{Math.round(detail.confidence * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Classification Info */}
-              <div className="bg-white rounded-lg p-4 shadow-sm">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Predicted Type</h4>
-                <div className="text-lg font-semibold text-gray-900 mb-3">
-                  {formatDocType(detail.predicted_type)}
-                </div>
-
-                {detail.summary && (
-                  <div className="mb-3">
-                    <h4 className="text-sm font-medium text-gray-700 mb-1">Summary</h4>
-                    <p className="text-sm text-gray-600">{detail.summary}</p>
-                  </div>
-                )}
-
-                {detail.signals && detail.signals.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-1">Signals</h4>
-                    <ul className="space-y-1">
-                      {detail.signals.map((signal, i) => (
-                        <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                          <span className="text-green-500 mt-0.5">*</span>
-                          {signal}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {detail.key_hints && Object.keys(detail.key_hints).length > 0 && (
-                  <div className="mt-3">
-                    <h4 className="text-sm font-medium text-gray-700 mb-1">Key Hints</h4>
-                    <div className="text-sm text-gray-600">
-                      {Object.entries(detail.key_hints).map(([key, value]) => (
-                        <div key={key}>
-                          <span className="text-gray-500">{key}:</span> {value}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Text Preview */}
-              {detail.pages_preview && (
-                <div className="bg-white rounded-lg p-4 shadow-sm">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Text Preview</h4>
-                  <pre className="text-xs text-gray-600 whitespace-pre-wrap font-mono bg-gray-50 p-3 rounded max-h-40 overflow-auto">
-                    {detail.pages_preview}
-                  </pre>
-                </div>
-              )}
-
-              {/* Review Actions */}
-              <div className="bg-white rounded-lg p-4 shadow-sm">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Review</h4>
-
-                <div className="flex gap-2 mb-4">
-                  <button
-                    onClick={() => setReviewAction("confirm")}
-                    className={cn(
-                      "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                      reviewAction === "confirm"
-                        ? "bg-green-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    )}
-                  >
-                    Confirm Type
-                  </button>
-                  <button
-                    onClick={() => setReviewAction("change")}
-                    className={cn(
-                      "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                      reviewAction === "change"
-                        ? "bg-amber-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    )}
-                  >
-                    Change Type
-                  </button>
-                </div>
-
-                {reviewAction === "change" && (
-                  <div className="mb-4">
-                    <label className="block text-sm text-gray-600 mb-1">Correct Type:</label>
-                    <select
-                      value={newDocType}
-                      onChange={(e) => setNewDocType(e.target.value)}
-                      className="w-full border rounded-md px-3 py-2 text-sm"
-                    >
-                      <option value="">Select type...</option>
-                      {DOC_TYPES.filter((t) => t !== detail.predicted_type).map((type) => (
-                        <option key={type} value={type}>
-                          {formatDocType(type)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div className="mb-4">
-                  <label className="block text-sm text-gray-600 mb-1">Notes (optional):</label>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="w-full border rounded-md px-3 py-2 text-sm"
-                    rows={2}
-                    placeholder="Add notes..."
+            <>
+              {/* Top: Document Viewer */}
+              <div className="h-1/2 border-b bg-white">
+                {docPayload ? (
+                  <DocumentViewer
+                    pages={docPayload.pages}
+                    sourceUrl={getDocSourceUrl(detail.doc_id, detail.claim_id)}
+                    hasPdf={docPayload.has_pdf}
+                    hasImage={docPayload.has_image}
+                    claimId={detail.claim_id}
+                    docId={detail.doc_id}
                   />
-                </div>
-
-                <button
-                  onClick={handleSave}
-                  disabled={saving || (reviewAction === "change" && !newDocType)}
-                  className={cn(
-                    "w-full px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                    saving || (reviewAction === "change" && !newDocType)
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      : "bg-gray-900 text-white hover:bg-gray-800"
-                  )}
-                >
-                  {saving ? "Saving..." : "Save Review"}
-                </button>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <Spinner />
+                  </div>
+                )}
               </div>
-            </div>
+
+              {/* Bottom: Classification Review Panel */}
+              <div className="h-1/2 overflow-auto bg-gray-50 p-4">
+                <div className="space-y-4">
+                  {/* Doc Info Header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium text-gray-900">{detail.filename}</h3>
+                      <div className="text-xs text-gray-500">
+                        {detail.claim_id} &bull; {Math.round(detail.confidence * 100)}% confidence
+                      </div>
+                    </div>
+                    <ScoreBadge value={Math.round(detail.confidence * 100)} />
+                  </div>
+
+                  {/* Classification Info */}
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-500">Predicted Type</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {formatDocType(detail.predicted_type)}
+                      </span>
+                    </div>
+
+                    {detail.summary && (
+                      <p className="text-xs text-gray-600 mb-2">{detail.summary}</p>
+                    )}
+
+                    {detail.signals && detail.signals.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        Signals: {detail.signals.slice(0, 3).join(", ")}
+                        {detail.signals.length > 3 && ` +${detail.signals.length - 3} more`}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Review Actions */}
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        onClick={() => setReviewAction("confirm")}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                          reviewAction === "confirm"
+                            ? "bg-green-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        )}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setReviewAction("change")}
+                        className={cn(
+                          "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                          reviewAction === "change"
+                            ? "bg-amber-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        )}
+                      >
+                        Change Type
+                      </button>
+                    </div>
+
+                    {reviewAction === "change" && (
+                      <select
+                        value={newDocType}
+                        onChange={(e) => setNewDocType(e.target.value)}
+                        className="w-full border rounded-md px-2 py-1.5 text-sm mb-3"
+                      >
+                        <option value="">Select correct type...</option>
+                        {DOC_TYPES.filter((t) => t !== detail.predicted_type).map((type) => (
+                          <option key={type} value={type}>
+                            {formatDocType(type)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="w-full border rounded-md px-2 py-1.5 text-sm mb-3"
+                      rows={2}
+                      placeholder="Notes (optional)..."
+                    />
+
+                    <button
+                      onClick={handleSave}
+                      disabled={saving || (reviewAction === "change" && !newDocType)}
+                      className={cn(
+                        "w-full px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                        saving || (reviewAction === "change" && !newDocType)
+                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          : "bg-gray-900 text-white hover:bg-gray-800"
+                      )}
+                    >
+                      {saving ? "Saving..." : "Save Review"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

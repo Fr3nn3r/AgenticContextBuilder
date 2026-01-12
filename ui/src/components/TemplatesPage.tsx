@@ -53,14 +53,6 @@ export function TemplatesPage() {
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Extraction Templates</h2>
-        <p className="text-sm text-gray-500">
-          View supported document types and their extraction specifications
-        </p>
-      </div>
-
       {/* Template cards */}
       <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
         {templates.map((template) => (

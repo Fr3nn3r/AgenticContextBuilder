@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
-type View = "dashboard" | "claims" | "classification" | "insights" | "templates";
+type View = "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates";
 
 interface SidebarProps {
   currentView: View;
@@ -10,7 +10,8 @@ interface SidebarProps {
 const navItems = [
   { id: "dashboard" as View, label: "Extraction", path: "/dashboard", icon: DashboardIcon },
   { id: "classification" as View, label: "Classification Review", path: "/classification", icon: ClassificationIcon },
-  { id: "claims" as View, label: "Document Review", path: "/claims", icon: ClaimsIcon },
+  { id: "documents" as View, label: "Document Review", path: "/documents", icon: DocumentsIcon },
+  { id: "claims" as View, label: "Claims Review", path: "/claims", icon: ClaimsIcon },
   { id: "insights" as View, label: "Benchmark", path: "/insights", icon: InsightsIcon },
   { id: "templates" as View, label: "Extraction Templates", path: "/templates", icon: TemplatesIcon },
 ];
@@ -98,6 +99,14 @@ function ClassificationIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+    </svg>
+  );
+}
+
+function DocumentsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
     </svg>
   );
 }

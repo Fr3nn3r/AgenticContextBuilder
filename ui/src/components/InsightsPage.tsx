@@ -13,6 +13,7 @@ import {
   OutcomeBadge,
   PageLoadingSkeleton,
   NoLabelsEmptyState,
+  RunSelector,
 } from "./shared";
 import {
   getInsightsFieldDetails,
@@ -38,7 +39,15 @@ import {
 
 type ViewTab = "insights" | "history" | "compare";
 
-export function InsightsPage() {
+interface InsightsPageProps {
+  selectedRunId: string | null;
+  onRunChange: (runId: string) => void;
+}
+
+export function InsightsPage({
+  selectedRunId,
+  onRunChange,
+}: InsightsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const drilldownRef = useRef<HTMLDivElement>(null);
@@ -46,10 +55,9 @@ export function InsightsPage() {
   // View state
   const [activeTab, setActiveTab] = useState<ViewTab>("insights");
 
-  // Run state
+  // Run state (local for this page's run list with metrics)
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [detailedRuns, setDetailedRuns] = useState<DetailedRunInfo[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedDetailedRun, setSelectedDetailedRun] = useState<DetailedRunInfo | null>(null);
   const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
   const [runMetadata, setRunMetadata] = useState<Record<string, unknown> | null>(null);
@@ -81,12 +89,37 @@ export function InsightsPage() {
     loadBaseline();
   }, []);
 
+  // Sync selectedDetailedRun when selectedRunId or detailedRuns change
+  useEffect(() => {
+    if (selectedRunId && detailedRuns.length > 0) {
+      const detailed = detailedRuns.find((r) => r.run_id === selectedRunId);
+      setSelectedDetailedRun(detailed || null);
+    }
+  }, [selectedRunId, detailedRuns]);
+
   // Load data when run selection changes
   useEffect(() => {
     if (selectedRunId) {
       loadRunData(selectedRunId);
     }
   }, [selectedRunId]);
+
+  async function loadRuns() {
+    try {
+      const [runsData, detailedData] = await Promise.all([
+        getInsightsRuns(),
+        getDetailedRuns(),
+      ]);
+      setRuns(runsData);
+      setDetailedRuns(detailedData);
+      // If no run selected yet, select latest and notify parent
+      if (runsData.length > 0 && !selectedRunId) {
+        onRunChange(runsData[0].run_id);
+      }
+    } catch (err) {
+      console.error("Failed to load runs:", err);
+    }
+  }
 
   // Load field details and examples when selection changes
   useEffect(() => {
@@ -113,25 +146,6 @@ export function InsightsPage() {
       setComparison(null);
     }
   }, [compareBaselineId, compareCurrentId]);
-
-  async function loadRuns() {
-    try {
-      const [runsData, detailedData] = await Promise.all([
-        getInsightsRuns(),
-        getDetailedRuns(),
-      ]);
-      setRuns(runsData);
-      setDetailedRuns(detailedData);
-      // Auto-select latest run if none selected
-      if (runsData.length > 0 && !selectedRunId) {
-        setSelectedRunId(runsData[0].run_id);
-        const detailed = detailedData.find((r) => r.run_id === runsData[0].run_id);
-        setSelectedDetailedRun(detailed || null);
-      }
-    } catch (err) {
-      console.error("Failed to load runs:", err);
-    }
-  }
 
   async function loadBaseline() {
     try {
@@ -271,27 +285,18 @@ export function InsightsPage() {
   }
 
   return (
-    <div className="p-4 space-y-4 max-w-[1600px] mx-auto">
+    <div className="p-4 space-y-4">
       {/* Run Context Header */}
       <div className="bg-white rounded-lg border shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Run Selector */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Run:</label>
-              <select
-                data-testid="run-selector"
-                value={selectedRunId || ""}
-                onChange={(e) => setSelectedRunId(e.target.value)}
-                className="border rounded px-2 py-1 text-sm min-w-[180px]"
-              >
-                {runs.map((run) => (
-                  <option key={run.run_id} value={run.run_id}>
-                    {run.run_id} {run.run_id === runs[0]?.run_id ? "(Latest)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <RunSelector
+              runs={runs}
+              selectedRunId={selectedRunId}
+              onRunChange={onRunChange}
+              testId="run-selector"
+            />
 
             {/* Run Metadata */}
             {runMetadata && (
@@ -413,7 +418,7 @@ export function InsightsPage() {
           runs={runs}
           baselineRunId={baselineRunId}
           selectedRunId={selectedRunId}
-          onSelectRun={setSelectedRunId}
+          onSelectRun={onRunChange}
           onSetBaseline={handleSetBaseline}
         />
       )}
