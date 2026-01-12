@@ -12,13 +12,13 @@ from context_builder.api.services.utils import (
     get_latest_run_dir_for_claim,
     get_run_dir_by_id,
 )
-from context_builder.storage import FileStorage
+from context_builder.storage import StorageFacade
 
 
 class DocumentsService:
     """Service layer for document listing and retrieval."""
 
-    def __init__(self, data_dir: Path, storage_factory: Callable[[], FileStorage]):
+    def __init__(self, data_dir: Path, storage_factory: Callable[[], StorageFacade]):
         self.data_dir = data_dir
         self.storage_factory = storage_factory
 
@@ -89,7 +89,7 @@ class DocumentsService:
 
     def get_doc(self, doc_id: str, run_id: Optional[str] = None) -> DocPayload:
         storage = self.storage_factory()
-        doc_bundle = storage.get_doc(doc_id)
+        doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
@@ -99,14 +99,14 @@ class DocumentsService:
         language = meta.get("language", "es")
         resolved_claim_id = doc_bundle.claim_id or extract_claim_number(doc_bundle.claim_folder)
 
-        doc_text = storage.get_doc_text(doc_id)
+        doc_text = storage.doc_store.get_doc_text(doc_id)
         pages = doc_text.pages if doc_text else []
 
         extraction = None
         if run_id:
-            extraction = storage.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
+            extraction = storage.run_store.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
 
-        labels = storage.get_label(doc_id)
+        labels = storage.label_store.get_label(doc_id)
 
         has_pdf = False
         has_image = False
@@ -134,9 +134,9 @@ class DocumentsService:
 
     def get_doc_source(self, doc_id: str) -> Tuple[Path, str, str]:
         storage = self.storage_factory()
-        source_file = storage.get_doc_source_path(doc_id)
+        source_file = storage.doc_store.get_doc_source_path(doc_id)
         if not source_file:
-            doc = storage.get_doc(doc_id)
+            doc = storage.doc_store.get_doc(doc_id)
             if not doc:
                 raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
             raise HTTPException(status_code=404, detail="No source file available")
@@ -159,7 +159,7 @@ class DocumentsService:
 
     def get_doc_azure_di(self, doc_id: str) -> dict:
         storage = self.storage_factory()
-        doc_bundle = storage.get_doc(doc_id)
+        doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 

@@ -3,7 +3,8 @@
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, Type
+from dataclasses import dataclass, field
+from typing import Dict, Any, Type, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,44 @@ class APIError(IngestionError):
 class ConfigurationError(IngestionError):
     """Exception raised when configuration is missing or invalid."""
     pass
+
+
+@dataclass(frozen=True)
+class IngestionIssue:
+    """Structured warning/error for ingestion results."""
+
+    code: str
+    message: str
+
+
+@dataclass
+class IngestionResult:
+    """Standard ingestion result envelope."""
+
+    data: Dict[str, Any]
+    warnings: List[IngestionIssue] = field(default_factory=list)
+    errors: List[IngestionIssue] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "data": self.data,
+            "warnings": [issue.__dict__ for issue in self.warnings],
+            "errors": [issue.__dict__ for issue in self.errors],
+        }
+
+
+def wrap_ingestion_result(
+    data: Dict[str, Any],
+    warnings: Optional[List[IngestionIssue]] = None,
+    errors: Optional[List[IngestionIssue]] = None,
+) -> Dict[str, Any]:
+    """Create a standard ingestion result envelope."""
+    result = IngestionResult(
+        data=data,
+        warnings=warnings or [],
+        errors=errors or [],
+    )
+    return result.to_dict()
 
 
 class DataIngestion(ABC):
@@ -79,7 +118,7 @@ class DataIngestion(ABC):
 
         self.logger.debug(f"File validation passed: {filepath}")
 
-    def process(self, filepath: Path) -> Dict[str, Any]:
+    def process(self, filepath: Path, envelope: bool = False) -> Dict[str, Any]:
         """
         Process a file and extract context.
 
@@ -87,7 +126,8 @@ class DataIngestion(ABC):
             filepath: Path to file to process
 
         Returns:
-            Dictionary containing extracted context
+            Dictionary containing extracted context, optionally wrapped
+            in a standard ingestion result envelope.
 
         Raises:
             IngestionError: If processing fails
@@ -109,6 +149,8 @@ class DataIngestion(ABC):
             # at the top level (file_name, file_path, file_size_bytes, etc.)
 
             self.logger.info(f"Successfully processed: {filepath}")
+            if envelope:
+                return wrap_ingestion_result(result)
             return result
 
         except IngestionError:

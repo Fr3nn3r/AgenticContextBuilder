@@ -197,3 +197,56 @@ class Storage(Protocol):
             Registry metadata dict with build timestamp and counts.
         """
         ...
+
+
+@runtime_checkable
+class DocStore(Protocol):
+    """Document access interface."""
+
+    def list_claims(self) -> list[ClaimRef]:
+        ...
+
+    def list_docs(self, claim_id: str) -> list[DocRef]:
+        ...
+
+    def get_doc(self, doc_id: str) -> Optional[DocBundle]:
+        ...
+
+    def get_doc_text(self, doc_id: str) -> Optional[DocText]:
+        ...
+
+    def get_doc_source_path(self, doc_id: str) -> Optional[Path]:
+        ...
+
+    def find_doc_claim(self, doc_id: str) -> Optional[str]:
+        ...
+
+
+@runtime_checkable
+class RunStore(Protocol):
+    """Run-scoped access interface."""
+
+    def list_runs(self) -> list[RunRef]:
+        ...
+
+    def get_run(self, run_id: str) -> Optional[RunBundle]:
+        ...
+
+    def get_extraction(
+        self, run_id: str, doc_id: str, claim_id: Optional[str] = None
+    ) -> Optional[dict]:
+        ...
+
+
+@runtime_checkable
+class LabelStore(Protocol):
+    """Label access interface."""
+
+    def get_label(self, doc_id: str) -> Optional[dict]:
+        ...
+
+    def save_label(self, doc_id: str, label_data: dict) -> None:
+        ...
+
+    def get_label_summary(self, doc_id: str) -> Optional[LabelSummary]:
+        ...

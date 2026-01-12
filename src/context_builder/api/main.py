@@ -68,12 +68,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 
 # Storage abstraction layer (uses indexes when available)
-from context_builder.storage import FileStorage
+from context_builder.storage import FileStorage, StorageFacade
 
 
-def get_storage() -> FileStorage:
+def get_storage() -> StorageFacade:
     """Get Storage instance (fresh for each request to see new runs)."""
-    return FileStorage(DATA_DIR)
+    return StorageFacade.from_storage(FileStorage(DATA_DIR))
 
 
 def set_data_dir(path: Path):

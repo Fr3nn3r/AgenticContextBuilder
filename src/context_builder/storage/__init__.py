@@ -31,8 +31,9 @@ Usage:
         meta = storage.get_index_meta()
 """
 
-from .protocol import Storage
+from .protocol import Storage, DocStore, RunStore, LabelStore
 from .filesystem import FileStorage
+from .facade import StorageFacade
 from .models import (
     ClaimRef,
     DocRef,
@@ -49,8 +50,12 @@ from .index_builder import build_all_indexes
 __all__ = [
     # Protocol
     "Storage",
+    "DocStore",
+    "RunStore",
+    "LabelStore",
     # Implementation
     "FileStorage",
+    "StorageFacade",
     # Models
     "ClaimRef",
     "DocRef",

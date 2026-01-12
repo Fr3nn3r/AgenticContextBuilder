@@ -17,13 +17,13 @@ from context_builder.api.services.utils import (
     get_run_dir_by_id,
     parse_loss_type_from_folder,
 )
-from context_builder.storage import FileStorage
+from context_builder.storage import StorageFacade
 
 
 class ClaimsService:
     """Service layer for claims and run summaries."""
 
-    def __init__(self, data_dir: Path, storage_factory: Callable[[], FileStorage]):
+    def __init__(self, data_dir: Path, storage_factory: Callable[[], StorageFacade]):
         self.data_dir = data_dir
         self.storage_factory = storage_factory
 
@@ -144,7 +144,7 @@ class ClaimsService:
 
     def list_runs(self) -> List[dict]:
         storage = self.storage_factory()
-        run_ids = [r.run_id for r in storage.list_runs()]
+        run_ids = [r.run_id for r in storage.run_store.list_runs()]
         runs = []
         global_runs_dir = get_global_runs_dir(self.data_dir)
 

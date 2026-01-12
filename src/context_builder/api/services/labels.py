@@ -6,13 +6,13 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 
 from context_builder.api.services.utils import extract_claim_number
-from context_builder.storage import FileStorage
+from context_builder.storage import StorageFacade
 
 
 class LabelsService:
     """Service layer for saving document labels."""
 
-    def __init__(self, storage_factory: Callable[[], FileStorage]):
+    def __init__(self, storage_factory: Callable[[], StorageFacade]):
         self.storage_factory = storage_factory
 
     def save_labels(
@@ -24,7 +24,7 @@ class LabelsService:
         doc_labels: Dict[str, Any],
     ) -> Dict[str, str]:
         storage = self.storage_factory()
-        doc_bundle = storage.get_doc(doc_id)
+        doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
@@ -44,7 +44,7 @@ class LabelsService:
         }
 
         try:
-            storage.save_label(doc_id, label_data)
+            storage.label_store.save_label(doc_id, label_data)
         except IOError as e:
             raise HTTPException(status_code=500, detail=f"Failed to save labels: {e}")
 
@@ -58,7 +58,7 @@ class LabelsService:
         notes: str,
     ) -> Dict[str, str]:
         storage = self.storage_factory()
-        doc_bundle = storage.get_doc(doc_id)
+        doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
@@ -86,7 +86,7 @@ class LabelsService:
         }
 
         try:
-            storage.save_label(doc_id, label_data)
+            storage.label_store.save_label(doc_id, label_data)
         except IOError as e:
             raise HTTPException(status_code=500, detail=f"Failed to save label: {e}")
 
@@ -100,7 +100,7 @@ class LabelsService:
         notes: str,
     ) -> Dict[str, str]:
         storage = self.storage_factory()
-        doc_bundle = storage.get_doc(doc_id)
+        doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
@@ -110,7 +110,7 @@ class LabelsService:
                 detail="doc_type_truth is required when doc_type_correct is False",
             )
 
-        label_data = storage.get_label(doc_id)
+        label_data = storage.label_store.get_label(doc_id)
         if not label_data:
             resolved_claim_id = doc_bundle.claim_id or extract_claim_number(doc_bundle.claim_folder)
             label_data = {
@@ -133,7 +133,7 @@ class LabelsService:
             label_data["review"]["notes"] = notes
 
         try:
-            storage.save_label(doc_id, label_data)
+            storage.label_store.save_label(doc_id, label_data)
         except IOError as e:
             raise HTTPException(status_code=500, detail=f"Failed to save label: {e}")
 

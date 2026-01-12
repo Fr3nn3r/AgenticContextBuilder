@@ -504,7 +504,7 @@ def process_file(
 
     # Process the file
     logger.info(f"Using {provider} vision API for processing")
-    result = ingestion.process(filepath)
+    result = ingestion.process(filepath, envelope=True)
 
     return result
 
@@ -526,9 +526,15 @@ def save_single_result(
     Returns:
         Path to saved JSON file
     """
+    # Normalize to ingestion envelope
+    data = result.get("data", result)
+
     # Add session ID if provided
     if session_id:
-        result["session_id"] = session_id
+        if "data" in result:
+            result["data"]["session_id"] = session_id
+        else:
+            result["session_id"] = session_id
 
     # Generate output filename
     output_filename = f"{filepath.stem}-context.json"
@@ -544,10 +550,10 @@ def save_single_result(
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     # Check if there's a markdown file to save (Azure DI specific)
-    if "markdown_file" in result:
+    if "markdown_file" in data:
         # Get the markdown source path (should be next to the original file)
-        md_filename = result["markdown_file"]
-        md_source = Path(result.get("file_path", filepath)).parent / md_filename
+        md_filename = data["markdown_file"]
+        md_source = Path(data.get("file_path", filepath)).parent / md_filename
 
         if md_source.exists():
             # Copy markdown file to output directory
@@ -889,6 +895,10 @@ def main():
                 and not getattr(args, "no_progress", False)
             )
 
+            # Create classifier once for the run to centralize defaults
+            from context_builder.classification import ClassifierFactory
+            classifier = ClassifierFactory.create("openai")
+
             # Process each claim
             total_docs = 0
             success_docs = 0
@@ -941,7 +951,7 @@ def main():
                     result = process_claim(
                         claim=claim,
                         output_base=output_dir,
-                        classifier=None,  # Will be created by process_claim
+                        classifier=classifier,
                         run_id=run_id,  # Use consistent run_id for all claims
                         force=args.force,
                         command=command_str,

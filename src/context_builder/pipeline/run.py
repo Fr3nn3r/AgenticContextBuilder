@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 # Placeholder for tests that patch this symbol without importing extraction at module load.
 ExtractorFactory = None
+# Placeholder for tests that patch ingestion factory without importing at module load.
+IngestionFactory = None
 
 
 @dataclass
@@ -81,6 +83,16 @@ class StageConfig:
         elif self.run_ingest:
             return "ingest_only"
         return "custom"
+
+
+@dataclass
+class PipelineProviders:
+    """Optional external providers/factories for dependency injection."""
+
+    classifier: Any = None
+    classifier_factory: Any = None
+    ingestion_factory: Any = None
+    extractor_factory: Any = None
 
 
 @dataclass
@@ -237,6 +249,7 @@ def _ingest_document(
     doc: DiscoveredDocument,
     doc_paths: DocPaths,
     writer: ResultWriter,
+    ingestion_factory: Optional[Any] = None,
 ) -> str:
     """
     Ingest a PDF or image document to extract text.
@@ -254,13 +267,17 @@ def _ingest_document(
     if doc.source_type == "pdf":
         # Use Azure DI for PDFs
         logger.info(f"Ingesting PDF with Azure DI: {doc.original_filename}")
-        from context_builder.ingestion import IngestionFactory
-        ingestion = IngestionFactory.create("azure-di")
+        factory = ingestion_factory or IngestionFactory
+        if factory is None:
+            from context_builder.ingestion import IngestionFactory as DefaultIngestionFactory
+            factory = DefaultIngestionFactory
+        ingestion = factory.create("azure-di")
         ingestion.save_markdown = False  # We'll save ourselves
-        result = ingestion.process(doc.source_path)
+        result = ingestion.process(doc.source_path, envelope=True)
+        data = result.get("data", {})
 
         # Extract markdown content from Azure DI result
-        raw_output = result.get("raw_azure_di_output", {})
+        raw_output = data.get("raw_azure_di_output", {})
         text_content = raw_output.get("content", "")
 
         if not text_content:
@@ -268,19 +285,23 @@ def _ingest_document(
 
         # Save raw Azure DI output for debugging
         raw_path = doc_paths.text_raw_dir / "azure_di.json"
-        writer.write_json(raw_path, result)
+        writer.write_json(raw_path, data)
 
         return text_content
 
     elif doc.source_type == "image":
         # Use OpenAI Vision for images
         logger.info(f"Ingesting image with OpenAI Vision: {doc.original_filename}")
-        from context_builder.ingestion import IngestionFactory
-        ingestion = IngestionFactory.create("openai")
-        result = ingestion.process(doc.source_path)
+        factory = ingestion_factory or IngestionFactory
+        if factory is None:
+            from context_builder.ingestion import IngestionFactory as DefaultIngestionFactory
+            factory = DefaultIngestionFactory
+        ingestion = factory.create("openai")
+        result = ingestion.process(doc.source_path, envelope=True)
+        data = result.get("data", {})
 
         # Extract text from vision pages
-        pages = result.get("pages", [])
+        pages = data.get("pages", [])
         if not pages:
             raise ValueError("OpenAI Vision returned no pages")
 
@@ -304,7 +325,7 @@ def _ingest_document(
 
         # Save raw vision output for debugging
         raw_path = doc_paths.text_raw_dir / "vision.json"
-        writer.write_json(raw_path, result)
+        writer.write_json(raw_path, data)
 
         return text_content
 
@@ -378,6 +399,8 @@ class DocumentContext:
     doc_paths: DocPaths
     run_paths: RunPaths
     classifier: Any
+    ingestion_factory: Any
+    extractor_factory: Any
     run_id: str
     stage_config: StageConfig
     writer: ResultWriter
@@ -441,7 +464,12 @@ class IngestionStage:
                 self.writer.write_text(context.doc_paths.original_txt, context.doc.content)
 
             if context.doc.needs_ingestion:
-                context.text_content = _ingest_document(context.doc, context.doc_paths, self.writer)
+                context.text_content = _ingest_document(
+                    context.doc,
+                    context.doc_paths,
+                    self.writer,
+                    ingestion_factory=context.ingestion_factory,
+                )
             else:
                 context.text_content = context.doc.content
 
@@ -553,9 +581,11 @@ class ExtractionStage:
         start = time.time()
 
         doc_type = context.doc_type or "unknown"
-        if context.stage_config.run_extract:
-            from context_builder.extraction.base import ExtractorFactory
-        if context.stage_config.run_extract and ExtractorFactory.is_supported(doc_type):
+        extractor_factory = context.extractor_factory or ExtractorFactory
+        if context.stage_config.run_extract and extractor_factory is None:
+            from context_builder.extraction.base import ExtractorFactory as DefaultExtractorFactory
+            extractor_factory = DefaultExtractorFactory
+        if context.stage_config.run_extract and extractor_factory.is_supported(doc_type):
             if context.pages_data is None:
                 raise ValueError("Missing pages data for extraction")
             context.extraction_path, context.quality_gate_status = _run_extraction(
@@ -570,6 +600,7 @@ class ExtractionStage:
                 run_paths=context.run_paths,
                 run_id=context.run_id,
                 writer=self.writer,
+                extractor_factory=extractor_factory,
             )
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
@@ -590,6 +621,7 @@ def process_document(
     run_id: str,
     stage_config: Optional[StageConfig] = None,
     writer: Optional[ResultWriter] = None,
+    providers: Optional[PipelineProviders] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -625,6 +657,8 @@ def process_document(
         doc_paths=doc_paths,
         run_paths=run_paths,
         classifier=classifier,
+        ingestion_factory=providers.ingestion_factory if providers else None,
+        extractor_factory=providers.extractor_factory if providers else None,
         run_id=run_id,
         stage_config=stage_config,
         writer=writer,
@@ -673,6 +707,7 @@ def _run_extraction(
     run_paths: RunPaths,
     run_id: str,
     writer: ResultWriter,
+    extractor_factory: Any,
 ) -> tuple[Path, Optional[str]]:
     """Run field extraction for supported doc types.
 
@@ -681,9 +716,7 @@ def _run_extraction(
     """
     # Import extractors to ensure they're registered
     import context_builder.extraction.extractors  # noqa: F401
-    from context_builder.extraction.base import ExtractorFactory
-
-    extractor = ExtractorFactory.create(doc_type)
+    extractor = extractor_factory.create(doc_type)
 
     # Convert pages to PageContent objects
     pages = pages_json_to_page_content(pages_data)
@@ -795,6 +828,7 @@ def process_claim(
     compute_metrics: bool = True,
     stage_config: Optional[StageConfig] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    providers: Optional[PipelineProviders] = None,
 ) -> ClaimResult:
     """
     Process all documents in a claim through selected pipeline stages.
@@ -861,6 +895,10 @@ def process_claim(
         )
 
         # Create classifier if not provided
+        if classifier is None and providers and providers.classifier is not None:
+            classifier = providers.classifier
+        if classifier is None and providers and providers.classifier_factory is not None:
+            classifier = providers.classifier_factory.create("openai")
         if classifier is None:
             from context_builder.classification import ClassifierFactory
             classifier = ClassifierFactory.create("openai")
@@ -884,6 +922,7 @@ def process_claim(
                 run_id=run_id,
                 stage_config=stage_config,
                 writer=writer,
+                providers=providers,
             )
             results.append(result)
 
