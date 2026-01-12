@@ -436,7 +436,7 @@ export function FieldsTable({
                               Skip...
                             </button>
                             {showUnverifiableMenu === field.name && (
-                              <div className="absolute bottom-full left-0 mb-1 bg-white border rounded-lg shadow-lg z-20 py-1 min-w-[160px]">
+                              <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-20 py-1 min-w-[160px]">
                                 <div className="px-3 py-1 text-xs text-gray-500 font-medium border-b">
                                   Mark as unverifiable
                                 </div>
