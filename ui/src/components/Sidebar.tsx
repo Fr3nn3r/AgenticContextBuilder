@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
+import { useViteTheme } from "@space-man/react-theme-animation";
 import { cn } from "../lib/utils";
 
 type View = "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth";
@@ -16,8 +17,18 @@ const navItems = [
   { id: "pipeline" as View, label: "Pipeline", path: "/pipeline", icon: PipelineIcon },
 ];
 
+const COLOR_THEMES = [
+  { id: 'northern-lights', name: 'Northern Lights' },
+  { id: 'default', name: 'Default' },
+  { id: 'pink', name: 'Pink' },
+] as const;
+
 export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
+  const { theme: darkMode, setTheme: setDarkMode, setColorTheme, colorTheme } = useViteTheme();
+
+  // Use colorTheme from hook, fallback to northern-lights
+  const currentColorTheme = colorTheme || 'northern-lights';
 
   // Check if current path is under /batches (for active highlighting)
   const isBatchRoute = location.pathname.startsWith("/batches");
@@ -61,9 +72,68 @@ export function Sidebar({ currentView }: SidebarProps) {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="text-xs text-muted-foreground">
+      {/* Footer - Theme Controls */}
+      <div className="p-4 border-t border-sidebar-border space-y-3">
+        {/* Color Theme Selector */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Theme</span>
+          <select
+            value={currentColorTheme}
+            onChange={(e) => setColorTheme(e.target.value)}
+            className="text-xs bg-sidebar-accent text-sidebar-accent-foreground rounded px-2 py-1 border-0 cursor-pointer"
+          >
+            {COLOR_THEMES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Dark Mode Toggle */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Mode</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setDarkMode("light")}
+              className={cn(
+                "p-1.5 rounded text-xs transition-colors",
+                darkMode === "light"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:text-sidebar-foreground"
+              )}
+              title="Light mode"
+            >
+              <SunIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setDarkMode("dark")}
+              className={cn(
+                "p-1.5 rounded text-xs transition-colors",
+                darkMode === "dark"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:text-sidebar-foreground"
+              )}
+              title="Dark mode"
+            >
+              <MoonIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setDarkMode("system")}
+              className={cn(
+                "p-1.5 rounded text-xs transition-colors",
+                darkMode === "system"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:text-sidebar-foreground"
+              )}
+              title="System preference"
+            >
+              <SystemIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="text-xs text-muted-foreground pt-1">
           ContextBuilder v1.0
         </div>
       </div>
@@ -125,6 +195,45 @@ function TruthIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
+
+function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+      />
+    </svg>
+  );
+}
+
+function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+      />
+    </svg>
+  );
+}
+
+function SystemIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
       />
     </svg>
   );

@@ -5,10 +5,32 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Extraction QA Console</title>
-    <!-- Northern Lights Theme Fonts -->
+    <!-- Flash prevention: apply theme before CSS loads -->
+    <script>
+      (function() {
+        try {
+          const html = document.documentElement;
+          // Apply color theme (stored in vite-color-theme)
+          const colorTheme = localStorage.getItem('vite-color-theme') || 'northern-lights';
+          html.classList.add('theme-' + colorTheme);
+          // Apply dark mode (stored in cb-theme as simple string)
+          const darkMode = localStorage.getItem('cb-theme') || 'system';
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (darkMode === 'dark' || (darkMode === 'system' && prefersDark)) {
+            html.classList.add('dark');
+          }
+        } catch (e) {
+          // Fallback on any error
+          document.documentElement.classList.add('theme-northern-lights');
+        }
+      })();
+    </script>
+    <!-- Theme Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Northern Lights: Plus Jakarta Sans, Source Serif 4, JetBrains Mono -->
+    <!-- Pink: Poppins, Playfair Display, Space Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Source+Serif+4:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>
