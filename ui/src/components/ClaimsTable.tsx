@@ -11,7 +11,6 @@ import {
   GateStatusBadge,
   NotInRunBadge,
   NoSearchResultsEmptyState,
-  BatchSelector,
 } from "./shared";
 
 interface ClaimsTableProps {
@@ -46,9 +45,9 @@ export function ClaimsTable({
   lobFilter,
   statusFilter,
   riskFilter,
-  runs,
-  selectedRunId,
-  onRunChange,
+  runs: _runs,
+  selectedRunId: _selectedRunId,
+  onRunChange: _onRunChange,
   onSearchChange,
   onLobFilterChange,
   onStatusFilterChange,
@@ -57,7 +56,11 @@ export function ClaimsTable({
   onSelectDoc,
   onNavigateToReview,
 }: ClaimsTableProps) {
-  void _selectedClaim; // Used for future features
+  // Batch context now handled by BatchWorkspace
+  void _selectedClaim;
+  void _runs;
+  void _selectedRunId;
+  void _onRunChange;
   const [expandedClaim, setExpandedClaim] = useState<string | null>(null);
 
   // Sorting state
@@ -119,17 +122,6 @@ export function ClaimsTable({
 
   return (
     <div className="p-6">
-      {/* Batch Selector Header */}
-      <div className="mb-6">
-        <BatchSelector
-          batches={runs.map(r => ({ ...r, batch_id: r.run_id }))}
-          selectedBatchId={selectedRunId}
-          onBatchChange={(id) => onRunChange(id || null)}
-          showMetadata
-          testId="batch-selector"
-        />
-      </div>
-
       {/* KPI Stats */}
       <MetricCardRow columns={4} className="mb-6">
         <MetricCard

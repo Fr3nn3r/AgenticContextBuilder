@@ -11,7 +11,6 @@ import {
   SelectToViewEmptyState,
   Spinner,
   NoDocumentsEmptyState,
-  BatchSelector,
 } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
 import type {
@@ -52,10 +51,13 @@ interface ClassificationReviewProps {
 }
 
 export function ClassificationReview({
-  batches,
+  batches: _batches,
   selectedBatchId,
-  onBatchChange,
+  onBatchChange: _onBatchChange,
 }: ClassificationReviewProps) {
+  // Batch context now handled by BatchWorkspace
+  void _batches;
+  void _onBatchChange;
 
   // Doc list state
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
@@ -220,16 +222,9 @@ export function ClassificationReview({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header with batch selector and KPIs */}
+      {/* Header with filters and KPIs */}
       <div className="bg-white border-b px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <BatchSelector
-            batches={batches.map(b => ({ ...b, batch_id: b.run_id }))}
-            selectedBatchId={selectedBatchId}
-            onBatchChange={(id) => onBatchChange(id || null)}
-            showMetadata
-          />
-
+        <div className="flex items-center justify-end mb-4">
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">Show:</label>
             <select

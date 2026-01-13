@@ -12,7 +12,6 @@ import {
   OutcomeBadge,
   PageLoadingSkeleton,
   NoLabelsEmptyState,
-  BatchSelector,
 } from "./shared";
 import {
   getInsightsFieldDetails,
@@ -285,37 +284,18 @@ export function InsightsPage({
 
   return (
     <div className="p-4 space-y-4">
-      {/* Batch Context Header */}
+      {/* Baseline Controls */}
       <div className="bg-white rounded-lg border shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Batch Selector */}
-            <BatchSelector
-              batches={runs.map(r => ({ ...r, batch_id: r.run_id }))}
-              selectedBatchId={selectedBatchId}
-              onBatchChange={onBatchChange}
-              testId="batch-selector"
-            />
-
             {/* Run Metadata */}
             {runMetadata && (
-              <div data-testid="run-metadata" className="flex items-center gap-4 text-xs text-gray-500 border-l pl-4">
-                <span>
-                  <strong>Time:</strong> {formatTimestamp(String(runMetadata.timestamp || ""))}
-                </span>
-                {Boolean(runMetadata.model) && (
-                  <span>
-                    <strong>Model:</strong> {String(runMetadata.model)}
-                  </span>
-                )}
+              <div data-testid="run-metadata" className="flex items-center gap-4 text-xs text-gray-500">
                 {Boolean(runMetadata.extractor_version) && (
                   <span>
                     <strong>Extractor:</strong> {String(runMetadata.extractor_version)}
                   </span>
                 )}
-                <span>
-                  <strong>Docs:</strong> {Number(runMetadata.docs_total) || 0}
-                </span>
               </div>
             )}
           </div>

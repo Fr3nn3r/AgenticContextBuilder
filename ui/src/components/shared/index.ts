@@ -60,3 +60,7 @@ export {
 
 // Batch selector
 export { BatchSelector } from "./BatchSelector";
+
+// Batch workspace components
+export { BatchContextBar } from "./BatchContextBar";
+export { BatchSubNav, type BatchTab } from "./BatchSubNav";

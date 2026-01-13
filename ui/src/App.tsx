@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Routes, Route, useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
+import { BatchWorkspace } from "./components/BatchWorkspace";
 import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
 import { ClassificationReview } from "./components/ClassificationReview";
@@ -10,6 +11,7 @@ import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
 import { NewClaimPage } from "./components/NewClaimPage";
 import { PipelineControlCenter } from "./components/PipelineControlCenter";
+import { TruthPage } from "./components/TruthPage";
 import type { ClaimSummary, DocSummary } from "./types";
 import {
   listClaims,
@@ -189,33 +191,34 @@ function App() {
     navigate(`/claims/${claimId}/review`);
   }
 
-  // Get current page title based on route
+  // Get current page title based on route (for non-batch routes)
   function getPageTitle(): string {
     const path = location.pathname;
-    if (path === "/" || path === "/dashboard") return "Extraction";
     if (path === "/claims/new") return "New Claim";
-    if (path === "/claims") return "Claims Review";
-    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Claims Review";
-    if (path === "/classification") return "Classification Review";
-    if (path === "/documents") return "Document Review";
-    if (path === "/insights") return "Benchmark";
+    if (path === "/claims/all") return "All Claims";
+    if (path.startsWith("/claims/") && path.endsWith("/review")) return "Claim Review";
     if (path === "/templates") return "Extraction Templates";
     if (path === "/pipeline") return "Pipeline Control Center";
+    if (path === "/truth") return "Ground Truth";
     return "ContextBuilder";
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "documents" | "insights" | "templates" | "pipeline" {
+  function getCurrentView(): "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth" {
     const path = location.pathname;
-    if (path === "/" || path === "/dashboard") return "dashboard";
+    if (path.startsWith("/batches")) return "batches";
     if (path === "/claims/new") return "new-claim";
-    if (path === "/classification") return "documents"; // Classification is now integrated into Document Review
-    if (path === "/documents") return "documents";
-    if (path === "/insights") return "insights";
+    if (path === "/claims/all") return "all-claims";
     if (path === "/templates") return "templates";
     if (path === "/pipeline") return "pipeline";
-    return "claims"; // /claims and /claims/:id/review both highlight claims
+    if (path === "/truth") return "truth";
+    // Default to batches for claim review (accessed from batch context)
+    if (path.startsWith("/claims/") && path.endsWith("/review")) return "batches";
+    return "batches";
   }
+
+  // Check if current route is a batch workspace route (no header needed)
+  const isBatchRoute = location.pathname.startsWith("/batches");
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -224,36 +227,38 @@ function App() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">
-            {getPageTitle()}
-          </h1>
-          <div className="flex items-center gap-4">
-            <button className="p-2 text-gray-500 hover:text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </button>
-            <button className="p-2 text-gray-500 hover:text-gray-700 relative">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
-            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-700">
-              CB
+        {/* Header - only show for non-batch routes */}
+        {!isBatchRoute && (
+          <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-gray-900">
+              {getPageTitle()}
+            </h1>
+            <div className="flex items-center gap-4">
+              <button className="p-2 text-gray-500 hover:text-gray-700">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </button>
+              <button className="p-2 text-gray-500 hover:text-gray-700 relative">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              </button>
+              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-700">
+                CB
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* Content */}
-        <main className="flex-1 overflow-auto">
-          {loading ? (
+        <main className={isBatchRoute ? "flex-1 overflow-hidden" : "flex-1 overflow-auto"}>
+          {loading && !isBatchRoute ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-gray-500">Loading...</div>
             </div>
-          ) : error ? (
+          ) : error && !isBatchRoute ? (
             <div className="flex flex-col items-center justify-center h-full">
               <p className="text-red-600 mb-4">{error}</p>
               <button
@@ -265,43 +270,107 @@ function App() {
             </div>
           ) : (
             <Routes>
+              {/* Batch workspace routes */}
               <Route
-                path="/"
+                path="/batches"
                 element={
-                  <ExtractionPage
+                  <BatchWorkspace
                     batches={detailedRuns}
                     selectedBatchId={selectedRunId}
                     onBatchChange={setSelectedRunId}
                     selectedBatch={selectedDetailedRun}
-                    overview={dashboardOverview}
-                    docTypes={dashboardDocTypes}
-                    loading={dashboardLoading}
                   />
                 }
-              />
+              >
+                <Route
+                  index
+                  element={
+                    selectedRunId ? (
+                      <Navigate to={selectedRunId} replace />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500">
+                        Loading batches...
+                      </div>
+                    )
+                  }
+                />
+                <Route
+                  path=":batchId"
+                  element={
+                    <ExtractionPage
+                      batches={detailedRuns}
+                      selectedBatchId={selectedRunId}
+                      onBatchChange={setSelectedRunId}
+                      selectedBatch={selectedDetailedRun}
+                      overview={dashboardOverview}
+                      docTypes={dashboardDocTypes}
+                      loading={dashboardLoading}
+                    />
+                  }
+                />
+                <Route
+                  path=":batchId/documents"
+                  element={
+                    <DocumentReview
+                      batches={runs}
+                      selectedBatchId={selectedRunId}
+                      onBatchChange={setSelectedRunId}
+                    />
+                  }
+                />
+                <Route
+                  path=":batchId/classification"
+                  element={
+                    <ClassificationReview
+                      batches={runs}
+                      selectedBatchId={selectedRunId}
+                      onBatchChange={setSelectedRunId}
+                    />
+                  }
+                />
+                <Route
+                  path=":batchId/claims"
+                  element={
+                    <ClaimsTable
+                      claims={filteredClaims}
+                      totalCount={claims.length}
+                      selectedClaim={selectedClaim}
+                      docs={docs}
+                      searchQuery={searchQuery}
+                      lobFilter={lobFilter}
+                      statusFilter={statusFilter}
+                      riskFilter={riskFilter}
+                      runs={runs}
+                      selectedRunId={selectedRunId}
+                      onRunChange={setSelectedRunId}
+                      onSearchChange={setSearchQuery}
+                      onLobFilterChange={setLobFilter}
+                      onStatusFilterChange={setStatusFilter}
+                      onRiskFilterChange={setRiskFilter}
+                      onSelectClaim={handleSelectClaim}
+                      onSelectDoc={handleSelectDoc}
+                      onNavigateToReview={handleNavigateToReview}
+                    />
+                  }
+                />
+                <Route
+                  path=":batchId/benchmark"
+                  element={
+                    <InsightsPage
+                      selectedBatchId={selectedRunId}
+                      onBatchChange={setSelectedRunId}
+                    />
+                  }
+                />
+              </Route>
+
+              {/* Batch-independent routes */}
+              <Route path="/claims/new" element={<NewClaimPage />} />
               <Route
-                path="/dashboard"
-                element={
-                  <ExtractionPage
-                    batches={detailedRuns}
-                    selectedBatchId={selectedRunId}
-                    onBatchChange={setSelectedRunId}
-                    selectedBatch={selectedDetailedRun}
-                    overview={dashboardOverview}
-                    docTypes={dashboardDocTypes}
-                    loading={dashboardLoading}
-                  />
-                }
-              />
-              <Route
-                path="/claims/new"
-                element={<NewClaimPage />}
-              />
-              <Route
-                path="/claims"
+                path="/claims/all"
                 element={
                   <ClaimsTable
-                    claims={filteredClaims}
+                    claims={claims}
                     totalCount={claims.length}
                     selectedClaim={selectedClaim}
                     docs={docs}
@@ -326,37 +395,53 @@ function App() {
                 path="/claims/:claimId/review"
                 element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} selectedRunId={selectedRunId} />}
               />
-              <Route
-                path="/classification"
-                element={
-                  <ClassificationReview
-                    batches={runs}
-                    selectedBatchId={selectedRunId}
-                    onBatchChange={setSelectedRunId}
-                  />
-                }
-              />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/pipeline" element={<PipelineControlCenter />} />
+              <Route path="/truth" element={<TruthPage />} />
+
+              {/* Redirects for backwards compatibility */}
+              <Route path="/" element={<Navigate to="/batches" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/batches" replace />} />
               <Route
                 path="/documents"
                 element={
-                  <DocumentReview
-                    batches={runs}
-                    selectedBatchId={selectedRunId}
-                    onBatchChange={setSelectedRunId}
-                  />
+                  selectedRunId ? (
+                    <Navigate to={`/batches/${selectedRunId}/documents`} replace />
+                  ) : (
+                    <Navigate to="/batches" replace />
+                  )
+                }
+              />
+              <Route
+                path="/classification"
+                element={
+                  selectedRunId ? (
+                    <Navigate to={`/batches/${selectedRunId}/classification`} replace />
+                  ) : (
+                    <Navigate to="/batches" replace />
+                  )
+                }
+              />
+              <Route
+                path="/claims"
+                element={
+                  selectedRunId ? (
+                    <Navigate to={`/batches/${selectedRunId}/claims`} replace />
+                  ) : (
+                    <Navigate to="/batches" replace />
+                  )
                 }
               />
               <Route
                 path="/insights"
                 element={
-                  <InsightsPage
-                    selectedBatchId={selectedRunId}
-                    onBatchChange={setSelectedRunId}
-                  />
+                  selectedRunId ? (
+                    <Navigate to={`/batches/${selectedRunId}/benchmark`} replace />
+                  ) : (
+                    <Navigate to="/batches" replace />
+                  )
                 }
               />
-              <Route path="/templates" element={<TemplatesPage />} />
-              <Route path="/pipeline" element={<PipelineControlCenter />} />
             </Routes>
           )}
         </main>

@@ -16,7 +16,6 @@ import type {
   DocLabels,
   UnverifiableReason,
 } from "../types";
-import { BatchSelector } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
 import { ClassificationPanel } from "./ClassificationPanel";
@@ -33,10 +32,14 @@ type ClaimFilter = "all" | string;
 type StatusFilter = "all" | "pending" | "labeled";
 
 export function DocumentReview({
-  batches,
+  batches: _batches,
   selectedBatchId,
-  onBatchChange,
+  onBatchChange: _onBatchChange,
 }: DocumentReviewProps) {
+  // Batch context now handled by BatchWorkspace
+  void _batches;
+  void _onBatchChange;
+
   // Document list state
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
   const [loading, setLoading] = useState(false);
@@ -485,16 +488,6 @@ export function DocumentReview({
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="bg-white border-b px-4 py-3 flex items-center gap-4 flex-wrap">
-        {/* Batch Selector */}
-        <BatchSelector
-          batches={batches.map(b => ({ ...b, batch_id: b.run_id }))}
-          selectedBatchId={selectedBatchId}
-          onBatchChange={onBatchChange}
-          showMetadata={false}
-          className="w-56 flex-shrink-0"
-          testId="document-review"
-        />
-
         {/* Search */}
         <div className="relative w-64 flex-shrink-0">
           <input

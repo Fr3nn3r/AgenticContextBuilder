@@ -1,7 +1,7 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "../lib/utils";
 
-type View = "new-claim" | "dashboard" | "claims" | "documents" | "insights" | "templates" | "pipeline";
+type View = "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth";
 
 interface SidebarProps {
   currentView: View;
@@ -9,15 +9,19 @@ interface SidebarProps {
 
 const navItems = [
   { id: "new-claim" as View, label: "New Claim", path: "/claims/new", icon: PlusIcon },
-  { id: "dashboard" as View, label: "Extraction", path: "/dashboard", icon: DashboardIcon },
-  { id: "documents" as View, label: "Document Review", path: "/documents", icon: DocumentsIcon },
-  { id: "claims" as View, label: "Claims Review", path: "/claims", icon: ClaimsIcon },
-  { id: "insights" as View, label: "Benchmark", path: "/insights", icon: InsightsIcon },
-  { id: "templates" as View, label: "Extraction Templates", path: "/templates", icon: TemplatesIcon },
-  { id: "pipeline" as View, label: "Pipeline Control", path: "/pipeline", icon: PipelineIcon },
+  { id: "batches" as View, label: "Batches", path: "/batches", icon: BatchesIcon },
+  { id: "all-claims" as View, label: "All Claims", path: "/claims/all", icon: ClaimsIcon },
+  { id: "truth" as View, label: "Ground Truth", path: "/truth", icon: TruthIcon },
+  { id: "templates" as View, label: "Templates", path: "/templates", icon: TemplatesIcon },
+  { id: "pipeline" as View, label: "Pipeline", path: "/pipeline", icon: PipelineIcon },
 ];
 
 export function Sidebar({ currentView }: SidebarProps) {
+  const location = useLocation();
+
+  // Check if current path is under /batches (for active highlighting)
+  const isBatchRoute = location.pathname.startsWith("/batches");
+
   return (
     <div className="w-56 bg-gray-900 text-white flex flex-col" data-testid="sidebar">
       {/* Logo */}
@@ -32,7 +36,11 @@ export function Sidebar({ currentView }: SidebarProps) {
       <nav className="flex-1 px-2 py-4 space-y-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentView === item.id;
+          // For batches, check if any batch route is active
+          const isActive =
+            item.id === "batches"
+              ? isBatchRoute
+              : currentView === item.id;
 
           return (
             <NavLink
@@ -64,10 +72,15 @@ export function Sidebar({ currentView }: SidebarProps) {
 }
 
 // Icon components
-function DashboardIcon({ className }: { className?: string }) {
+function BatchesIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+      />
     </svg>
   );
 }
@@ -88,22 +101,6 @@ function TemplatesIcon({ className }: { className?: string }) {
   );
 }
 
-function InsightsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-  );
-}
-
-function DocumentsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-    </svg>
-  );
-}
-
 function PlusIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,6 +113,19 @@ function PipelineIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h16" />
+    </svg>
+  );
+}
+
+function TruthIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
     </svg>
   );
 }
