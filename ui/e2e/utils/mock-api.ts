@@ -17,13 +17,18 @@ const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir
 const multiBatchFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
 
 export async function setupApiMocks(page: Page) {
-  // Mock GET /api/claims
+  // Mock GET /api/claims - ensure claims have in_run: true for batch-scoped views
   await page.route("**/api/claims", async (route) => {
     if (route.request().method() === "GET") {
+      // Add in_run: true to all claims so they appear in batch-scoped views
+      const claimsWithInRun = claimsFixture.map((c: Record<string, unknown>) => ({
+        ...c,
+        in_run: true,
+      }));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(claimsFixture),
+        body: JSON.stringify(claimsWithInRun),
       });
     } else {
       await route.continue();
@@ -108,12 +113,53 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/insights/runs/detailed
-  await page.route("**/api/insights/runs/detailed", async (route) => {
+  // Mock GET /api/insights/runs/detailed and /api/insights/batches/detailed
+  await page.route(/\/api\/insights\/(runs|batches)\/detailed/, async (route) => {
+    // Return detailed batch info (DetailedRunInfo format) with full phases structure
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([]),
+      body: JSON.stringify(batchesFixture.map((b: { run_id: string; timestamp: string; model: string; docs_count?: number }) => {
+        const docsTotal = b.docs_count || 5;
+        return {
+          run_id: b.run_id,
+          timestamp: b.timestamp,
+          model: b.model,
+          status: "complete" as const,
+          duration_seconds: 120,
+          claims_count: 2,
+          docs_total: docsTotal,
+          docs_success: Math.floor(docsTotal * 0.8),
+          docs_failed: Math.floor(docsTotal * 0.2),
+          phases: {
+            ingestion: {
+              discovered: docsTotal,
+              ingested: docsTotal,
+              skipped: 0,
+              failed: 0,
+              duration_ms: 5000,
+            },
+            classification: {
+              classified: docsTotal,
+              low_confidence: 0,
+              distribution: { loss_notice: 2, police_report: 2, invoice: 1 },
+              duration_ms: 3000,
+            },
+            extraction: {
+              attempted: docsTotal,
+              succeeded: Math.floor(docsTotal * 0.8),
+              failed: Math.floor(docsTotal * 0.2),
+              skipped_unsupported: 0,
+              duration_ms: 10000,
+            },
+            quality_gate: {
+              pass: Math.floor(docsTotal * 0.6),
+              warn: Math.floor(docsTotal * 0.2),
+              fail: Math.floor(docsTotal * 0.2),
+            },
+          },
+        };
+      })),
     });
   });
 

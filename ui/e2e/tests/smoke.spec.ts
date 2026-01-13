@@ -8,24 +8,43 @@ test.describe("Smoke Tests", () => {
   });
 
   test("app loads and displays correct sidebar nav items", async ({ page }) => {
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     const sidebar = new SidebarPage(page);
 
     // Sidebar should be visible
     await expect(sidebar.sidebar).toBeVisible();
 
-    // Should display exactly 4 nav items with correct labels
-    await expect(sidebar.dashboardLink).toBeVisible();
-    await expect(sidebar.dashboardLink).toContainText("Extraction");
+    // Should display nav items with correct labels
+    await expect(sidebar.batchesLink).toBeVisible();
+    await expect(sidebar.batchesLink).toContainText("Batches");
 
-    await expect(sidebar.claimsLink).toBeVisible();
-    await expect(sidebar.claimsLink).toContainText("Claims Review");
-
-    await expect(sidebar.insightsLink).toBeVisible();
-    await expect(sidebar.insightsLink).toContainText("Benchmark");
+    await expect(sidebar.allClaimsLink).toBeVisible();
+    await expect(sidebar.allClaimsLink).toContainText("All Claims");
 
     await expect(sidebar.templatesLink).toBeVisible();
-    await expect(sidebar.templatesLink).toContainText("Extraction Templates");
+    await expect(sidebar.templatesLink).toContainText("Templates");
+
+    await expect(sidebar.pipelineLink).toBeVisible();
+    await expect(sidebar.pipelineLink).toContainText("Pipeline");
+  });
+
+  test("batch workspace displays context bar and tabs", async ({ page }) => {
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+
+    // Batch context bar should be visible
+    await expect(page.getByTestId("batch-context-bar")).toBeVisible();
+
+    // Batch selector should be in context bar
+    await expect(page.getByTestId("batch-context-selector")).toBeVisible();
+
+    // Batch sub-navigation tabs should be visible
+    await expect(page.getByTestId("batch-sub-nav")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-overview")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-documents")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-classification")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-claims")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-benchmark")).toBeVisible();
   });
 
   test("navigate to each screen without errors", async ({ page }) => {
@@ -37,24 +56,24 @@ test.describe("Smoke Tests", () => {
       }
     });
 
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     const sidebar = new SidebarPage(page);
 
-    // Navigate to Dashboard (Calibration Home)
-    await sidebar.navigateToDashboard();
-    await expect(page).toHaveURL(/\/dashboard/);
+    // Navigate to Batches (default landing)
+    await sidebar.navigateToBatches();
+    await expect(page).toHaveURL(/\/batches/);
 
-    // Navigate to Claims (Claim Document Pack)
-    await sidebar.navigateToClaims();
-    await expect(page).toHaveURL(/\/claims/);
+    // Navigate to All Claims
+    await sidebar.navigateToAllClaims();
+    await expect(page).toHaveURL(/\/claims\/all/);
 
-    // Navigate to Insights (Calibration Insights)
-    await sidebar.navigateToInsights();
-    await expect(page).toHaveURL(/\/insights/);
-
-    // Navigate to Templates (Extraction Templates)
+    // Navigate to Templates
     await sidebar.navigateToTemplates();
     await expect(page).toHaveURL(/\/templates/);
+
+    // Navigate to Pipeline
+    await sidebar.navigateToPipeline();
+    await expect(page).toHaveURL(/\/pipeline/);
 
     // No critical console errors should have occurred
     const criticalErrors = consoleErrors.filter(
@@ -64,11 +83,28 @@ test.describe("Smoke Tests", () => {
   });
 
   test("logo and branding visible", async ({ page }) => {
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     const sidebar = new SidebarPage(page);
 
     await expect(sidebar.logo).toBeVisible();
-    // CB logo appears in sidebar - use first() since it also appears in header
+    // CB logo appears in sidebar
     await expect(page.locator("text=CB").first()).toBeVisible();
+  });
+
+  test("batch workspace tabs navigate correctly", async ({ page }) => {
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+
+    // Click Documents tab
+    await page.getByTestId("batch-tab-documents").click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+\/documents/);
+
+    // Click Benchmark tab
+    await page.getByTestId("batch-tab-benchmark").click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+\/benchmark/);
+
+    // Click Overview tab to return
+    await page.getByTestId("batch-tab-overview").click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+$/);
   });
 });

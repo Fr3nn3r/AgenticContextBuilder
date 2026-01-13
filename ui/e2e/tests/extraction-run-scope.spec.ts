@@ -11,12 +11,12 @@ test.describe("Extraction Page - Batch Scoping", () => {
   });
 
   test("displays correct metrics for small batch (3 docs)", async ({ page }) => {
-    // Extraction page is at /dashboard (or /)
-    await page.goto("/dashboard");
+    // Navigate to batches workspace
+    await page.goto("/batches");
     await page.waitForLoadState("networkidle");
 
-    // Click on the small batch (3 docs) in the sidebar
-    await page.click('[data-testid="batch-item-batch-small"]');
+    // Select the small batch from the batch selector in context bar
+    await page.getByTestId("batch-context-selector").selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     // Verify phase cards show correct counts
@@ -40,11 +40,11 @@ test.describe("Extraction Page - Batch Scoping", () => {
   });
 
   test("displays correct metrics for large batch (130 docs)", async ({ page }) => {
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     await page.waitForLoadState("networkidle");
 
-    // Click on the large batch (130 docs)
-    await page.click('[data-testid="batch-item-batch-large"]');
+    // Select the large batch
+    await page.getByTestId("batch-context-selector").selectOption("batch-large");
     await page.waitForLoadState("networkidle");
 
     // Verify phase cards show correct counts
@@ -65,11 +65,13 @@ test.describe("Extraction Page - Batch Scoping", () => {
   });
 
   test("metrics update when switching between batches", async ({ page }) => {
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     await page.waitForLoadState("networkidle");
 
+    const batchSelector = page.getByTestId("batch-context-selector");
+
     // Start with small batch
-    await page.click('[data-testid="batch-item-batch-small"]');
+    await batchSelector.selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     // Verify small batch metrics
@@ -77,14 +79,14 @@ test.describe("Extraction Page - Batch Scoping", () => {
     await expect(labelCoverageValue).toContainText("/ 3");
 
     // Switch to large batch
-    await page.click('[data-testid="batch-item-batch-large"]');
+    await batchSelector.selectOption("batch-large");
     await page.waitForLoadState("networkidle");
 
     // Verify metrics updated to large batch values
     await expect(labelCoverageValue).toContainText("/ 130");
 
     // Switch back to small batch
-    await page.click('[data-testid="batch-item-batch-small"]');
+    await batchSelector.selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     // Verify metrics returned to small batch values
@@ -92,11 +94,11 @@ test.describe("Extraction Page - Batch Scoping", () => {
   });
 
   test("doc type scoreboard shows Classified and Extracted columns", async ({ page }) => {
-    await page.goto("/dashboard");
+    await page.goto("/batches");
     await page.waitForLoadState("networkidle");
 
-    // Click on small batch
-    await page.click('[data-testid="batch-item-batch-small"]');
+    // Select small batch
+    await page.getByTestId("batch-context-selector").selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');

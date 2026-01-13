@@ -4,29 +4,31 @@ export class SidebarPage {
   readonly page: Page;
   readonly sidebar: Locator;
   readonly logo: Locator;
-  readonly dashboardLink: Locator;
-  readonly claimsLink: Locator;
-  readonly insightsLink: Locator;
+  readonly batchesLink: Locator;
+  readonly allClaimsLink: Locator;
   readonly templatesLink: Locator;
+  readonly pipelineLink: Locator;
+  readonly newClaimLink: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.sidebar = page.getByTestId("sidebar");
     this.logo = page.getByText("ContextBuilder", { exact: true });
-    this.dashboardLink = page.getByTestId("nav-dashboard");
-    this.claimsLink = page.getByTestId("nav-claims");
-    this.insightsLink = page.getByTestId("nav-insights");
+    this.batchesLink = page.getByTestId("nav-batches");
+    this.allClaimsLink = page.getByTestId("nav-all-claims");
     this.templatesLink = page.getByTestId("nav-templates");
+    this.pipelineLink = page.getByTestId("nav-pipeline");
+    this.newClaimLink = page.getByTestId("nav-new-claim");
   }
 
-  async navigateToDashboard() {
-    await this.dashboardLink.click();
-    await this.page.waitForURL("**/dashboard");
+  async navigateToBatches() {
+    await this.batchesLink.click();
+    await this.page.waitForURL("**/batches/**");
   }
 
-  async navigateToClaims() {
-    await this.claimsLink.click();
-    await this.page.waitForURL("**/claims");
+  async navigateToAllClaims() {
+    await this.allClaimsLink.click();
+    await this.page.waitForURL("**/claims/all");
   }
 
   async navigateToTemplates() {
@@ -34,9 +36,9 @@ export class SidebarPage {
     await this.page.waitForURL("**/templates");
   }
 
-  async navigateToInsights() {
-    await this.insightsLink.click();
-    await this.page.waitForURL("**/insights");
+  async navigateToPipeline() {
+    await this.pipelineLink.click();
+    await this.page.waitForURL("**/pipeline");
   }
 
   async isVisible(): Promise<boolean> {

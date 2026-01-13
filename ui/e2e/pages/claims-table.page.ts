@@ -6,6 +6,7 @@ export class ClaimsTablePage extends BasePage {
   readonly searchInput: Locator;
   readonly claimRows: Locator;
   readonly gateStatusFilter: Locator;
+  readonly batchSelector: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -13,10 +14,25 @@ export class ClaimsTablePage extends BasePage {
     this.searchInput = page.getByPlaceholder(/search/i);
     this.claimRows = page.locator("tbody tr");
     this.gateStatusFilter = page.locator("select").first();
+    this.batchSelector = page.getByTestId("batch-context-selector");
   }
 
   async goto() {
-    await this.page.goto("/claims");
+    // Navigate to batches first, then use tab to go to claims
+    await this.page.goto("/batches");
+    await this.waitForLoad();
+    // Click the claims tab
+    await this.page.getByTestId("batch-tab-claims").click();
+    await this.waitForLoad();
+  }
+
+  async gotoWithBatch(batchId: string) {
+    await this.page.goto(`/batches/${batchId}/claims`);
+    await this.waitForLoad();
+  }
+
+  async gotoAllClaims() {
+    await this.page.goto("/claims/all");
     await this.waitForLoad();
   }
 

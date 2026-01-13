@@ -18,7 +18,8 @@
     "gate_warn_count": 1,
     "gate_fail_count": 1,
     "needs_vision_count": 0,
-    "last_processed": "2024-01-15"
+    "last_processed": "2024-01-15",
+    "in_run": true
   },
   {
     "claim_id": "CLM-2024-002",
@@ -39,6 +40,7 @@
     "gate_warn_count": 0,
     "gate_fail_count": 0,
     "needs_vision_count": 1,
-    "last_processed": "2024-01-14"
+    "last_processed": "2024-01-14",
+    "in_run": true
   }
 ]

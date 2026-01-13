@@ -18,11 +18,14 @@ test.describe("Visual Regression", () => {
   });
 
   test("Claim Document Pack layout", async ({ page }) => {
-    await page.goto("/claims");
+    // Navigate to batches workspace then claims tab
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-claims").click();
     await page.waitForLoadState("networkidle");
 
     // Wait for data to load
-    await page.waitForSelector('[data-testid="batch-selector"]');
+    await page.waitForSelector('[data-testid="batch-context-selector"]');
     await page.waitForTimeout(500); // Extra wait for animations
 
     await expect(page).toHaveScreenshot("claims-table.png", {
@@ -46,11 +49,14 @@ test.describe("Visual Regression", () => {
   });
 
   test("Calibration Insights layout", async ({ page }) => {
-    await page.goto("/insights");
+    // Navigate to batches workspace then benchmark tab
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
     // Wait for insights data to load
-    await page.waitForSelector('[data-testid="batch-selector"]');
+    await page.waitForSelector('[data-testid="batch-context-selector"]');
     await page.waitForTimeout(500);
 
     await expect(page).toHaveScreenshot("insights.png", {

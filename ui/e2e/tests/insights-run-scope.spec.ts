@@ -14,11 +14,14 @@ test.describe("Insights Page - Batch Scoping", () => {
   });
 
   test("displays correct KPIs for small batch (3 docs)", async ({ page }) => {
-    await page.goto("/insights");
+    // Navigate to batches workspace then benchmark tab
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
-    // Select small batch from dropdown
-    await page.selectOption('[data-testid="batch-selector"]', "batch-small");
+    // Select small batch from context bar dropdown
+    await page.getByTestId("batch-context-selector").selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     // Verify Doc Coverage KPI shows 3 docs total
@@ -27,11 +30,13 @@ test.describe("Insights Page - Batch Scoping", () => {
   });
 
   test("displays correct KPIs for large batch (130 docs)", async ({ page }) => {
-    await page.goto("/insights");
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
-    // Select large batch from dropdown
-    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
+    // Select large batch from context bar dropdown
+    await page.getByTestId("batch-context-selector").selectOption("batch-large");
     await page.waitForLoadState("networkidle");
 
     // Verify Doc Coverage KPI shows 130 docs total
@@ -44,13 +49,15 @@ test.describe("Insights Page - Batch Scoping", () => {
   });
 
   test("doc type scoreboard shows data for selected batch", async ({ page }) => {
-    await page.goto("/insights");
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
 
-    // Select small batch
-    await page.selectOption('[data-testid="batch-selector"]', "batch-small");
+    // Select small batch from context bar
+    await page.getByTestId("batch-context-selector").selectOption("batch-small");
     await page.waitForLoadState("networkidle");
 
     // Wait for scoreboard to have data rows
@@ -63,11 +70,13 @@ test.describe("Insights Page - Batch Scoping", () => {
   });
 
   test("doc type scoreboard shows Classified and Extracted columns", async ({ page }) => {
-    await page.goto("/insights");
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
     // Select large batch for more interesting data
-    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
+    await page.getByTestId("batch-context-selector").selectOption("batch-large");
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
@@ -87,11 +96,13 @@ test.describe("Insights Page - Batch Scoping", () => {
   });
 
   test("KPIs and scoreboard remain consistent when refreshing", async ({ page }) => {
-    await page.goto("/insights");
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+    await page.getByTestId("batch-tab-benchmark").click();
     await page.waitForLoadState("networkidle");
 
-    // Select large batch
-    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
+    // Select large batch from context bar
+    await page.getByTestId("batch-context-selector").selectOption("batch-large");
     await page.waitForLoadState("networkidle");
 
     // Note the current values
@@ -102,8 +113,8 @@ test.describe("Insights Page - Batch Scoping", () => {
     const rows = scoreboardTable.locator("tbody tr");
     await expect(rows).toHaveCount(6);
 
-    // The batch selector should still have the large batch selected
-    const batchSelector = page.locator('[data-testid="batch-selector"]');
+    // The batch selector in context bar should still have the large batch selected
+    const batchSelector = page.getByTestId("batch-context-selector");
     await expect(batchSelector).toHaveValue("batch-large");
   });
 });

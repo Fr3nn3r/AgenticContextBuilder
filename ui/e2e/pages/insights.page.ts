@@ -2,6 +2,7 @@ import { Page, Locator } from "@playwright/test";
 import { BasePage } from "./base.page";
 
 export class InsightsPage extends BasePage {
+  readonly batchContextBar: Locator;
   readonly batchSelector: Locator;
   readonly runMetadata: Locator;
   readonly kpiCards: Locator;
@@ -11,7 +12,8 @@ export class InsightsPage extends BasePage {
 
   constructor(page: Page) {
     super(page);
-    this.batchSelector = page.getByTestId("batch-selector");
+    this.batchContextBar = page.getByTestId("batch-context-bar");
+    this.batchSelector = page.getByTestId("batch-context-selector");
     this.runMetadata = page.getByTestId("run-metadata");
     this.kpiCards = page.locator(".rounded-lg.border.p-3");
     this.insightsTab = page.getByRole("button", { name: "Insights" });
@@ -20,7 +22,16 @@ export class InsightsPage extends BasePage {
   }
 
   async goto() {
-    await this.page.goto("/insights");
+    // Navigate to batches first, then use tab to go to benchmark
+    await this.page.goto("/batches");
+    await this.waitForLoad();
+    // Click the benchmark tab
+    await this.page.getByTestId("batch-tab-benchmark").click();
+    await this.waitForLoad();
+  }
+
+  async gotoWithBatch(batchId: string) {
+    await this.page.goto(`/batches/${batchId}/benchmark`);
     await this.waitForLoad();
   }
 

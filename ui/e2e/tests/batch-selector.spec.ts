@@ -2,22 +2,29 @@ import { test, expect } from "@playwright/test";
 import { InsightsPage } from "../pages/insights.page";
 import { setupApiMocks } from "../utils/mock-api";
 
-test.describe("Batch Selector - Claim Document Pack", () => {
+test.describe("Batch Selector - Batch Context Bar", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
 
-  test("batch selector exists", async ({ page }) => {
-    await page.goto("/claims");
+  test("batch selector exists in context bar", async ({ page }) => {
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
 
-    const batchSelector = page.getByTestId("batch-selector");
+    // Batch context bar should be visible
+    const batchContextBar = page.getByTestId("batch-context-bar");
+    await expect(batchContextBar).toBeVisible();
+
+    // Batch selector should be in context bar
+    const batchSelector = page.getByTestId("batch-context-selector");
     await expect(batchSelector).toBeVisible();
   });
 
-  test("switching batch updates selection", async ({ page }) => {
-    await page.goto("/claims");
+  test("switching batch updates selection and URL", async ({ page }) => {
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
 
-    const batchSelector = page.getByTestId("batch-selector");
+    const batchSelector = page.getByTestId("batch-context-selector");
 
     // Get initial value
     const initialValue = await batchSelector.inputValue();
@@ -29,10 +36,38 @@ test.describe("Batch Selector - Claim Document Pack", () => {
     const newValue = await batchSelector.inputValue();
     expect(newValue).toBe("run_002");
     expect(newValue).not.toBe(initialValue);
+
+    // URL should include new batch ID
+    await expect(page).toHaveURL(/\/batches\/run_002/);
+  });
+
+  test("batch context persists across tab navigation", async ({ page }) => {
+    await page.goto("/batches");
+    await page.waitForLoadState("networkidle");
+
+    const batchSelector = page.getByTestId("batch-context-selector");
+
+    // Select a specific batch
+    await batchSelector.selectOption("run_002");
+    await expect(page).toHaveURL(/\/batches\/run_002/);
+
+    // Navigate to Documents tab
+    await page.getByTestId("batch-tab-documents").click();
+    await expect(page).toHaveURL(/\/batches\/run_002\/documents/);
+
+    // Batch selector should still show the same batch
+    await expect(batchSelector).toHaveValue("run_002");
+
+    // Navigate to Benchmark tab
+    await page.getByTestId("batch-tab-benchmark").click();
+    await expect(page).toHaveURL(/\/batches\/run_002\/benchmark/);
+
+    // Batch selector should still show the same batch
+    await expect(batchSelector).toHaveValue("run_002");
   });
 });
 
-test.describe("Batch Selector - Calibration Insights", () => {
+test.describe("Batch Selector - Benchmark Page", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
@@ -41,16 +76,11 @@ test.describe("Batch Selector - Calibration Insights", () => {
     const insights = new InsightsPage(page);
     await insights.goto();
 
+    // Batch context bar should be visible
+    await expect(insights.batchContextBar).toBeVisible();
+
     // Batch selector should be visible
     await expect(insights.batchSelector).toBeVisible();
-
-    // Batch metadata should be visible
-    await expect(insights.runMetadata).toBeVisible();
-
-    // Metadata should contain model info
-    const metadataText = await insights.getRunMetadataText();
-    expect(metadataText).toContain("Model:");
-    expect(metadataText).toContain("gpt-4o");
   });
 
   test("switching batch updates display", async ({ page }) => {
