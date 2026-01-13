@@ -6,6 +6,13 @@ import time
 from pathlib import Path
 from typing import Dict, Any
 
+# Ensure .env is loaded (fallback in case not loaded by main.py)
+from dotenv import load_dotenv
+_project_root = Path(__file__).resolve().parent.parent.parent.parent
+_env_path = _project_root / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path, override=True)
+
 from context_builder.ingestion import (
     DataIngestion,
     APIError,
@@ -39,6 +46,10 @@ class AzureDocumentIntelligenceIngestion(DataIngestion):
         # Get Azure credentials from environment
         self.endpoint = os.getenv("AZURE_DI_ENDPOINT")
         self.api_key = os.getenv("AZURE_DI_API_KEY")
+
+        # Debug: log what we found
+        logger.info(f"[AzureDI] AZURE_DI_ENDPOINT from env: {self.endpoint[:30] if self.endpoint else 'NOT FOUND'}...")
+        logger.info(f"[AzureDI] All env keys containing AZURE: {[k for k in os.environ.keys() if 'AZURE' in k]}")
 
         if not self.endpoint:
             raise ConfigurationError(

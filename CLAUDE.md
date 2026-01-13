@@ -77,6 +77,22 @@ Windows note: if pytest temp dirs hit permission errors, run:
 python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
 ```
 
+## Troubleshooting
+
+**Env vars not loading / Code changes not taking effect:**
+Multiple uvicorn processes may be running. Auto-reload spawns new processes but old ones keep serving requests.
+
+```powershell
+# Check for multiple processes on port 8000
+Get-NetTCPConnection -LocalPort 8000 -State Listen | Select OwningProcess
+
+# Kill all Python processes and restart fresh
+Get-Process python | Stop-Process -Force
+uvicorn context_builder.api.main:app --reload --port 8000
+```
+
+See `tests/unit/test_azure_di_impl.py::TestEnvironmentVariableLoading` for regression tests.
+
 ## Folders
 
 - `plans/` - save implementation plans here

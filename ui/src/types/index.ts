@@ -336,6 +336,7 @@ export interface DocProgress {
   claim_id: string;
   filename: string;
   phase: DocPipelinePhase;
+  failed_at_stage?: DocPipelinePhase;  // Which stage failed (ingesting/classifying/extracting)
   error?: string;
 }
 
@@ -373,6 +374,7 @@ export interface WebSocketMessage {
   run_id?: string;
   doc_id?: string;
   phase?: DocPipelinePhase;
+  failed_at_stage?: DocPipelinePhase;
   error?: string;
   status?: PipelineRunStatus;
   docs?: Record<string, DocProgress>;

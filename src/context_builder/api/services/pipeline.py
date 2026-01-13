@@ -43,6 +43,7 @@ class DocProgress:
     claim_id: str
     filename: str
     phase: DocPhase = DocPhase.PENDING
+    failed_at_stage: Optional[DocPhase] = None  # Which stage failed
     error: Optional[str] = None
 
 
@@ -59,8 +60,8 @@ class PipelineRun:
     summary: Optional[Dict[str, Any]] = None
 
 
-# Progress callback type: (run_id, doc_id, phase, error)
-ProgressCallback = Callable[[str, str, DocPhase, Optional[str]], None]
+# Progress callback type: (run_id, doc_id, phase, error, failed_at_stage)
+ProgressCallback = Callable[[str, str, DocPhase, Optional[str], Optional[DocPhase]], None]
 
 
 class PipelineService:
@@ -209,6 +210,32 @@ class PipelineService:
                                 break
                     return callback
 
+                # Create phase callback for real-time stage updates
+                def make_phase_callback(claim_id: str):
+                    # Map stage names to DocPhase
+                    stage_to_phase = {
+                        "ingestion": DocPhase.INGESTING,
+                        "classification": DocPhase.CLASSIFYING,
+                        "extraction": DocPhase.EXTRACTING,
+                    }
+
+                    def callback(stage_name: str, doc_id: str):
+                        phase = stage_to_phase.get(stage_name)
+                        if phase:
+                            # Update local state
+                            for key, doc in run.docs.items():
+                                if doc.doc_id == doc_id:
+                                    doc.phase = phase
+                                    break
+                            # Broadcast via WebSocket
+                            if progress_callback:
+                                asyncio.create_task(
+                                    self._async_callback(
+                                        progress_callback, run_id, doc_id, phase, None
+                                    )
+                                )
+                    return callback
+
                 try:
                     # Process the claim
                     result = process_claim(
@@ -218,6 +245,7 @@ class PipelineService:
                         model=model,
                         stage_config=StageConfig(),
                         progress_callback=make_doc_callback(claim_id),
+                        phase_callback=make_phase_callback(claim_id),
                     )
 
                     # Count results
@@ -226,31 +254,34 @@ class PipelineService:
                             total_success += 1
                         else:
                             total_failed += 1
-                            # Mark failed doc
+                            # Mark failed doc and track which stage failed
                             for key, doc in run.docs.items():
                                 if doc.claim_id == claim_id and doc.filename == doc_result.original_filename:
+                                    # Save the stage where it failed before marking as failed
+                                    doc.failed_at_stage = doc.phase if doc.phase != DocPhase.PENDING else DocPhase.INGESTING
                                     doc.phase = DocPhase.FAILED
                                     doc.error = doc_result.error
                                     if progress_callback:
                                         asyncio.create_task(
                                             self._async_callback(
-                                                progress_callback, run_id, doc.doc_id, DocPhase.FAILED, doc_result.error
+                                                progress_callback, run_id, doc.doc_id, DocPhase.FAILED, doc_result.error, doc.failed_at_stage
                                             )
                                         )
                                     break
 
                 except Exception as e:
                     logger.exception(f"Failed to process claim {claim_id}")
-                    # Mark all docs in this claim as failed
+                    # Mark all docs in this claim as failed, tracking which stage they were in
                     for key, doc in run.docs.items():
                         if doc.claim_id == claim_id and doc.phase != DocPhase.DONE:
+                            doc.failed_at_stage = doc.phase if doc.phase != DocPhase.PENDING else DocPhase.INGESTING
                             doc.phase = DocPhase.FAILED
                             doc.error = str(e)
                             total_failed += 1
                             if progress_callback:
                                 asyncio.create_task(
                                     self._async_callback(
-                                        progress_callback, run_id, doc.doc_id, DocPhase.FAILED, str(e)
+                                        progress_callback, run_id, doc.doc_id, DocPhase.FAILED, str(e), doc.failed_at_stage
                                     )
                                 )
 
@@ -313,10 +344,11 @@ class PipelineService:
         doc_id: str,
         phase: DocPhase,
         error: Optional[str],
+        failed_at_stage: Optional[DocPhase] = None,
     ) -> None:
         """Execute callback, handling both sync and async callbacks."""
         try:
-            result = callback(run_id, doc_id, phase, error)
+            result = callback(run_id, doc_id, phase, error, failed_at_stage)
             if asyncio.iscoroutine(result):
                 await result
         except Exception as e:

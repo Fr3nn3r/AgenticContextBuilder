@@ -351,3 +351,129 @@ class TestAzureDocumentIntelligenceFactory:
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
                 instance = IngestionFactory.create('azure-di')
                 assert instance is not None
+
+
+class TestEnvironmentVariableLoading:
+    """Test that environment variables are loaded correctly from .env file.
+
+    This test class was added after a production incident where:
+    - Multiple uvicorn processes were running on port 8000
+    - Old processes served requests with cached code that didn't load .env
+    - Result: AZURE_DI_ENDPOINT not found errors despite .env being correct
+
+    Prevention: Always fully restart the server (kill all processes) rather than
+    relying on auto-reload when debugging environment variable issues.
+    """
+
+    def test_dotenv_loads_azure_credentials(self, tmp_path):
+        """Test that load_dotenv correctly loads Azure credentials from .env file."""
+        from dotenv import load_dotenv
+
+        # Create a temporary .env file
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "AZURE_DI_ENDPOINT=https://test-endpoint.cognitiveservices.azure.com/\n"
+            "AZURE_DI_API_KEY=test_api_key_12345\n"
+        )
+
+        # Clear any existing env vars
+        with patch.dict(os.environ, {}, clear=True):
+            # Load the .env file
+            load_dotenv(env_file, override=True)
+
+            # Verify env vars are set
+            assert os.getenv("AZURE_DI_ENDPOINT") == "https://test-endpoint.cognitiveservices.azure.com/"
+            assert os.getenv("AZURE_DI_API_KEY") == "test_api_key_12345"
+
+    def test_dotenv_override_existing_vars(self, tmp_path):
+        """Test that load_dotenv with override=True replaces existing env vars."""
+        from dotenv import load_dotenv
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("AZURE_DI_ENDPOINT=https://new-endpoint.azure.com/\n")
+
+        # Set an existing env var
+        with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://old-endpoint.azure.com/"}):
+            # Without override, old value should persist
+            load_dotenv(env_file, override=False)
+            assert os.getenv("AZURE_DI_ENDPOINT") == "https://old-endpoint.azure.com/"
+
+            # With override, new value should replace
+            load_dotenv(env_file, override=True)
+            assert os.getenv("AZURE_DI_ENDPOINT") == "https://new-endpoint.azure.com/"
+
+    @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
+    def test_azure_di_uses_os_getenv(self):
+        """Test that AzureDocumentIntelligenceIngestion uses os.getenv at init time.
+
+        This is a regression test for the issue where env vars weren't
+        available because the module was cached without the dotenv loading code.
+
+        We verify the class uses os.getenv() to read credentials, which means
+        as long as env vars are set (by main.py's load_dotenv or otherwise),
+        the class will work correctly.
+        """
+        from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+        import inspect
+
+        # Verify the __init__ method uses os.getenv to read credentials
+        source = inspect.getsource(AzureDocumentIntelligenceIngestion.__init__)
+
+        # Check that endpoint and api_key are read from os.getenv
+        assert 'os.getenv("AZURE_DI_ENDPOINT")' in source or "os.getenv('AZURE_DI_ENDPOINT')" in source, \
+            "AzureDocumentIntelligenceIngestion must read AZURE_DI_ENDPOINT from os.getenv()"
+        assert 'os.getenv("AZURE_DI_API_KEY")' in source or "os.getenv('AZURE_DI_API_KEY')" in source, \
+            "AzureDocumentIntelligenceIngestion must read AZURE_DI_API_KEY from os.getenv()"
+
+    def test_azure_di_module_has_dotenv_fallback(self):
+        """Verify azure_di_ingestion.py has fallback load_dotenv at module level.
+
+        This ensures that even if main.py hasn't loaded .env yet (e.g., during
+        CLI usage), the module will load it as a fallback.
+        """
+        from pathlib import Path
+        import ast
+
+        azure_di_path = Path(__file__).parent.parent.parent / "src" / "context_builder" / "impl" / "azure_di_ingestion.py"
+        source = azure_di_path.read_text()
+
+        # Verify load_dotenv is imported and called at module level
+        assert "from dotenv import load_dotenv" in source, \
+            "azure_di_ingestion.py must import load_dotenv"
+        assert "load_dotenv(" in source, \
+            "azure_di_ingestion.py must call load_dotenv() as fallback"
+
+    def test_main_py_loads_dotenv_at_startup(self):
+        """Verify that main.py loads .env at module level.
+
+        This ensures env vars are available before any request handlers run.
+        The failure case was when main.py didn't load .env early enough.
+        """
+        import ast
+        from pathlib import Path
+
+        main_py = Path(__file__).parent.parent.parent / "src" / "context_builder" / "api" / "main.py"
+        source = main_py.read_text()
+        tree = ast.parse(source)
+
+        # Find the first occurrence of load_dotenv call
+        load_dotenv_line = None
+        first_decorator_line = float('inf')
+
+        for node in ast.walk(tree):
+            # Find load_dotenv calls
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == 'load_dotenv':
+                    load_dotenv_line = node.lineno
+                    break
+            # Find first @app decorator (marks where routes start)
+            if isinstance(node, ast.FunctionDef):
+                for decorator in node.decorator_list:
+                    if isinstance(decorator, ast.Call):
+                        if hasattr(decorator.func, 'value') and hasattr(decorator.func.value, 'id'):
+                            if decorator.func.value.id == 'app':
+                                first_decorator_line = min(first_decorator_line, decorator.lineno)
+
+        assert load_dotenv_line is not None, "load_dotenv() must be called in main.py"
+        assert load_dotenv_line < first_decorator_line, \
+            f"load_dotenv() at line {load_dotenv_line} must come before route decorators at line {first_decorator_line}"

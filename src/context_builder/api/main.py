@@ -21,6 +21,20 @@ Data structure expected:
       labels/{doc_id}.labels.json
 """
 
+from pathlib import Path as _Path
+from dotenv import load_dotenv
+import os as _os
+
+# Find project root (where .env is located) by going up from this file
+_project_root = _Path(__file__).resolve().parent.parent.parent.parent
+_env_path = _project_root / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+    print(f"[startup] Loaded .env from {_env_path}")
+    print(f"[startup] AZURE_DI_ENDPOINT = {_os.getenv('AZURE_DI_ENDPOINT', 'NOT SET')[:30]}...")
+else:
+    print(f"[startup] WARNING: .env not found at {_env_path}")
+
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1054,6 +1068,11 @@ async def start_pipeline_run(request: PipelineRunRequest):
     Returns:
         run_id for tracking progress
     """
+    print(f"[API] /api/pipeline/run called with claim_ids={request.claim_ids}", flush=True)
+    # Debug: write to file to prove code is executing
+    from datetime import datetime as dt
+    with open("C:/Users/fbrun/Documents/GitHub/AgenticContextBuilder/DEBUG_API_CALLED.txt", "a") as f:
+        f.write(f"API called at {dt.now()} with claim_ids={request.claim_ids}\n")
     pipeline_service = get_pipeline_service()
     upload_service = get_upload_service()
 
@@ -1063,12 +1082,13 @@ async def start_pipeline_run(request: PipelineRunRequest):
             raise HTTPException(status_code=404, detail=f"Pending claim not found: {claim_id}")
 
     # Create progress callback that broadcasts to WebSocket
-    async def broadcast_progress(run_id: str, doc_id: str, phase: DocPhase, error: Optional[str]):
+    async def broadcast_progress(run_id: str, doc_id: str, phase: DocPhase, error: Optional[str], failed_at_stage: Optional[DocPhase] = None):
         await ws_manager.broadcast(run_id, {
             "type": "doc_progress",
             "doc_id": doc_id,
             "phase": phase.value,
             "error": error,
+            "failed_at_stage": failed_at_stage.value if failed_at_stage else None,
         })
 
     run_id = await pipeline_service.start_pipeline(
@@ -1205,6 +1225,7 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
                         "filename": doc.filename,
                         "phase": doc.phase.value,
                         "error": doc.error,
+                        "failed_at_stage": doc.failed_at_stage.value if doc.failed_at_stage else None,
                     }
                     for key, doc in run.docs.items()
                 },

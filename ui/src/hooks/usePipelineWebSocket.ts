@@ -22,7 +22,7 @@ function getWsUrl(runId: string): string {
 
 export interface UsePipelineWebSocketOptions {
   runId: string | null;
-  onDocProgress?: (docId: string, phase: string, error?: string) => void;
+  onDocProgress?: (docId: string, phase: string, error?: string, failedAtStage?: string) => void;
   onRunComplete?: (summary: { total: number; success: number; failed: number }) => void;
   onRunCancelled?: () => void;
   onSync?: (status: PipelineRunStatus, docs: Record<string, DocProgress>) => void;
@@ -109,7 +109,7 @@ export function usePipelineWebSocket({
 
           case 'doc_progress':
             if (callbacks.onDocProgress && message.doc_id && message.phase) {
-              callbacks.onDocProgress(message.doc_id, message.phase, message.error);
+              callbacks.onDocProgress(message.doc_id, message.phase, message.error, message.failed_at_stage);
             }
             break;
 

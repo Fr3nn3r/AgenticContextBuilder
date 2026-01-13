@@ -1,5 +1,15 @@
 """Run module: orchestrate ingestion, classification, and extraction pipeline."""
 
+# Ensure .env is loaded for pipeline execution
+from pathlib import Path as _Path
+from dotenv import load_dotenv
+import os as _os
+_project_root = _Path(__file__).resolve().parent.parent.parent.parent
+_env_path = _project_root / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+    print(f"[pipeline.run] Loaded .env, AZURE_DI_ENDPOINT={_os.getenv('AZURE_DI_ENDPOINT', 'NOT SET')[:30]}...")
+
 import hashlib
 import json
 import logging
@@ -622,6 +632,7 @@ def process_document(
     stage_config: Optional[StageConfig] = None,
     writer: Optional[ResultWriter] = None,
     providers: Optional[PipelineProviders] = None,
+    phase_callback: Optional[Callable[[str, str], None]] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -641,6 +652,7 @@ def process_document(
         classifier: Document classifier instance
         run_id: Current run identifier
         stage_config: Configuration for which stages to run (default: all)
+        phase_callback: Optional callback(phase_name, doc_id) for phase transitions
 
     Returns:
         DocResult with processing status and paths
@@ -664,11 +676,19 @@ def process_document(
         writer=writer,
     )
 
-    runner = PipelineRunner([
-        IngestionStage(writer),
-        ClassificationStage(writer),
-        ExtractionStage(writer),
-    ])
+    # Create phase callback wrapper that passes doc_id
+    def on_phase_start(stage_name: str, ctx: DocumentContext) -> None:
+        if phase_callback:
+            phase_callback(stage_name, doc.doc_id)
+
+    runner = PipelineRunner(
+        [
+            IngestionStage(writer),
+            ClassificationStage(writer),
+            ExtractionStage(writer),
+        ],
+        on_phase_start=on_phase_start,
+    )
 
     try:
         context = runner.run(context)
@@ -828,6 +848,7 @@ def process_claim(
     compute_metrics: bool = True,
     stage_config: Optional[StageConfig] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    phase_callback: Optional[Callable[[str, str], None]] = None,
     providers: Optional[PipelineProviders] = None,
 ) -> ClaimResult:
     """
@@ -844,6 +865,7 @@ def process_claim(
         compute_metrics: If True, compute metrics.json at end
         stage_config: Configuration for which stages to run (default: all)
         progress_callback: Optional callback(idx, total, filename) for progress reporting
+        phase_callback: Optional callback(phase_name, doc_id) for real-time phase updates
 
     Returns:
         ClaimResult with aggregated stats
@@ -923,6 +945,7 @@ def process_claim(
                 stage_config=stage_config,
                 writer=writer,
                 providers=providers,
+                phase_callback=phase_callback,
             )
             results.append(result)
 
