@@ -1,5 +1,17 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { getDoc, listClaims, saveLabels } from "../client";
+import {
+  getDoc,
+  listClaims,
+  listDocs,
+  saveLabels,
+  getInsightsExamples,
+  getInsightsFieldDetails,
+  compareRuns,
+  startPipeline,
+  getPipelineStatus,
+  listPipelineBatches,
+  getAzureDI,
+} from "../client";
 
 describe("api client", () => {
   const fetchMock = vi.fn();
@@ -12,6 +24,10 @@ describe("api client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
+
+  // ============================================================================
+  // Existing Tests
+  // ============================================================================
 
   test("listClaims builds run filter query", async () => {
     fetchMock.mockResolvedValue({
@@ -72,5 +88,234 @@ describe("api client", () => {
     } as unknown as Response);
 
     await expect(listClaims()).rejects.toThrow("Boom");
+  });
+
+  // ============================================================================
+  // Query Parameter Building Tests
+  // ============================================================================
+
+  describe("query parameter building", () => {
+    test("listDocs includes runId param when provided", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await listDocs("claim_123", "run_456");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/claims/claim_123/docs?run_id=run_456",
+        undefined
+      );
+    });
+
+    test("listDocs omits runId when not provided", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await listDocs("claim_123");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/claims/claim_123/docs",
+        undefined
+      );
+    });
+
+    test("getInsightsExamples includes all optional params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await getInsightsExamples({
+        doc_type: "invoice",
+        field: "total_amount",
+        outcome: "mismatch",
+        run_id: "run_123",
+        limit: 20,
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/insights/examples?doc_type=invoice&field=total_amount&outcome=mismatch&run_id=run_123&limit=20",
+        undefined
+      );
+    });
+
+    test("getInsightsExamples omits undefined params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await getInsightsExamples({
+        doc_type: "invoice",
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/insights/examples?doc_type=invoice",
+        undefined
+      );
+    });
+
+    test("getInsightsFieldDetails encodes special characters", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      } as unknown as Response);
+
+      await getInsightsFieldDetails("doc type/special", "field&name", "run=1");
+
+      const call = fetchMock.mock.calls[0][0] as string;
+      expect(call).toContain("doc_type=doc+type%2Fspecial");
+      expect(call).toContain("field=field%26name");
+      expect(call).toContain("run_id=run%3D1");
+    });
+
+    test("compareRuns builds baseline and current params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      } as unknown as Response);
+
+      await compareRuns("baseline_001", "current_002");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/insights/compare?baseline=baseline_001&current=current_002",
+        undefined
+      );
+    });
+  });
+
+  // ============================================================================
+  // Response Mapping Tests (run_id -> batch_id)
+  // ============================================================================
+
+  describe("response mapping", () => {
+    test("startPipeline maps run_id to batch_id", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ run_id: "run_abc", status: "started" }),
+      } as unknown as Response);
+
+      const result = await startPipeline(["claim_1"], "gpt-4o");
+
+      expect(result).toEqual({ batch_id: "run_abc", status: "started" });
+    });
+
+    test("getPipelineStatus maps run_id to batch_id", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          run_id: "run_xyz",
+          status: "completed",
+          claim_ids: ["claim_1"],
+        }),
+      } as unknown as Response);
+
+      const result = await getPipelineStatus("run_xyz");
+
+      expect(result.batch_id).toBe("run_xyz");
+      expect(result.status).toBe("completed");
+    });
+
+    test("listPipelineBatches maps all run_id to batch_id", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { run_id: "run_1", status: "completed", claim_ids: [] },
+          { run_id: "run_2", status: "running", claim_ids: [] },
+        ],
+      } as unknown as Response);
+
+      const results = await listPipelineBatches();
+
+      expect(results).toHaveLength(2);
+      expect(results[0].batch_id).toBe("run_1");
+      expect(results[1].batch_id).toBe("run_2");
+    });
+  });
+
+  // ============================================================================
+  // Error Handling Tests
+  // ============================================================================
+
+  describe("error handling", () => {
+    test("throws generic error when json parse fails", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: async () => {
+          throw new Error("JSON parse error");
+        },
+      } as unknown as Response);
+
+      await expect(listClaims()).rejects.toThrow("Unknown error");
+    });
+
+    test("throws HTTP status when no detail in error response", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      } as unknown as Response);
+
+      await expect(listClaims()).rejects.toThrow("HTTP 404");
+    });
+  });
+
+  // ============================================================================
+  // Azure DI Caching Tests
+  // ============================================================================
+
+  describe("getAzureDI caching", () => {
+    test("returns null on 404 error", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "Not found" }),
+      } as unknown as Response);
+
+      const result = await getAzureDI("doc_new", "claim_new");
+
+      expect(result).toBeNull();
+    });
+
+    test("returns cached value on subsequent calls", async () => {
+      const mockData = { raw_azure_di_output: { pages: [], content: "" } };
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => mockData,
+      } as unknown as Response);
+
+      // First call
+      const result1 = await getAzureDI("doc_cached", "claim_cached");
+      expect(result1).toEqual(mockData);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second call - should use cache
+      const result2 = await getAzureDI("doc_cached", "claim_cached");
+      expect(result2).toEqual(mockData);
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new fetch
+    });
+
+    test("caches null to avoid repeated 404s", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "Not found" }),
+      } as unknown as Response);
+
+      // First call
+      const result1 = await getAzureDI("doc_404", "claim_404");
+      expect(result1).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second call - should return cached null
+      const result2 = await getAzureDI("doc_404", "claim_404");
+      expect(result2).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new fetch
+    });
   });
 });
