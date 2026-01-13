@@ -151,24 +151,24 @@ export function FieldsTable({
       readOnly && "opacity-50 pointer-events-none"
     )}>
       {/* Progress Header */}
-      <div className="p-3 border-b bg-gray-50 flex-shrink-0">
+      <div className="p-3 border-b bg-muted/50 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-foreground">
             {labeledCount} of {totalCount} labeled
           </span>
           {hiddenFieldsCount > 0 && onToggleOptionalFields && (
             <button
               onClick={onToggleOptionalFields}
-              className="text-xs text-blue-600 hover:text-blue-800"
+              className="text-xs text-accent-foreground hover:text-accent"
             >
               {showOptionalFields ? "Hide optional" : `+${hiddenFieldsCount} optional`}
             </button>
           )}
         </div>
         {/* Progress bar */}
-        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
           <div
-            className="h-full bg-green-500 rounded-full transition-all duration-300"
+            className="h-full bg-success rounded-full transition-all duration-300"
             style={{ width: `${totalCount > 0 ? (labeledCount / totalCount) * 100 : 0}%` }}
           />
         </div>
@@ -191,14 +191,14 @@ export function FieldsTable({
 
           // Determine border color based on state
           const borderColor = isUnverifiable
-            ? "border-l-gray-300"
+            ? "border-l-muted-foreground/30"
             : isLabeled && comparisonResult === "correct"
-            ? "border-l-green-500"
+            ? "border-l-success"
             : isLabeled && comparisonResult === "incorrect"
-            ? "border-l-red-500"
+            ? "border-l-destructive"
             : isLabeled && comparisonResult === "missing"
-            ? "border-l-amber-500"
-            : "border-l-amber-400";
+            ? "border-l-warning"
+            : "border-l-warning/70";
 
           const rowBg = isUnlabeled ? "bg-amber-50/40" : "";
 
@@ -206,7 +206,7 @@ export function FieldsTable({
             <div key={field.name} className={cn("border-l-4", borderColor, rowBg)}>
               {/* Collapsed Row */}
               <div
-                className="px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors"
+                className="px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleToggleExpand(field.name)}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -215,32 +215,32 @@ export function FieldsTable({
                     <span
                       className={cn(
                         "w-2 h-2 rounded-full flex-shrink-0",
-                        isLabeled ? "bg-green-500" :
-                        isUnverifiable ? "bg-gray-400" :
-                        "bg-amber-400"
+                        isLabeled ? "bg-success" :
+                        isUnverifiable ? "bg-muted-foreground/50" :
+                        "bg-warning/70"
                       )}
                     />
                     {/* Field name */}
-                    <span className="font-medium text-sm text-gray-900 truncate">
+                    <span className="font-medium text-sm text-foreground truncate">
                       {getDisplayName(field.name)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Extracted value preview */}
-                    <span className="font-mono text-xs text-gray-500 truncate max-w-[120px]">
+                    <span className="font-mono text-xs text-muted-foreground truncate max-w-[120px]">
                       {field.value || "—"}
                     </span>
                     {/* Status indicator */}
                     {isLabeled && comparisonResult === "correct" && (
-                      <span className="text-green-600 text-xs">✓</span>
+                      <span className="text-success text-xs">✓</span>
                     )}
                     {isLabeled && comparisonResult === "incorrect" && (
-                      <span className="text-red-600 text-xs">✗</span>
+                      <span className="text-destructive text-xs">✗</span>
                     )}
                     {/* Chevron */}
                     <svg
                       className={cn(
-                        "w-4 h-4 text-gray-400 transition-transform",
+                        "w-4 h-4 text-muted-foreground/70 transition-transform",
                         isExpanded && "rotate-180"
                       )}
                       fill="none"
@@ -255,17 +255,17 @@ export function FieldsTable({
 
               {/* Expanded Content */}
               {isExpanded && (
-                <div className="px-3 pb-3 bg-gray-50/50">
+                <div className="px-3 pb-3 bg-muted/30">
                   {/* Extracted Value */}
                   <div className="flex items-start gap-2 py-2">
-                    <span className="text-xs text-gray-500 w-16 flex-shrink-0 pt-0.5">Extracted</span>
+                    <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">Extracted</span>
                     <div className="flex-1 min-w-0">
                       {field.value ? (
-                        <code className="text-sm bg-white px-2 py-1 rounded border border-gray-200 inline-block">
+                        <code className="text-sm bg-card px-2 py-1 rounded border border-border inline-block">
                           {field.normalized_value || field.value}
                         </code>
                       ) : (
-                        <span className="text-sm text-gray-400 italic">No value extracted</span>
+                        <span className="text-sm text-muted-foreground/70 italic">No value extracted</span>
                       )}
                       {field.value_is_placeholder && (
                         <StatusBadge variant="info" size="sm" className="ml-2">Placeholder</StatusBadge>
@@ -275,8 +275,8 @@ export function FieldsTable({
 
                   {/* Truth Value (if labeled) */}
                   {isLabeled && (
-                    <div className="flex items-start gap-2 py-2 border-t border-gray-200">
-                      <span className="text-xs text-gray-500 w-16 flex-shrink-0 pt-0.5">Truth</span>
+                    <div className="flex items-start gap-2 py-2 border-t border-border">
+                      <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">Truth</span>
                       <div className="flex-1 flex items-center gap-2 flex-wrap">
                         {editingField === field.name ? (
                           <div className="flex gap-2 items-center flex-1">
@@ -293,20 +293,20 @@ export function FieldsTable({
                             />
                             <button
                               onClick={() => handleEditSave(field.name)}
-                              className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                              className="px-2 py-1 text-xs bg-accent text-accent-foreground rounded hover:bg-accent/90"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => setEditingField(null)}
-                              className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+                              className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
                             >
                               Cancel
                             </button>
                           </div>
                         ) : (
                           <>
-                            <code className="text-sm text-green-700">{label?.truth_value || "(empty)"}</code>
+                            <code className="text-sm text-success">{label?.truth_value || "(empty)"}</code>
                             {comparisonResult === "correct" && <CorrectBadge />}
                             {comparisonResult === "incorrect" && <IncorrectBadge />}
                             {comparisonResult === "missing" && <MissingBadge />}
@@ -317,7 +317,7 @@ export function FieldsTable({
                                   setEditingField(field.name);
                                   setEditValue(label?.truth_value || "");
                                 }}
-                                className="text-xs text-blue-600 hover:underline"
+                                className="text-xs text-accent-foreground hover:underline"
                               >
                                 Edit
                               </button>
@@ -330,10 +330,10 @@ export function FieldsTable({
 
                   {/* Unverifiable Reason */}
                   {isUnverifiable && label?.unverifiable_reason && (
-                    <div className="flex items-start gap-2 py-2 border-t border-gray-200">
-                      <span className="text-xs text-gray-500 w-16 flex-shrink-0 pt-0.5">Reason</span>
+                    <div className="flex items-start gap-2 py-2 border-t border-border">
+                      <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">Reason</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">
+                        <span className="text-sm text-muted-foreground">
                           {unverifiableReasonLabels[label.unverifiable_reason]}
                         </span>
                         <UnverifiableBadge />
@@ -343,8 +343,8 @@ export function FieldsTable({
 
                   {/* Evidence Link */}
                   {provenance && (
-                    <div className="flex items-start gap-2 py-2 border-t border-gray-200">
-                      <span className="text-xs text-gray-500 w-16 flex-shrink-0 pt-0.5">Evidence</span>
+                    <div className="flex items-start gap-2 py-2 border-t border-border">
+                      <span className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">Evidence</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -356,11 +356,11 @@ export function FieldsTable({
                             field.normalized_value || field.value || undefined
                           );
                         }}
-                        className="text-sm text-blue-600 hover:underline text-left"
+                        className="text-sm text-accent-foreground hover:underline text-left"
                       >
                         Page {provenance.page}
-                        <span className="text-gray-400 ml-1">·</span>
-                        <span className="text-gray-500 ml-1 italic truncate max-w-[200px] inline-block align-bottom">
+                        <span className="text-muted-foreground/70 ml-1">·</span>
+                        <span className="text-muted-foreground ml-1 italic truncate max-w-[200px] inline-block align-bottom">
                           "{provenance.text_quote.slice(0, 40)}..."
                         </span>
                       </button>
@@ -369,7 +369,7 @@ export function FieldsTable({
 
                   {/* Action Buttons - Only for UNLABELED */}
                   {!readOnly && isUnlabeled && (
-                    <div className="pt-3 mt-2 border-t border-gray-200">
+                    <div className="pt-3 mt-2 border-t border-border">
                       {settingTruthField === field.name ? (
                         <div className="space-y-2">
                           <input
@@ -377,7 +377,7 @@ export function FieldsTable({
                             value={newTruthValue}
                             onChange={(e) => setNewTruthValue(e.target.value)}
                             placeholder="Enter the correct value..."
-                            className="w-full px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-accent focus:border-accent"
                             autoFocus
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && newTruthValue.trim()) handleSetTruthSave(field.name);
@@ -388,13 +388,13 @@ export function FieldsTable({
                             <button
                               onClick={() => handleSetTruthSave(field.name)}
                               disabled={!newTruthValue.trim()}
-                              className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="px-3 py-1.5 text-sm bg-accent text-accent-foreground rounded hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Save Truth
                             </button>
                             <button
                               onClick={() => setSettingTruthField(null)}
-                              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                              className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
                             >
                               Cancel
                             </button>
@@ -409,7 +409,7 @@ export function FieldsTable({
                             }}
                             disabled={!field.value}
                             title={!field.value ? "No extracted value to confirm" : "Accept extracted value as truth"}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-success text-success-foreground rounded hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -422,7 +422,7 @@ export function FieldsTable({
                               setSettingTruthField(field.name);
                               setNewTruthValue(field.value || "");
                             }}
-                            className="px-3 py-1.5 text-sm font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                            className="px-3 py-1.5 text-sm font-medium bg-accent text-accent-foreground rounded hover:bg-accent/90 transition-colors"
                           >
                             Set Value...
                           </button>
@@ -434,13 +434,13 @@ export function FieldsTable({
                                   showUnverifiableMenu === field.name ? null : field.name
                                 );
                               }}
-                              className="px-3 py-1.5 text-sm font-medium bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                              className="px-3 py-1.5 text-sm font-medium bg-muted text-foreground rounded hover:bg-muted/80 transition-colors"
                             >
                               Skip...
                             </button>
                             {showUnverifiableMenu === field.name && (
-                              <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-20 py-1 min-w-[160px]">
-                                <div className="px-3 py-1 text-xs text-gray-500 font-medium border-b">
+                              <div className="absolute top-full left-0 mt-1 bg-card border rounded-lg shadow-lg z-20 py-1 min-w-[160px]">
+                                <div className="px-3 py-1 text-xs text-muted-foreground font-medium border-b">
                                   Mark as unverifiable
                                 </div>
                                 {(Object.keys(unverifiableReasonLabels) as UnverifiableReason[]).map((reason) => (
@@ -450,7 +450,7 @@ export function FieldsTable({
                                       e.stopPropagation();
                                       handleUnverifiableSelect(field.name, reason);
                                     }}
-                                    className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+                                    className="block w-full text-left px-3 py-2 text-sm hover:bg-muted"
                                   >
                                     {unverifiableReasonLabels[reason]}
                                   </button>
@@ -465,7 +465,7 @@ export function FieldsTable({
 
                   {/* Change Decision for UNVERIFIABLE */}
                   {!readOnly && isUnverifiable && (
-                    <div className="pt-3 mt-2 border-t border-gray-200">
+                    <div className="pt-3 mt-2 border-t border-border">
                       {settingTruthField === field.name ? (
                         <div className="space-y-2">
                           <input
@@ -480,13 +480,13 @@ export function FieldsTable({
                             <button
                               onClick={() => handleSetTruthSave(field.name)}
                               disabled={!newTruthValue.trim()}
-                              className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                              className="px-3 py-1.5 text-sm bg-accent text-accent-foreground rounded hover:bg-accent/90 disabled:opacity-50"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => setSettingTruthField(null)}
-                              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                              className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
                             >
                               Cancel
                             </button>
@@ -498,7 +498,7 @@ export function FieldsTable({
                             e.stopPropagation();
                             setSettingTruthField(field.name);
                           }}
-                          className="text-sm text-blue-600 hover:underline"
+                          className="text-sm text-accent-foreground hover:underline"
                         >
                           Change decision...
                         </button>

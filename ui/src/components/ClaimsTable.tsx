@@ -154,7 +154,7 @@ export function ClaimsTable({
           <select
             value={statusFilter}
             onChange={(e) => onStatusFilterChange(e.target.value)}
-            className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Gate Status</option>
             <option value="has_fail">Has FAIL docs</option>
@@ -166,7 +166,7 @@ export function ClaimsTable({
           <select
             value={lobFilter}
             onChange={(e) => onLobFilterChange(e.target.value)}
-            className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Claims</option>
             <option value="has_unlabeled">Has unlabeled docs</option>
@@ -176,7 +176,7 @@ export function ClaimsTable({
           <select
             value={riskFilter}
             onChange={(e) => onRiskFilterChange(e.target.value)}
-            className="px-3 py-2 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Priority</option>
             <option value="high">High Priority</option>
@@ -188,7 +188,7 @@ export function ClaimsTable({
         {/* Search */}
         <div className="relative">
           <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -205,19 +205,19 @@ export function ClaimsTable({
             placeholder="Search by Claim ID..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-10 pr-4 py-2 w-64 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+            className="pl-10 pr-4 py-2 w-64 bg-card border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-muted"
           />
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border overflow-hidden">
+      <div className="bg-card rounded-lg border overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b bg-gray-50">
+            <tr className="border-b bg-muted/50">
               <th className="w-10 px-4 py-3"></th>
               <th
-                className="px-4 py-3 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer hover:bg-muted"
                 onClick={() => handleSort("claim_id")}
               >
                 <div className="flex items-center gap-1">
@@ -225,9 +225,9 @@ export function ClaimsTable({
                   <SortIcon active={sortColumn === "claim_id"} direction={sortDirection} />
                 </div>
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">LOB</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">LOB</th>
               <th
-                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-3 text-center text-sm font-medium text-foreground cursor-pointer hover:bg-muted"
                 onClick={() => handleSort("doc_count")}
               >
                 <div className="flex items-center justify-center gap-1">
@@ -236,7 +236,7 @@ export function ClaimsTable({
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-3 text-center text-sm font-medium text-foreground cursor-pointer hover:bg-muted"
                 onClick={() => handleSort("labeled")}
               >
                 <div className="flex items-center justify-center gap-1">
@@ -245,7 +245,7 @@ export function ClaimsTable({
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-center text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-3 text-center text-sm font-medium text-foreground cursor-pointer hover:bg-muted"
                 onClick={() => handleSort("gate")}
                 title="Extraction Gate (Run): PASS/WARN/FAIL based on required fields presence, evidence quality, and extraction errors for the selected run"
               >
@@ -255,7 +255,7 @@ export function ClaimsTable({
                 </div>
               </th>
               <th
-                className="px-4 py-3 text-right text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-3 text-right text-sm font-medium text-foreground cursor-pointer hover:bg-muted"
                 onClick={() => handleSort("last_processed")}
               >
                 <div className="flex items-center justify-end gap-1">
@@ -271,13 +271,13 @@ export function ClaimsTable({
                 <tr
                   onClick={() => handleClaimClick(claim)}
                   className={cn(
-                    "border-b cursor-pointer hover:bg-gray-50 transition-colors",
-                    expandedClaim === claim.claim_id && "bg-gray-50",
+                    "border-b cursor-pointer hover:bg-muted/50 transition-colors",
+                    expandedClaim === claim.claim_id && "bg-muted/50",
                     !claim.in_run && "opacity-60"
                   )}
                 >
                   <td className="px-4 py-3">
-                    <button className="text-gray-400 hover:text-gray-600">
+                    <button className="text-muted-foreground/70 hover:text-muted-foreground">
                       <svg
                         className={cn(
                           "w-4 h-4 transition-transform",
@@ -298,20 +298,20 @@ export function ClaimsTable({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{claim.claim_id}</span>
+                      <span className="font-medium text-foreground">{claim.claim_id}</span>
                       {!claim.in_run && <NotInRunBadge />}
                     </div>
                   </td>
                   <td className="px-4 py-3">
                     <LobBadge lob={claim.lob} />
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-900">
+                  <td className="px-4 py-3 text-center text-foreground">
                     {claim.doc_count}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={cn(
                       "text-sm",
-                      claim.labeled_count === claim.doc_count ? "text-green-600" : "text-gray-600"
+                      claim.labeled_count === claim.doc_count ? "text-success" : "text-muted-foreground"
                     )}>
                       {claim.labeled_count}/{claim.doc_count}
                     </span>
@@ -324,10 +324,10 @@ export function ClaimsTable({
                         fail={claim.gate_fail_count}
                       />
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-muted-foreground/70">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-500 text-sm">
+                  <td className="px-4 py-3 text-right text-muted-foreground text-sm">
                     {claim.in_run ? (claim.last_processed || "-") : "-"}
                   </td>
                 </tr>
@@ -335,13 +335,13 @@ export function ClaimsTable({
                 {/* Expanded docs row - Document Pack Queue */}
                 {expandedClaim === claim.claim_id && (
                   <tr>
-                    <td colSpan={7} className="bg-gray-50 border-b">
+                    <td colSpan={7} className="bg-muted/50 border-b">
                       <div className="px-6 py-4">
                         {/* Document Pack Header */}
                         <div className="flex items-center justify-between mb-3">
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-900">Document Pack</h4>
-                            <p className="text-xs text-gray-500">
+                            <h4 className="text-sm font-semibold text-foreground">Document Pack</h4>
+                            <p className="text-xs text-muted-foreground">
                               {claim.doc_count} documents &middot; {claim.labeled_count} labeled &middot; {claim.gate_fail_count} fail
                             </p>
                           </div>
@@ -351,14 +351,14 @@ export function ClaimsTable({
                                 e.stopPropagation();
                                 onNavigateToReview(claim.claim_id);
                               }}
-                              className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded hover:bg-gray-800 transition-colors"
+                              className="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded hover:bg-primary/90 transition-colors"
                             >
                               Review next unlabeled
                             </button>
                           )}
                         </div>
                         {docs.length === 0 ? (
-                          <p className="text-sm text-gray-500">Loading documents...</p>
+                          <p className="text-sm text-muted-foreground">Loading documents...</p>
                         ) : (
                           <div className="space-y-2">
                             {/* Sort docs: Unlabeled first, then FAIL > WARN > PASS */}
@@ -380,19 +380,19 @@ export function ClaimsTable({
                                   e.stopPropagation();
                                   onSelectDoc(doc.doc_id, claim.claim_id);
                                 }}
-                                className="w-full flex items-center justify-between p-3 bg-white rounded-lg border hover:border-gray-300 transition-colors text-left"
+                                className="w-full flex items-center justify-between p-3 bg-card rounded-lg border hover:border-border transition-colors text-left"
                               >
                                 <div className="flex items-center gap-3">
                                   <QualityDot status={doc.quality_status} />
                                   <div>
-                                    <div className="text-sm font-medium text-gray-900">
+                                    <div className="text-sm font-medium text-foreground">
                                       {doc.filename}
                                     </div>
-                                    <div className="text-xs text-gray-500">
+                                    <div className="text-xs text-muted-foreground">
                                       {formatDocType(doc.doc_type)} &middot; {Math.round(doc.confidence * 100)}%
                                     </div>
                                     {doc.missing_required_fields && doc.missing_required_fields.length > 0 && (
-                                      <div className="text-xs text-red-600 mt-0.5">
+                                      <div className="text-xs text-destructive mt-0.5">
                                         Missing: {doc.missing_required_fields.join(", ")}
                                       </div>
                                     )}
@@ -404,7 +404,7 @@ export function ClaimsTable({
                                   {/* Labeled/Unlabeled Badge */}
                                   {doc.has_labels ? <LabeledBadge /> : <UnlabeledBadge />}
                                   <svg
-                                    className="w-4 h-4 text-gray-400"
+                                    className="w-4 h-4 text-muted-foreground/70"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -439,14 +439,14 @@ export function ClaimsTable({
 function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
   if (!active) {
     return (
-      <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
       </svg>
     );
   }
   // Show single arrow for active sort
   return (
-    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       {direction === "asc" ? (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       ) : (
@@ -459,7 +459,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "
 function LobBadge({ lob }: { lob: string }) {
   const isMotor = lob === "MOTOR";
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm text-gray-700">
+    <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
       {isMotor ? (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 5h8m-4 8c-4.418 0-8-1.79-8-4v-1a4 4 0 014-4h8a4 4 0 014 4v1c0 2.21-3.582 4-8 4z" />
@@ -478,22 +478,22 @@ function GateSummary({ pass, warn, fail }: { pass: number; warn: number; fail: n
   return (
     <div className="flex items-center gap-1 text-xs">
       {pass > 0 && (
-        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+        <span className="px-1.5 py-0.5 bg-success/10 text-success rounded">
           {pass} PASS
         </span>
       )}
       {warn > 0 && (
-        <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded">
+        <span className="px-1.5 py-0.5 bg-warning/10 text-warning-foreground rounded">
           {warn} WARN
         </span>
       )}
       {fail > 0 && (
-        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+        <span className="px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">
           {fail} FAIL
         </span>
       )}
       {pass === 0 && warn === 0 && fail === 0 && (
-        <span className="text-gray-400">-</span>
+        <span className="text-muted-foreground/70">-</span>
       )}
     </div>
   );
@@ -501,9 +501,9 @@ function GateSummary({ pass, warn, fail }: { pass: number; warn: number; fail: n
 
 function QualityDot({ status }: { status: string | null }) {
   const colors: Record<string, string> = {
-    pass: "bg-green-500",
-    warn: "bg-yellow-500",
-    fail: "bg-red-500",
+    pass: "bg-success",
+    warn: "bg-warning",
+    fail: "bg-destructive",
   };
 
   return (

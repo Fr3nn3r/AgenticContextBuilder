@@ -221,7 +221,7 @@ function App() {
   const isBatchRoute = location.pathname.startsWith("/batches");
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <Sidebar currentView={getCurrentView()} />
 
@@ -229,23 +229,23 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header - only show for non-batch routes */}
         {!isBatchRoute && (
-          <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-gray-900">
+          <header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-foreground">
               {getPageTitle()}
             </h1>
             <div className="flex items-center gap-4">
-              <button className="p-2 text-gray-500 hover:text-gray-700">
+              <button className="p-2 text-muted-foreground hover:text-foreground">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               </button>
-              <button className="p-2 text-gray-500 hover:text-gray-700 relative">
+              <button className="p-2 text-muted-foreground hover:text-foreground relative">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full"></span>
               </button>
-              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-700">
+              <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center text-sm font-medium text-muted-foreground">
                 CB
               </div>
             </div>
@@ -256,14 +256,14 @@ function App() {
         <main className={isBatchRoute ? "flex-1 overflow-hidden" : "flex-1 overflow-auto"}>
           {loading && !isBatchRoute ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-gray-500">Loading...</div>
+              <div className="text-muted-foreground">Loading...</div>
             </div>
           ) : error && !isBatchRoute ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <p className="text-red-600 mb-4">{error}</p>
+              <p className="text-destructive mb-4">{error}</p>
               <button
                 onClick={() => loadClaims(selectedRunId || undefined)}
-                className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
               >
                 Retry
               </button>
@@ -288,7 +288,7 @@ function App() {
                     selectedRunId ? (
                       <Navigate to={selectedRunId} replace />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-gray-500">
+                      <div className="flex items-center justify-center h-full text-muted-foreground">
                         Loading batches...
                       </div>
                     )

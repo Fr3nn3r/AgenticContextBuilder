@@ -55,7 +55,7 @@ export function BatchWorkspace({
   if (!batchId) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading batches...</div>
+        <div className="text-muted-foreground">Loading batches...</div>
       </div>
     );
   }

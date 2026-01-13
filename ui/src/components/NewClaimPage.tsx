@@ -206,18 +206,18 @@ export function NewClaimPage() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-100">
+    <div className="flex-1 overflow-auto bg-muted">
       <div className="max-w-4xl mx-auto py-8 px-4">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">New Claim</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">New Claim</h1>
+          <p className="text-muted-foreground mt-1">
             {pageState === 'uploading' && 'Upload documents and run the extraction pipeline.'}
             {pageState === 'running' && 'Processing documents...'}
             {pageState === 'complete' && 'Pipeline completed.'}
@@ -231,7 +231,7 @@ export function NewClaimPage() {
             <div className="flex justify-start">
               <button
                 onClick={handleAddClaim}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
               >
                 <PlusIcon className="w-5 h-5" />
                 Add New Claim File
@@ -255,7 +255,7 @@ export function NewClaimPage() {
                 ))}
               </div>
             ) : (
-              <div className="bg-white rounded-lg border p-8 text-center text-gray-500">
+              <div className="bg-card rounded-lg border p-8 text-center text-muted-foreground">
                 No claim files yet. Click "Add New Claim File" to create one.
               </div>
             )}
@@ -265,7 +265,7 @@ export function NewClaimPage() {
               <button
                 onClick={handleRunPipeline}
                 disabled={!canRun}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
+                className="px-6 py-3 bg-success text-white rounded-lg hover:bg-success/90 disabled:bg-muted disabled:cursor-not-allowed transition-colors font-medium"
               >
                 Run Pipeline ({totalDocs} {totalDocs === 1 ? 'document' : 'documents'})
               </button>
@@ -275,11 +275,11 @@ export function NewClaimPage() {
 
         {/* Starting State - shown while API call is in progress */}
         {isStarting && (
-          <div className="bg-white rounded-lg border p-8 text-center">
+          <div className="bg-card rounded-lg border p-8 text-center">
             <div className="flex flex-col items-center gap-3">
-              <SpinnerIcon className="w-8 h-8 text-blue-500 animate-spin" />
-              <p className="text-gray-600 font-medium">Starting pipeline...</p>
-              <p className="text-sm text-gray-400">Preparing documents for processing</p>
+              <SpinnerIcon className="w-8 h-8 text-info animate-spin" />
+              <p className="text-muted-foreground font-medium">Starting pipeline...</p>
+              <p className="text-sm text-muted-foreground/70">Preparing documents for processing</p>
             </div>
           </div>
         )}
@@ -302,13 +302,13 @@ export function NewClaimPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={handleReset}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   Upload More Claims
                 </button>
                 <a
                   href={`/claims?run_id=${currentBatch?.batch_id || ''}`}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
                 >
                   View in Claims Review
                 </a>
@@ -320,22 +320,22 @@ export function NewClaimPage() {
         {/* Cancel Confirmation Modal */}
         {showCancelConfirm && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+            <div className="bg-card rounded-lg p-6 max-w-md mx-4">
               <h3 className="text-lg font-semibold mb-2">Cancel Pipeline?</h3>
-              <p className="text-gray-600 mb-4">
+              <p className="text-muted-foreground mb-4">
                 Documents that have already been processed will be saved.
                 Are you sure you want to cancel?
               </p>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowCancelConfirm(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-muted/50"
                 >
                   Keep Running
                 </button>
                 <button
                   onClick={handleCancel}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90"
                 >
                   Cancel Pipeline
                 </button>

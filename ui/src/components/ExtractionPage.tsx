@@ -53,10 +53,10 @@ export function ExtractionPage({
   return (
     <div className="flex h-full" data-testid="extraction-page">
       {/* Left Panel: Batch History */}
-      <div className="w-72 border-r bg-gray-50 flex flex-col">
-        <div className="p-4 border-b bg-white">
-          <h3 className="font-semibold text-gray-900">Batch History</h3>
-          <p className="text-xs text-gray-500 mt-1">{batches.length} batches</p>
+      <div className="w-72 border-r bg-muted/50 flex flex-col">
+        <div className="p-4 border-b bg-card">
+          <h3 className="font-semibold text-foreground">Batch History</h3>
+          <p className="text-xs text-muted-foreground mt-1">{batches.length} batches</p>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {sortedBatches.map((batch) => (
@@ -67,23 +67,23 @@ export function ExtractionPage({
               className={cn(
                 "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
                 selectedBatchId === batch.run_id
-                  ? "bg-blue-100 border border-blue-300"
-                  : "hover:bg-gray-100"
+                  ? "bg-accent/10 border border-accent/50"
+                  : "hover:bg-muted"
               )}
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-900 truncate" title={batch.run_id}>
+                <span className="text-sm font-medium text-foreground truncate" title={batch.run_id}>
                   {batch.run_id}
                 </span>
                 <BatchStatusBadge status={batch.status} />
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">
+              <div className="text-xs text-muted-foreground/70 mt-0.5">
                 {batch.model || "Unknown model"} &bull; {batch.docs_total} docs
               </div>
             </button>
           ))}
           {batches.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">No batches found</div>
+            <div className="text-center py-8 text-muted-foreground/70 text-sm">No batches found</div>
           )}
         </div>
       </div>
@@ -100,27 +100,27 @@ export function ExtractionPage({
           ) : (
             <>
               {/* Batch Context Header */}
-              <div className="bg-white rounded-lg border p-4 mb-6">
+              <div className="bg-card rounded-lg border p-4 mb-6">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-500">Batch ID:</span>
-                      <code className="text-sm bg-gray-100 px-2 py-0.5 rounded">
+                      <span className="text-sm font-medium text-muted-foreground">Batch ID:</span>
+                      <code className="text-sm bg-muted px-2 py-0.5 rounded">
                         {selectedBatch.run_id}
                       </code>
                       <button
                         onClick={copyBatchId}
-                        className="text-gray-400 hover:text-gray-600"
+                        className="text-muted-foreground/70 hover:text-muted-foreground"
                         title="Copy batch ID"
                       >
                         {copiedBatchId ? (
-                          <CheckIcon className="w-4 h-4 text-green-500" />
+                          <CheckIcon className="w-4 h-4 text-success" />
                         ) : (
                           <CopyIcon className="w-4 h-4" />
                         )}
                       </button>
                     </div>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                       <span>
                         {selectedBatch.timestamp
                           ? new Date(selectedBatch.timestamp).toLocaleString()
@@ -138,21 +138,21 @@ export function ExtractionPage({
                 </div>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 pt-4 border-t text-sm">
                   <div>
-                    <span className="text-gray-500">Claims:</span>{" "}
+                    <span className="text-muted-foreground">Claims:</span>{" "}
                     <span className="font-medium">{selectedBatch.claims_count}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Docs:</span>{" "}
+                    <span className="text-muted-foreground">Docs:</span>{" "}
                     <span className="font-medium">{selectedBatch.docs_total}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Doc types:</span>{" "}
+                    <span className="text-muted-foreground">Doc types:</span>{" "}
                     <span className="font-medium">
                       {docTypesInBatch.length > 0 ? docTypesInBatch.join(", ") : "—"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Model:</span>{" "}
+                    <span className="text-muted-foreground">Model:</span>{" "}
                     <span className="font-medium">{selectedBatch.model || "—"}</span>
                   </div>
                 </div>
@@ -210,7 +210,7 @@ export function ExtractionPage({
                         .map(([type, count]) => (
                           <div
                             key={type}
-                            className="flex justify-between text-xs text-gray-500"
+                            className="flex justify-between text-xs text-muted-foreground"
                           >
                             <span>{formatDocType(type)}</span>
                             <span>{count}</span>
@@ -269,7 +269,7 @@ export function ExtractionPage({
                   {overview && (
                     <div className="mt-2 pt-2 border-t">
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Evidence rate</span>
+                        <span className="text-muted-foreground">Evidence rate</span>
                         <span className="font-medium">{overview.evidence_rate}%</span>
                       </div>
                     </div>
@@ -280,8 +280,8 @@ export function ExtractionPage({
               {/* Coverage + Doc Type Scoreboard */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Coverage Section */}
-                <div className="bg-white rounded-lg border p-6" data-testid="coverage-section">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">Coverage</h3>
+                <div className="bg-card rounded-lg border p-6" data-testid="coverage-section">
+                  <h3 className="text-lg font-medium text-foreground mb-4">Coverage</h3>
                   <div className="space-y-4">
                     <ProgressBar
                       testId="label-coverage"
@@ -305,21 +305,21 @@ export function ExtractionPage({
                 </div>
 
                 {/* Doc Type Scoreboard */}
-                <div className="bg-white rounded-lg border p-6" data-testid="doc-type-scoreboard">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+                <div className="bg-card rounded-lg border p-6" data-testid="doc-type-scoreboard">
+                  <h3 className="text-lg font-medium text-foreground mb-4">
                     Doc Type Scoreboard
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="scoreboard-table">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left py-2 font-medium text-gray-600">Type</th>
-                          <th className="text-right py-2 font-medium text-gray-600">Classified</th>
-                          <th className="text-right py-2 font-medium text-gray-600">Extracted</th>
-                          <th className="text-right py-2 font-medium text-gray-600">
+                          <th className="text-left py-2 font-medium text-muted-foreground">Type</th>
+                          <th className="text-right py-2 font-medium text-muted-foreground">Classified</th>
+                          <th className="text-right py-2 font-medium text-muted-foreground">Extracted</th>
+                          <th className="text-right py-2 font-medium text-muted-foreground">
                             Presence
                           </th>
-                          <th className="text-right py-2 font-medium text-gray-600">
+                          <th className="text-right py-2 font-medium text-muted-foreground">
                             Evidence
                           </th>
                         </tr>
@@ -327,7 +327,7 @@ export function ExtractionPage({
                       <tbody>
                         {Object.keys(selectedBatch.phases.classification.distribution).length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="py-4 text-center text-gray-400">
+                            <td colSpan={5} className="py-4 text-center text-muted-foreground/70">
                               No doc types classified yet
                             </td>
                           </tr>
@@ -338,27 +338,27 @@ export function ExtractionPage({
                               const extractionMetrics = docTypes.find((dt) => dt.doc_type === docType);
                               return (
                                 <tr key={docType} className="border-b last:border-0">
-                                  <td className="py-2 text-gray-900">
+                                  <td className="py-2 text-foreground">
                                     {formatDocType(docType)}
                                   </td>
-                                  <td className="py-2 text-right text-gray-600">
+                                  <td className="py-2 text-right text-muted-foreground">
                                     {classifiedCount}
                                   </td>
-                                  <td className="py-2 text-right text-gray-600">
+                                  <td className="py-2 text-right text-muted-foreground">
                                     {extractionMetrics?.docs_total || 0}
                                   </td>
                                   <td className="py-2 text-right">
                                     {extractionMetrics ? (
                                       <ScoreBadge value={extractionMetrics.required_field_presence_pct} />
                                     ) : (
-                                      <span className="text-gray-400">—</span>
+                                      <span className="text-muted-foreground/70">—</span>
                                     )}
                                   </td>
                                   <td className="py-2 text-right">
                                     {extractionMetrics ? (
                                       <ScoreBadge value={extractionMetrics.evidence_rate_pct} />
                                     ) : (
-                                      <span className="text-gray-400">—</span>
+                                      <span className="text-muted-foreground/70">—</span>
                                     )}
                                   </td>
                                 </tr>
@@ -405,14 +405,14 @@ interface PhaseCardProps {
 
 function PhaseCard({ title, icon, color, metrics, duration, children, testId }: PhaseCardProps) {
   const colorClasses = {
-    blue: "bg-blue-50 text-blue-600",
-    purple: "bg-purple-50 text-purple-600",
-    green: "bg-green-50 text-green-600",
-    amber: "bg-amber-50 text-amber-600",
+    blue: "bg-info/10 text-info",
+    purple: "bg-secondary/10 text-secondary",
+    green: "bg-success/10 text-success",
+    amber: "bg-warning/10 text-warning-foreground",
   };
 
   return (
-    <div className="bg-white rounded-lg border p-4" data-testid={testId}>
+    <div className="bg-card rounded-lg border p-4" data-testid={testId}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div
@@ -423,28 +423,28 @@ function PhaseCard({ title, icon, color, metrics, duration, children, testId }: 
           >
             {icon}
           </div>
-          <h4 className="font-medium text-gray-900">{title}</h4>
+          <h4 className="font-medium text-foreground">{title}</h4>
         </div>
         {duration !== undefined && duration !== null && (
-          <span className="text-xs text-gray-400">{Math.round(duration / 1000)}s</span>
+          <span className="text-xs text-muted-foreground/70">{Math.round(duration / 1000)}s</span>
         )}
         {duration === null && (
-          <span className="text-xs text-gray-300">—</span>
+          <span className="text-xs text-muted-foreground/50">—</span>
         )}
       </div>
       <div className="space-y-1">
         {metrics.map((m) => (
           <div key={m.label} className="flex justify-between text-sm">
-            <span className={cn("text-gray-500", m.muted && "text-gray-400")}>
+            <span className={cn("text-muted-foreground", m.muted && "text-muted-foreground/70")}>
               {m.label}
             </span>
             <span
               className={cn(
                 "font-medium",
-                m.alert && "text-red-600",
-                m.warning && "text-amber-600",
-                m.success && "text-green-600",
-                !m.alert && !m.warning && !m.success && "text-gray-900"
+                m.alert && "text-destructive",
+                m.warning && "text-warning-foreground",
+                m.success && "text-success",
+                !m.alert && !m.warning && !m.success && "text-foreground"
               )}
             >
               {m.value}
@@ -469,24 +469,24 @@ interface ProgressBarProps {
 
 function ProgressBar({ label, description, value, total, percentage, color, testId }: ProgressBarProps) {
   const colorClasses = {
-    green: "bg-green-500",
-    blue: "bg-blue-500",
+    green: "bg-success",
+    blue: "bg-accent",
   };
 
   return (
     <div data-testid={testId}>
       <div className="flex justify-between text-sm mb-1">
         <div>
-          <span className="text-gray-700 font-medium">{label}</span>
+          <span className="text-foreground font-medium">{label}</span>
           {description && (
-            <span className="text-gray-400 text-xs block">{description}</span>
+            <span className="text-muted-foreground/70 text-xs block">{description}</span>
           )}
         </div>
-        <span className="text-gray-600" data-testid={testId ? `${testId}-value` : undefined}>
+        <span className="text-muted-foreground" data-testid={testId ? `${testId}-value` : undefined}>
           {value} / {total} ({percentage}%)
         </span>
       </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2 bg-muted rounded-full overflow-hidden">
         <div
           className={cn("h-full rounded-full transition-all", colorClasses[color])}
           style={{ width: `${Math.min(percentage, 100)}%` }}

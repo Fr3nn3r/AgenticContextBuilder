@@ -194,7 +194,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading claim...</div>
+        <div className="text-muted-foreground">Loading claim...</div>
       </div>
     );
   }
@@ -202,10 +202,10 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
   if (error || !claimData) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <p className="text-red-600 mb-4">{error || "Claim not found"}</p>
+        <p className="text-destructive mb-4">{error || "Claim not found"}</p>
         <button
           onClick={() => navigate("/claims")}
-          className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
+          className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
         >
           Back to Claims
         </button>
@@ -216,11 +216,11 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header: Back to Claims | Claim ID with nav | Doc navigation */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
+      <div className="flex items-center justify-between px-4 py-2 bg-card border-b">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate("/claims")}
-            className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -230,7 +230,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
 
           {/* Claim navigation */}
           <div className="flex items-center gap-1">
-            <span className="text-sm font-medium text-gray-900">Claim {claimData.claim_id}</span>
+            <span className="text-sm font-medium text-foreground">Claim {claimData.claim_id}</span>
             <button
               data-testid="prev-claim"
               onClick={() => claimData.prev_claim_id && navigate(`/claims/${claimData.prev_claim_id}/review`)}
@@ -238,8 +238,8 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
               className={cn(
                 "p-1 rounded transition-colors",
                 claimData.prev_claim_id
-                  ? "text-gray-600 hover:bg-gray-100"
-                  : "text-gray-300 cursor-not-allowed"
+                  ? "text-muted-foreground hover:bg-muted"
+                  : "text-muted-foreground/50 cursor-not-allowed"
               )}
               title="Previous claim"
             >
@@ -254,8 +254,8 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
               className={cn(
                 "p-1 rounded transition-colors",
                 claimData.next_claim_id
-                  ? "text-gray-600 hover:bg-gray-100"
-                  : "text-gray-300 cursor-not-allowed"
+                  ? "text-muted-foreground hover:bg-muted"
+                  : "text-muted-foreground/50 cursor-not-allowed"
               )}
               title="Next claim"
             >
@@ -274,15 +274,15 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
             className={cn(
               "p-1 rounded transition-colors",
               currentDocIndex > 0
-                ? "text-gray-700 hover:bg-gray-100"
-                : "text-gray-300 cursor-not-allowed"
+                ? "text-foreground hover:bg-muted"
+                : "text-muted-foreground/50 cursor-not-allowed"
             )}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-muted-foreground">
             {currentDocIndex + 1}/{claimData.docs.length}
           </span>
           <button
@@ -291,8 +291,8 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
             className={cn(
               "p-1 rounded transition-colors",
               currentDocIndex < claimData.docs.length - 1
-                ? "text-gray-700 hover:bg-gray-100"
-                : "text-gray-300 cursor-not-allowed"
+                ? "text-foreground hover:bg-muted"
+                : "text-muted-foreground/50 cursor-not-allowed"
             )}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -305,10 +305,10 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
       {/* Main content: 3-column layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Document list */}
-        <div className="w-80 border-r bg-gray-50 flex flex-col overflow-hidden">
-          <div className="p-3 border-b bg-white">
-            <h2 className="font-semibold text-gray-900">Document Pack Review</h2>
-            <div className="text-xs text-gray-500 mt-0.5">
+        <div className="w-80 border-r bg-muted/50 flex flex-col overflow-hidden">
+          <div className="p-3 border-b bg-card">
+            <h2 className="font-semibold text-foreground">Document Pack Review</h2>
+            <div className="text-xs text-muted-foreground mt-0.5">
               {claimData.doc_count} documents &middot; {claimData.unlabeled_count} to review
             </div>
           </div>
@@ -330,7 +330,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-hidden">
             {docLoading ? (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 Loading document...
               </div>
             ) : currentDoc ? (
@@ -349,7 +349,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
                 docId={currentDoc.doc_id}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 Select a document
               </div>
             )}
@@ -358,15 +358,15 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
 
         {/* Right: Extracted fields + Review controls */}
         <div className="w-96 border-l overflow-hidden flex flex-col">
-          <div className="p-3 border-b bg-white">
-            <h3 className="font-medium text-gray-900">Field Extraction</h3>
+          <div className="p-3 border-b bg-card">
+            <h3 className="font-medium text-foreground">Field Extraction</h3>
             {currentDoc && (
               <>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-muted-foreground mt-0.5">
                   {currentDoc.filename}
                 </div>
                 {currentDoc.extraction && (
-                  <div className="text-xs text-gray-400 mt-0.5">
+                  <div className="text-xs text-muted-foreground/70 mt-0.5">
                     Run: {currentDoc.extraction.run.run_id}
                   </div>
                 )}
@@ -385,7 +385,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
                 docType={currentDoc.doc_type}
               />
             ) : (
-              <div className="p-4 text-gray-500">
+              <div className="p-4 text-muted-foreground">
                 {docLoading ? "Loading..." : selectedRunId ? "No extraction available in this run" : "No extraction results available"}
               </div>
             )}
@@ -393,7 +393,7 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
 
           {/* Bottom: Save button */}
           {currentDoc && (
-            <div className="border-t p-3 bg-gray-50">
+            <div className="border-t p-3 bg-muted/50">
               <button
                 data-testid="save-labels-btn"
                 onClick={() => activeDocId && handleSaveReview(activeDocId)}
@@ -401,8 +401,8 @@ export function ClaimReview({ onSaved, selectedRunId }: ClaimReviewProps) {
                 className={cn(
                   "w-full px-4 py-2 rounded-md font-medium transition-colors",
                   savingDocId === activeDocId
-                    ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                    : "bg-gray-900 text-white hover:bg-gray-800"
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-white hover:bg-primary/90"
                 )}
               >
                 {savingDocId === activeDocId ? "Saving..." : "Save Labels"}
@@ -429,7 +429,7 @@ function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemP
       data-testid="doc-strip-item"
       className={cn(
         "flex items-center gap-2 px-3 py-2 border-b cursor-pointer transition-colors",
-        isActive ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-100"
+        isActive ? "bg-accent/10 border-l-2 border-l-accent" : "hover:bg-muted"
       )}
       onClick={onSelect}
     >
@@ -439,22 +439,22 @@ function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemP
       {/* Doc info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={cn("text-sm font-medium truncate", isActive ? "text-blue-900" : "text-gray-900")}>
+          <span className={cn("text-sm font-medium truncate", isActive ? "text-accent-foreground" : "text-foreground")}>
             {doc.doc_type}
           </span>
           {doc.has_labels && (
-            <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-3.5 h-3.5 text-success flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           )}
         </div>
-        <div className="text-xs text-gray-500 truncate">
+        <div className="text-xs text-muted-foreground truncate">
           {doc.filename}
         </div>
       </div>
 
       {/* Confidence */}
-      <div className="text-xs text-gray-400 flex-shrink-0">
+      <div className="text-xs text-muted-foreground/70 flex-shrink-0">
         {Math.round(doc.confidence * 100)}%
       </div>
 
@@ -468,10 +468,10 @@ function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemP
         className={cn(
           "px-2 py-1 text-xs rounded transition-colors flex-shrink-0",
           doc.has_labels
-            ? "bg-gray-100 text-gray-400 cursor-default"
+            ? "bg-muted text-muted-foreground/70 cursor-default"
             : isSaving
-            ? "bg-gray-200 text-gray-500"
-            : "bg-gray-900 text-white hover:bg-gray-800"
+            ? "bg-muted text-muted-foreground"
+            : "bg-primary text-white hover:bg-primary/90"
         )}
       >
         {isSaving ? "..." : doc.has_labels ? "Saved" : "Save"}

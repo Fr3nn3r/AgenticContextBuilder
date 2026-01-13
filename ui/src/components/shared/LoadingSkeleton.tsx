@@ -11,7 +11,7 @@ export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
       className={cn(
-        "animate-pulse bg-gray-200 rounded",
+        "animate-pulse bg-muted rounded",
         className
       )}
     />
@@ -44,7 +44,7 @@ export function MetricCardSkeleton({ count = 5 }: { count?: number }) {
   return (
     <div className={cn("grid gap-3", `grid-cols-${Math.min(count, 3)} md:grid-cols-${count}`)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-lg border bg-white p-3 shadow-sm">
+        <div key={i} className="rounded-lg border border-border bg-card p-3 shadow-sm">
           <Skeleton className="h-7 w-16 mb-2" />
           <Skeleton className="h-3 w-20 mb-1" />
           <Skeleton className="h-2 w-24" />
@@ -59,16 +59,16 @@ export function MetricCardSkeleton({ count = 5 }: { count?: number }) {
  */
 export function TableRowSkeleton({ columns = 5, rows = 5 }: { columns?: number; rows?: number }) {
   return (
-    <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+    <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden">
       {/* Header skeleton */}
-      <div className="border-b bg-gray-50 p-3 flex gap-4">
+      <div className="border-b border-border bg-muted/50 p-3 flex gap-4">
         {Array.from({ length: columns }).map((_, i) => (
           <Skeleton key={i} className="h-4 flex-1" />
         ))}
       </div>
       {/* Row skeletons */}
       {Array.from({ length: rows }).map((_, rowIdx) => (
-        <div key={rowIdx} className="border-b p-3 flex gap-4">
+        <div key={rowIdx} className="border-b border-border p-3 flex gap-4">
           {Array.from({ length: columns }).map((_, colIdx) => (
             <Skeleton key={colIdx} className="h-4 flex-1" />
           ))}
@@ -85,7 +85,7 @@ export function RunListSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="space-y-2">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-lg border bg-white p-3">
+        <div key={i} className="rounded-lg border border-border bg-card p-3">
           <div className="flex items-center gap-2 mb-2">
             <Skeleton className="h-4 w-12" />
             <Skeleton className="h-4 w-16" />
@@ -106,9 +106,9 @@ export function PageLoadingSkeleton({ message = "Loading..." }: { message?: stri
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4">
       <div className="relative">
-        <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
+        <div className="w-12 h-12 border-4 border-muted border-t-foreground rounded-full animate-spin" />
       </div>
-      <p className="text-gray-500 text-sm">{message}</p>
+      <p className="text-muted-foreground text-sm">{message}</p>
     </div>
   );
 }
@@ -126,7 +126,7 @@ export function Spinner({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   return (
     <div
       className={cn(
-        "border-gray-200 border-t-gray-600 rounded-full animate-spin",
+        "border-muted border-t-foreground rounded-full animate-spin",
         sizeStyles[size]
       )}
     />
@@ -158,7 +158,7 @@ export function FieldListSkeleton({ count = 6 }: { count?: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="border rounded-lg p-3 bg-white">
+        <div key={i} className="border border-border rounded-lg p-3 bg-card">
           <div className="flex items-center justify-between mb-2">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-5 w-16" />

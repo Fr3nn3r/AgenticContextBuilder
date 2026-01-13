@@ -23,10 +23,10 @@ export function Sidebar({ currentView }: SidebarProps) {
   const isBatchRoute = location.pathname.startsWith("/batches");
 
   return (
-    <div className="w-56 bg-gray-900 text-white flex flex-col" data-testid="sidebar">
+    <div className="w-56 bg-sidebar text-sidebar-foreground flex flex-col" data-testid="sidebar">
       {/* Logo */}
       <div className="p-4 flex items-center gap-2">
-        <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-gray-900 font-bold text-sm">
+        <div className="w-8 h-8 bg-sidebar-primary rounded flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
           CB
         </div>
         <span className="font-semibold text-lg">ContextBuilder</span>
@@ -50,8 +50,8 @@ export function Sidebar({ currentView }: SidebarProps) {
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
                 isActive
-                  ? "bg-gray-800 text-white"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
               )}
             >
               <Icon className="w-5 h-5" />
@@ -62,8 +62,8 @@ export function Sidebar({ currentView }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-800">
-        <div className="text-xs text-gray-500">
+      <div className="p-4 border-t border-sidebar-border">
+        <div className="text-xs text-muted-foreground">
           ContextBuilder v1.0
         </div>
       </div>

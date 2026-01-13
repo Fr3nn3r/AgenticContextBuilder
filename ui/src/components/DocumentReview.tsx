@@ -456,7 +456,7 @@ export function DocumentReview({
         );
       default:
         return (
-          <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+          <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground">
             Pending
           </span>
         );
@@ -468,7 +468,7 @@ export function DocumentReview({
     const pct = Math.round(confidence * 100);
     const color =
       confidence >= 0.9
-        ? "text-green-600"
+        ? "text-success"
         : confidence >= 0.7
         ? "text-amber-600"
         : "text-red-600";
@@ -487,7 +487,7 @@ export function DocumentReview({
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="bg-white border-b px-4 py-3 flex items-center gap-4 flex-wrap">
+      <div className="bg-card border-b px-4 py-3 flex items-center gap-4 flex-wrap">
         {/* Search */}
         <div className="relative w-64 flex-shrink-0">
           <input
@@ -498,7 +498,7 @@ export function DocumentReview({
             className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <svg
-            className="absolute left-2.5 top-2 w-4 h-4 text-gray-400"
+            className="absolute left-2.5 top-2 w-4 h-4 text-muted-foreground/70"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -516,7 +516,7 @@ export function DocumentReview({
         <select
           value={claimFilter}
           onChange={(e) => setClaimFilter(e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All Claims</option>
           {claims.map((claim) => (
@@ -530,7 +530,7 @@ export function DocumentReview({
         <select
           value={docTypeFilter}
           onChange={(e) => setDocTypeFilter(e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All Types</option>
           {docTypes.map((type) => (
@@ -544,7 +544,7 @@ export function DocumentReview({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="px-3 py-1.5 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All Status</option>
           <option value="pending">Pending</option>
@@ -552,7 +552,7 @@ export function DocumentReview({
         </select>
 
         {/* Count */}
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-muted-foreground">
           {filteredDocs.length} of {docs.length} documents
         </div>
       </div>
@@ -560,9 +560,9 @@ export function DocumentReview({
       {/* Main Content */}
       <div className="flex-1 flex min-h-0">
         {/* Document List - narrow left panel */}
-        <div className="w-72 border-r overflow-auto bg-white flex-shrink-0">
+        <div className="w-72 border-r overflow-auto bg-card flex-shrink-0">
           {loading ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="flex items-center justify-center h-full text-muted-foreground">
               Loading documents...
             </div>
           ) : error ? (
@@ -570,17 +570,17 @@ export function DocumentReview({
               <p className="text-red-600 mb-2 text-sm">{error}</p>
               <button
                 onClick={loadDocs}
-                className="px-3 py-1.5 text-sm bg-gray-900 text-white rounded-md hover:bg-gray-800"
+                className="px-3 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90"
               >
                 Retry
               </button>
             </div>
           ) : !selectedBatchId ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               Select a run to view documents
             </div>
           ) : filteredDocs.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               No documents match filters
             </div>
           ) : (
@@ -590,21 +590,21 @@ export function DocumentReview({
                   key={doc.doc_id}
                   onClick={() => handleSelectDoc(doc.doc_id)}
                   className={cn(
-                    "p-3 cursor-pointer hover:bg-gray-50 transition-colors",
-                    selectedDocId === doc.doc_id && "bg-blue-50 border-l-2 border-blue-500"
+                    "p-3 cursor-pointer hover:bg-muted/50 transition-colors",
+                    selectedDocId === doc.doc_id && "bg-accent/10 border-l-2 border-accent"
                   )}
                 >
-                  <div className="font-medium text-sm text-gray-900 truncate">
+                  <div className="font-medium text-sm text-foreground truncate">
                     {doc.filename}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       {doc.predicted_type.replace(/_/g, " ")}
                     </span>
                     {getConfidenceBadge(doc.confidence)}
                   </div>
                   <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-gray-400 truncate">
+                    <span className="text-xs text-muted-foreground/70 truncate">
                       {doc.claim_id}
                     </span>
                     {getStatusBadge(doc.review_status)}
@@ -619,7 +619,7 @@ export function DocumentReview({
         {selectedDoc && docPayload ? (
           <div className="flex-1 flex min-h-0">
             {/* Center: Document Viewer */}
-            <div className="flex-1 border-r bg-white">
+            <div className="flex-1 border-r bg-card">
               <DocumentViewer
                 pages={docPayload.pages}
                 sourceUrl={getDocSourceUrl(docPayload.doc_id, docPayload.claim_id)}
@@ -636,13 +636,13 @@ export function DocumentReview({
             </div>
 
             {/* Right: Fields Panel */}
-            <div className="w-[420px] flex-shrink-0 flex flex-col bg-gray-50">
+            <div className="w-[420px] flex-shrink-0 flex flex-col bg-muted/50">
               {/* Header */}
-              <div className="px-4 py-3 border-b bg-white">
+              <div className="px-4 py-3 border-b bg-card">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium text-gray-900">Field Extraction</h3>
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <h3 className="font-medium text-foreground">Field Extraction</h3>
+                    <div className="text-xs text-muted-foreground mt-0.5">
                       {labeledCount} labeled, {unverifiableCount} unverifiable of {totalFields} fields
                     </div>
                   </div>
@@ -656,8 +656,8 @@ export function DocumentReview({
                       className={cn(
                         "px-3 py-1.5 text-sm rounded-md font-medium transition-colors",
                         saving || !hasUnsavedChanges
-                          ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                          : "bg-gray-900 text-white hover:bg-gray-800"
+                          ? "bg-muted text-muted-foreground cursor-not-allowed"
+                          : "bg-primary text-white hover:bg-primary/90"
                       )}
                     >
                       {saving ? "Saving..." : "Save"}
@@ -696,15 +696,15 @@ export function DocumentReview({
                     readOnly={classificationOverridden}
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                  <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                     No extraction data available
                   </div>
                 )}
               </div>
 
               {/* Notes */}
-              <div className="px-4 py-3 border-t bg-white">
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+              <div className="px-4 py-3 border-t bg-card">
+                <label className="block text-xs font-medium text-foreground mb-1">
                   Review Notes
                 </label>
                 <textarea
@@ -720,13 +720,13 @@ export function DocumentReview({
               </div>
 
               {/* Copy IDs Section */}
-              <div className="px-4 py-2 border-t bg-gray-50 flex items-center gap-4 text-xs">
+              <div className="px-4 py-2 border-t bg-muted/50 flex items-center gap-4 text-xs">
                 <div className="flex items-center gap-1">
-                  <span className="text-gray-500">Doc ID:</span>
-                  <code className="text-gray-700 font-mono">{docPayload.doc_id.slice(0, 12)}...</code>
+                  <span className="text-muted-foreground">Doc ID:</span>
+                  <code className="text-foreground font-mono">{docPayload.doc_id.slice(0, 12)}...</code>
                   <button
                     onClick={handleCopyDocId}
-                    className="p-1 text-gray-400 hover:text-gray-600"
+                    className="p-1 text-muted-foreground/70 hover:text-muted-foreground"
                     title="Copy full Doc ID"
                   >
                     {copiedDocId ? (
@@ -741,11 +741,11 @@ export function DocumentReview({
                   </button>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-gray-500">Batch:</span>
-                  <code className="text-gray-700 font-mono">{selectedBatchId?.slice(0, 12)}...</code>
+                  <span className="text-muted-foreground">Batch:</span>
+                  <code className="text-foreground font-mono">{selectedBatchId?.slice(0, 12)}...</code>
                   <button
                     onClick={handleCopyBatchId}
-                    className="p-1 text-gray-400 hover:text-gray-600"
+                    className="p-1 text-muted-foreground/70 hover:text-muted-foreground"
                     title="Copy full Batch ID"
                   >
                     {copiedBatchId ? (
@@ -763,11 +763,11 @@ export function DocumentReview({
             </div>
           </div>
         ) : detailLoading ? (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
             Loading document...
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
             Select a document to review
           </div>
         )}

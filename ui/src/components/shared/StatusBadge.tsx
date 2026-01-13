@@ -10,12 +10,12 @@ interface StatusBadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  success: "bg-green-100 text-green-700 border-green-200",
-  warning: "bg-yellow-100 text-yellow-700 border-yellow-200",
-  error: "bg-red-100 text-red-700 border-red-200",
-  info: "bg-blue-100 text-blue-700 border-blue-200",
-  neutral: "bg-gray-100 text-gray-600 border-gray-200",
-  default: "bg-gray-50 text-gray-600 border-gray-200",
+  success: "bg-success/10 text-success border-success/20",
+  warning: "bg-warning/10 text-warning-foreground border-warning/20",
+  error: "bg-destructive/10 text-destructive border-destructive/20",
+  info: "bg-info/10 text-info border-info/20",
+  neutral: "bg-muted text-muted-foreground border-border",
+  default: "bg-muted/50 text-muted-foreground border-border",
 };
 
 const sizeStyles: Record<"sm" | "md", string> = {
@@ -142,10 +142,10 @@ export function ScoreBadge({ value, showPercent = true }: { value: number; showP
   return (
     <span className={cn(
       "font-medium",
-      variant === "success" && "text-green-600",
-      variant === "warning" && "text-yellow-600",
-      variant === "error" && "text-red-600",
-      variant === "neutral" && "text-gray-400"
+      variant === "success" && "text-success",
+      variant === "warning" && "text-warning-foreground",
+      variant === "error" && "text-destructive",
+      variant === "neutral" && "text-muted-foreground"
     )}>
       {value}{showPercent ? "%" : ""}
     </span>
@@ -176,7 +176,7 @@ export function GateStatusBadge({
  * Outcome badge for field extraction results
  */
 export function OutcomeBadge({ outcome }: { outcome: string | null }) {
-  if (!outcome) return <span className="text-gray-300">-</span>;
+  if (!outcome) return <span className="text-muted-foreground/50">-</span>;
 
   // Map outcomes to variants
   const outcomeMap: Record<string, { label: string; variant: BadgeVariant }> = {

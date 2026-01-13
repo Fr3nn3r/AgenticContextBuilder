@@ -223,10 +223,10 @@ export function ClassificationReview({
   return (
     <div className="h-full flex flex-col">
       {/* Header with filters and KPIs */}
-      <div className="bg-white border-b px-6 py-4">
+      <div className="bg-card border-b px-6 py-4">
         <div className="flex items-center justify-end mb-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Show:</label>
+            <label className="text-sm text-muted-foreground">Show:</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as "all" | "pending" | "reviewed")}
@@ -270,17 +270,17 @@ export function ClassificationReview({
       {/* Main content: doc list + detail panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Doc List */}
-        <div className="w-1/2 border-r overflow-auto bg-white">
+        <div className="w-1/2 border-r overflow-auto bg-card">
           {docsLoading ? (
             <div className="p-8 flex justify-center"><Spinner /></div>
           ) : filteredDocs.length === 0 ? (
             <NoDocumentsEmptyState />
           ) : (
             <table className="w-full">
-              <thead className="bg-gray-50 sticky top-0">
+              <thead className="bg-muted/50 sticky top-0">
                 <tr>
                   <th
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
                     onClick={() => handleSort("filename")}
                   >
                     <div className="flex items-center gap-1">
@@ -289,7 +289,7 @@ export function ClassificationReview({
                     </div>
                   </th>
                   <th
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
                     onClick={() => handleSort("predicted_type")}
                   >
                     <div className="flex items-center gap-1">
@@ -298,7 +298,7 @@ export function ClassificationReview({
                     </div>
                   </th>
                   <th
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
                     onClick={() => handleSort("confidence")}
                   >
                     <div className="flex items-center gap-1">
@@ -307,7 +307,7 @@ export function ClassificationReview({
                     </div>
                   </th>
                   <th
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
                     onClick={() => handleSort("review_status")}
                   >
                     <div className="flex items-center gap-1">
@@ -323,20 +323,20 @@ export function ClassificationReview({
                     key={doc.doc_id}
                     onClick={() => setSelectedDocId(doc.doc_id)}
                     className={cn(
-                      "cursor-pointer hover:bg-gray-50",
-                      selectedDocId === doc.doc_id && "bg-blue-50"
+                      "cursor-pointer hover:bg-muted/50",
+                      selectedDocId === doc.doc_id && "bg-accent/10"
                     )}
                   >
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]">
+                      <div className="text-sm font-medium text-foreground truncate max-w-[200px]">
                         {doc.filename}
                       </div>
-                      <div className="text-xs text-gray-500">{doc.claim_id}</div>
+                      <div className="text-xs text-muted-foreground">{doc.claim_id}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-700">{formatDocType(doc.predicted_type)}</span>
+                      <span className="text-sm text-foreground">{formatDocType(doc.predicted_type)}</span>
                       {doc.doc_type_truth && (
-                        <div className="text-xs text-amber-600">
+                        <div className="text-xs text-warning-foreground">
                           Changed to: {formatDocType(doc.doc_type_truth)}
                         </div>
                       )}
@@ -357,17 +357,17 @@ export function ClassificationReview({
         {/* Detail Panel - Split View */}
         <div className="w-1/2 flex flex-col overflow-hidden">
           {detailLoading ? (
-            <div className="flex items-center justify-center h-full bg-gray-50">
+            <div className="flex items-center justify-center h-full bg-muted/50">
               <Spinner />
             </div>
           ) : !detail ? (
-            <div className="flex items-center justify-center h-full bg-gray-50">
+            <div className="flex items-center justify-center h-full bg-muted/50">
               <SelectToViewEmptyState itemType="document" />
             </div>
           ) : (
             <>
               {/* Top: Document Viewer */}
-              <div className="h-1/2 border-b bg-white">
+              <div className="h-1/2 border-b bg-card">
                 {docPayload ? (
                   <DocumentViewer
                     pages={docPayload.pages}
@@ -378,20 +378,20 @@ export function ClassificationReview({
                     docId={detail.doc_id}
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-400">
+                  <div className="flex items-center justify-center h-full text-muted-foreground/70">
                     <Spinner />
                   </div>
                 )}
               </div>
 
               {/* Bottom: Classification Review Panel */}
-              <div className="h-1/2 overflow-auto bg-gray-50 p-4">
+              <div className="h-1/2 overflow-auto bg-muted/50 p-4">
                 <div className="space-y-4">
                   {/* Doc Info Header */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="font-medium text-gray-900">{detail.filename}</h3>
-                      <div className="text-xs text-gray-500">
+                      <h3 className="font-medium text-foreground">{detail.filename}</h3>
+                      <div className="text-xs text-muted-foreground">
                         {detail.claim_id} &bull; {Math.round(detail.confidence * 100)}% confidence
                       </div>
                     </div>
@@ -399,20 +399,20 @@ export function ClassificationReview({
                   </div>
 
                   {/* Classification Info */}
-                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                  <div className="bg-card rounded-lg p-3 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-500">Predicted Type</span>
-                      <span className="text-sm font-semibold text-gray-900">
+                      <span className="text-sm text-muted-foreground">Predicted Type</span>
+                      <span className="text-sm font-semibold text-foreground">
                         {formatDocType(detail.predicted_type)}
                       </span>
                     </div>
 
                     {detail.summary && (
-                      <p className="text-xs text-gray-600 mb-2">{detail.summary}</p>
+                      <p className="text-xs text-muted-foreground mb-2">{detail.summary}</p>
                     )}
 
                     {detail.signals && detail.signals.length > 0 && (
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-muted-foreground">
                         Signals: {detail.signals.slice(0, 3).join(", ")}
                         {detail.signals.length > 3 && ` +${detail.signals.length - 3} more`}
                       </div>
@@ -420,15 +420,15 @@ export function ClassificationReview({
                   </div>
 
                   {/* Review Actions */}
-                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                  <div className="bg-card rounded-lg p-3 shadow-sm">
                     <div className="flex gap-2 mb-3">
                       <button
                         onClick={() => setReviewAction("confirm")}
                         className={cn(
                           "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                           reviewAction === "confirm"
-                            ? "bg-green-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            ? "bg-success text-white"
+                            : "bg-muted text-foreground hover:bg-muted"
                         )}
                       >
                         Confirm
@@ -438,8 +438,8 @@ export function ClassificationReview({
                         className={cn(
                           "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                           reviewAction === "change"
-                            ? "bg-amber-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            ? "bg-warning text-white"
+                            : "bg-muted text-foreground hover:bg-muted"
                         )}
                       >
                         Change Type
@@ -475,8 +475,8 @@ export function ClassificationReview({
                       className={cn(
                         "w-full px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                         saving || (reviewAction === "change" && !newDocType)
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : "bg-gray-900 text-white hover:bg-gray-800"
+                          ? "bg-muted text-muted-foreground cursor-not-allowed"
+                          : "bg-primary text-white hover:bg-primary/90"
                       )}
                     >
                       {saving ? "Saving..." : "Save Review"}
@@ -504,13 +504,13 @@ function ReviewStatusBadge({ status }: { status: "pending" | "confirmed" | "over
 function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
   if (!active) {
     return (
-      <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-3 h-3 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
       </svg>
     );
   }
   return (
-    <svg className="w-3 h-3 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-3 h-3 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       {direction === "asc" ? (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       ) : (

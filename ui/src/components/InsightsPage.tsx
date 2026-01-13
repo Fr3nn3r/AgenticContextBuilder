@@ -271,10 +271,10 @@ export function InsightsPage({
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <p className="text-red-600 mb-4">{error}</p>
+        <p className="text-destructive mb-4">{error}</p>
         <button
           onClick={() => selectedBatchId && loadRunData(selectedBatchId)}
-          className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
         >
           Retry
         </button>
@@ -285,12 +285,12 @@ export function InsightsPage({
   return (
     <div className="p-4 space-y-4">
       {/* Baseline Controls */}
-      <div className="bg-white rounded-lg border shadow-sm p-4">
+      <div className="bg-card rounded-lg border shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Run Metadata */}
             {runMetadata && (
-              <div data-testid="run-metadata" className="flex items-center gap-4 text-xs text-gray-500">
+              <div data-testid="run-metadata" className="flex items-center gap-4 text-xs text-muted-foreground">
                 {Boolean(runMetadata.extractor_version) && (
                   <span>
                     <strong>Extractor:</strong> {String(runMetadata.extractor_version)}
@@ -303,14 +303,14 @@ export function InsightsPage({
           {/* Baseline Controls */}
           <div className="flex items-center gap-2">
             {baselineRunId && (
-              <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+              <span className="text-xs text-success bg-success/10 px-2 py-1 rounded">
                 Baseline: {baselineRunId}
               </span>
             )}
             {selectedBatchId && selectedBatchId !== baselineRunId && (
               <button
                 onClick={() => handleSetBaseline(selectedBatchId)}
-                className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                className="text-xs px-2 py-1 bg-accent/10 text-accent-foreground rounded hover:bg-accent/20"
               >
                 Set as Baseline
               </button>
@@ -318,7 +318,7 @@ export function InsightsPage({
             {baselineRunId && (
               <button
                 onClick={handleClearBaseline}
-                className="text-xs px-2 py-1 text-gray-500 hover:text-gray-700"
+                className="text-xs px-2 py-1 text-muted-foreground hover:text-foreground"
               >
                 Clear
               </button>
@@ -334,8 +334,8 @@ export function InsightsPage({
           className={cn(
             "px-4 py-2 text-sm font-medium border-b-2 -mb-px",
             activeTab === "insights"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              ? "border-accent text-accent-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
           Insights
@@ -345,8 +345,8 @@ export function InsightsPage({
           className={cn(
             "px-4 py-2 text-sm font-medium border-b-2 -mb-px",
             activeTab === "history"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              ? "border-accent text-accent-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
           Batch History
@@ -356,8 +356,8 @@ export function InsightsPage({
           className={cn(
             "px-4 py-2 text-sm font-medium border-b-2 -mb-px",
             activeTab === "compare"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              ? "border-accent text-accent-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
           Compare Batches
@@ -499,8 +499,8 @@ function InsightsTab({
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Top Error Drivers */}
         <section className="lg:col-span-3">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Top Error Drivers</h2>
-          <div className="bg-white rounded-lg border shadow-sm max-h-[400px] overflow-y-auto">
+          <h2 className="text-sm font-semibold text-foreground mb-2">Top Error Drivers</h2>
+          <div className="bg-card rounded-lg border shadow-sm max-h-[400px] overflow-y-auto">
             {priorities.length === 0 ? (
               <NoLabelsEmptyState />
             ) : (
@@ -510,25 +510,25 @@ function InsightsTab({
                     key={`${item.doc_type}-${item.field_name}`}
                     onClick={() => onPriorityClick(item)}
                     className={cn(
-                      "w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors",
-                      selectedDocType === item.doc_type && selectedField === item.field_name && "bg-blue-50 border-l-2 border-blue-500"
+                      "w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors",
+                      selectedDocType === item.doc_type && selectedField === item.field_name && "bg-accent/10 border-l-2 border-accent"
                     )}
                   >
                     <div className="flex items-center gap-1.5 text-sm">
-                      <span className="text-gray-400 font-mono w-5">{idx + 1}.</span>
-                      <span className="font-medium text-gray-900">{formatDocType(item.doc_type)}</span>
-                      <span className="text-gray-400">·</span>
-                      <span className="text-gray-700">{formatFieldName(item.field_name)}</span>
+                      <span className="text-muted-foreground/70 font-mono w-5">{idx + 1}.</span>
+                      <span className="font-medium text-foreground">{formatDocType(item.doc_type)}</span>
+                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-foreground">{formatFieldName(item.field_name)}</span>
                       {item.is_required && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">Required</span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-destructive/10 text-destructive rounded font-medium">Required</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 ml-5 text-xs">
-                      <span className="text-gray-500">{item.error_rate}% error rate</span>
-                      <span className="text-gray-300">·</span>
-                      {(item.incorrect_count ?? item.mismatch_count ?? 0) > 0 && <span className="text-red-600">{item.incorrect_count ?? item.mismatch_count ?? 0} incorrect</span>}
-                      {(item.missing_count ?? item.miss_count ?? 0) > 0 && <span className="text-yellow-600">{item.missing_count ?? item.miss_count ?? 0} missing</span>}
-                      <span className="ml-auto text-gray-500">{item.total_labeled ?? item.total_confirmed ?? 0} labeled</span>
+                      <span className="text-muted-foreground">{item.error_rate}% error rate</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      {(item.incorrect_count ?? item.mismatch_count ?? 0) > 0 && <span className="text-destructive">{item.incorrect_count ?? item.mismatch_count ?? 0} incorrect</span>}
+                      {(item.missing_count ?? item.miss_count ?? 0) > 0 && <span className="text-warning-foreground">{item.missing_count ?? item.miss_count ?? 0} missing</span>}
+                      <span className="ml-auto text-muted-foreground">{item.total_labeled ?? item.total_confirmed ?? 0} labeled</span>
                     </div>
                   </button>
                 ))}
@@ -539,11 +539,11 @@ function InsightsTab({
 
         {/* Doc Type Scoreboard */}
         <section className="lg:col-span-2" data-testid="doc-type-scoreboard">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Doc Type Scoreboard</h2>
-          <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          <h2 className="text-sm font-semibold text-foreground mb-2">Doc Type Scoreboard</h2>
+          <div className="bg-card rounded-lg border shadow-sm overflow-hidden">
             <table className="w-full text-xs" data-testid="scoreboard-table">
               <thead>
-                <tr className="border-b bg-gray-50">
+                <tr className="border-b bg-muted/50">
                   <th className="text-left p-2 font-medium">Type</th>
                   <th className="text-right p-2 font-medium">Classified</th>
                   <th className="text-right p-2 font-medium">Extracted</th>
@@ -565,39 +565,39 @@ function InsightsTab({
                           onClick={() => extractionMetrics && onDocTypeClick(docType)}
                           className={cn(
                             "border-b transition-colors",
-                            extractionMetrics && "cursor-pointer hover:bg-gray-50",
-                            selectedDocType === docType && "bg-blue-50"
+                            extractionMetrics && "cursor-pointer hover:bg-muted/50",
+                            selectedDocType === docType && "bg-accent/10"
                           )}
                         >
                           <td className="p-2 font-medium">
                             {formatDocType(docType)}
                           </td>
-                          <td className="p-2 text-right text-gray-600">{classifiedCount}</td>
-                          <td className="p-2 text-right text-gray-600">
+                          <td className="p-2 text-right text-muted-foreground">{classifiedCount}</td>
+                          <td className="p-2 text-right text-muted-foreground">
                             {extractionMetrics?.docs_total || 0}
                           </td>
                           <td className="p-2 text-right">
                             {extractionMetrics ? (
                               <ScoreBadge value={extractionMetrics.required_field_presence_pct} />
                             ) : (
-                              <span className="text-gray-400">—</span>
+                              <span className="text-muted-foreground/70">—</span>
                             )}
                           </td>
                           <td className="p-2 text-right">
                             {extractionMetrics ? (
                               <ScoreBadge value={extractionMetrics.required_field_accuracy_pct} />
                             ) : (
-                              <span className="text-gray-400">—</span>
+                              <span className="text-muted-foreground/70">—</span>
                             )}
                           </td>
                           <td className="p-2 text-right">
                             {extractionMetrics ? (
                               <ScoreBadge value={extractionMetrics.evidence_rate_pct} />
                             ) : (
-                              <span className="text-gray-400">—</span>
+                              <span className="text-muted-foreground/70">—</span>
                             )}
                           </td>
-                          <td className="p-2 text-gray-600 truncate max-w-[80px]" title={extractionMetrics?.top_failing_field || ""}>
+                          <td className="p-2 text-muted-foreground truncate max-w-[80px]" title={extractionMetrics?.top_failing_field || ""}>
                             {extractionMetrics?.top_failing_field ? formatFieldName(extractionMetrics.top_failing_field) : "-"}
                           </td>
                         </tr>
@@ -609,15 +609,15 @@ function InsightsTab({
                       key={dt.doc_type}
                       onClick={() => onDocTypeClick(dt.doc_type)}
                       className={cn(
-                        "border-b cursor-pointer hover:bg-gray-50 transition-colors",
-                        selectedDocType === dt.doc_type && "bg-blue-50"
+                        "border-b cursor-pointer hover:bg-muted/50 transition-colors",
+                        selectedDocType === dt.doc_type && "bg-accent/10"
                       )}
                     >
                       <td className="p-2 font-medium">
                         {formatDocType(dt.doc_type)}
                       </td>
-                      <td className="p-2 text-right text-gray-600">—</td>
-                      <td className="p-2 text-right text-gray-600">{dt.docs_total}</td>
+                      <td className="p-2 text-right text-muted-foreground">—</td>
+                      <td className="p-2 text-right text-muted-foreground">{dt.docs_total}</td>
                       <td className="p-2 text-right">
                         <ScoreBadge value={dt.required_field_presence_pct} />
                       </td>
@@ -627,14 +627,14 @@ function InsightsTab({
                       <td className="p-2 text-right">
                         <ScoreBadge value={dt.evidence_rate_pct} />
                       </td>
-                      <td className="p-2 text-gray-600 truncate max-w-[80px]" title={dt.top_failing_field || ""}>
+                      <td className="p-2 text-muted-foreground truncate max-w-[80px]" title={dt.top_failing_field || ""}>
                         {dt.top_failing_field ? formatFieldName(dt.top_failing_field) : "-"}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="p-3 text-center text-gray-500">
+                    <td colSpan={7} className="p-3 text-center text-muted-foreground">
                       No data
                     </td>
                   </tr>
@@ -647,8 +647,8 @@ function InsightsTab({
 
       {/* Drilldown */}
       {(selectedDocType || fieldDetails) && (
-        <section ref={drilldownRef} className="bg-white rounded-lg border shadow-sm">
-          <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+        <section ref={drilldownRef} className="bg-card rounded-lg border shadow-sm">
+          <div className="flex items-center justify-between p-3 border-b bg-muted/50">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold">
                 {fieldDetails
@@ -659,23 +659,23 @@ function InsightsTab({
               </h2>
               {fieldDetails && (
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="px-1.5 py-0.5 bg-gray-100 rounded">
+                  <span className="px-1.5 py-0.5 bg-muted rounded">
                     Presence: <strong>{fieldDetails.rates.presence_pct}%</strong>
                   </span>
-                  <span className="px-1.5 py-0.5 bg-gray-100 rounded">
+                  <span className="px-1.5 py-0.5 bg-muted rounded">
                     Accuracy: <strong>{fieldDetails.rates.accuracy_pct}%</strong>
                   </span>
-                  <span className="px-1.5 py-0.5 bg-gray-100 rounded">
+                  <span className="px-1.5 py-0.5 bg-muted rounded">
                     Evidence: <strong>{fieldDetails.rates.evidence_pct}%</strong>
                   </span>
                 </div>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={onCopyLink} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
+              <button onClick={onCopyLink} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted">
                 Copy link
               </button>
-              <button onClick={onClearSelection} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">
+              <button onClick={onClearSelection} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted">
                 Clear
               </button>
             </div>
@@ -710,10 +710,10 @@ interface RunHistoryTabProps {
 
 function RunHistoryTab({ runs, baselineRunId, selectedBatchId, onSelectRun, onSetBaseline }: RunHistoryTabProps) {
   return (
-    <div className="bg-white rounded-lg border shadow-sm">
+    <div className="bg-card rounded-lg border shadow-sm">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b bg-gray-50">
+          <tr className="border-b bg-muted/50">
             <th className="text-left p-3 font-medium">Batch ID</th>
             <th className="text-left p-3 font-medium">Timestamp</th>
             <th className="text-left p-3 font-medium">Model</th>
@@ -730,16 +730,16 @@ function RunHistoryTab({ runs, baselineRunId, selectedBatchId, onSelectRun, onSe
             <tr
               key={run.run_id}
               className={cn(
-                "border-b hover:bg-gray-50",
-                selectedBatchId === run.run_id && "bg-blue-50"
+                "border-b hover:bg-muted/50",
+                selectedBatchId === run.run_id && "bg-accent/10"
               )}
             >
               <td className="p-3 font-mono text-xs">
                 {run.run_id}
                 {run.run_id === baselineRunId && <span className="ml-2"><BaselineBadge /></span>}
               </td>
-              <td className="p-3 text-gray-600">{formatTimestamp(run.timestamp)}</td>
-              <td className="p-3 text-gray-600">{run.model || "-"}</td>
+              <td className="p-3 text-muted-foreground">{formatTimestamp(run.timestamp)}</td>
+              <td className="p-3 text-muted-foreground">{run.model || "-"}</td>
               <td className="p-3 text-right">{run.docs_count}</td>
               <td className="p-3 text-right">{run.labeled_count}</td>
               <td className="p-3 text-right"><ScoreBadge value={run.presence_rate} /></td>
@@ -749,14 +749,14 @@ function RunHistoryTab({ runs, baselineRunId, selectedBatchId, onSelectRun, onSe
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onSelectRun(run.run_id)}
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="text-xs text-accent-foreground hover:text-accent"
                   >
                     View
                   </button>
                   {run.run_id !== baselineRunId && (
                     <button
                       onClick={() => onSetBaseline(run.run_id)}
-                      className="text-xs text-gray-500 hover:text-gray-700"
+                      className="text-xs text-muted-foreground hover:text-foreground"
                     >
                       Set Baseline
                     </button>
@@ -767,7 +767,7 @@ function RunHistoryTab({ runs, baselineRunId, selectedBatchId, onSelectRun, onSe
           ))}
           {runs.length === 0 && (
             <tr>
-              <td colSpan={9} className="p-4 text-center text-gray-500">
+              <td colSpan={9} className="p-4 text-center text-muted-foreground">
                 No runs found
               </td>
             </tr>
@@ -795,10 +795,10 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
   return (
     <div className="space-y-4">
       {/* Run selectors */}
-      <div className="bg-white rounded-lg border shadow-sm p-4">
+      <div className="bg-card rounded-lg border shadow-sm p-4">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Baseline:</label>
+            <label className="text-sm font-medium text-foreground">Baseline:</label>
             <select
               value={baselineId || ""}
               onChange={(e) => onBaselineChange(e.target.value || null)}
@@ -811,7 +811,7 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Current:</label>
+            <label className="text-sm font-medium text-foreground">Current:</label>
             <select
               value={currentId || ""}
               onChange={(e) => onCurrentChange(e.target.value || null)}
@@ -829,7 +829,7 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
       {comparison && (
         <>
           {/* Overview Deltas */}
-          <div className="bg-white rounded-lg border shadow-sm p-4">
+          <div className="bg-card rounded-lg border shadow-sm p-4">
             <h3 className="text-sm font-semibold mb-3">KPI Changes</h3>
             <MetricCardRow columns={6}>
               {Object.entries(comparison.overview_deltas).map(([key, val]) => (
@@ -846,11 +846,11 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
           </div>
 
           {/* Doc Type Deltas */}
-          <div className="bg-white rounded-lg border shadow-sm p-4">
+          <div className="bg-card rounded-lg border shadow-sm p-4">
             <h3 className="text-sm font-semibold mb-3">Doc Type Changes</h3>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-gray-50">
+                <tr className="border-b bg-muted/50">
                   <th className="text-left p-2 font-medium">Doc Type</th>
                   <th className="text-right p-2 font-medium">Presence Change</th>
                   <th className="text-right p-2 font-medium">Accuracy Change</th>
@@ -872,22 +872,22 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
 
           {/* Priority Changes */}
           {comparison.priority_changes.length > 0 && (
-            <div className="bg-white rounded-lg border shadow-sm p-4">
+            <div className="bg-card rounded-lg border shadow-sm p-4">
               <h3 className="text-sm font-semibold mb-3">Priority List Changes</h3>
               <div className="space-y-2">
                 {comparison.priority_changes.map((change, idx) => (
                   <div key={idx} className={cn(
                     "flex items-center gap-2 text-sm px-3 py-2 rounded",
-                    change.status === "improved" ? "bg-green-50" : "bg-red-50"
+                    change.status === "improved" ? "bg-success/10" : "bg-destructive/10"
                   )}>
-                    <span className={change.status === "improved" ? "text-green-600" : "text-red-600"}>
+                    <span className={change.status === "improved" ? "text-success" : "text-destructive"}>
                       {change.status === "improved" ? "↑" : "↓"}
                     </span>
                     <span className="font-medium">{formatDocType(change.doc_type)}</span>
-                    <span className="text-gray-400">·</span>
+                    <span className="text-muted-foreground/70">·</span>
                     <span>{formatFieldName(change.field_name)}</span>
                     {change.delta !== undefined && (
-                      <span className="text-gray-500 ml-auto">
+                      <span className="text-muted-foreground ml-auto">
                         {change.delta > 0 ? `+${change.delta}` : change.delta} affected
                       </span>
                     )}
@@ -900,11 +900,11 @@ function CompareRunsTab({ runs, baselineId, currentId, comparison, onBaselineCha
       )}
 
       {!comparison && baselineId && currentId && baselineId !== currentId && (
-        <div className="text-center text-gray-500 py-8">Loading comparison...</div>
+        <div className="text-center text-muted-foreground py-8">Loading comparison...</div>
       )}
 
       {(!baselineId || !currentId || baselineId === currentId) && (
-        <div className="text-center text-gray-500 py-8">
+        <div className="text-center text-muted-foreground py-8">
           Select two different runs to compare
         </div>
       )}
@@ -928,10 +928,10 @@ function formatKpiLabel(key: string): string {
 }
 
 function DeltaBadge({ delta }: { delta: number }) {
-  if (delta === 0) return <span className="text-gray-400">-</span>;
+  if (delta === 0) return <span className="text-muted-foreground/70">-</span>;
   const isPositive = delta > 0;
   return (
-    <span className={cn("font-medium", isPositive ? "text-green-600" : "text-red-600")}>
+    <span className={cn("font-medium", isPositive ? "text-success" : "text-destructive")}>
       {isPositive ? "+" : ""}{delta}%
     </span>
   );
@@ -947,11 +947,11 @@ interface OutcomeChipProps {
 
 function OutcomeChip({ label, count, variant, selected, onClick }: OutcomeChipProps) {
   const variants = {
-    success: "border-green-300 bg-green-50 text-green-700",
-    error: "border-red-300 bg-red-50 text-red-700",
-    warning: "border-yellow-300 bg-yellow-50 text-yellow-700",
-    info: "border-orange-300 bg-orange-50 text-orange-700",
-    neutral: "border-gray-300 bg-gray-50 text-gray-700",
+    success: "border-success/30 bg-success/10 text-success",
+    error: "border-destructive/30 bg-destructive/10 text-destructive",
+    warning: "border-warning/30 bg-warning/10 text-warning-foreground",
+    info: "border-info/30 bg-info/10 text-info",
+    neutral: "border-border bg-muted/50 text-foreground",
   };
 
   return (
@@ -960,7 +960,7 @@ function OutcomeChip({ label, count, variant, selected, onClick }: OutcomeChipPr
       className={cn(
         "px-2 py-1 rounded border text-xs font-medium transition-all",
         variants[variant],
-        selected && "ring-2 ring-blue-500 ring-offset-1"
+        selected && "ring-2 ring-accent ring-offset-1"
       )}
     >
       {label}: {count}
@@ -979,7 +979,7 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b bg-gray-50">
+          <tr className="border-b bg-muted/50">
             <th className="text-left p-2 font-medium">Claim</th>
             <th className="text-left p-2 font-medium">Filename</th>
             {!selectedField && <th className="text-left p-2 font-medium">Field</th>}
@@ -992,33 +992,33 @@ function ExamplesTable({ examples, selectedField, onOpenReview }: ExamplesTableP
         </thead>
         <tbody>
           {examples.map((ex, idx) => (
-            <tr key={`${ex.doc_id}-${ex.field_name}-${idx}`} className="border-b hover:bg-gray-50">
+            <tr key={`${ex.doc_id}-${ex.field_name}-${idx}`} className="border-b hover:bg-muted/50">
               <td className="p-2 font-mono text-[10px]">{ex.claim_id}</td>
               <td className="p-2 truncate max-w-[140px]" title={ex.filename}>{ex.filename}</td>
               {!selectedField && <td className="p-2">{formatFieldName(ex.field_name)}</td>}
               <td className="p-2 font-mono text-[10px] truncate max-w-[120px]" title={ex.normalized_value || ex.predicted_value || ""}>
-                {ex.normalized_value || ex.predicted_value || <span className="text-gray-400">-</span>}
+                {ex.normalized_value || ex.predicted_value || <span className="text-muted-foreground/70">-</span>}
               </td>
               <td className="p-2 font-mono text-[10px] truncate max-w-[120px]" title={ex.truth_value || ""}>
                 {ex.state === "CONFIRMED" ? (
-                  ex.truth_value || <span className="text-gray-400">-</span>
+                  ex.truth_value || <span className="text-muted-foreground/70">-</span>
                 ) : ex.state === "UNVERIFIABLE" ? (
-                  <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded">Unverifiable</span>
+                  <span className="text-[10px] px-1 py-0.5 bg-muted text-muted-foreground rounded">Unverifiable</span>
                 ) : (
-                  <span className="text-gray-300">-</span>
+                  <span className="text-muted-foreground/50">-</span>
                 )}
               </td>
               <td className="p-2 text-center">
-                {ex.has_evidence ? <span className="text-green-600">Yes</span> : <span className="text-gray-300">-</span>}
+                {ex.has_evidence ? <span className="text-success">Yes</span> : <span className="text-muted-foreground/50">-</span>}
               </td>
               <td className="p-2 text-center"><OutcomeBadge outcome={ex.outcome} /></td>
               <td className="p-2">
-                <button onClick={() => onOpenReview(ex)} className="text-blue-600 hover:text-blue-800 hover:underline">Open</button>
+                <button onClick={() => onOpenReview(ex)} className="text-accent-foreground hover:text-accent hover:underline">Open</button>
               </td>
             </tr>
           ))}
           {examples.length === 0 && (
-            <tr><td colSpan={selectedField ? 7 : 8} className="p-4 text-center text-gray-500">No examples found</td></tr>
+            <tr><td colSpan={selectedField ? 7 : 8} className="p-4 text-center text-muted-foreground">No examples found</td></tr>
           )}
         </tbody>
       </table>
