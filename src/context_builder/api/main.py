@@ -246,7 +246,7 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None), run_id: Optional
     - Extraction results (if available)
     - Labels (if available)
     """
-    return get_documents_service().get_doc(doc_id, run_id)
+    return get_documents_service().get_doc(doc_id, run_id, claim_id)
 
 
 @app.post("/api/docs/{doc_id}/labels")

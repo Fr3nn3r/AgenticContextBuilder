@@ -87,8 +87,66 @@ class DocumentsService:
 
         return docs
 
-    def get_doc(self, doc_id: str, run_id: Optional[str] = None) -> DocPayload:
+    def get_doc(self, doc_id: str, run_id: Optional[str] = None, claim_id: Optional[str] = None) -> DocPayload:
         storage = self.storage_factory()
+
+        # If claim_id is provided, look up document directly in that claim
+        # This avoids the issue of duplicate doc_ids across claims (same file MD5)
+        if claim_id:
+            claim_dir = self._find_claim_dir(claim_id)
+            if claim_dir:
+                doc_folder = claim_dir / "docs" / doc_id
+                meta_path = doc_folder / "meta" / "doc.json"
+                if meta_path.exists():
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    filename = meta.get("original_filename", "Unknown")
+                    doc_type = meta.get("doc_type", "unknown")
+                    language = meta.get("language", "es")
+                    resolved_claim_id = claim_id
+
+                    # Load text
+                    pages_json = doc_folder / "text" / "pages.json"
+                    pages = []
+                    if pages_json.exists():
+                        with open(pages_json, "r", encoding="utf-8") as f:
+                            pages_data = json.load(f)
+                            pages = pages_data.get("pages", [])
+
+                    # Load extraction
+                    extraction = None
+                    if run_id:
+                        extraction = storage.run_store.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
+
+                    # Load labels
+                    labels = storage.label_store.get_label(doc_id)
+
+                    # Check source files
+                    has_pdf = False
+                    has_image = False
+                    source_dir = doc_folder / "source"
+                    if source_dir.exists():
+                        for source_file in source_dir.iterdir():
+                            ext = source_file.suffix.lower()
+                            if ext == ".pdf":
+                                has_pdf = True
+                            elif ext in {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".bmp", ".webp"}:
+                                has_image = True
+
+                    return DocPayload(
+                        doc_id=doc_id,
+                        claim_id=resolved_claim_id,
+                        filename=filename,
+                        doc_type=doc_type,
+                        language=language,
+                        pages=pages,
+                        extraction=extraction,
+                        labels=labels,
+                        has_pdf=has_pdf,
+                        has_image=has_image,
+                    )
+
+        # Fallback to storage lookup (may find wrong doc if duplicates exist)
         doc_bundle = storage.doc_store.get_doc(doc_id)
         if not doc_bundle:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
