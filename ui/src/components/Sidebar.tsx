@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useViteTheme } from "@space-man/react-theme-animation";
+import { useSpacemanTheme } from "@space-man/react-theme-animation";
 import { cn } from "../lib/utils";
 
 type View = "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth";
@@ -25,7 +25,7 @@ const COLOR_THEMES = [
 
 export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
-  const { theme: darkMode, setTheme: setDarkMode, setColorTheme, colorTheme } = useViteTheme();
+  const { theme: darkMode, switchThemeFromElement, setColorTheme, colorTheme } = useSpacemanTheme();
 
   // Use colorTheme from hook, fallback to northern-lights
   const currentColorTheme = colorTheme || 'northern-lights';
@@ -95,7 +95,7 @@ export function Sidebar({ currentView }: SidebarProps) {
           <span className="text-xs text-muted-foreground">Mode</span>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setDarkMode("light")}
+              onClick={(e) => switchThemeFromElement("light", e.currentTarget)}
               className={cn(
                 "p-1.5 rounded text-xs transition-colors",
                 darkMode === "light"
@@ -107,7 +107,7 @@ export function Sidebar({ currentView }: SidebarProps) {
               <SunIcon className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setDarkMode("dark")}
+              onClick={(e) => switchThemeFromElement("dark", e.currentTarget)}
               className={cn(
                 "p-1.5 rounded text-xs transition-colors",
                 darkMode === "dark"
@@ -119,7 +119,7 @@ export function Sidebar({ currentView }: SidebarProps) {
               <MoonIcon className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setDarkMode("system")}
+              onClick={(e) => switchThemeFromElement("system", e.currentTarget)}
               className={cn(
                 "p-1.5 rounded text-xs transition-colors",
                 darkMode === "system"

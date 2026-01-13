@@ -170,7 +170,7 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
       {/* Back button */}
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -179,19 +179,19 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
       </button>
 
       {/* Document header - Extraction Review */}
-      <div className="bg-white rounded-lg border p-4">
+      <div className="bg-card rounded-lg border border-border p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Extraction Review</h2>
-            <p className="text-xs text-gray-400 mb-1">Validate fields against source text</p>
-            <div className="text-sm text-gray-700 font-medium">{doc.filename}</div>
-            <div className="text-sm text-gray-500">
+            <h2 className="text-lg font-semibold text-foreground">Extraction Review</h2>
+            <p className="text-xs text-muted-foreground mb-1">Validate fields against source text</p>
+            <div className="text-sm text-foreground font-medium">{doc.filename}</div>
+            <div className="text-sm text-muted-foreground">
               {doc.claim_id} &middot; {doc.doc_type}
               {extraction && ` (${Math.round(extraction.doc.doc_type_confidence * 100)}%)`}
               {" "}&middot; {doc.language.toUpperCase()} &middot; {doc.pages.length} pages
             </div>
             {extraction && (
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-muted-foreground/70 mt-1">
                 Run: {extraction.run.run_id} &middot; Extractor v{extraction.run.extractor_version}
               </div>
             )}
@@ -206,8 +206,8 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
               className={cn(
                 "px-4 py-2 rounded-md font-medium transition-colors",
                 saving
-                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                  : "bg-gray-900 text-white hover:bg-gray-800"
+                  ? "bg-muted text-muted-foreground cursor-not-allowed"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
               {saving ? "Saving..." : "Save review"}
@@ -219,9 +219,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
       {/* Main content: split view */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ height: "calc(100vh - 320px)" }}>
         {/* Left: Page viewer */}
-        <div className="bg-white rounded-lg border overflow-hidden">
-          <div className="p-3 border-b bg-gray-50">
-            <h3 className="font-medium text-gray-900">Document Text</h3>
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
+          <div className="p-3 border-b border-border bg-muted">
+            <h3 className="font-medium text-foreground">Document Text</h3>
           </div>
           <div className="h-full overflow-hidden" style={{ height: "calc(100% - 48px)" }}>
             <PageViewer
@@ -235,13 +235,13 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
         </div>
 
         {/* Right: Fields + Labels */}
-        <div className="bg-white rounded-lg border overflow-hidden flex flex-col">
-          <div className="p-3 border-b bg-gray-50">
+        <div className="bg-card rounded-lg border border-border overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-border bg-muted">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium text-gray-900">Field Extraction</h3>
+                <h3 className="font-medium text-foreground">Field Extraction</h3>
                 {extraction && (
-                  <div className="text-xs text-gray-500 mt-0.5">
+                  <div className="text-xs text-muted-foreground mt-0.5">
                     Run: {extraction.run.run_id}
                   </div>
                 )}
@@ -250,12 +250,12 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
               <div className="flex items-center gap-3 text-xs">
                 <span className={cn(
                   "px-2 py-1 rounded",
-                  doc.labels ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                  doc.labels ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                 )}>
                   {doc.labels ? "Labels: Saved" : "Labels: Not saved"}
                 </span>
                 {extraction && (
-                  <span className="text-gray-500">
+                  <span className="text-muted-foreground">
                     {fieldLabels.filter(l => l.state !== "UNLABELED").length}/{fieldLabels.length} labeled
                   </span>
                 )}
@@ -278,14 +278,14 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 onToggleOptionalFields={() => setShowOptionalFields(!showOptionalFields)}
               />
             ) : (
-              <div className="p-4 text-gray-500">
+              <div className="p-4 text-muted-foreground">
                 No extraction results available
               </div>
             )}
           </div>
 
           {/* Doc-level labels & reviewer */}
-          <div className="border-t p-4 space-y-3 bg-gray-50">
+          <div className="border-t border-border p-4 space-y-3 bg-muted">
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
                 <input
@@ -297,9 +297,9 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                       doc_type_correct: e.target.checked,
                     }))
                   }
-                  className="rounded border-gray-300"
+                  className="rounded border-input"
                 />
-                <span className="text-sm text-gray-700">Doc type correct</span>
+                <span className="text-sm text-foreground">Doc type correct</span>
               </label>
             </div>
 
@@ -309,14 +309,14 @@ export function DocReview({ docId, onBack, onSaved }: DocReviewProps) {
                 placeholder="Reviewer name"
                 value={reviewer}
                 onChange={(e) => setReviewer(e.target.value)}
-                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+                className="flex-1 border border-input rounded px-3 py-2 text-sm bg-background text-foreground"
               />
               <input
                 type="text"
                 placeholder="Notes (optional)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+                className="flex-1 border border-input rounded px-3 py-2 text-sm bg-background text-foreground"
               />
             </div>
           </div>

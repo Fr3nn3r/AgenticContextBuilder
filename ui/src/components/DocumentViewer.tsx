@@ -143,7 +143,7 @@ export function DocumentViewer({
   return (
     <div className="flex flex-col h-full">
       {/* Tab bar */}
-      <div className="flex border-b bg-white">
+      <div className="flex border-b border-border bg-card">
         {availableTabs.map((tab) => (
           <button
             key={tab.id}
@@ -151,8 +151,8 @@ export function DocumentViewer({
             className={cn(
               "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
               activeTab === tab.id
-                ? "border-gray-900 text-gray-900"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted"
             )}
           >
             {tab.label}

@@ -69,19 +69,19 @@ export function EmptyState({
         className
       )}
     >
-      <IconComponent className={cn("text-gray-300 mb-3", styles.icon)} />
-      <p className={cn("font-medium text-gray-600 mb-1", styles.title)}>
+      <IconComponent className={cn("text-muted-foreground/50 mb-3", styles.icon)} />
+      <p className={cn("font-medium text-muted-foreground mb-1", styles.title)}>
         {title}
       </p>
       {description && (
-        <p className={cn("text-gray-400 max-w-sm", styles.description)}>
+        <p className={cn("text-muted-foreground/70 max-w-sm", styles.description)}>
           {description}
         </p>
       )}
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+          className="mt-4 px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-md hover:bg-primary/20 transition-colors"
         >
           {action.label}
         </button>

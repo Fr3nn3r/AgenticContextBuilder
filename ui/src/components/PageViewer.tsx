@@ -109,7 +109,7 @@ export function PageViewer({
       </div>
 
       {/* Page content */}
-      <div className="flex-1 overflow-auto p-4 bg-white">
+      <div className="flex-1 overflow-auto p-4 bg-card">
         {currentPage ? (
           renderPageContent(currentPage.text)
         ) : (

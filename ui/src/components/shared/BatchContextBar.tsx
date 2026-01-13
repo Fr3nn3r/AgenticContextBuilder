@@ -39,7 +39,7 @@ export function BatchContextBar({
   return (
     <div
       className={cn(
-        "bg-white border-b px-6 py-3 flex items-center justify-between",
+        "bg-card border-b border-border px-6 py-3 flex items-center justify-between",
         className
       )}
       data-testid="batch-context-bar"
@@ -47,12 +47,12 @@ export function BatchContextBar({
       <div className="flex items-center gap-4">
         {/* Batch selector */}
         <div className="flex items-center gap-2">
-          <BatchIcon className="w-5 h-5 text-gray-500" />
+          <BatchIcon className="w-5 h-5 text-muted-foreground" />
           <select
             data-testid="batch-context-selector"
             value={selectedBatchId || ""}
             onChange={(e) => onBatchChange(e.target.value)}
-            className="border rounded-md px-3 py-1.5 text-sm font-medium min-w-[200px] bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-input rounded-md px-3 py-1.5 text-sm font-medium min-w-[200px] bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-ring"
           >
             {sortedBatches.map((batch) => (
               <option key={batch.run_id} value={batch.run_id}>
@@ -64,7 +64,7 @@ export function BatchContextBar({
 
         {/* Batch metadata */}
         {selectedBatch && (
-          <div className="flex items-center gap-4 text-sm text-gray-600 border-l pl-4">
+          <div className="flex items-center gap-4 text-sm text-muted-foreground border-l border-border pl-4">
             <span className="flex items-center gap-1">
               <ModelIcon className="w-4 h-4" />
               {selectedBatch.model}
@@ -88,7 +88,7 @@ export function BatchContextBar({
       <button
         onClick={handleCopyId}
         disabled={!selectedBatchId}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
         title="Copy batch ID"
       >
         {copiedId ? (
@@ -109,9 +109,9 @@ export function BatchContextBar({
 
 function StatusBadge({ status }: { status: "complete" | "partial" | "failed" }) {
   const config = {
-    complete: { bg: "bg-green-100", text: "text-green-700", label: "Complete" },
-    partial: { bg: "bg-yellow-100", text: "text-yellow-700", label: "Partial" },
-    failed: { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
+    complete: { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "Complete" },
+    partial: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400", label: "Partial" },
+    failed: { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400", label: "Failed" },
   };
   const { bg, text, label } = config[status];
 

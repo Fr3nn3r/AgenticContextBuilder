@@ -42,12 +42,12 @@ export function BatchSelector<T extends BaseBatchInfo>({
   return (
     <div className={cn("flex items-center gap-4", className)}>
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Batch:</label>
+        <label className="text-sm font-medium text-foreground">Batch:</label>
         <select
           data-testid={testId || "batch-selector"}
           value={selectedBatchId || ""}
           onChange={(e) => onBatchChange(e.target.value)}
-          className="border rounded-md px-3 py-1.5 text-sm min-w-[180px] bg-white"
+          className="border border-input rounded-md px-3 py-1.5 text-sm min-w-[180px] bg-background text-foreground"
         >
           {sortedBatches.map((batch) => (
             <option key={batch.batch_id} value={batch.batch_id}>
@@ -58,7 +58,7 @@ export function BatchSelector<T extends BaseBatchInfo>({
       </div>
 
       {showMetadata && selectedBatch && (
-        <div className="flex items-center gap-3 text-xs text-gray-500 border-l pl-4">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground border-l border-border pl-4">
           {selectedBatch.model && (
             <span>
               <strong>Model:</strong> {selectedBatch.model}

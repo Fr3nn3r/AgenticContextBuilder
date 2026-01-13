@@ -21,7 +21,7 @@ export function BatchSubNav({ className }: BatchSubNavProps) {
 
   return (
     <div
-      className={cn("bg-white border-b px-6", className)}
+      className={cn("bg-card border-b border-border px-6", className)}
       data-testid="batch-sub-nav"
     >
       <nav className="flex gap-1" aria-label="Batch views">
@@ -35,8 +35,8 @@ export function BatchSubNav({ className }: BatchSubNavProps) {
               cn(
                 "px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
                 isActive
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted"
               )
             }
           >

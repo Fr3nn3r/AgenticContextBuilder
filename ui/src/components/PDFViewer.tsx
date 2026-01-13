@@ -362,22 +362,22 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     }
 
     return (
-      <div id="pdf-container" className="flex flex-col h-full bg-gray-100">
+      <div id="pdf-container" className="flex flex-col h-full bg-muted">
         {/* Page navigation */}
-        <div className="flex items-center justify-center gap-4 p-2 bg-white border-b">
+        <div className="flex items-center justify-center gap-4 p-2 bg-card border-b border-border">
           <button
             onClick={goToPrevPage}
             disabled={pageNumber <= 1}
             className={cn(
               "px-3 py-1 rounded text-sm",
               pageNumber <= 1
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-700 hover:bg-gray-100"
+                ? "text-muted-foreground/50 cursor-not-allowed"
+                : "text-foreground hover:bg-muted"
             )}
           >
             Previous
           </button>
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-muted-foreground">
             Page {pageNumber} of {numPages || "?"}
           </span>
           <button
@@ -386,8 +386,8 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
             className={cn(
               "px-3 py-1 rounded text-sm",
               pageNumber >= numPages
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-700 hover:bg-gray-100"
+                ? "text-muted-foreground/50 cursor-not-allowed"
+                : "text-foreground hover:bg-muted"
             )}
           >
             Next
@@ -397,7 +397,7 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         {/* PDF content */}
         <div className="flex-1 overflow-auto flex items-start justify-center p-4">
           {loading && !error && (
-            <div className="text-gray-500 mt-8">Loading PDF...</div>
+            <div className="text-muted-foreground mt-8">Loading PDF...</div>
           )}
 
           {error && (

@@ -126,7 +126,7 @@ export function ImageViewer({ url, alt = "Document", className }: ImageViewerPro
 
       {/* Help text */}
       {imageLoaded && !isZoomed && (
-        <div className="absolute bottom-4 left-4 text-gray-500 text-xs">
+        <div className="absolute bottom-4 left-4 text-muted-foreground text-xs">
           Scroll to zoom, double-click to reset
         </div>
       )}

@@ -1,22 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { ViteThemeProvider } from '@space-man/react-theme-animation'
+import { SpacemanThemeProvider, ThemeAnimationType } from '@space-man/react-theme-animation'
 import App from './App'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ViteThemeProvider
+    <SpacemanThemeProvider
       defaultTheme="system"
-      storageKey="cb-theme"
-      attribute="class"
-      colorThemes={['northern-lights', 'default', 'pink']}
       defaultColorTheme="northern-lights"
+      themes={['light', 'dark', 'system']}
+      colorThemes={['northern-lights', 'default', 'pink']}
+      animationType={ThemeAnimationType.CIRCLE}
+      duration={500}
     >
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </ViteThemeProvider>
+    </SpacemanThemeProvider>
   </React.StrictMode>,
 )

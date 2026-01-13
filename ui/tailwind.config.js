@@ -5,6 +5,13 @@ export default {
     "./index.html",
     "./src/**/*.{ts,tsx}",
   ],
+  safelist: [
+    // Theme classes applied dynamically by SpacemanThemeProvider
+    "theme-northern-lights",
+    "theme-default",
+    "theme-pink",
+    "dark",
+  ],
   theme: {
     container: {
       center: true,

@@ -10,10 +10,10 @@
       (function() {
         try {
           const html = document.documentElement;
-          // Apply color theme (stored in vite-color-theme)
-          const colorTheme = localStorage.getItem('vite-color-theme') || 'northern-lights';
+          // Apply color theme (stored in cb-color-theme)
+          const colorTheme = localStorage.getItem('cb-color-theme') || 'northern-lights';
           html.classList.add('theme-' + colorTheme);
-          // Apply dark mode (stored in cb-theme as simple string)
+          // Apply dark mode (stored in cb-theme)
           const darkMode = localStorage.getItem('cb-theme') || 'system';
           const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           if (darkMode === 'dark' || (darkMode === 'system' && prefersDark)) {
