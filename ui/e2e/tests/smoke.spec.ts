@@ -16,13 +16,13 @@ test.describe("Smoke Tests", () => {
 
     // Should display exactly 4 nav items with correct labels
     await expect(sidebar.dashboardLink).toBeVisible();
-    await expect(sidebar.dashboardLink).toContainText("Calibration Home");
+    await expect(sidebar.dashboardLink).toContainText("Extraction");
 
     await expect(sidebar.claimsLink).toBeVisible();
-    await expect(sidebar.claimsLink).toContainText("Claim Document Pack");
+    await expect(sidebar.claimsLink).toContainText("Claims Review");
 
     await expect(sidebar.insightsLink).toBeVisible();
-    await expect(sidebar.insightsLink).toContainText("Calibration Insights");
+    await expect(sidebar.insightsLink).toContainText("Benchmark");
 
     await expect(sidebar.templatesLink).toBeVisible();
     await expect(sidebar.templatesLink).toContainText("Extraction Templates");
@@ -68,6 +68,7 @@ test.describe("Smoke Tests", () => {
     const sidebar = new SidebarPage(page);
 
     await expect(sidebar.logo).toBeVisible();
-    await expect(page.locator("text=CB")).toBeVisible();
+    // CB logo appears in sidebar - use first() since it also appears in header
+    await expect(page.locator("text=CB").first()).toBeVisible();
   });
 });

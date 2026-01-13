@@ -28,11 +28,10 @@ test.describe("Claims Table", () => {
     await claimsTable.goto();
 
     await claimsTable.expandClaim("CLM-2024-001");
-    // Wait for expansion animation
-    await page.waitForTimeout(500);
 
-    // After expansion, doc types from fixture should be visible
-    await expect(page.getByText("loss_notice").first()).toBeVisible();
+    // Wait for Document Pack content to load - look for the heading and a doc filename
+    await expect(page.getByText("Document Pack")).toBeVisible();
+    await expect(page.getByText("loss_notice.pdf")).toBeVisible();
   });
 
   test("should navigate to review when clicking document", async ({ page }) => {

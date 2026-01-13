@@ -12,7 +12,7 @@ export class SidebarPage {
   constructor(page: Page) {
     this.page = page;
     this.sidebar = page.getByTestId("sidebar");
-    this.logo = page.locator("text=ContextBuilder");
+    this.logo = page.getByText("ContextBuilder", { exact: true });
     this.dashboardLink = page.getByTestId("nav-dashboard");
     this.claimsLink = page.getByTestId("nav-claims");
     this.insightsLink = page.getByTestId("nav-insights");
