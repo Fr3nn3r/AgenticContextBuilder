@@ -1,6 +1,7 @@
 """Pipeline service for async pipeline execution with real-time progress."""
 
 import asyncio
+import json
 import logging
 import shutil
 from dataclasses import dataclass, field
@@ -158,7 +159,7 @@ class PipelineService:
         try:
             # Import pipeline components
             from context_builder.pipeline.discovery import discover_claims
-            from context_builder.pipeline.run import process_claim, StageConfig
+            from context_builder.pipeline.run import process_claim
 
             # Prepare input directories
             input_paths: List[Path] = []
@@ -194,6 +195,9 @@ class PipelineService:
                 # The original doc_ids from upload may differ from discovered doc_ids
                 await self._update_doc_ids(run_id, claim_id, claim.documents, progress_callback)
 
+                # Get event loop for thread-safe callback scheduling
+                loop = asyncio.get_running_loop()
+
                 # Create progress callback that reports per-document completion
                 def make_doc_callback(claim_id: str):
                     def callback(idx: int, total: int, filename: str):
@@ -202,10 +206,12 @@ class PipelineService:
                             if doc.claim_id == claim_id and doc.filename == filename:
                                 doc.phase = DocPhase.DONE
                                 if progress_callback:
-                                    asyncio.create_task(
+                                    # Thread-safe scheduling to main event loop
+                                    asyncio.run_coroutine_threadsafe(
                                         self._async_callback(
                                             progress_callback, run_id, doc.doc_id, DocPhase.DONE, None
-                                        )
+                                        ),
+                                        loop
                                     )
                                 break
                     return callback
@@ -227,23 +233,30 @@ class PipelineService:
                                 if doc.doc_id == doc_id:
                                     doc.phase = phase
                                     break
-                            # Broadcast via WebSocket
+                            # Broadcast via WebSocket (thread-safe)
                             if progress_callback:
-                                asyncio.create_task(
+                                asyncio.run_coroutine_threadsafe(
                                     self._async_callback(
                                         progress_callback, run_id, doc_id, phase, None
-                                    )
+                                    ),
+                                    loop
                                 )
                     return callback
 
                 try:
-                    # Process the claim
-                    result = process_claim(
+                    # Detect which stages can be skipped based on existing outputs
+                    doc_ids = [doc.doc_id for doc in claim.documents]
+                    stage_config = self._detect_stages_for_claim(claim_id, doc_ids)
+
+                    # Process the claim in a thread pool to allow event loop
+                    # to process broadcast tasks while processing runs
+                    result = await asyncio.to_thread(
+                        process_claim,
                         claim=claim,
                         output_base=self.output_dir,
                         run_id=run_id,
                         model=model,
-                        stage_config=StageConfig(),
+                        stage_config=stage_config,
                         progress_callback=make_doc_callback(claim_id),
                         phase_callback=make_phase_callback(claim_id),
                     )
@@ -305,6 +318,17 @@ class PipelineService:
                 "success": total_success,
                 "failed": total_failed,
             }
+
+            # Persist run to disk for visibility in other screens
+            self._persist_run(run)
+
+            # Broadcast run completion via progress callback
+            # The callback will be used to send run_complete message
+            if progress_callback:
+                await self._async_callback(
+                    progress_callback, run_id, "__RUN_COMPLETE__",
+                    DocPhase.DONE, None, None
+                )
 
         except Exception as e:
             logger.exception(f"Pipeline run {run_id} failed")
@@ -388,3 +412,130 @@ class PipelineService:
     def get_all_runs(self) -> List[PipelineRun]:
         """Get all tracked pipeline runs."""
         return list(self.active_runs.values())
+
+    def _persist_run(self, run: PipelineRun) -> None:
+        """Persist run to disk for visibility in other screens.
+
+        Creates the global run directory structure with manifest.json,
+        summary.json, and .complete marker so FileStorage.list_runs() can find it.
+        Also appends to the run index if it exists for immediate visibility.
+        """
+        from context_builder.pipeline.paths import create_workspace_run_structure
+
+        try:
+            # Create global run directory structure
+            ws_paths = create_workspace_run_structure(self.output_dir, run.run_id)
+
+            # Write manifest.json
+            manifest = {
+                "run_id": run.run_id,
+                "claim_ids": run.claim_ids,
+                "started_at": run.started_at,
+                "completed_at": run.completed_at,
+                "status": run.status.value,
+                "doc_count": len(run.docs),
+            }
+            with open(ws_paths.manifest_json, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
+
+            # Write summary.json
+            summary_data = run.summary or {}
+            with open(ws_paths.summary_json, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f, indent=2)
+
+            # Write .complete marker
+            ws_paths.complete_marker.touch()
+
+            logger.info(f"Persisted run {run.run_id} to {ws_paths.run_root}")
+
+            # Append to run index if it exists (for immediate visibility)
+            self._append_to_run_index(run, ws_paths, summary_data)
+
+        except Exception as e:
+            logger.error(f"Failed to persist run {run.run_id}: {e}")
+
+    def _append_to_run_index(
+        self,
+        run: PipelineRun,
+        ws_paths: "WorkspaceRunPaths",
+        summary_data: dict,
+    ) -> None:
+        """Append run to the index file if it exists.
+
+        This allows the run to be immediately visible without rebuilding the full index.
+        """
+        # Registry is at output/registry/ (sibling to output/claims/ and output/runs/)
+        registry_dir = self.output_dir.parent / "registry"
+        run_index_path = registry_dir / "run_index.jsonl"
+
+        if not run_index_path.exists():
+            logger.debug("No run index exists, skipping index update")
+            return
+
+        try:
+            # Build index record matching the format from index_builder.build_run_index()
+            record = {
+                "run_id": run.run_id,
+                "status": summary_data.get("status", "complete"),
+                "started_at": run.started_at,
+                "ended_at": run.completed_at,
+                "claims_count": len(run.claim_ids),
+                "docs_count": summary_data.get("total", len(run.docs)),
+                "run_root": str(ws_paths.run_root.relative_to(self.output_dir.parent.parent)),
+            }
+
+            # Append to JSONL file
+            with open(run_index_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+            logger.info(f"Appended run {run.run_id} to index")
+        except Exception as e:
+            logger.warning(f"Failed to append to run index: {e}")
+
+    def _detect_stages_for_claim(self, claim_id: str, doc_ids: List[str]) -> "StageConfig":
+        """Detect which stages can be skipped based on existing outputs.
+
+        Checks for existing ingestion (pages.json) and classification (doc.json)
+        outputs to determine which stages can be skipped.
+
+        Args:
+            claim_id: Claim ID to check
+            doc_ids: List of document IDs in the claim
+
+        Returns:
+            StageConfig with appropriate stages enabled/disabled
+        """
+        from context_builder.pipeline.run import StageConfig, PipelineStage
+        from context_builder.pipeline.paths import get_claim_paths, get_doc_paths
+
+        claim_paths = get_claim_paths(self.output_dir, claim_id)
+
+        can_skip_ingest = True
+        can_skip_classify = True
+
+        for doc_id in doc_ids:
+            doc_paths = get_doc_paths(claim_paths, doc_id)
+
+            # Check if ingestion output exists
+            if not doc_paths.pages_json.exists():
+                can_skip_ingest = False
+
+            # Check if classification output exists
+            if not doc_paths.doc_json.exists():
+                can_skip_classify = False
+
+        # Build stage list based on what can be skipped
+        stages = []
+        if not can_skip_ingest:
+            stages.append(PipelineStage.INGEST)
+        if not can_skip_classify:
+            stages.append(PipelineStage.CLASSIFY)
+        stages.append(PipelineStage.EXTRACT)  # Always run extraction for new run
+
+        if can_skip_ingest or can_skip_classify:
+            logger.info(
+                f"Smart stage detection for {claim_id}: "
+                f"skip_ingest={can_skip_ingest}, skip_classify={can_skip_classify}"
+            )
+
+        return StageConfig(stages=stages)

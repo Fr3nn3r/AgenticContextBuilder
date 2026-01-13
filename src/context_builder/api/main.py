@@ -1068,11 +1068,6 @@ async def start_pipeline_run(request: PipelineRunRequest):
     Returns:
         run_id for tracking progress
     """
-    print(f"[API] /api/pipeline/run called with claim_ids={request.claim_ids}", flush=True)
-    # Debug: write to file to prove code is executing
-    from datetime import datetime as dt
-    with open("C:/Users/fbrun/Documents/GitHub/AgenticContextBuilder/DEBUG_API_CALLED.txt", "a") as f:
-        f.write(f"API called at {dt.now()} with claim_ids={request.claim_ids}\n")
     pipeline_service = get_pipeline_service()
     upload_service = get_upload_service()
 
@@ -1083,6 +1078,17 @@ async def start_pipeline_run(request: PipelineRunRequest):
 
     # Create progress callback that broadcasts to WebSocket
     async def broadcast_progress(run_id: str, doc_id: str, phase: DocPhase, error: Optional[str], failed_at_stage: Optional[DocPhase] = None):
+        # Handle run completion signal
+        if doc_id == "__RUN_COMPLETE__":
+            run = pipeline_service.get_run_status(run_id)
+            await ws_manager.broadcast(run_id, {
+                "type": "run_complete",
+                "run_id": run_id,
+                "status": run.status.value if run else "completed",
+                "summary": run.summary if run else None,
+            })
+            return
+
         await ws_manager.broadcast(run_id, {
             "type": "doc_progress",
             "doc_id": doc_id,
@@ -1149,7 +1155,7 @@ def get_pipeline_status(run_id: str):
         "completed_at": run.completed_at,
         "summary": run.summary,
         "docs": {
-            key: {
+            doc.doc_id: {  # Use doc_id as key for consistency with WebSocket messages
                 "doc_id": doc.doc_id,
                 "claim_id": doc.claim_id,
                 "filename": doc.filename,
@@ -1219,7 +1225,7 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
                 "run_id": run.run_id,
                 "status": run.status.value,
                 "docs": {
-                    key: {
+                    doc.doc_id: {  # Use doc_id as key (matches progress messages)
                         "doc_id": doc.doc_id,
                         "claim_id": doc.claim_id,
                         "filename": doc.filename,
