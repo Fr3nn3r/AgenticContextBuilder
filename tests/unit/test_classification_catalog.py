@@ -46,6 +46,7 @@ class TestDocTypeCatalog:
             "travel_itinerary",
             "customer_comm",
             "supporting_document",
+            "damage_evidence",
         ]
 
         for expected in expected_types:
@@ -145,6 +146,7 @@ class TestClassificationSchema:
             "travel_itinerary",
             "customer_comm",
             "supporting_document",
+            "damage_evidence",
         }
 
         enum_values = {e.value for e in ClaimsDocumentType}

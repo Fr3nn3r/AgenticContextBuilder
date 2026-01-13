@@ -157,3 +157,21 @@ doc_types:
       - "additional"
       - "anexo"
       - "adjunto"
+
+  - doc_type: damage_evidence
+    description: "Photographic evidence of damage to vehicle, property, or other insured items from claims"
+    cues:
+      - "damage photo"
+      - "damage evidence"
+      - "photo of damage"
+      - "vehicle damage"
+      - "property damage"
+      - "crash damage"
+      - "accident photos"
+      - "dent"
+      - "scratch"
+      - "broken"
+      - "foto de daños"
+      - "evidencia de daño"
+      - "daños del vehículo"
+      - "daños a la propiedad"

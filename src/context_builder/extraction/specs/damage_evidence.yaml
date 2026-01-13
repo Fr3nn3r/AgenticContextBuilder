@@ -1,0 +1,63 @@
+doc_type: damage_evidence
+version: v1
+
+required_fields:
+  - damage_description
+optional_fields:
+  - vehicle_plate
+  - vehicle_vin
+  - property_identifier
+  - damage_severity
+  - damage_location
+  - estimated_cost
+  - photo_date
+
+field_rules:
+  damage_description:
+    normalize: none
+    validate: non_empty
+    hints: ["damage", "daño", "visible damage", "impact area", "affected area", "broken", "dent", "scratch", "crack"]
+
+  vehicle_plate:
+    normalize: plate_normalize
+    validate: plate_like
+    hints: ["plate", "license plate", "placa", "matrícula", "placas"]
+
+  vehicle_vin:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["VIN", "vehicle identification", "chassis", "chasis", "serial number"]
+
+  property_identifier:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["property", "address", "location", "building", "unit", "dirección"]
+
+  damage_severity:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["severity", "minor", "moderate", "major", "severe", "total loss", "severidad", "leve", "grave"]
+
+  damage_location:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints: ["front", "rear", "side", "roof", "hood", "bumper", "door", "window", "fender", "quarter panel"]
+
+  estimated_cost:
+    normalize: money_to_decimal
+    validate: is_money
+    hints: ["estimate", "cost", "repair", "amount", "monto", "presupuesto", "costo"]
+
+  photo_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints: ["date", "taken", "photo date", "fecha", "timestamp"]
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.5
+  warn_if:
+    - evidence_rate < 0.5
+  fail_if:
+    - required_present_ratio < 1.0

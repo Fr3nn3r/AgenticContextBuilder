@@ -18,6 +18,7 @@ class ClaimsDocumentType(str, Enum):
     TRAVEL_ITINERARY = "travel_itinerary"
     CUSTOMER_COMM = "customer_comm"
     SUPPORTING_DOCUMENT = "supporting_document"
+    DAMAGE_EVIDENCE = "damage_evidence"
 
 
 class DocumentClassification(BaseModel):
@@ -36,7 +37,7 @@ class DocumentClassification(BaseModel):
         description="Type of document from the catalog: fnol_form, insurance_policy, "
                     "police_report, invoice, id_document, vehicle_registration, "
                     "certificate, medical_report, travel_itinerary, customer_comm, "
-                    "supporting_document"
+                    "supporting_document, damage_evidence"
     )
 
     language: str = Field(

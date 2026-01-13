@@ -6,7 +6,10 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletion
 from io import BytesIO
 
 from pydantic import ValidationError
@@ -331,7 +334,8 @@ class OpenAIVisionIngestion(DataIngestion):
                     response = self._call_api_with_retry(page_messages)
 
                     # Parse and validate response
-                    parsed_data = self._parse_response(response.choices[0].message.content)
+                    content = self._extract_response_content(response)
+                    parsed_data = self._parse_response(content)
                     page_result = self._validate_with_schema(parsed_data)
                     page_result["page_number"] = page_index + 1
                     all_results.append(page_result)
@@ -450,6 +454,55 @@ class OpenAIVisionIngestion(DataIngestion):
                 else:
                     raise APIError(f"API call failed after {self.retries} retries: {e}")
 
+    def _extract_response_content(self, response: Any) -> str:
+        """
+        Extract content from OpenAI response with proper error logging.
+
+        Checks finish_reason to diagnose why response might be empty.
+
+        Args:
+            response: OpenAI API response object
+
+        Returns:
+            Response content string (may be empty string if None)
+        """
+        if not response.choices:
+            logger.error("Vision API returned no choices in response")
+            return ""
+
+        choice = response.choices[0]
+        finish_reason = getattr(choice, "finish_reason", "unknown")
+        content = choice.message.content
+
+        if content is None or content == "":
+            # Log diagnostic information
+            logger.warning(
+                f"Empty response from vision API. "
+                f"finish_reason={finish_reason}, "
+                f"model={getattr(response, 'model', 'unknown')}"
+            )
+
+            # Provide specific guidance based on finish_reason
+            if finish_reason == "content_filter":
+                logger.error(
+                    "Response blocked by content filter. "
+                    "The image may contain content that violates OpenAI policies."
+                )
+            elif finish_reason == "length":
+                logger.error(
+                    "Response truncated due to max_tokens limit. "
+                    "Consider increasing max_tokens configuration."
+                )
+            elif finish_reason is None or finish_reason == "null":
+                logger.error(
+                    "Server-side error occurred (finish_reason is null). "
+                    "This may be a transient issue - consider retrying."
+                )
+
+            return ""
+
+        return content
+
     def _process_implementation(self, filepath: Path) -> Dict[str, Any]:
         """
         Process file using OpenAI Vision API with JSON object mode.
@@ -479,7 +532,8 @@ class OpenAIVisionIngestion(DataIngestion):
                 response = self._call_api_with_retry(messages)
 
                 # Parse and validate response
-                parsed_data = self._parse_response(response.choices[0].message.content)
+                content = self._extract_response_content(response)
+                parsed_data = self._parse_response(content)
                 page_content = self._validate_with_schema(parsed_data)
 
                 # Structure result
