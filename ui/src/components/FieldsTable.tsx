@@ -146,7 +146,10 @@ export function FieldsTable({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={cn(
+      "flex flex-col h-full",
+      readOnly && "opacity-50 pointer-events-none"
+    )}>
       {/* Progress Header */}
       <div className="p-3 border-b bg-gray-50 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">

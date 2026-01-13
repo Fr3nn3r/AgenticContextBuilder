@@ -32,9 +32,9 @@ export function ExtractionPage({
 }: ExtractionPageProps) {
   const [copiedBatchId, setCopiedBatchId] = useState(false);
 
-  // Sort batches alphabetically by batch_id
+  // Sort batches by batch_id (descending - most recent first)
   const sortedBatches = useMemo(() => {
-    return [...batches].sort((a, b) => a.run_id.localeCompare(b.run_id));
+    return [...batches].sort((a, b) => b.run_id.localeCompare(a.run_id));
   }, [batches]);
 
   const copyBatchId = () => {

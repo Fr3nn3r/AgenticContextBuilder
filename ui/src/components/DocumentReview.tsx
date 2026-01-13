@@ -5,10 +5,12 @@ import {
   getDoc,
   getDocSourceUrl,
   saveLabels,
+  saveClassificationLabel,
   type ClaimRunInfo,
 } from "../api/client";
 import type {
   ClassificationDoc,
+  ClassificationDetail,
   DocPayload,
   FieldLabel,
   DocLabels,
@@ -17,6 +19,7 @@ import type {
 import { BatchSelector } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
+import { ClassificationPanel } from "./ClassificationPanel";
 import { cn } from "../lib/utils";
 
 interface DocumentReviewProps {
@@ -69,6 +72,16 @@ export function DocumentReview({
 
   // Optional fields toggle
   const [showOptionalFields, setShowOptionalFields] = useState(false);
+
+  // Copy ID state
+  const [copiedDocId, setCopiedDocId] = useState(false);
+  const [copiedBatchId, setCopiedBatchId] = useState(false);
+
+  // Classification panel state
+  const [classificationDetail, setClassificationDetail] = useState<ClassificationDetail | null>(null);
+  const [classificationConfirmed, setClassificationConfirmed] = useState(false);
+  const [classificationOverridden, setClassificationOverridden] = useState(false);
+  const [classificationOverriddenType, setClassificationOverriddenType] = useState<string | null>(null);
 
   // Load documents when run changes
   const loadDocs = useCallback(async () => {
@@ -148,9 +161,40 @@ export function DocumentReview({
       );
       setDocPayload(payload);
 
-      
+      // Build classification detail from available data
+      // The selectedDoc already has predicted_type, confidence, signals from listClassificationDocs
+      if (selectedDoc) {
+        setClassificationDetail({
+          doc_id: selectedDoc.doc_id,
+          claim_id: selectedDoc.claim_id,
+          filename: selectedDoc.filename,
+          predicted_type: selectedDoc.predicted_type,
+          confidence: selectedDoc.confidence,
+          signals: selectedDoc.signals || [],
+          summary: "",
+          key_hints: null,
+          pages_preview: "",
+          has_pdf: payload.has_pdf || false,
+          has_image: payload.has_image || false,
+          existing_label: payload.labels?.doc_labels
+            ? {
+                doc_type_correct: payload.labels.doc_labels.doc_type_correct ?? true,
+                doc_type_truth: selectedDoc.doc_type_truth || null,
+                notes: payload.labels.review?.notes || "",
+              }
+            : null,
+        });
+
+        // Initialize classification label state from existing labels
+        const hasOverride = selectedDoc.doc_type_truth !== null && selectedDoc.doc_type_truth !== selectedDoc.predicted_type;
+        const isConfirmed = payload.labels?.doc_labels?.doc_type_correct === true;
+        setClassificationConfirmed(isConfirmed || hasOverride);
+        setClassificationOverridden(hasOverride);
+        setClassificationOverriddenType(hasOverride ? selectedDoc.doc_type_truth : null);
+      }
+
       // Initialize labels from existing or create new from extraction
-      if (payload.labels) {
+      if (payload.labels && payload.labels.field_labels.length > 0) {
         setFieldLabels(payload.labels.field_labels);
         setDocLabels(payload.labels.doc_labels);
         setNotes(payload.labels.review.notes);
@@ -163,8 +207,9 @@ export function DocumentReview({
             notes: "",
           }))
         );
-        setDocLabels({ doc_type_correct: true });
-        setNotes("");
+        // Preserve doc_labels if they exist (for classification), otherwise default
+        setDocLabels(payload.labels?.doc_labels || { doc_type_correct: true });
+        setNotes(payload.labels?.review?.notes || "");
       } else {
         setFieldLabels([]);
         setDocLabels({ doc_type_correct: true });
@@ -259,7 +304,7 @@ export function DocumentReview({
 
   // Save labels and auto-advance to next unlabeled doc
   async function handleSave() {
-    if (!docPayload) return;
+    if (!docPayload || !classificationDetail) return;
 
     const currentDocId = docPayload.doc_id;
 
@@ -276,13 +321,30 @@ export function DocumentReview({
 
     try {
       setSaving(true);
+
+      // Save field labels
       await saveLabels(docPayload.doc_id, "QA Console", notes, fieldLabels, docLabels);
+
+      // Save classification label (to update doc_type_truth in the list)
+      await saveClassificationLabel(classificationDetail.doc_id, {
+        claim_id: classificationDetail.claim_id,
+        doc_type_correct: !classificationOverridden,
+        doc_type_truth: classificationOverriddenType || undefined,
+        notes: "",
+      });
+
       setHasUnsavedChanges(false);
 
       // Update the current doc's status locally to avoid full reload
       setDocs((prev) =>
         prev.map((d) =>
-          d.doc_id === currentDocId ? { ...d, review_status: "confirmed" as const } : d
+          d.doc_id === currentDocId
+            ? {
+                ...d,
+                review_status: "confirmed" as const,
+                doc_type_truth: classificationOverriddenType,
+              }
+            : d
         )
       );
 
@@ -295,6 +357,39 @@ export function DocumentReview({
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCopyDocId() {
+    if (docPayload?.doc_id) {
+      navigator.clipboard.writeText(docPayload.doc_id);
+      setCopiedDocId(true);
+      setTimeout(() => setCopiedDocId(false), 2000);
+    }
+  }
+
+  function handleCopyBatchId() {
+    if (selectedBatchId) {
+      navigator.clipboard.writeText(selectedBatchId);
+      setCopiedBatchId(true);
+      setTimeout(() => setCopiedBatchId(false), 2000);
+    }
+  }
+
+  // Classification handlers - update local state only (saved with main Save button)
+  function handleConfirmClassification() {
+    setClassificationConfirmed(true);
+    setClassificationOverridden(false);
+    setClassificationOverriddenType(null);
+    setDocLabels((prev) => ({ ...prev, doc_type_correct: true }));
+    setHasUnsavedChanges(true);
+  }
+
+  function handleOverrideClassification(newType: string) {
+    setClassificationConfirmed(true);
+    setClassificationOverridden(true);
+    setClassificationOverriddenType(newType);
+    setDocLabels((prev) => ({ ...prev, doc_type_correct: false, doc_type_truth: newType }));
+    setHasUnsavedChanges(true);
   }
 
   // Get unique doc types and claims for filters
@@ -389,19 +484,19 @@ export function DocumentReview({
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="bg-white border-b px-4 py-3 flex items-center gap-4">
+      <div className="bg-white border-b px-4 py-3 flex items-center gap-4 flex-wrap">
         {/* Batch Selector */}
         <BatchSelector
           batches={batches.map(b => ({ ...b, batch_id: b.run_id }))}
           selectedBatchId={selectedBatchId}
           onBatchChange={onBatchChange}
           showMetadata={false}
-          className="w-56"
+          className="w-56 flex-shrink-0"
           testId="document-review"
         />
 
         {/* Search */}
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative w-64 flex-shrink-0">
           <input
             type="text"
             value={searchQuery}
@@ -578,6 +673,20 @@ export function DocumentReview({
                 </div>
               </div>
 
+              {/* Classification Panel */}
+              {docPayload.extraction && classificationDetail && (
+                <ClassificationPanel
+                  predictedType={classificationDetail.predicted_type}
+                  confidence={classificationDetail.confidence}
+                  signals={classificationDetail.signals}
+                  isConfirmed={classificationConfirmed}
+                  isOverridden={classificationOverridden}
+                  overriddenType={classificationOverriddenType}
+                  onConfirm={handleConfirmClassification}
+                  onOverride={handleOverrideClassification}
+                />
+              )}
+
               {/* Fields Table */}
               <div className="flex-1 overflow-auto">
                 {docPayload.extraction ? (
@@ -591,6 +700,7 @@ export function DocumentReview({
                     docType={docPayload.doc_type}
                     showOptionalFields={showOptionalFields}
                     onToggleOptionalFields={() => setShowOptionalFields(!showOptionalFields)}
+                    readOnly={classificationOverridden}
                   />
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -614,6 +724,48 @@ export function DocumentReview({
                   rows={2}
                   className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 />
+              </div>
+
+              {/* Copy IDs Section */}
+              <div className="px-4 py-2 border-t bg-gray-50 flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500">Doc ID:</span>
+                  <code className="text-gray-700 font-mono">{docPayload.doc_id.slice(0, 12)}...</code>
+                  <button
+                    onClick={handleCopyDocId}
+                    className="p-1 text-gray-400 hover:text-gray-600"
+                    title="Copy full Doc ID"
+                  >
+                    {copiedDocId ? (
+                      <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500">Batch:</span>
+                  <code className="text-gray-700 font-mono">{selectedBatchId?.slice(0, 12)}...</code>
+                  <button
+                    onClick={handleCopyBatchId}
+                    className="p-1 text-gray-400 hover:text-gray-600"
+                    title="Copy full Batch ID"
+                  >
+                    {copiedBatchId ? (
+                      <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

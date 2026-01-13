@@ -31,9 +31,9 @@ export function BatchSelector<T extends BaseBatchInfo>({
   className,
   testId,
 }: BatchSelectorProps<T>) {
-  // Sort batches alphabetically by batch_id
+  // Sort batches by batch_id (descending - most recent first)
   const sortedBatches = [...batches].sort((a, b) =>
-    a.batch_id.localeCompare(b.batch_id)
+    b.batch_id.localeCompare(a.batch_id)
   );
 
   const selectedBatch = sortedBatches.find(b => b.batch_id === selectedBatchId);

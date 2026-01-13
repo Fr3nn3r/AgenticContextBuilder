@@ -205,11 +205,11 @@ function App() {
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" | "pipeline" {
+  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "documents" | "insights" | "templates" | "pipeline" {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
     if (path === "/claims/new") return "new-claim";
-    if (path === "/classification") return "classification";
+    if (path === "/classification") return "documents"; // Classification is now integrated into Document Review
     if (path === "/documents") return "documents";
     if (path === "/insights") return "insights";
     if (path === "/templates") return "templates";
