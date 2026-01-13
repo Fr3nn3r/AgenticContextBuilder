@@ -1,7 +1,7 @@
 {
-  "detailedRuns": [
+  "detailedBatches": [
     {
-      "run_id": "run-small",
+      "run_id": "batch-small",
       "timestamp": "2024-01-20T10:00:00Z",
       "model": "gpt-4o",
       "status": "complete",
@@ -43,7 +43,7 @@
       }
     },
     {
-      "run_id": "run-large",
+      "run_id": "batch-large",
       "timestamp": "2024-01-15T10:00:00Z",
       "model": "gpt-4o",
       "status": "complete",
@@ -88,9 +88,9 @@
       }
     }
   ],
-  "runs": [
+  "batches": [
     {
-      "run_id": "run-small",
+      "run_id": "batch-small",
       "timestamp": "2024-01-20T10:00:00Z",
       "model": "gpt-4o",
       "extractor_version": "1.0.0",
@@ -104,7 +104,7 @@
       "evidence_rate": 85
     },
     {
-      "run_id": "run-large",
+      "run_id": "batch-large",
       "timestamp": "2024-01-15T10:00:00Z",
       "model": "gpt-4o",
       "extractor_version": "1.0.0",
@@ -119,9 +119,9 @@
     }
   ],
   "overviews": {
-    "run-small": {
+    "batch-small": {
       "run_metadata": {
-        "run_id": "run-small",
+        "run_id": "batch-small",
         "timestamp": "2024-01-20T10:00:00Z",
         "model": "gpt-4o",
         "extractor_version": "1.0.0",
@@ -148,9 +148,9 @@
         "run_coverage": 66.7
       }
     },
-    "run-large": {
+    "batch-large": {
       "run_metadata": {
-        "run_id": "run-large",
+        "run_id": "batch-large",
         "timestamp": "2024-01-15T10:00:00Z",
         "model": "gpt-4o",
         "extractor_version": "1.0.0",
@@ -179,7 +179,7 @@
     }
   },
   "docTypes": {
-    "run-small": [
+    "batch-small": [
       {
         "doc_type": "insurance_policy",
         "docs_total": 1,
@@ -203,7 +203,7 @@
         "top_failing_field": "badge_number"
       }
     ],
-    "run-large": [
+    "batch-large": [
       {
         "doc_type": "insurance_policy",
         "docs_total": 18,

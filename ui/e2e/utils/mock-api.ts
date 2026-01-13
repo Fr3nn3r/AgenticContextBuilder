@@ -12,9 +12,9 @@ const claimsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claims.
 const claimReviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claim-review.json"), "utf-8"));
 const docPayloadFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "doc-payload.json"), "utf-8"));
 const templatesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "templates.json"), "utf-8"));
-const runsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.json"), "utf-8"));
+const batchesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.json"), "utf-8"));
 const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "insights-overview.json"), "utf-8"));
-const multiRunFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
+const multiBatchFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
 
 export async function setupApiMocks(page: Page) {
   // Mock GET /api/claims
@@ -99,17 +99,26 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/insights/runs
-  await page.route("**/api/insights/runs", async (route) => {
+  // Mock GET /api/insights/batches (also handles legacy /api/insights/runs)
+  await page.route(/\/api\/insights\/(runs|batches)$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(runsFixture),
+      body: JSON.stringify(batchesFixture),
     });
   });
 
-  // Mock GET /api/insights/runs/:runId/overview
-  await page.route(/\/api\/insights\/runs\/[^/]+\/overview/, async (route) => {
+  // Mock GET /api/insights/runs/detailed
+  await page.route("**/api/insights/runs/detailed", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+
+  // Mock GET /api/insights/(runs|batch)/:id/overview
+  await page.route(/\/api\/insights\/(run|batch)\/[^/]+\/overview/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -117,8 +126,8 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/insights/runs/:runId/doc-types
-  await page.route(/\/api\/insights\/runs\/[^/]+\/doc-types/, async (route) => {
+  // Mock GET /api/insights/(runs|batch)/:id/doc-types
+  await page.route(/\/api\/insights\/(run|batch)\/[^/]+\/doc-types/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -145,93 +154,8 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/claim-runs
-  await page.route("**/api/claim-runs", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(runsFixture),
-    });
-  });
-}
-
-/**
- * Setup API mocks for multi-run testing scenarios.
- * This function mocks APIs with run-specific data to test that UI
- * correctly displays run-scoped metrics when switching between runs.
- */
-export async function setupMultiRunMocks(page: Page) {
-  // Mock GET /api/claims (same as base)
-  await page.route("**/api/claims", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(claimsFixture),
-      });
-    } else {
-      await route.continue();
-    }
-  });
-
-  // Mock GET /api/insights/runs - return multi-run data
-  await page.route("**/api/insights/runs", async (route) => {
-    const url = route.request().url();
-    // Check if this is the detailed endpoint
-    if (url.includes("/detailed")) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(multiRunFixture.detailedRuns),
-      });
-    } else {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(multiRunFixture.runs),
-      });
-    }
-  });
-
-  // Mock GET /api/insights/runs/detailed
-  await page.route("**/api/insights/runs/detailed", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(multiRunFixture.detailedRuns),
-    });
-  });
-
-  // Mock GET /api/insights/run/:runId/overview - return run-specific data
-  await page.route(/\/api\/insights\/run\/([^/]+)\/overview/, async (route) => {
-    const url = route.request().url();
-    const match = url.match(/\/api\/insights\/run\/([^/]+)\/overview/);
-    const runId = match ? match[1] : "run-small";
-
-    const overview = multiRunFixture.overviews[runId] || multiRunFixture.overviews["run-small"];
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(overview),
-    });
-  });
-
-  // Mock GET /api/insights/run/:runId/doc-types - return run-specific data
-  await page.route(/\/api\/insights\/run\/([^/]+)\/doc-types/, async (route) => {
-    const url = route.request().url();
-    const match = url.match(/\/api\/insights\/run\/([^/]+)\/doc-types/);
-    const runId = match ? match[1] : "run-small";
-
-    const docTypes = multiRunFixture.docTypes[runId] || multiRunFixture.docTypes["run-small"];
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(docTypes),
-    });
-  });
-
-  // Mock GET /api/insights/run/:runId/priorities - return empty for simplicity
-  await page.route(/\/api\/insights\/run\/([^/]+)\/priorities/, async (route) => {
+  // Mock GET /api/insights/(run|batch)/:id/priorities
+  await page.route(/\/api\/insights\/(run|batch)\/[^/]+\/priorities/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -248,16 +172,109 @@ export async function setupMultiRunMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/claims/runs - for Extraction page run selector
-  await page.route("**/api/claims/runs", async (route) => {
+  // Mock GET /api/claims/batches and /api/claims/runs (legacy)
+  await page.route(/\/api\/(claim-runs|claims\/(batches|runs))/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(multiRunFixture.runs.map((r: { run_id: string; timestamp: string; model: string; claims_count: number }) => ({
-        run_id: r.run_id,
-        timestamp: r.timestamp,
-        model: r.model,
-        claims_count: r.claims_count,
+      body: JSON.stringify(batchesFixture),
+    });
+  });
+}
+
+/**
+ * Setup API mocks for multi-batch testing scenarios.
+ * This function mocks APIs with batch-specific data to test that UI
+ * correctly displays batch-scoped metrics when switching between batches.
+ */
+export async function setupMultiBatchMocks(page: Page) {
+  // Mock GET /api/claims (same as base)
+  await page.route("**/api/claims", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(claimsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/insights/batches - return multi-batch data
+  await page.route(/\/api\/insights\/(runs|batches)$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(multiBatchFixture.batches),
+    });
+  });
+
+  // Mock GET /api/insights/batches/detailed
+  await page.route(/\/api\/insights\/(runs|batches)\/detailed/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(multiBatchFixture.detailedBatches),
+    });
+  });
+
+  // Mock GET /api/insights/batch/:batchId/overview - return batch-specific data
+  await page.route(/\/api\/insights\/(run|batch)\/([^/]+)\/overview/, async (route) => {
+    const url = route.request().url();
+    const match = url.match(/\/api\/insights\/(?:run|batch)\/([^/]+)\/overview/);
+    const batchId = match ? match[1] : "batch-small";
+
+    const overview = multiBatchFixture.overviews[batchId] || multiBatchFixture.overviews["batch-small"];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(overview),
+    });
+  });
+
+  // Mock GET /api/insights/batch/:batchId/doc-types - return batch-specific data
+  await page.route(/\/api\/insights\/(run|batch)\/([^/]+)\/doc-types/, async (route) => {
+    const url = route.request().url();
+    const match = url.match(/\/api\/insights\/(?:run|batch)\/([^/]+)\/doc-types/);
+    const batchId = match ? match[1] : "batch-small";
+
+    const docTypes = multiBatchFixture.docTypes[batchId] || multiBatchFixture.docTypes["batch-small"];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(docTypes),
+    });
+  });
+
+  // Mock GET /api/insights/batch/:batchId/priorities - return empty for simplicity
+  await page.route(/\/api\/insights\/(run|batch)\/([^/]+)\/priorities/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+
+  // Mock GET /api/insights/baseline
+  await page.route("**/api/insights/baseline", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ baseline_batch_id: null }),
+    });
+  });
+
+  // Mock GET /api/claims/batches - for Extraction page batch selector
+  await page.route(/\/api\/claims\/(runs|batches)/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(multiBatchFixture.batches.map((b: { run_id: string; timestamp: string; model: string; claims_count: number }) => ({
+        run_id: b.run_id,
+        timestamp: b.timestamp,
+        model: b.model,
+        claims_count: b.claims_count,
       }))),
     });
   });
@@ -271,3 +288,6 @@ export async function setupMultiRunMocks(page: Page) {
     });
   });
 }
+
+// Legacy alias for backwards compatibility
+export const setupMultiRunMocks = setupMultiBatchMocks;

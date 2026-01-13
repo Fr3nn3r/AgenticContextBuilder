@@ -14,15 +14,15 @@ import type {
   DocLabels,
   UnverifiableReason,
 } from "../types";
-import { RunSelector } from "./shared/RunSelector";
+import { BatchSelector } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
 import { cn } from "../lib/utils";
 
 interface DocumentReviewProps {
-  runs: ClaimRunInfo[];
-  selectedRunId: string | null;
-  onRunChange: (runId: string | null) => void;
+  batches: ClaimRunInfo[];
+  selectedBatchId: string | null;
+  onBatchChange: (batchId: string | null) => void;
 }
 
 type DocTypeFilter = "all" | string;
@@ -30,9 +30,9 @@ type ClaimFilter = "all" | string;
 type StatusFilter = "all" | "pending" | "labeled";
 
 export function DocumentReview({
-  runs,
-  selectedRunId,
-  onRunChange,
+  batches,
+  selectedBatchId,
+  onBatchChange,
 }: DocumentReviewProps) {
   // Document list state
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
@@ -72,7 +72,7 @@ export function DocumentReview({
 
   // Load documents when run changes
   const loadDocs = useCallback(async () => {
-    if (!selectedRunId) {
+    if (!selectedBatchId) {
       setDocs([]);
       return;
     }
@@ -82,14 +82,14 @@ export function DocumentReview({
       setError(null);
 
       // Get classification docs
-      const classificationDocs = await listClassificationDocs(selectedRunId);
+      const classificationDocs = await listClassificationDocs(selectedBatchId);
 
       // Get unique claim IDs to fetch extraction status
       const claimIds = Array.from(new Set(classificationDocs.map((d) => d.claim_id)));
 
       // Fetch doc summaries for all claims to get has_extraction status
       const docSummariesByClaimPromises = claimIds.map((claimId) =>
-        listDocs(claimId, selectedRunId).catch(() => [])
+        listDocs(claimId, selectedBatchId).catch(() => [])
       );
       const docSummariesByClaim = await Promise.all(docSummariesByClaimPromises);
 
@@ -115,7 +115,7 @@ export function DocumentReview({
     } finally {
       setLoading(false);
     }
-  }, [selectedRunId]);
+  }, [selectedBatchId]);
 
   useEffect(() => {
     loadDocs();
@@ -123,7 +123,7 @@ export function DocumentReview({
 
   // Load document detail when selection changes
   const loadDetail = useCallback(async () => {
-    if (!selectedDocId || !selectedRunId) {
+    if (!selectedDocId || !selectedBatchId) {
       setDocPayload(null);
       setFieldLabels([]);
       return;
@@ -144,7 +144,7 @@ export function DocumentReview({
       const payload = await getDoc(
         selectedDocId,
         selectedDoc.claim_id,
-        selectedRunId
+        selectedBatchId
       );
       setDocPayload(payload);
 
@@ -184,7 +184,7 @@ export function DocumentReview({
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedDocId, selectedRunId, docs, hasUnsavedChanges]);
+  }, [selectedDocId, selectedBatchId, docs, hasUnsavedChanges]);
 
   // Handle document selection with change tracking
   const handleSelectDoc = (docId: string) => {
@@ -390,11 +390,11 @@ export function DocumentReview({
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="bg-white border-b px-4 py-3 flex items-center gap-4">
-        {/* Run Selector */}
-        <RunSelector
-          runs={runs}
-          selectedRunId={selectedRunId}
-          onRunChange={onRunChange}
+        {/* Batch Selector */}
+        <BatchSelector
+          batches={batches.map(b => ({ ...b, batch_id: b.run_id }))}
+          selectedBatchId={selectedBatchId}
+          onBatchChange={onBatchChange}
           showMetadata={false}
           className="w-56"
           testId="document-review"
@@ -487,7 +487,7 @@ export function DocumentReview({
                 Retry
               </button>
             </div>
-          ) : !selectedRunId ? (
+          ) : !selectedBatchId ? (
             <div className="flex items-center justify-center h-full text-gray-500 text-sm">
               Select a run to view documents
             </div>

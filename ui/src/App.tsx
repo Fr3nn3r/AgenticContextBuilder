@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
@@ -9,6 +9,7 @@ import { ExtractionPage } from "./components/ExtractionPage";
 import { TemplatesPage } from "./components/TemplatesPage";
 import { InsightsPage } from "./components/InsightsPage";
 import { NewClaimPage } from "./components/NewClaimPage";
+import { PipelineControlCenter } from "./components/PipelineControlCenter";
 import type { ClaimSummary, DocSummary } from "./types";
 import {
   listClaims,
@@ -26,6 +27,7 @@ import {
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
   const [filteredClaims, setFilteredClaims] = useState<ClaimSummary[]>([]);
@@ -57,6 +59,16 @@ function App() {
   useEffect(() => {
     loadRuns();
   }, []);
+
+  // Handle run_id from URL query params (e.g., from NewClaimPage navigation)
+  useEffect(() => {
+    const urlRunId = searchParams.get('run_id');
+    if (urlRunId && urlRunId !== selectedRunId) {
+      // Set the run_id from URL and refresh runs list to include it
+      setSelectedRunId(urlRunId);
+      loadRuns(); // Refresh to include the new run in the dropdown
+    }
+  }, [searchParams, selectedRunId]);
 
   // Load claims and dashboard data when run selection changes
   useEffect(() => {
@@ -188,11 +200,12 @@ function App() {
     if (path === "/documents") return "Document Review";
     if (path === "/insights") return "Benchmark";
     if (path === "/templates") return "Extraction Templates";
+    if (path === "/pipeline") return "Pipeline Control Center";
     return "ContextBuilder";
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" {
+  function getCurrentView(): "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" | "pipeline" {
     const path = location.pathname;
     if (path === "/" || path === "/dashboard") return "dashboard";
     if (path === "/claims/new") return "new-claim";
@@ -200,6 +213,7 @@ function App() {
     if (path === "/documents") return "documents";
     if (path === "/insights") return "insights";
     if (path === "/templates") return "templates";
+    if (path === "/pipeline") return "pipeline";
     return "claims"; // /claims and /claims/:id/review both highlight claims
   }
 
@@ -255,10 +269,10 @@ function App() {
                 path="/"
                 element={
                   <ExtractionPage
-                    runs={detailedRuns}
-                    selectedRunId={selectedRunId}
-                    onRunChange={setSelectedRunId}
-                    selectedRun={selectedDetailedRun}
+                    batches={detailedRuns}
+                    selectedBatchId={selectedRunId}
+                    onBatchChange={setSelectedRunId}
+                    selectedBatch={selectedDetailedRun}
                     overview={dashboardOverview}
                     docTypes={dashboardDocTypes}
                     loading={dashboardLoading}
@@ -269,10 +283,10 @@ function App() {
                 path="/dashboard"
                 element={
                   <ExtractionPage
-                    runs={detailedRuns}
-                    selectedRunId={selectedRunId}
-                    onRunChange={setSelectedRunId}
-                    selectedRun={selectedDetailedRun}
+                    batches={detailedRuns}
+                    selectedBatchId={selectedRunId}
+                    onBatchChange={setSelectedRunId}
+                    selectedBatch={selectedDetailedRun}
                     overview={dashboardOverview}
                     docTypes={dashboardDocTypes}
                     loading={dashboardLoading}
@@ -316,9 +330,9 @@ function App() {
                 path="/classification"
                 element={
                   <ClassificationReview
-                    runs={runs}
-                    selectedRunId={selectedRunId}
-                    onRunChange={setSelectedRunId}
+                    batches={runs}
+                    selectedBatchId={selectedRunId}
+                    onBatchChange={setSelectedRunId}
                   />
                 }
               />
@@ -326,9 +340,9 @@ function App() {
                 path="/documents"
                 element={
                   <DocumentReview
-                    runs={runs}
-                    selectedRunId={selectedRunId}
-                    onRunChange={setSelectedRunId}
+                    batches={runs}
+                    selectedBatchId={selectedRunId}
+                    onBatchChange={setSelectedRunId}
                   />
                 }
               />
@@ -336,12 +350,13 @@ function App() {
                 path="/insights"
                 element={
                   <InsightsPage
-                    selectedRunId={selectedRunId}
-                    onRunChange={setSelectedRunId}
+                    selectedBatchId={selectedRunId}
+                    onBatchChange={setSelectedRunId}
                   />
                 }
               />
               <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/pipeline" element={<PipelineControlCenter />} />
             </Routes>
           )}
         </main>

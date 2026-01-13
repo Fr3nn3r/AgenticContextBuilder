@@ -2,7 +2,7 @@ import { Page, Locator } from "@playwright/test";
 import { BasePage } from "./base.page";
 
 export class InsightsPage extends BasePage {
-  readonly runSelector: Locator;
+  readonly batchSelector: Locator;
   readonly runMetadata: Locator;
   readonly kpiCards: Locator;
   readonly insightsTab: Locator;
@@ -11,12 +11,12 @@ export class InsightsPage extends BasePage {
 
   constructor(page: Page) {
     super(page);
-    this.runSelector = page.getByTestId("run-selector");
+    this.batchSelector = page.getByTestId("batch-selector");
     this.runMetadata = page.getByTestId("run-metadata");
     this.kpiCards = page.locator(".rounded-lg.border.p-3");
     this.insightsTab = page.getByRole("button", { name: "Insights" });
-    this.historyTab = page.getByRole("button", { name: "Run History" });
-    this.compareTab = page.getByRole("button", { name: "Compare Runs" });
+    this.historyTab = page.getByRole("button", { name: "Batch History" });
+    this.compareTab = page.getByRole("button", { name: "Compare Batches" });
   }
 
   async goto() {
@@ -24,13 +24,13 @@ export class InsightsPage extends BasePage {
     await this.waitForLoad();
   }
 
-  async selectRun(runId: string) {
-    await this.runSelector.selectOption(runId);
+  async selectBatch(batchId: string) {
+    await this.batchSelector.selectOption(batchId);
     await this.page.waitForTimeout(300);
   }
 
-  async getSelectedRunId(): Promise<string> {
-    return await this.runSelector.inputValue();
+  async getSelectedBatchId(): Promise<string> {
+    return await this.batchSelector.inputValue();
   }
 
   async getRunMetadataText(): Promise<string> {

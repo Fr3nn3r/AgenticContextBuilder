@@ -9,55 +9,58 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DocProgress, PipelineRunStatus, WebSocketMessage } from '../types';
+import type { DocProgress, PipelineBatchStatus, WebSocketMessage } from '../types';
 
 const WS_RECONNECT_DELAY = 3000;
 
 // Build WebSocket URL from current location
-function getWsUrl(runId: string): string {
+function getWsUrl(batchId: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  return `${protocol}//${host}/api/pipeline/ws/${runId}`;
+  return `${protocol}//${host}/api/pipeline/ws/${batchId}`;
 }
 
 export interface UsePipelineWebSocketOptions {
-  runId: string | null;
+  batchId: string | null;
   onDocProgress?: (docId: string, phase: string, error?: string, failedAtStage?: string) => void;
-  onRunComplete?: (summary: { total: number; success: number; failed: number }) => void;
-  onRunCancelled?: () => void;
-  onSync?: (status: PipelineRunStatus, docs: Record<string, DocProgress>) => void;
+  onBatchComplete?: (summary: { total: number; success: number; failed: number }) => void;
+  onBatchCancelled?: () => void;
+  onSync?: (status: PipelineBatchStatus, docs: Record<string, DocProgress>) => void;
   onError?: (error: Error) => void;
 }
 
 export interface UsePipelineWebSocketResult {
   isConnected: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean;
   error: Error | null;
   reconnectAttempts: number;
 }
 
 export function usePipelineWebSocket({
-  runId,
+  batchId,
   onDocProgress,
-  onRunComplete,
-  onRunCancelled,
+  onBatchComplete,
+  onBatchCancelled,
   onSync,
   onError,
 }: UsePipelineWebSocketOptions): UsePipelineWebSocketResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const shouldReconnectRef = useRef(true);
+  const hasConnectedOnceRef = useRef(false);
 
   // Store callbacks in refs to avoid reconnecting when they change
   const callbacksRef = useRef({
     onDocProgress,
-    onRunComplete,
-    onRunCancelled,
+    onBatchComplete,
+    onBatchCancelled,
     onSync,
     onError,
   });
@@ -66,15 +69,15 @@ export function usePipelineWebSocket({
   useEffect(() => {
     callbacksRef.current = {
       onDocProgress,
-      onRunComplete,
-      onRunCancelled,
+      onBatchComplete,
+      onBatchCancelled,
       onSync,
       onError,
     };
-  }, [onDocProgress, onRunComplete, onRunCancelled, onSync, onError]);
+  }, [onDocProgress, onBatchComplete, onBatchCancelled, onSync, onError]);
 
   const connect = useCallback(() => {
-    if (!runId) return;
+    if (!batchId) return;
 
     // Clean up existing connection
     if (wsRef.current) {
@@ -82,15 +85,24 @@ export function usePipelineWebSocket({
       wsRef.current = null;
     }
 
-    setIsConnecting(true);
+    // Distinguish initial connect from reconnect
+    if (hasConnectedOnceRef.current) {
+      setIsReconnecting(true);
+      setIsConnecting(false);
+    } else {
+      setIsConnecting(true);
+      setIsReconnecting(false);
+    }
     setError(null);
 
-    const ws = new WebSocket(getWsUrl(runId));
+    const ws = new WebSocket(getWsUrl(batchId));
     wsRef.current = ws;
 
     ws.onopen = () => {
+      hasConnectedOnceRef.current = true;
       setIsConnected(true);
       setIsConnecting(false);
+      setIsReconnecting(false);
       setReconnectAttempts(0);
       setError(null);
     };
@@ -103,7 +115,7 @@ export function usePipelineWebSocket({
         switch (message.type) {
           case 'sync':
             if (callbacks.onSync && message.status && message.docs) {
-              callbacks.onSync(message.status as PipelineRunStatus, message.docs);
+              callbacks.onSync(message.status as PipelineBatchStatus, message.docs);
             }
             break;
 
@@ -113,15 +125,17 @@ export function usePipelineWebSocket({
             }
             break;
 
-          case 'run_complete':
-            if (callbacks.onRunComplete && message.summary) {
-              callbacks.onRunComplete(message.summary);
+          case 'batch_complete':
+          case 'run_complete':  // Support legacy message type
+            if (callbacks.onBatchComplete && message.summary) {
+              callbacks.onBatchComplete(message.summary);
             }
             break;
 
-          case 'run_cancelled':
-            if (callbacks.onRunCancelled) {
-              callbacks.onRunCancelled();
+          case 'batch_cancelled':
+          case 'run_cancelled':  // Support legacy message type
+            if (callbacks.onBatchCancelled) {
+              callbacks.onBatchCancelled();
             }
             break;
 
@@ -148,23 +162,25 @@ export function usePipelineWebSocket({
     ws.onclose = () => {
       setIsConnected(false);
       setIsConnecting(false);
+      setIsReconnecting(false);
       wsRef.current = null;
 
       // Auto-reconnect if we should
-      if (shouldReconnectRef.current && runId) {
+      if (shouldReconnectRef.current && batchId) {
         setReconnectAttempts((prev) => prev + 1);
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();
         }, WS_RECONNECT_DELAY);
       }
     };
-  }, [runId]);
+  }, [batchId]);
 
-  // Connect when runId changes
+  // Connect when batchId changes
   useEffect(() => {
     shouldReconnectRef.current = true;
+    hasConnectedOnceRef.current = false; // Reset for new run
 
-    if (runId) {
+    if (batchId) {
       connect();
     }
 
@@ -181,11 +197,12 @@ export function usePipelineWebSocket({
         wsRef.current = null;
       }
     };
-  }, [runId, connect]);
+  }, [batchId, connect]);
 
   return {
     isConnected,
     isConnecting,
+    isReconnecting,
     error,
     reconnectAttempts,
   };

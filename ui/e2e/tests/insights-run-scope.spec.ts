@@ -1,21 +1,21 @@
 import { test, expect } from "@playwright/test";
-import { setupMultiRunMocks } from "../utils/mock-api";
+import { setupMultiBatchMocks } from "../utils/mock-api";
 
 /**
- * Tests that verify the Insights/Benchmark page displays run-scoped metrics correctly.
- * These tests catch bugs where global data is shown instead of data for the selected run.
+ * Tests that verify the Insights/Benchmark page displays batch-scoped metrics correctly.
+ * These tests catch bugs where global data is shown instead of data for the selected batch.
  */
-test.describe("Insights Page - Run Scoping", () => {
+test.describe("Insights Page - Batch Scoping", () => {
   test.beforeEach(async ({ page }) => {
-    await setupMultiRunMocks(page);
+    await setupMultiBatchMocks(page);
   });
 
-  test("displays correct KPIs for small run (3 docs)", async ({ page }) => {
+  test("displays correct KPIs for small batch (3 docs)", async ({ page }) => {
     await page.goto("/insights");
     await page.waitForLoadState("networkidle");
 
-    // Select small run from dropdown
-    await page.selectOption('[data-testid="run-selector"]', "run-small");
+    // Select small batch from dropdown
+    await page.selectOption('[data-testid="batch-selector"]', "batch-small");
     await page.waitForLoadState("networkidle");
 
     // Verify Doc Coverage KPI shows 3 docs total
@@ -23,38 +23,38 @@ test.describe("Insights Page - Run Scoping", () => {
     await expect(docCoverageCard).toContainText("/3");
   });
 
-  test("displays correct KPIs for large run (130 docs)", async ({ page }) => {
+  test("displays correct KPIs for large batch (130 docs)", async ({ page }) => {
     await page.goto("/insights");
     await page.waitForLoadState("networkidle");
 
-    // Select large run from dropdown
-    await page.selectOption('[data-testid="run-selector"]', "run-large");
+    // Select large batch from dropdown
+    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
     await page.waitForLoadState("networkidle");
 
     // Verify Doc Coverage KPI shows 130 docs total
     const docCoverageCard = page.locator('[data-testid="kpi-doc-coverage"]');
     await expect(docCoverageCard).toContainText("/130");
 
-    // Verify Accuracy KPI shows run-specific value
+    // Verify Accuracy KPI shows batch-specific value
     const accuracyCard = page.locator('[data-testid="kpi-accuracy"]');
     await expect(accuracyCard).toContainText("92%");
   });
 
-  test("doc type scoreboard updates when switching runs", async ({ page }) => {
+  test("doc type scoreboard updates when switching batches", async ({ page }) => {
     await page.goto("/insights");
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
 
-    // Select small run - should show 3 doc types
-    await page.selectOption('[data-testid="run-selector"]', "run-small");
+    // Select small batch - should show 3 doc types
+    await page.selectOption('[data-testid="batch-selector"]', "batch-small");
     await page.waitForLoadState("networkidle");
 
     let rows = scoreboardTable.locator("tbody tr");
     await expect(rows).toHaveCount(3);
 
-    // Switch to large run - should show 6 doc types
-    await page.selectOption('[data-testid="run-selector"]', "run-large");
+    // Switch to large batch - should show 6 doc types
+    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
     await page.waitForLoadState("networkidle");
 
     rows = scoreboardTable.locator("tbody tr");
@@ -65,8 +65,8 @@ test.describe("Insights Page - Run Scoping", () => {
     await page.goto("/insights");
     await page.waitForLoadState("networkidle");
 
-    // Select large run for more interesting data
-    await page.selectOption('[data-testid="run-selector"]', "run-large");
+    // Select large batch for more interesting data
+    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
@@ -93,8 +93,8 @@ test.describe("Insights Page - Run Scoping", () => {
     await page.goto("/insights");
     await page.waitForLoadState("networkidle");
 
-    // Select large run
-    await page.selectOption('[data-testid="run-selector"]', "run-large");
+    // Select large batch
+    await page.selectOption('[data-testid="batch-selector"]', "batch-large");
     await page.waitForLoadState("networkidle");
 
     // Note the current values
@@ -105,8 +105,8 @@ test.describe("Insights Page - Run Scoping", () => {
     const rows = scoreboardTable.locator("tbody tr");
     await expect(rows).toHaveCount(6);
 
-    // The run selector should still have the large run selected
-    const runSelector = page.locator('[data-testid="run-selector"]');
-    await expect(runSelector).toHaveValue("run-large");
+    // The batch selector should still have the large batch selected
+    const batchSelector = page.locator('[data-testid="batch-selector"]');
+    await expect(batchSelector).toHaveValue("batch-large");
   });
 });

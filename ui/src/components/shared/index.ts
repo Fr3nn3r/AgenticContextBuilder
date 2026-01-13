@@ -58,5 +58,5 @@ export {
   NoLabelsEmptyState,
 } from "./EmptyState";
 
-// Run selector
-export { RunSelector, formatRunLabel } from "./RunSelector";
+// Batch selector
+export { BatchSelector } from "./BatchSelector";

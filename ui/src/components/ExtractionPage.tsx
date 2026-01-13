@@ -6,139 +6,84 @@ import {
   CompleteBadge,
   PartialBadge,
   FailBadge,
-  LatestBadge,
   PageLoadingSkeleton,
   SelectToViewEmptyState,
 } from "./shared";
 import type { DetailedRunInfo, InsightsOverview, DocTypeMetrics } from "../api/client";
 
 interface ExtractionPageProps {
-  runs: DetailedRunInfo[];
-  selectedRunId: string | null;
-  onRunChange: (runId: string) => void;
-  selectedRun: DetailedRunInfo | null;
+  batches: DetailedRunInfo[];
+  selectedBatchId: string | null;
+  onBatchChange: (batchId: string) => void;
+  selectedBatch: DetailedRunInfo | null;
   overview: InsightsOverview | null;
   docTypes: DocTypeMetrics[];
   loading?: boolean;
 }
 
 export function ExtractionPage({
-  runs,
-  selectedRunId,
-  onRunChange,
-  selectedRun,
+  batches,
+  selectedBatchId,
+  onBatchChange,
+  selectedBatch,
   overview,
   docTypes,
   loading,
 }: ExtractionPageProps) {
-  const [copiedRunId, setCopiedRunId] = useState(false);
+  const [copiedBatchId, setCopiedBatchId] = useState(false);
 
-  // Group runs by date
-  const groupedRuns = useMemo(() => {
-    const groups: Record<string, DetailedRunInfo[]> = {};
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  // Sort batches alphabetically by batch_id
+  const sortedBatches = useMemo(() => {
+    return [...batches].sort((a, b) => a.run_id.localeCompare(b.run_id));
+  }, [batches]);
 
-    for (const run of runs) {
-      if (!run.timestamp) {
-        const key = "Unknown Date";
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(run);
-        continue;
-      }
-
-      const runDate = new Date(run.timestamp);
-      runDate.setHours(0, 0, 0, 0);
-
-      let key: string;
-      if (runDate.getTime() === today.getTime()) {
-        key = "Today";
-      } else if (runDate.getTime() === yesterday.getTime()) {
-        key = "Yesterday";
-      } else {
-        key = runDate.toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          year: runDate.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
-        });
-      }
-
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(run);
-    }
-
-    return groups;
-  }, [runs]);
-
-  const copyRunId = () => {
-    if (selectedRun) {
-      navigator.clipboard.writeText(selectedRun.run_id);
-      setCopiedRunId(true);
-      setTimeout(() => setCopiedRunId(false), 2000);
+  const copyBatchId = () => {
+    if (selectedBatch) {
+      navigator.clipboard.writeText(selectedBatch.run_id);
+      setCopiedBatchId(true);
+      setTimeout(() => setCopiedBatchId(false), 2000);
     }
   };
 
   // Get doc types from classification distribution
-  const docTypesInRun = selectedRun
-    ? Object.keys(selectedRun.phases.classification.distribution)
+  const docTypesInBatch = selectedBatch
+    ? Object.keys(selectedBatch.phases.classification.distribution)
     : [];
 
   return (
     <div className="flex h-full" data-testid="extraction-page">
-      {/* Left Panel: Run History */}
+      {/* Left Panel: Batch History */}
       <div className="w-72 border-r bg-gray-50 flex flex-col">
         <div className="p-4 border-b bg-white">
-          <h3 className="font-semibold text-gray-900">Run History</h3>
-          <p className="text-xs text-gray-500 mt-1">{runs.length} runs</p>
+          <h3 className="font-semibold text-gray-900">Batch History</h3>
+          <p className="text-xs text-gray-500 mt-1">{batches.length} batches</p>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {Object.entries(groupedRuns).map(([date, dateRuns]) => (
-            <div key={date} className="mb-4">
-              <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                {date}
+          {sortedBatches.map((batch) => (
+            <button
+              key={batch.run_id}
+              data-testid={`batch-item-${batch.run_id}`}
+              onClick={() => onBatchChange(batch.run_id)}
+              className={cn(
+                "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
+                selectedBatchId === batch.run_id
+                  ? "bg-blue-100 border border-blue-300"
+                  : "hover:bg-gray-100"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-900 truncate" title={batch.run_id}>
+                  {batch.run_id}
+                </span>
+                <BatchStatusBadge status={batch.status} />
               </div>
-              {dateRuns.map((run, idx) => (
-                <button
-                  key={run.run_id}
-                  data-testid={`run-item-${run.run_id}`}
-                  onClick={() => onRunChange(run.run_id)}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
-                    selectedRunId === run.run_id
-                      ? "bg-blue-100 border border-blue-300"
-                      : "hover:bg-gray-100"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-900">
-                      {run.timestamp
-                        ? new Date(run.timestamp).toLocaleTimeString(undefined, {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : "Unknown"}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {idx === 0 && date === "Today" && runs[0]?.run_id === run.run_id && (
-                        <LatestBadge />
-                      )}
-                      <RunStatusBadge status={run.status} />
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1 truncate" title={run.run_id}>
-                    {run.run_id.replace("run_", "").slice(0, 15)}...
-                  </div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {run.model || "Unknown model"} &bull; {run.docs_total} docs
-                  </div>
-                </button>
-              ))}
-            </div>
+              <div className="text-xs text-gray-400 mt-0.5">
+                {batch.model || "Unknown model"} &bull; {batch.docs_total} docs
+              </div>
+            </button>
           ))}
-          {runs.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">No runs found</div>
+          {batches.length === 0 && (
+            <div className="text-center py-8 text-gray-400 text-sm">No batches found</div>
           )}
         </div>
       </div>
@@ -148,27 +93,27 @@ export function ExtractionPage({
         <div className="p-6">
           {loading ? (
             <PageLoadingSkeleton message="Loading extraction data..." />
-          ) : !selectedRun ? (
+          ) : !selectedBatch ? (
             <div className="flex items-center justify-center h-64">
-              <SelectToViewEmptyState itemType="run" />
+              <SelectToViewEmptyState itemType="batch" />
             </div>
           ) : (
             <>
-              {/* Run Context Header */}
+              {/* Batch Context Header */}
               <div className="bg-white rounded-lg border p-4 mb-6">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-500">Run ID:</span>
+                      <span className="text-sm font-medium text-gray-500">Batch ID:</span>
                       <code className="text-sm bg-gray-100 px-2 py-0.5 rounded">
-                        {selectedRun.run_id}
+                        {selectedBatch.run_id}
                       </code>
                       <button
-                        onClick={copyRunId}
+                        onClick={copyBatchId}
                         className="text-gray-400 hover:text-gray-600"
-                        title="Copy run ID"
+                        title="Copy batch ID"
                       >
-                        {copiedRunId ? (
+                        {copiedBatchId ? (
                           <CheckIcon className="w-4 h-4 text-green-500" />
                         ) : (
                           <CopyIcon className="w-4 h-4" />
@@ -177,15 +122,15 @@ export function ExtractionPage({
                     </div>
                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
                       <span>
-                        {selectedRun.timestamp
-                          ? new Date(selectedRun.timestamp).toLocaleString()
+                        {selectedBatch.timestamp
+                          ? new Date(selectedBatch.timestamp).toLocaleString()
                           : "Unknown time"}
                       </span>
-                      <RunStatusBadge status={selectedRun.status} />
+                      <BatchStatusBadge status={selectedBatch.status} />
                       <span>
                         Duration:{" "}
-                        {selectedRun.duration_seconds
-                          ? `${selectedRun.duration_seconds}s`
+                        {selectedBatch.duration_seconds
+                          ? `${selectedBatch.duration_seconds}s`
                           : "—"}
                       </span>
                     </div>
@@ -194,21 +139,21 @@ export function ExtractionPage({
                 <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 pt-4 border-t text-sm">
                   <div>
                     <span className="text-gray-500">Claims:</span>{" "}
-                    <span className="font-medium">{selectedRun.claims_count}</span>
+                    <span className="font-medium">{selectedBatch.claims_count}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Docs:</span>{" "}
-                    <span className="font-medium">{selectedRun.docs_total}</span>
+                    <span className="font-medium">{selectedBatch.docs_total}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Doc types:</span>{" "}
                     <span className="font-medium">
-                      {docTypesInRun.length > 0 ? docTypesInRun.join(", ") : "—"}
+                      {docTypesInBatch.length > 0 ? docTypesInBatch.join(", ") : "—"}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Model:</span>{" "}
-                    <span className="font-medium">{selectedRun.model || "—"}</span>
+                    <span className="font-medium">{selectedBatch.model || "—"}</span>
                   </div>
                 </div>
               </div>
@@ -222,20 +167,20 @@ export function ExtractionPage({
                   color="blue"
                   testId="phase-ingestion"
                   metrics={[
-                    { label: "Discovered", value: selectedRun.phases.ingestion.discovered },
-                    { label: "Ingested", value: selectedRun.phases.ingestion.ingested },
+                    { label: "Discovered", value: selectedBatch.phases.ingestion.discovered },
+                    { label: "Ingested", value: selectedBatch.phases.ingestion.ingested },
                     {
                       label: "Skipped",
-                      value: selectedRun.phases.ingestion.skipped,
+                      value: selectedBatch.phases.ingestion.skipped,
                       muted: true,
                     },
                     {
                       label: "Failed",
-                      value: selectedRun.phases.ingestion.failed,
-                      alert: selectedRun.phases.ingestion.failed > 0,
+                      value: selectedBatch.phases.ingestion.failed,
+                      alert: selectedBatch.phases.ingestion.failed > 0,
                     },
                   ]}
-                  duration={selectedRun.phases.ingestion.duration_ms}
+                  duration={selectedBatch.phases.ingestion.duration_ms}
                 />
 
                 {/* Classification Card */}
@@ -247,19 +192,19 @@ export function ExtractionPage({
                   metrics={[
                     {
                       label: "Classified",
-                      value: selectedRun.phases.classification.classified,
+                      value: selectedBatch.phases.classification.classified,
                     },
                     {
                       label: "Low confidence",
-                      value: selectedRun.phases.classification.low_confidence,
-                      alert: selectedRun.phases.classification.low_confidence > 0,
+                      value: selectedBatch.phases.classification.low_confidence,
+                      alert: selectedBatch.phases.classification.low_confidence > 0,
                     },
                   ]}
-                  duration={selectedRun.phases.classification.duration_ms}
+                  duration={selectedBatch.phases.classification.duration_ms}
                 >
-                  {Object.keys(selectedRun.phases.classification.distribution).length > 0 && (
+                  {Object.keys(selectedBatch.phases.classification.distribution).length > 0 && (
                     <div className="mt-2 pt-2 border-t space-y-1">
-                      {Object.entries(selectedRun.phases.classification.distribution)
+                      {Object.entries(selectedBatch.phases.classification.distribution)
                         .sort((a, b) => b[1] - a[1])
                         .slice(0, 4)
                         .map(([type, count]) => (
@@ -282,19 +227,19 @@ export function ExtractionPage({
                   color="green"
                   testId="phase-extraction"
                   metrics={[
-                    { label: "Attempted", value: selectedRun.phases.extraction.attempted },
+                    { label: "Attempted", value: selectedBatch.phases.extraction.attempted },
                     {
                       label: "Succeeded",
-                      value: selectedRun.phases.extraction.succeeded,
+                      value: selectedBatch.phases.extraction.succeeded,
                       success: true,
                     },
                     {
                       label: "Failed",
-                      value: selectedRun.phases.extraction.failed,
-                      alert: selectedRun.phases.extraction.failed > 0,
+                      value: selectedBatch.phases.extraction.failed,
+                      alert: selectedBatch.phases.extraction.failed > 0,
                     },
                   ]}
-                  duration={selectedRun.phases.extraction.duration_ms}
+                  duration={selectedBatch.phases.extraction.duration_ms}
                 />
 
                 {/* Quality Gate Card */}
@@ -306,18 +251,18 @@ export function ExtractionPage({
                   metrics={[
                     {
                       label: "Pass",
-                      value: selectedRun.phases.quality_gate.pass,
+                      value: selectedBatch.phases.quality_gate.pass,
                       success: true,
                     },
                     {
                       label: "Warn",
-                      value: selectedRun.phases.quality_gate.warn,
-                      warning: selectedRun.phases.quality_gate.warn > 0,
+                      value: selectedBatch.phases.quality_gate.warn,
+                      warning: selectedBatch.phases.quality_gate.warn > 0,
                     },
                     {
                       label: "Fail",
-                      value: selectedRun.phases.quality_gate.fail,
-                      alert: selectedRun.phases.quality_gate.fail > 0,
+                      value: selectedBatch.phases.quality_gate.fail,
+                      alert: selectedBatch.phases.quality_gate.fail > 0,
                     },
                   ]}
                 >
@@ -343,8 +288,8 @@ export function ExtractionPage({
                       label="Label Coverage (truth)"
                       description="Labeled docs / total docs in run"
                       value={overview?.docs_reviewed || 0}
-                      total={selectedRun.docs_total}
-                      percentage={selectedRun.docs_total > 0 ? Math.round((overview?.docs_reviewed || 0) / selectedRun.docs_total * 100) : 0}
+                      total={selectedBatch.docs_total}
+                      percentage={selectedBatch.docs_total > 0 ? Math.round((overview?.docs_reviewed || 0) / selectedBatch.docs_total * 100) : 0}
                       color="green"
                     />
                     <ProgressBar
@@ -352,8 +297,8 @@ export function ExtractionPage({
                       label="Extraction Coverage"
                       description="Docs with extraction / total docs in run"
                       value={overview?.docs_with_extraction || 0}
-                      total={selectedRun.docs_total}
-                      percentage={selectedRun.docs_total > 0 ? Math.round((overview?.docs_with_extraction || 0) / selectedRun.docs_total * 100) : 0}
+                      total={selectedBatch.docs_total}
+                      percentage={selectedBatch.docs_total > 0 ? Math.round((overview?.docs_with_extraction || 0) / selectedBatch.docs_total * 100) : 0}
                       color="blue"
                     />
                   </div>
@@ -380,14 +325,14 @@ export function ExtractionPage({
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.keys(selectedRun.phases.classification.distribution).length === 0 ? (
+                        {Object.keys(selectedBatch.phases.classification.distribution).length === 0 ? (
                           <tr>
                             <td colSpan={5} className="py-4 text-center text-gray-400">
                               No doc types classified yet
                             </td>
                           </tr>
                         ) : (
-                          Object.entries(selectedRun.phases.classification.distribution)
+                          Object.entries(selectedBatch.phases.classification.distribution)
                             .sort((a, b) => b[1] - a[1])
                             .map(([docType, classifiedCount]) => {
                               const extractionMetrics = docTypes.find((dt) => dt.doc_type === docType);
@@ -435,7 +380,7 @@ export function ExtractionPage({
 
 // Helper Components
 
-function RunStatusBadge({ status }: { status: "complete" | "partial" | "failed" }) {
+function BatchStatusBadge({ status }: { status: "complete" | "partial" | "failed" }) {
   if (status === "complete") return <CompleteBadge />;
   if (status === "partial") return <PartialBadge />;
   return <FailBadge />;

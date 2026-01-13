@@ -142,14 +142,17 @@ export interface DocPayload {
   has_image: boolean;
 }
 
-export interface RunSummary {
-  run_dir: string;
+export interface BatchSummary {
+  batch_dir: string;
   total_claims: number;
   total_docs: number;
   extracted_count: number;
   labeled_count: number;
   quality_gate: Record<string, number>;
 }
+
+/** @deprecated Use BatchSummary instead */
+export type RunSummary = BatchSummary;
 
 // New types for claim-level review
 
@@ -340,16 +343,19 @@ export interface DocProgress {
   error?: string;
 }
 
-export type PipelineRunStatus =
+export type PipelineBatchStatus =
   | "pending"
   | "running"
   | "completed"
   | "failed"
   | "cancelled";
 
-export interface PipelineRun {
-  run_id: string;
-  status: PipelineRunStatus;
+/** @deprecated Use PipelineBatchStatus instead */
+export type PipelineRunStatus = PipelineBatchStatus;
+
+export interface PipelineBatch {
+  batch_id: string;
+  status: PipelineBatchStatus;
   claim_ids: string[];
   started_at?: string;
   completed_at?: string;
@@ -362,21 +368,27 @@ export interface PipelineRun {
   docs?: Record<string, DocProgress>;
 }
 
+/** @deprecated Use PipelineBatch instead */
+export type PipelineRun = PipelineBatch;
+
 export type WebSocketMessageType =
   | "sync"
   | "doc_progress"
-  | "run_complete"
-  | "run_cancelled"
+  | "batch_complete"
+  | "batch_cancelled"
+  | "run_complete"    // deprecated - use batch_complete
+  | "run_cancelled"   // deprecated - use batch_cancelled
   | "ping";
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;
-  run_id?: string;
+  batch_id?: string;
+  run_id?: string;  // deprecated - use batch_id
   doc_id?: string;
   phase?: DocPipelinePhase;
   failed_at_stage?: DocPipelinePhase;
   error?: string;
-  status?: PipelineRunStatus;
+  status?: PipelineBatchStatus;
   docs?: Record<string, DocProgress>;
   summary?: {
     total: number;

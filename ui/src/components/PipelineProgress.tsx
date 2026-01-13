@@ -10,11 +10,11 @@
  */
 
 import { cn } from '../lib/utils';
-import type { DocPipelinePhase, DocProgress, PipelineRunStatus } from '../types';
+import type { DocPipelinePhase, DocProgress, PipelineBatchStatus } from '../types';
 
 export interface PipelineProgressProps {
-  runId: string;
-  status: PipelineRunStatus;
+  batchId: string;
+  status: PipelineBatchStatus;
   docs: Record<string, DocProgress>;
   summary?: {
     total: number;
@@ -23,6 +23,8 @@ export interface PipelineProgressProps {
   };
   onCancel?: () => void;
   isConnected?: boolean;
+  isConnecting?: boolean;
+  isReconnecting?: boolean;
 }
 
 // Pipeline stages in order
@@ -39,12 +41,14 @@ const STAGE_LABELS: Record<DocPipelinePhase, string> = {
 };
 
 export function PipelineProgress({
-  runId,
+  batchId,
   status,
   docs,
   summary,
   onCancel,
-  isConnected = true,
+  isConnected: _isConnected = true,
+  isConnecting = false,
+  isReconnecting = false,
 }: PipelineProgressProps) {
   const docList = Object.values(docs);
   const completedCount = docList.filter(
@@ -62,10 +66,16 @@ export function PipelineProgress({
       <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
         <div className="flex items-center gap-3">
           <StatusBadge status={status} />
-          <span className="text-sm text-gray-500 font-mono">Run: {runId}</span>
-          {!isConnected && isRunning && (
+          <span className="text-sm text-gray-500 font-mono">Batch: {batchId}</span>
+          {isConnecting && isRunning && (
+            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1">
+              <SpinnerIcon className="w-3 h-3 animate-spin" />
+              Connecting...
+            </span>
+          )}
+          {isReconnecting && isRunning && (
             <span className="text-xs text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded flex items-center gap-1">
-              <SpinnerIcon className="w-3 h-3" />
+              <SpinnerIcon className="w-3 h-3 animate-spin" />
               Reconnecting...
             </span>
           )}
@@ -327,7 +337,7 @@ function PhaseLabel({ phase, failedAtStage }: { phase: DocPipelinePhase; failedA
   );
 }
 
-function StatusBadge({ status }: { status: PipelineRunStatus }) {
+function StatusBadge({ status }: { status: PipelineBatchStatus }) {
   const config: Record<string, { label: string; color: string }> = {
     pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700' },
     running: { label: 'Running', color: 'bg-blue-100 text-blue-700' },

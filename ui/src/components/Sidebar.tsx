@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
-type View = "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates";
+type View = "new-claim" | "dashboard" | "claims" | "classification" | "documents" | "insights" | "templates" | "pipeline";
 
 interface SidebarProps {
   currentView: View;
@@ -10,6 +10,7 @@ interface SidebarProps {
 const navItems = [
   { id: "new-claim" as View, label: "New Claim", path: "/claims/new", icon: PlusIcon },
   { id: "dashboard" as View, label: "Extraction", path: "/dashboard", icon: DashboardIcon },
+  { id: "pipeline" as View, label: "Pipeline Control", path: "/pipeline", icon: PipelineIcon },
   { id: "classification" as View, label: "Classification Review", path: "/classification", icon: ClassificationIcon },
   { id: "documents" as View, label: "Document Review", path: "/documents", icon: DocumentsIcon },
   { id: "claims" as View, label: "Claims Review", path: "/claims", icon: ClaimsIcon },
@@ -116,6 +117,14 @@ function PlusIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  );
+}
+
+function PipelineIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h16" />
     </svg>
   );
 }

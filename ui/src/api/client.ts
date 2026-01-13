@@ -4,7 +4,7 @@ import type {
   ClaimSummary,
   DocSummary,
   DocPayload,
-  RunSummary,
+  BatchSummary,
   FieldLabel,
   DocLabels,
   ClaimReviewPayload,
@@ -79,9 +79,12 @@ export async function saveLabels(
   });
 }
 
-export async function getRunSummary(): Promise<RunSummary> {
-  return fetchJson<RunSummary>(`${API_BASE}/runs/latest`);
+export async function getBatchSummary(): Promise<BatchSummary> {
+  return fetchJson<BatchSummary>(`${API_BASE}/runs/latest`);
 }
+
+/** @deprecated Use getBatchSummary instead */
+export const getRunSummary = getBatchSummary;
 
 // New API functions for claim-level review
 
@@ -437,7 +440,7 @@ export async function getClassificationStats(runId: string): Promise<Classificat
 // UPLOAD API
 // =============================================================================
 
-import type { PendingClaim, PendingDocument, PipelineRun } from "../types";
+import type { PendingClaim, PendingDocument, PipelineBatch } from "../types";
 
 export interface UploadResult {
   claim_id: string;
@@ -542,25 +545,31 @@ export async function generateClaimId(): Promise<{ claim_id: string }> {
 export async function startPipeline(
   claimIds: string[],
   model: string = "gpt-4o"
-): Promise<{ run_id: string; status: string }> {
-  return fetchJson<{ run_id: string; status: string }>(`${API_BASE}/pipeline/run`, {
+): Promise<{ batch_id: string; status: string }> {
+  const result = await fetchJson<{ run_id: string; status: string }>(`${API_BASE}/pipeline/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ claim_ids: claimIds, model }),
   });
+  return { batch_id: result.run_id, status: result.status };
 }
 
-export async function cancelPipeline(runId: string): Promise<{ status: string }> {
+export async function cancelPipeline(batchId: string): Promise<{ status: string }> {
   return fetchJson<{ status: string }>(
-    `${API_BASE}/pipeline/cancel/${encodeURIComponent(runId)}`,
+    `${API_BASE}/pipeline/cancel/${encodeURIComponent(batchId)}`,
     { method: "POST" }
   );
 }
 
-export async function getPipelineStatus(runId: string): Promise<PipelineRun> {
-  return fetchJson<PipelineRun>(`${API_BASE}/pipeline/status/${encodeURIComponent(runId)}`);
+export async function getPipelineStatus(batchId: string): Promise<PipelineBatch> {
+  const result = await fetchJson<{ run_id: string } & Omit<PipelineBatch, 'batch_id'>>(`${API_BASE}/pipeline/status/${encodeURIComponent(batchId)}`);
+  return { ...result, batch_id: result.run_id };
 }
 
-export async function listPipelineRuns(): Promise<PipelineRun[]> {
-  return fetchJson<PipelineRun[]>(`${API_BASE}/pipeline/runs`);
+export async function listPipelineBatches(): Promise<PipelineBatch[]> {
+  const results = await fetchJson<Array<{ run_id: string } & Omit<PipelineBatch, 'batch_id'>>>(`${API_BASE}/pipeline/runs`);
+  return results.map(r => ({ ...r, batch_id: r.run_id }));
 }
+
+/** @deprecated Use listPipelineBatches instead */
+export const listPipelineRuns = listPipelineBatches;

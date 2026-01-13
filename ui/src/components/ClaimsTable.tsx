@@ -11,7 +11,7 @@ import {
   GateStatusBadge,
   NotInRunBadge,
   NoSearchResultsEmptyState,
-  RunSelector,
+  BatchSelector,
 } from "./shared";
 
 interface ClaimsTableProps {
@@ -119,14 +119,14 @@ export function ClaimsTable({
 
   return (
     <div className="p-6">
-      {/* Run Selector Header */}
+      {/* Batch Selector Header */}
       <div className="mb-6">
-        <RunSelector
-          runs={runs}
-          selectedRunId={selectedRunId}
-          onRunChange={(id) => onRunChange(id || null)}
+        <BatchSelector
+          batches={runs.map(r => ({ ...r, batch_id: r.run_id }))}
+          selectedBatchId={selectedRunId}
+          onBatchChange={(id) => onRunChange(id || null)}
           showMetadata
-          testId="run-selector"
+          testId="batch-selector"
         />
       </div>
 

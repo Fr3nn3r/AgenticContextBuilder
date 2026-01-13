@@ -223,39 +223,39 @@ export function formatDuration(seconds: number): string {
 }
 
 // ============================================================================
-// Run ID Formatting
+// Batch ID Formatting
 // ============================================================================
 
 /**
- * Truncates a run ID for display while keeping it recognizable.
+ * Truncates a batch ID for display while keeping it recognizable.
  *
  * @example
- * truncateRunId("run_20260108_173118_5e32c71") // "20260108_173118..."
+ * truncateBatchId("batch_20260108_173118_5e32c71") // "20260108_173118..."
  */
-export function truncateRunId(runId: string, maxLength = 18): string {
-  // Remove "run_" prefix if present
-  const cleanId = runId.startsWith("run_") ? runId.slice(4) : runId;
+export function truncateBatchId(batchId: string, maxLength = 18): string {
+  // Remove "batch_" or "run_" prefix if present
+  let cleanId = batchId;
+  if (cleanId.startsWith("batch_")) cleanId = cleanId.slice(6);
+  else if (cleanId.startsWith("run_")) cleanId = cleanId.slice(4);
 
   if (cleanId.length <= maxLength) return cleanId;
   return cleanId.slice(0, maxLength) + "...";
 }
 
 /**
- * Formats a run ID with optional metadata for display in selectors.
+ * Formats a batch ID with optional metadata for display in selectors.
  *
  * @example
- * formatRunOption("run_20260108_173118_5e32c71", true, 3) // "20260108_173118... (Latest, 3 docs)"
+ * formatBatchOption("batch_20260108_173118_5e32c71", 3) // "20260108_173118... (3 docs)"
  */
-export function formatRunOption(
-  runId: string,
-  isLatest = false,
+export function formatBatchOption(
+  batchId: string,
   docsCount?: number,
   claimsCount?: number
 ): string {
-  const truncated = truncateRunId(runId);
+  const truncated = truncateBatchId(batchId);
   const parts: string[] = [];
 
-  if (isLatest) parts.push("Latest");
   if (docsCount !== undefined) parts.push(`${docsCount} docs`);
   if (claimsCount !== undefined) parts.push(`${claimsCount} claims`);
 

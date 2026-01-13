@@ -22,7 +22,7 @@ test.describe("Visual Regression", () => {
     await page.waitForLoadState("networkidle");
 
     // Wait for data to load
-    await page.waitForSelector('[data-testid="run-selector"]');
+    await page.waitForSelector('[data-testid="batch-selector"]');
     await page.waitForTimeout(500); // Extra wait for animations
 
     await expect(page).toHaveScreenshot("claims-table.png", {
@@ -50,7 +50,7 @@ test.describe("Visual Regression", () => {
     await page.waitForLoadState("networkidle");
 
     // Wait for insights data to load
-    await page.waitForSelector('[data-testid="run-selector"]');
+    await page.waitForSelector('[data-testid="batch-selector"]');
     await page.waitForTimeout(500);
 
     await expect(page).toHaveScreenshot("insights.png", {

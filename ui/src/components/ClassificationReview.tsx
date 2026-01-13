@@ -11,7 +11,7 @@ import {
   SelectToViewEmptyState,
   Spinner,
   NoDocumentsEmptyState,
-  RunSelector,
+  BatchSelector,
 } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
 import type {
@@ -46,15 +46,15 @@ const DOC_TYPES = [
 ];
 
 interface ClassificationReviewProps {
-  runs: ClaimRunInfo[];
-  selectedRunId: string | null;
-  onRunChange: (runId: string | null) => void;
+  batches: ClaimRunInfo[];
+  selectedBatchId: string | null;
+  onBatchChange: (batchId: string | null) => void;
 }
 
 export function ClassificationReview({
-  runs,
-  selectedRunId,
-  onRunChange,
+  batches,
+  selectedBatchId,
+  onBatchChange,
 }: ClassificationReviewProps) {
 
   // Doc list state
@@ -95,21 +95,21 @@ export function ClassificationReview({
 
   // Load docs when run changes
   useEffect(() => {
-    if (selectedRunId) {
-      loadDocs(selectedRunId);
-      loadStats(selectedRunId);
+    if (selectedBatchId) {
+      loadDocs(selectedBatchId);
+      loadStats(selectedBatchId);
     }
-  }, [selectedRunId]);
+  }, [selectedBatchId]);
 
   // Load detail when doc selected
   useEffect(() => {
-    if (selectedDocId && selectedRunId) {
-      loadDetail(selectedDocId, selectedRunId);
+    if (selectedDocId && selectedBatchId) {
+      loadDetail(selectedDocId, selectedBatchId);
     } else {
       setDetail(null);
       setDocPayload(null);
     }
-  }, [selectedDocId, selectedRunId]);
+  }, [selectedDocId, selectedBatchId]);
 
   async function loadDocs(runId: string) {
     try {
@@ -161,7 +161,7 @@ export function ClassificationReview({
   }
 
   async function handleSave() {
-    if (!detail || !selectedRunId) return;
+    if (!detail || !selectedBatchId) return;
 
     try {
       setSaving(true);
@@ -174,8 +174,8 @@ export function ClassificationReview({
 
       // Refresh docs and stats
       await Promise.all([
-        loadDocs(selectedRunId),
-        loadStats(selectedRunId),
+        loadDocs(selectedBatchId),
+        loadStats(selectedBatchId),
       ]);
 
       // Move to next pending doc
@@ -220,13 +220,13 @@ export function ClassificationReview({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header with run selector and KPIs */}
+      {/* Header with batch selector and KPIs */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
-          <RunSelector
-            runs={runs}
-            selectedRunId={selectedRunId}
-            onRunChange={(id) => onRunChange(id || null)}
+          <BatchSelector
+            batches={batches.map(b => ({ ...b, batch_id: b.run_id }))}
+            selectedBatchId={selectedBatchId}
+            onBatchChange={(id) => onBatchChange(id || null)}
             showMetadata
           />
 

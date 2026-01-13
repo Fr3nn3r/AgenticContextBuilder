@@ -103,13 +103,13 @@ See `tests/unit/test_azure_di_impl.py::TestEnvironmentVariableLoading` for regre
 
 | Term | Definition |
 |------|------------|
-| Run | Pipeline execution with specific versions; produces extraction outputs, gates, logs |
+| Batch | Pipeline execution with specific versions; produces extraction outputs, gates, logs |
 | Label | Human record per doc+field with truth state |
 | Labeled | truth_value exists (ground truth) |
 | Unlabeled | No truth recorded yet |
 | Unverifiable | Reviewer cannot establish truth (with reason) |
 | Truth value | Human-authoritative correct value |
-| Extracted value | System-produced value from run |
+| Extracted value | System-produced value from batch |
 | Correct | extracted == truth (normalized) |
 | Incorrect | extracted exists but != truth |
 | Missing | truth exists but no extraction |

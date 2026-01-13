@@ -1,0 +1,76 @@
+import { cn } from "../../lib/utils";
+
+interface BaseBatchInfo {
+  batch_id: string;
+  timestamp: string | null;
+  model?: string | null;
+  docs_count?: number;
+  docs_total?: number;
+  claims_count?: number;
+}
+
+interface BatchSelectorProps<T extends BaseBatchInfo> {
+  batches: T[];
+  selectedBatchId: string | null;
+  onBatchChange: (batchId: string) => void;
+  /** Show metadata inline (model, doc count) */
+  showMetadata?: boolean;
+  className?: string;
+  /** Test ID for e2e tests */
+  testId?: string;
+}
+
+/**
+ * Shared batch selector component with alphabetically sorted batch IDs
+ */
+export function BatchSelector<T extends BaseBatchInfo>({
+  batches,
+  selectedBatchId,
+  onBatchChange,
+  showMetadata = false,
+  className,
+  testId,
+}: BatchSelectorProps<T>) {
+  // Sort batches alphabetically by batch_id
+  const sortedBatches = [...batches].sort((a, b) =>
+    a.batch_id.localeCompare(b.batch_id)
+  );
+
+  const selectedBatch = sortedBatches.find(b => b.batch_id === selectedBatchId);
+  const docsCount = selectedBatch?.docs_count ?? selectedBatch?.docs_total ?? 0;
+
+  return (
+    <div className={cn("flex items-center gap-4", className)}>
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-gray-700">Batch:</label>
+        <select
+          data-testid={testId || "batch-selector"}
+          value={selectedBatchId || ""}
+          onChange={(e) => onBatchChange(e.target.value)}
+          className="border rounded-md px-3 py-1.5 text-sm min-w-[180px] bg-white"
+        >
+          {sortedBatches.map((batch) => (
+            <option key={batch.batch_id} value={batch.batch_id}>
+              {batch.batch_id}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {showMetadata && selectedBatch && (
+        <div className="flex items-center gap-3 text-xs text-gray-500 border-l pl-4">
+          {selectedBatch.model && (
+            <span>
+              <strong>Model:</strong> {selectedBatch.model}
+            </span>
+          )}
+          {docsCount > 0 && (
+            <span>
+              <strong>Docs:</strong> {docsCount}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

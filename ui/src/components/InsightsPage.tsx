@@ -8,12 +8,11 @@ import {
   DeltaMetricCard,
   getScoreVariant,
   ScoreBadge,
-  LatestBadge,
   BaselineBadge,
   OutcomeBadge,
   PageLoadingSkeleton,
   NoLabelsEmptyState,
-  RunSelector,
+  BatchSelector,
 } from "./shared";
 import {
   getInsightsFieldDetails,
@@ -40,13 +39,13 @@ import {
 type ViewTab = "insights" | "history" | "compare";
 
 interface InsightsPageProps {
-  selectedRunId: string | null;
-  onRunChange: (runId: string) => void;
+  selectedBatchId: string | null;
+  onBatchChange: (batchId: string) => void;
 }
 
 export function InsightsPage({
-  selectedRunId,
-  onRunChange,
+  selectedBatchId,
+  onBatchChange,
 }: InsightsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -89,20 +88,20 @@ export function InsightsPage({
     loadBaseline();
   }, []);
 
-  // Sync selectedDetailedRun when selectedRunId or detailedRuns change
+  // Sync selectedDetailedRun when selectedBatchId or detailedRuns change
   useEffect(() => {
-    if (selectedRunId && detailedRuns.length > 0) {
-      const detailed = detailedRuns.find((r) => r.run_id === selectedRunId);
+    if (selectedBatchId && detailedRuns.length > 0) {
+      const detailed = detailedRuns.find((r) => r.run_id === selectedBatchId);
       setSelectedDetailedRun(detailed || null);
     }
-  }, [selectedRunId, detailedRuns]);
+  }, [selectedBatchId, detailedRuns]);
 
   // Load data when run selection changes
   useEffect(() => {
-    if (selectedRunId) {
-      loadRunData(selectedRunId);
+    if (selectedBatchId) {
+      loadRunData(selectedBatchId);
     }
-  }, [selectedRunId]);
+  }, [selectedBatchId]);
 
   async function loadRuns() {
     try {
@@ -113,8 +112,8 @@ export function InsightsPage({
       setRuns(runsData);
       setDetailedRuns(detailedData);
       // If no run selected yet, select latest and notify parent
-      if (runsData.length > 0 && !selectedRunId) {
-        onRunChange(runsData[0].run_id);
+      if (runsData.length > 0 && !selectedBatchId) {
+        onBatchChange(runsData[0].run_id);
       }
     } catch (err) {
       console.error("Failed to load runs:", err);
@@ -136,7 +135,7 @@ export function InsightsPage({
       setFieldDetails(null);
       setExamples([]);
     }
-  }, [selectedDocType, selectedField, selectedOutcome, selectedRunId]);
+  }, [selectedDocType, selectedField, selectedOutcome, selectedBatchId]);
 
   // Load comparison when both runs selected
   useEffect(() => {
@@ -185,7 +184,7 @@ export function InsightsPage({
 
   async function loadFieldDetails(docType: string, field: string) {
     try {
-      const data = await getInsightsFieldDetails(docType, field, selectedRunId || undefined);
+      const data = await getInsightsFieldDetails(docType, field, selectedBatchId || undefined);
       setFieldDetails(data);
     } catch {
       setFieldDetails(null);
@@ -194,7 +193,7 @@ export function InsightsPage({
 
   async function loadExamples(params: { doc_type?: string; field?: string; outcome?: string }) {
     try {
-      const data = await getInsightsExamples({ ...params, run_id: selectedRunId || undefined, limit: 30 });
+      const data = await getInsightsExamples({ ...params, run_id: selectedBatchId || undefined, limit: 30 });
       setExamples(data);
     } catch {
       setExamples([]);
@@ -275,7 +274,7 @@ export function InsightsPage({
       <div className="flex flex-col items-center justify-center h-full">
         <p className="text-red-600 mb-4">{error}</p>
         <button
-          onClick={() => selectedRunId && loadRunData(selectedRunId)}
+          onClick={() => selectedBatchId && loadRunData(selectedBatchId)}
           className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
         >
           Retry
@@ -286,16 +285,16 @@ export function InsightsPage({
 
   return (
     <div className="p-4 space-y-4">
-      {/* Run Context Header */}
+      {/* Batch Context Header */}
       <div className="bg-white rounded-lg border shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Run Selector */}
-            <RunSelector
-              runs={runs}
-              selectedRunId={selectedRunId}
-              onRunChange={onRunChange}
-              testId="run-selector"
+            {/* Batch Selector */}
+            <BatchSelector
+              batches={runs.map(r => ({ ...r, batch_id: r.run_id }))}
+              selectedBatchId={selectedBatchId}
+              onBatchChange={onBatchChange}
+              testId="batch-selector"
             />
 
             {/* Run Metadata */}
@@ -328,9 +327,9 @@ export function InsightsPage({
                 Baseline: {baselineRunId}
               </span>
             )}
-            {selectedRunId && selectedRunId !== baselineRunId && (
+            {selectedBatchId && selectedBatchId !== baselineRunId && (
               <button
-                onClick={() => handleSetBaseline(selectedRunId)}
+                onClick={() => handleSetBaseline(selectedBatchId)}
                 className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
               >
                 Set as Baseline
@@ -370,7 +369,7 @@ export function InsightsPage({
               : "border-transparent text-gray-500 hover:text-gray-700"
           )}
         >
-          Run History
+          Batch History
         </button>
         <button
           onClick={() => setActiveTab("compare")}
@@ -381,7 +380,7 @@ export function InsightsPage({
               : "border-transparent text-gray-500 hover:text-gray-700"
           )}
         >
-          Compare Runs
+          Compare Batches
         </button>
       </div>
 
@@ -417,8 +416,8 @@ export function InsightsPage({
         <RunHistoryTab
           runs={runs}
           baselineRunId={baselineRunId}
-          selectedRunId={selectedRunId}
-          onSelectRun={onRunChange}
+          selectedBatchId={selectedBatchId}
+          onSelectRun={onBatchChange}
           onSetBaseline={handleSetBaseline}
         />
       )}
@@ -724,18 +723,18 @@ function InsightsTab({
 interface RunHistoryTabProps {
   runs: RunInfo[];
   baselineRunId: string | null;
-  selectedRunId: string | null;
+  selectedBatchId: string | null;
   onSelectRun: (runId: string) => void;
   onSetBaseline: (runId: string) => void;
 }
 
-function RunHistoryTab({ runs, baselineRunId, selectedRunId, onSelectRun, onSetBaseline }: RunHistoryTabProps) {
+function RunHistoryTab({ runs, baselineRunId, selectedBatchId, onSelectRun, onSetBaseline }: RunHistoryTabProps) {
   return (
     <div className="bg-white rounded-lg border shadow-sm">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b bg-gray-50">
-            <th className="text-left p-3 font-medium">Run ID</th>
+            <th className="text-left p-3 font-medium">Batch ID</th>
             <th className="text-left p-3 font-medium">Timestamp</th>
             <th className="text-left p-3 font-medium">Model</th>
             <th className="text-right p-3 font-medium">Docs</th>
@@ -747,17 +746,16 @@ function RunHistoryTab({ runs, baselineRunId, selectedRunId, onSelectRun, onSetB
           </tr>
         </thead>
         <tbody>
-          {runs.map((run, idx) => (
+          {runs.map((run) => (
             <tr
               key={run.run_id}
               className={cn(
                 "border-b hover:bg-gray-50",
-                selectedRunId === run.run_id && "bg-blue-50"
+                selectedBatchId === run.run_id && "bg-blue-50"
               )}
             >
               <td className="p-3 font-mono text-xs">
                 {run.run_id}
-                {idx === 0 && <span className="ml-2"><LatestBadge /></span>}
                 {run.run_id === baselineRunId && <span className="ml-2"><BaselineBadge /></span>}
               </td>
               <td className="p-3 text-gray-600">{formatTimestamp(run.timestamp)}</td>

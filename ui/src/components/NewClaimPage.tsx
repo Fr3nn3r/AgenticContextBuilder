@@ -26,7 +26,7 @@ function generateLocalClaimId(): string {
   return `CLM-${dateStr}-${randomSuffix}`;
 }
 import { usePipelineWebSocket } from '../hooks/usePipelineWebSocket';
-import type { DocProgress, PendingClaim, PipelineRun, PipelineRunStatus } from '../types';
+import type { DocProgress, PendingClaim, PipelineBatch, PipelineBatchStatus } from '../types';
 import { PendingClaimCard } from './PendingClaimCard';
 import { PipelineProgress } from './PipelineProgress';
 
@@ -40,33 +40,39 @@ export function NewClaimPage() {
   const [loading, setLoading] = useState(true);
 
   // Pipeline state
-  const [currentRun, setCurrentRun] = useState<PipelineRun | null>(null);
+  const [currentBatch, setCurrentBatch] = useState<PipelineBatch | null>(null);
   const [docs, setDocs] = useState<Record<string, DocProgress>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isStarting, setIsStarting] = useState(false); // Shows while API call is in progress
 
   // WebSocket connection
-  const { isConnected } = usePipelineWebSocket({
-    runId: currentRun?.run_id || null,
-    onDocProgress: (docId, phase, error) => {
+  const { isConnected, isConnecting, isReconnecting } = usePipelineWebSocket({
+    batchId: currentBatch?.batch_id || null,
+    onDocProgress: (docId, phase, error, failedAtStage) => {
       setDocs((prev) => ({
         ...prev,
-        [docId]: { ...prev[docId], phase: phase as DocProgress['phase'], error },
+        [docId]: {
+          ...prev[docId],
+          phase: phase as DocProgress['phase'],
+          error,
+          failed_at_stage: failedAtStage as DocProgress['phase'] | undefined,
+        },
       }));
     },
-    onRunComplete: (summary) => {
-      setCurrentRun((prev) =>
+    onBatchComplete: (summary) => {
+      setCurrentBatch((prev) =>
         prev ? { ...prev, status: 'completed', summary } : null
       );
       setPageState('complete');
     },
-    onRunCancelled: () => {
-      setCurrentRun((prev) =>
+    onBatchCancelled: () => {
+      setCurrentBatch((prev) =>
         prev ? { ...prev, status: 'cancelled' } : null
       );
       setPageState('complete');
     },
     onSync: (status, syncedDocs) => {
-      setCurrentRun((prev) =>
+      setCurrentBatch((prev) =>
         prev ? { ...prev, status } : null
       );
       setDocs(syncedDocs);
@@ -144,6 +150,8 @@ export function NewClaimPage() {
     const claimsWithDocs = pendingClaims.filter((c) => c.documents.length > 0);
     if (claimsWithDocs.length === 0) return;
 
+    setIsStarting(true);
+
     try {
       const result = await startPipeline(claimsWithDocs.map((c) => c.claim_id));
 
@@ -160,23 +168,25 @@ export function NewClaimPage() {
         });
       });
 
-      setCurrentRun({
-        run_id: result.run_id,
-        status: result.status as PipelineRunStatus,
+      setCurrentBatch({
+        batch_id: result.batch_id,
+        status: result.status as PipelineBatchStatus,
         claim_ids: claimsWithDocs.map((c) => c.claim_id),
       });
       setDocs(initialDocs);
       setPageState('running');
     } catch (err) {
       console.error('Failed to start pipeline:', err);
+    } finally {
+      setIsStarting(false);
     }
   };
 
   const handleCancel = async () => {
-    if (!currentRun) return;
+    if (!currentBatch) return;
 
     try {
-      await cancelPipeline(currentRun.run_id);
+      await cancelPipeline(currentBatch.batch_id);
       setShowCancelConfirm(false);
     } catch (err) {
       console.error('Failed to cancel pipeline:', err);
@@ -184,7 +194,7 @@ export function NewClaimPage() {
   };
 
   const handleReset = () => {
-    setCurrentRun(null);
+    setCurrentBatch(null);
     setDocs({});
     setPendingClaims([]);
     setPageState('uploading');
@@ -263,16 +273,29 @@ export function NewClaimPage() {
           </div>
         )}
 
+        {/* Starting State - shown while API call is in progress */}
+        {isStarting && (
+          <div className="bg-white rounded-lg border p-8 text-center">
+            <div className="flex flex-col items-center gap-3">
+              <SpinnerIcon className="w-8 h-8 text-blue-500 animate-spin" />
+              <p className="text-gray-600 font-medium">Starting pipeline...</p>
+              <p className="text-sm text-gray-400">Preparing documents for processing</p>
+            </div>
+          </div>
+        )}
+
         {/* Running / Complete State */}
-        {(pageState === 'running' || pageState === 'complete') && currentRun && (
+        {!isStarting && (pageState === 'running' || pageState === 'complete') && currentBatch && (
           <div className="space-y-6">
             <PipelineProgress
-              runId={currentRun.run_id}
-              status={currentRun.status}
+              batchId={currentBatch.batch_id}
+              status={currentBatch.status}
               docs={docs}
-              summary={currentRun.summary}
+              summary={currentBatch.summary}
               onCancel={() => setShowCancelConfirm(true)}
               isConnected={isConnected}
+              isConnecting={isConnecting}
+              isReconnecting={isReconnecting}
             />
 
             {pageState === 'complete' && (
@@ -284,7 +307,7 @@ export function NewClaimPage() {
                   Upload More Claims
                 </button>
                 <a
-                  href="/claims"
+                  href={`/claims?run_id=${currentBatch?.batch_id || ''}`}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   View in Claims Review
@@ -329,6 +352,26 @@ function PlusIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  );
+}
+
+function SpinnerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24">
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
     </svg>
   );
 }

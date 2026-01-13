@@ -1,22 +1,22 @@
 import { test, expect } from "@playwright/test";
-import { setupMultiRunMocks } from "../utils/mock-api";
+import { setupMultiBatchMocks } from "../utils/mock-api";
 
 /**
- * Tests that verify the Extraction page displays run-scoped metrics correctly.
- * These tests catch bugs where global data is shown instead of data for the selected run.
+ * Tests that verify the Extraction page displays batch-scoped metrics correctly.
+ * These tests catch bugs where global data is shown instead of data for the selected batch.
  */
-test.describe("Extraction Page - Run Scoping", () => {
+test.describe("Extraction Page - Batch Scoping", () => {
   test.beforeEach(async ({ page }) => {
-    await setupMultiRunMocks(page);
+    await setupMultiBatchMocks(page);
   });
 
-  test("displays correct metrics for small run (3 docs)", async ({ page }) => {
+  test("displays correct metrics for small batch (3 docs)", async ({ page }) => {
     // Extraction page is at /dashboard (or /)
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Click on the small run (3 docs) in the sidebar
-    await page.click('[data-testid="run-item-run-small"]');
+    // Click on the small batch (3 docs) in the sidebar
+    await page.click('[data-testid="batch-item-batch-small"]');
     await page.waitForLoadState("networkidle");
 
     // Verify phase cards show correct counts
@@ -26,7 +26,7 @@ test.describe("Extraction Page - Run Scoping", () => {
     const extractionCard = page.locator('[data-testid="phase-extraction"]');
     await expect(extractionCard).toContainText("2"); // 2 succeeded
 
-    // Verify coverage section shows run-scoped total (3 docs, not 130)
+    // Verify coverage section shows batch-scoped total (3 docs, not 130)
     const labelCoverageValue = page.locator('[data-testid="label-coverage-value"]');
     await expect(labelCoverageValue).toContainText("/ 3");
 
@@ -39,12 +39,12 @@ test.describe("Extraction Page - Run Scoping", () => {
     await expect(rows).toHaveCount(3);
   });
 
-  test("displays correct metrics for large run (130 docs)", async ({ page }) => {
+  test("displays correct metrics for large batch (130 docs)", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Click on the large run (130 docs)
-    await page.click('[data-testid="run-item-run-large"]');
+    // Click on the large batch (130 docs)
+    await page.click('[data-testid="batch-item-batch-large"]');
     await page.waitForLoadState("networkidle");
 
     // Verify phase cards show correct counts
@@ -54,40 +54,40 @@ test.describe("Extraction Page - Run Scoping", () => {
     const extractionCard = page.locator('[data-testid="phase-extraction"]');
     await expect(extractionCard).toContainText("35"); // 35 succeeded
 
-    // Verify coverage section shows run-scoped total (130 docs)
+    // Verify coverage section shows batch-scoped total (130 docs)
     const labelCoverageValue = page.locator('[data-testid="label-coverage-value"]');
     await expect(labelCoverageValue).toContainText("/ 130");
 
-    // Verify Doc Type Scoreboard shows 6 doc types (from large run distribution)
+    // Verify Doc Type Scoreboard shows 6 doc types (from large batch distribution)
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
     const rows = scoreboardTable.locator("tbody tr");
     await expect(rows).toHaveCount(6);
   });
 
-  test("metrics update when switching between runs", async ({ page }) => {
+  test("metrics update when switching between batches", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Start with small run
-    await page.click('[data-testid="run-item-run-small"]');
+    // Start with small batch
+    await page.click('[data-testid="batch-item-batch-small"]');
     await page.waitForLoadState("networkidle");
 
-    // Verify small run metrics
+    // Verify small batch metrics
     const labelCoverageValue = page.locator('[data-testid="label-coverage-value"]');
     await expect(labelCoverageValue).toContainText("/ 3");
 
-    // Switch to large run
-    await page.click('[data-testid="run-item-run-large"]');
+    // Switch to large batch
+    await page.click('[data-testid="batch-item-batch-large"]');
     await page.waitForLoadState("networkidle");
 
-    // Verify metrics updated to large run values
+    // Verify metrics updated to large batch values
     await expect(labelCoverageValue).toContainText("/ 130");
 
-    // Switch back to small run
-    await page.click('[data-testid="run-item-run-small"]');
+    // Switch back to small batch
+    await page.click('[data-testid="batch-item-batch-small"]');
     await page.waitForLoadState("networkidle");
 
-    // Verify metrics returned to small run values
+    // Verify metrics returned to small batch values
     await expect(labelCoverageValue).toContainText("/ 3");
   });
 
@@ -95,8 +95,8 @@ test.describe("Extraction Page - Run Scoping", () => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Click on small run
-    await page.click('[data-testid="run-item-run-small"]');
+    // Click on small batch
+    await page.click('[data-testid="batch-item-batch-small"]');
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
