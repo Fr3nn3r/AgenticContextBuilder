@@ -24,13 +24,18 @@ class TestAzureDocumentIntelligenceInit:
     """Test Azure DI initialization and setup."""
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    @patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"})
     @patch('azure.ai.documentintelligence.DocumentIntelligenceClient')
     def test_init_success(self, mock_client):
         """Test successful initialization with valid credentials."""
-        from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+        import sys
+        # Remove cached module to force re-import with mocked env
+        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
+            del sys.modules['context_builder.impl.azure_di_ingestion']
 
-        ingestion = AzureDocumentIntelligenceIngestion()
+        with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}, clear=True):
+            with patch('dotenv.load_dotenv'):  # Prevent .env from overriding test values
+                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                ingestion = AzureDocumentIntelligenceIngestion()
 
         assert ingestion.endpoint == "https://test.cognitiveservices.azure.com/"
         assert ingestion.api_key == "test_key"
@@ -42,20 +47,30 @@ class TestAzureDocumentIntelligenceInit:
         assert "styleFont" in ingestion.features
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    @patch.dict(os.environ, {}, clear=True)
     def test_init_missing_endpoint(self):
         """Test initialization fails without endpoint."""
-        with pytest.raises(ConfigurationError, match="AZURE_DI_ENDPOINT not found"):
-            from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
-            AzureDocumentIntelligenceIngestion()
+        import sys
+        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
+            del sys.modules['context_builder.impl.azure_di_ingestion']
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('dotenv.load_dotenv'):
+                with pytest.raises(ConfigurationError, match="AZURE_DI_ENDPOINT not found"):
+                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    AzureDocumentIntelligenceIngestion()
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
-    @patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/"})
     def test_init_missing_api_key(self):
         """Test initialization fails without API key."""
-        with pytest.raises(ConfigurationError, match="AZURE_DI_API_KEY not found"):
-            from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
-            AzureDocumentIntelligenceIngestion()
+        import sys
+        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
+            del sys.modules['context_builder.impl.azure_di_ingestion']
+
+        with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/"}, clear=True):
+            with patch('dotenv.load_dotenv'):
+                with pytest.raises(ConfigurationError, match="AZURE_DI_API_KEY not found"):
+                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    AzureDocumentIntelligenceIngestion()
 
 
 class TestAzureDocumentIntelligenceRetry:
