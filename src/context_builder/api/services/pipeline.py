@@ -59,6 +59,7 @@ class PipelineRun:
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     summary: Optional[Dict[str, Any]] = None
+    model: str = "gpt-4o"
 
 
 # Progress callback type: (run_id, doc_id, phase, error, failed_at_stage)
@@ -116,6 +117,7 @@ class PipelineService:
             claim_ids=claim_ids,
             status=PipelineStatus.PENDING,
             started_at=datetime.utcnow().isoformat() + "Z",
+            model=model,
         )
 
         # Build initial doc list from pending claims
@@ -426,20 +428,46 @@ class PipelineService:
             # Create global run directory structure
             ws_paths = create_workspace_run_structure(self.output_dir, run.run_id)
 
-            # Write manifest.json
+            # Build claims array with per-claim details
+            claims_by_id: Dict[str, Dict[str, Any]] = {}
+            for doc in run.docs.values():
+                if doc.claim_id not in claims_by_id:
+                    claims_by_id[doc.claim_id] = {
+                        "claim_id": doc.claim_id,
+                        "status": "success",
+                        "docs_count": 0,
+                        "claim_run_path": str(self.output_dir / doc.claim_id / "runs" / run.run_id),
+                    }
+                claims_by_id[doc.claim_id]["docs_count"] += 1
+                # Mark claim as partial/failed if any doc failed
+                if doc.phase == DocPhase.FAILED:
+                    if claims_by_id[doc.claim_id]["status"] == "success":
+                        claims_by_id[doc.claim_id]["status"] = "partial"
+
+            # Write manifest.json (matching CLI format)
             manifest = {
                 "run_id": run.run_id,
-                "claim_ids": run.claim_ids,
                 "started_at": run.started_at,
-                "completed_at": run.completed_at,
-                "status": run.status.value,
-                "doc_count": len(run.docs),
+                "ended_at": run.completed_at,
+                "model": run.model,
+                "claims_count": len(run.claim_ids),
+                "claims": list(claims_by_id.values()),
             }
             with open(ws_paths.manifest_json, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2)
 
-            # Write summary.json
-            summary_data = run.summary or {}
+            # Write summary.json (matching CLI format)
+            run_summary = run.summary or {}
+            summary_data = {
+                "run_id": run.run_id,
+                "status": run.status.value,
+                "claims_discovered": len(run.claim_ids),
+                "claims_processed": len(run.claim_ids),
+                "claims_failed": 0,
+                "docs_total": run_summary.get("total", len(run.docs)),
+                "docs_success": run_summary.get("success", 0),
+                "completed_at": run.completed_at,
+            }
             with open(ws_paths.summary_json, "w", encoding="utf-8") as f:
                 json.dump(summary_data, f, indent=2)
 

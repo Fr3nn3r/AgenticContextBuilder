@@ -312,6 +312,7 @@ class TestPersistRun:
             started_at="2026-01-13T12:00:00Z",
             completed_at="2026-01-13T12:05:00Z",
             summary={"total": 3, "success": 3, "failed": 0},
+            model="gpt-4o",
         )
         run.docs = {
             "CLAIM-001/doc1": DocProgress("doc1", "CLAIM-001", "test1.pdf"),
@@ -327,11 +328,13 @@ class TestPersistRun:
             manifest = json.load(f)
 
         assert manifest["run_id"] == run.run_id
-        assert manifest["claim_ids"] == ["CLAIM-001", "CLAIM-002"]
         assert manifest["started_at"] == "2026-01-13T12:00:00Z"
-        assert manifest["completed_at"] == "2026-01-13T12:05:00Z"
-        assert manifest["status"] == "completed"
-        assert manifest["doc_count"] == 2
+        assert manifest["ended_at"] == "2026-01-13T12:05:00Z"
+        assert manifest["model"] == "gpt-4o"
+        assert manifest["claims_count"] == 2
+        assert len(manifest["claims"]) == 1  # Only CLAIM-001 has docs
+        assert manifest["claims"][0]["claim_id"] == "CLAIM-001"
+        assert manifest["claims"][0]["docs_count"] == 2
 
     def test_creates_summary_json(self, pipeline_service, tmp_path):
         """_persist_run creates summary.json with correct content."""
@@ -354,9 +357,13 @@ class TestPersistRun:
         with open(summary_path) as f:
             summary = json.load(f)
 
-        assert summary["total"] == 5
-        assert summary["success"] == 4
-        assert summary["failed"] == 1
+        assert summary["run_id"] == run.run_id
+        assert summary["status"] == "completed"
+        assert summary["docs_total"] == 5
+        assert summary["docs_success"] == 4
+        assert summary["claims_discovered"] == 1
+        assert summary["claims_processed"] == 1
+        assert summary["completed_at"] == "2026-01-13T12:05:00Z"
 
     def test_creates_complete_marker(self, pipeline_service, tmp_path):
         """_persist_run creates .complete marker file."""
