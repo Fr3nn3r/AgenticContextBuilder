@@ -1,14 +1,12 @@
 """Run module: orchestrate ingestion, classification, and extraction pipeline."""
 
-# Ensure .env is loaded for pipeline execution
+# Ensure .env is loaded for pipeline execution (fallback for CLI usage)
 from pathlib import Path as _Path
 from dotenv import load_dotenv
-import os as _os
 _project_root = _Path(__file__).resolve().parent.parent.parent.parent
 _env_path = _project_root / ".env"
 if _env_path.exists():
     load_dotenv(_env_path)
-    print(f"[pipeline.run] Loaded .env, AZURE_DI_ENDPOINT={_os.getenv('AZURE_DI_ENDPOINT', 'NOT SET')[:30]}...")
 
 import hashlib
 import json

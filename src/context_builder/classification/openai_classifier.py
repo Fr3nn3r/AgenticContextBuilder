@@ -243,13 +243,22 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             ClassificationError: If validation fails
         """
         try:
+            # Defensive check for None response
+            if response is None:
+                logger.warning("Received None response from API")
+                return {
+                    "document_type": "unknown",
+                    "summary": "No response from classification API",
+                    "language": "unknown",
+                    "confidence": 0.0,
+                }
             # Validate with Pydantic
             validated = DocumentClassification.model_validate(response)
             return validated.model_dump()
         except ValidationError as e:
             logger.warning(f"Schema validation failed: {e}")
             # Return response as-is if it has required fields
-            if "document_type" in response and "summary" in response:
+            if response and "document_type" in response and "summary" in response:
                 return response
             raise
 

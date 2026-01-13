@@ -200,6 +200,18 @@ class OpenAIVisionIngestion(DataIngestion):
         """
         # Try to parse as JSON
         try:
+            # Defensive check for None response
+            if not response_text:
+                return {
+                    "document_type": "unknown",
+                    "language": "unknown",
+                    "summary": "Empty response from vision API",
+                    "key_information": {},
+                    "visual_elements": [],
+                    "text_content": "",
+                    "_parse_error": "response_text was None or empty",
+                }
+
             # Handle potential markdown code blocks
             if "```json" in response_text:
                 start = response_text.find("```json") + 7

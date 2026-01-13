@@ -209,11 +209,15 @@ def pages_json_to_page_content(pages_json: Dict[str, Any]) -> List[PageContent]:
     Returns:
         List of PageContent pydantic models
     """
+    # Defensive check: ensure pages_json and pages array exist
+    if not pages_json:
+        return []
+    pages = pages_json.get("pages") or []
     return [
         PageContent(
             page=p["page"],
             text=p["text"],
-            text_md5=p["text_md5"],
+            text_md5=p.get("text_md5", ""),
         )
-        for p in pages_json["pages"]
+        for p in pages
     ]
