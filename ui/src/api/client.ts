@@ -15,8 +15,32 @@ import type {
 
 const API_BASE = "/api";
 
+// Get auth token from localStorage
+function getAuthToken(): string | null {
+  return localStorage.getItem("auth_token");
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
+  const token = getAuthToken();
+  const headers = new Headers(options?.headers);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  // Handle 401 Unauthorized - redirect to login
+  if (response.status === 401) {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_user");
+    window.location.href = "/login";
+    throw new Error("Session expired");
+  }
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Unknown error" }));
     throw new Error(error.detail || `HTTP ${response.status}`);
@@ -429,6 +453,7 @@ import type {
   ClassificationDetail,
   ClassificationLabelRequest,
   ClassificationStats,
+  DocTypeCatalogEntry,
 } from "../types";
 
 export async function listClassificationDocs(runId: string): Promise<ClassificationDoc[]> {
@@ -444,6 +469,10 @@ export async function getClassificationDetail(
   return fetchJson<ClassificationDetail>(
     `${API_BASE}/classification/doc/${docId}?run_id=${encodeURIComponent(runId)}`
   );
+}
+
+export async function getDocTypeCatalog(): Promise<DocTypeCatalogEntry[]> {
+  return fetchJson<DocTypeCatalogEntry[]>(`${API_BASE}/classification/doc-types`);
 }
 
 export async function saveClassificationLabel(
@@ -709,4 +738,52 @@ export async function listAuditEntries(params?: AuditListParams): Promise<AuditE
     : `${API_BASE}/pipeline/audit`;
 
   return fetchJson<AuditEntry[]>(url);
+}
+
+// =============================================================================
+// ADMIN API (User Management)
+// =============================================================================
+
+export interface UserResponse {
+  username: string;
+  role: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listUsers(): Promise<UserResponse[]> {
+  return fetchJson<UserResponse[]>(`${API_BASE}/admin/users`);
+}
+
+export async function createUser(
+  username: string,
+  password: string,
+  role: string
+): Promise<UserResponse> {
+  return fetchJson<UserResponse>(`${API_BASE}/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, role }),
+  });
+}
+
+export async function updateUser(
+  username: string,
+  data: { password?: string; role?: string }
+): Promise<UserResponse> {
+  return fetchJson<UserResponse>(
+    `${API_BASE}/admin/users/${encodeURIComponent(username)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function deleteUser(username: string): Promise<{ success: boolean }> {
+  return fetchJson<{ success: boolean }>(
+    `${API_BASE}/admin/users/${encodeURIComponent(username)}`,
+    { method: "DELETE" }
+  );
 }

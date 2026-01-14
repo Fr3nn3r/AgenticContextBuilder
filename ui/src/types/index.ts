@@ -319,6 +319,7 @@ export interface ClassificationDetail {
   signals: string[];
   summary: string;
   key_hints: Record<string, string> | null;
+  language: string;
   pages_preview: string;
   has_pdf: boolean;
   has_image: boolean;
@@ -327,6 +328,12 @@ export interface ClassificationDetail {
     doc_type_truth: string | null;
     notes: string;
   } | null;
+}
+
+export interface DocTypeCatalogEntry {
+  doc_type: string;
+  description: string;
+  cues: string[];
 }
 
 export interface ClassificationLabelRequest {

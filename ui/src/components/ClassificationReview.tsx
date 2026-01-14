@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
 import {
@@ -13,36 +13,24 @@ import {
   NoDocumentsEmptyState,
 } from "./shared";
 import { DocumentViewer } from "./DocumentViewer";
+import { ClassificationInfoPanel } from "./ClassificationInfoPanel";
 import type {
   ClassificationDoc,
   ClassificationDetail,
   ClassificationStats,
   DocPayload,
+  DocTypeCatalogEntry,
 } from "../types";
 import {
   listClassificationDocs,
   getClassificationDetail,
   saveClassificationLabel,
   getClassificationStats,
+  getDocTypeCatalog,
   getDoc,
   getDocSourceUrl,
   type ClaimRunInfo,
 } from "../api/client";
-
-// Document type options from the catalog
-const DOC_TYPES = [
-  "fnol_form",
-  "insurance_policy",
-  "police_report",
-  "invoice",
-  "id_document",
-  "vehicle_registration",
-  "certificate",
-  "medical_report",
-  "travel_itinerary",
-  "customer_comm",
-  "supporting_document",
-];
 
 interface ClassificationReviewProps {
   batches: ClaimRunInfo[];
@@ -81,19 +69,21 @@ export function ClassificationReview({
   // Filter
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reviewed">("all");
 
-  // Sorting state
-  type SortColumn = "filename" | "predicted_type" | "confidence" | "review_status";
-  const [sortColumn, setSortColumn] = useState<SortColumn>("filename");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // Doc type catalog
+  const [docTypeCatalog, setDocTypeCatalog] = useState<DocTypeCatalogEntry[]>([]);
 
-  function handleSort(column: SortColumn) {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortColumn(column);
-      setSortDirection("asc");
-    }
-  }
+  // Load doc type catalog on mount
+  useEffect(() => {
+    getDocTypeCatalog()
+      .then(setDocTypeCatalog)
+      .catch((err) => console.error("Failed to load doc type catalog:", err));
+  }, []);
+
+  // Get catalog entry for current predicted type
+  const currentDocTypeInfo = useMemo(() => {
+    if (!detail) return null;
+    return docTypeCatalog.find((d) => d.doc_type === detail.predicted_type) || null;
+  }, [detail, docTypeCatalog]);
 
   // Load docs when run changes
   useEffect(() => {
@@ -194,43 +184,24 @@ export function ClassificationReview({
     }
   }
 
-  // Filter and sort docs
-  const filteredDocs = docs
-    .filter((d) => {
-      if (statusFilter === "pending") return d.review_status === "pending";
-      if (statusFilter === "reviewed") return d.review_status !== "pending";
-      return true;
-    })
-    .sort((a, b) => {
-      let comparison = 0;
-      switch (sortColumn) {
-        case "filename":
-          comparison = a.filename.localeCompare(b.filename);
-          break;
-        case "predicted_type":
-          comparison = a.predicted_type.localeCompare(b.predicted_type);
-          break;
-        case "confidence":
-          comparison = a.confidence - b.confidence;
-          break;
-        case "review_status":
-          comparison = a.review_status.localeCompare(b.review_status);
-          break;
-      }
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
+  // Filter docs
+  const filteredDocs = docs.filter((d) => {
+    if (statusFilter === "pending") return d.review_status === "pending";
+    if (statusFilter === "reviewed") return d.review_status !== "pending";
+    return true;
+  });
 
   return (
     <div className="h-full flex flex-col">
       {/* Header with filters and KPIs */}
-      <div className="bg-card border-b px-6 py-4">
+      <div className="bg-card border-b px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-end mb-4">
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Show:</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as "all" | "pending" | "reviewed")}
-              className="border rounded-md px-3 py-1.5 text-sm"
+              className="border rounded-md px-3 py-1.5 text-sm bg-background"
             >
               <option value="all">All</option>
               <option value="pending">Pending</option>
@@ -267,224 +238,96 @@ export function ClassificationReview({
         )}
       </div>
 
-      {/* Main content: doc list + detail panel */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Doc List */}
-        <div className="w-1/2 border-r overflow-auto bg-card">
+      {/* Main content: 3-column layout */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left: Doc List (narrow) */}
+        <div className="w-72 border-r overflow-auto bg-card flex-shrink-0">
           {docsLoading ? (
             <div className="p-8 flex justify-center"><Spinner /></div>
           ) : filteredDocs.length === 0 ? (
             <NoDocumentsEmptyState />
           ) : (
-            <table className="w-full">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
-                    onClick={() => handleSort("filename")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Doc
-                      <SortIcon active={sortColumn === "filename"} direction={sortDirection} />
+            <div className="divide-y">
+              {filteredDocs.map((doc) => (
+                <div
+                  key={doc.doc_id}
+                  onClick={() => setSelectedDocId(doc.doc_id)}
+                  className={cn(
+                    "p-3 cursor-pointer hover:bg-muted/50 transition-colors",
+                    selectedDocId === doc.doc_id && "bg-accent/10 border-l-2 border-accent"
+                  )}
+                >
+                  <div className="font-medium text-sm text-foreground truncate" title={doc.filename}>
+                    {doc.filename}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-muted-foreground truncate">
+                      {formatDocType(doc.predicted_type)}
+                    </span>
+                    <ScoreBadge value={Math.round(doc.confidence * 100)} />
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-muted-foreground/70 truncate">
+                      {doc.claim_id}
+                    </span>
+                    <ReviewStatusBadge status={doc.review_status} />
+                  </div>
+                  {doc.doc_type_truth && (
+                    <div className="text-xs text-warning mt-1">
+                      Changed to: {formatDocType(doc.doc_type_truth)}
                     </div>
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
-                    onClick={() => handleSort("predicted_type")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Type
-                      <SortIcon active={sortColumn === "predicted_type"} direction={sortDirection} />
-                    </div>
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
-                    onClick={() => handleSort("confidence")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Conf.
-                      <SortIcon active={sortColumn === "confidence"} direction={sortDirection} />
-                    </div>
-                  </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted"
-                    onClick={() => handleSort("review_status")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Status
-                      <SortIcon active={sortColumn === "review_status"} direction={sortDirection} />
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredDocs.map((doc) => (
-                  <tr
-                    key={doc.doc_id}
-                    onClick={() => setSelectedDocId(doc.doc_id)}
-                    className={cn(
-                      "cursor-pointer hover:bg-muted/50",
-                      selectedDocId === doc.doc_id && "bg-accent/10"
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-foreground truncate max-w-[200px]">
-                        {doc.filename}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{doc.claim_id}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-foreground">{formatDocType(doc.predicted_type)}</span>
-                      {doc.doc_type_truth && (
-                        <div className="text-xs text-warning-foreground">
-                          Changed to: {formatDocType(doc.doc_type_truth)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <ScoreBadge value={Math.round(doc.confidence * 100)} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <ReviewStatusBadge status={doc.review_status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Detail Panel - Split View */}
-        <div className="w-1/2 flex flex-col overflow-hidden">
+        {/* Center: Document Viewer (flexible) */}
+        <div className="flex-1 border-r bg-card min-w-0">
           {detailLoading ? (
-            <div className="flex items-center justify-center h-full bg-muted/50">
+            <div className="flex items-center justify-center h-full">
               <Spinner />
             </div>
-          ) : !detail ? (
+          ) : !detail || !docPayload ? (
             <div className="flex items-center justify-center h-full bg-muted/50">
               <SelectToViewEmptyState itemType="document" />
             </div>
           ) : (
-            <>
-              {/* Top: Document Viewer */}
-              <div className="h-1/2 border-b bg-card">
-                {docPayload ? (
-                  <DocumentViewer
-                    pages={docPayload.pages}
-                    sourceUrl={getDocSourceUrl(detail.doc_id, detail.claim_id)}
-                    hasPdf={docPayload.has_pdf}
-                    hasImage={docPayload.has_image}
-                    claimId={detail.claim_id}
-                    docId={detail.doc_id}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground/70">
-                    <Spinner />
-                  </div>
-                )}
-              </div>
+            <DocumentViewer
+              pages={docPayload.pages}
+              sourceUrl={getDocSourceUrl(detail.doc_id, detail.claim_id)}
+              hasPdf={docPayload.has_pdf}
+              hasImage={docPayload.has_image}
+              claimId={detail.claim_id}
+              docId={detail.doc_id}
+            />
+          )}
+        </div>
 
-              {/* Bottom: Classification Review Panel */}
-              <div className="h-1/2 overflow-auto bg-muted/50 p-4">
-                <div className="space-y-4">
-                  {/* Doc Info Header */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-foreground">{detail.filename}</h3>
-                      <div className="text-xs text-muted-foreground">
-                        {detail.claim_id} &bull; {Math.round(detail.confidence * 100)}% confidence
-                      </div>
-                    </div>
-                    <ScoreBadge value={Math.round(detail.confidence * 100)} />
-                  </div>
-
-                  {/* Classification Info */}
-                  <div className="bg-card rounded-lg p-3 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-muted-foreground">Predicted Type</span>
-                      <span className="text-sm font-semibold text-foreground">
-                        {formatDocType(detail.predicted_type)}
-                      </span>
-                    </div>
-
-                    {detail.summary && (
-                      <p className="text-xs text-muted-foreground mb-2">{detail.summary}</p>
-                    )}
-
-                    {detail.signals && detail.signals.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        Signals: {detail.signals.slice(0, 3).join(", ")}
-                        {detail.signals.length > 3 && ` +${detail.signals.length - 3} more`}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Review Actions */}
-                  <div className="bg-card rounded-lg p-3 shadow-sm">
-                    <div className="flex gap-2 mb-3">
-                      <button
-                        onClick={() => setReviewAction("confirm")}
-                        className={cn(
-                          "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                          reviewAction === "confirm"
-                            ? "bg-success text-white"
-                            : "bg-muted text-foreground hover:bg-muted"
-                        )}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => setReviewAction("change")}
-                        className={cn(
-                          "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                          reviewAction === "change"
-                            ? "bg-warning text-white"
-                            : "bg-muted text-foreground hover:bg-muted"
-                        )}
-                      >
-                        Change Type
-                      </button>
-                    </div>
-
-                    {reviewAction === "change" && (
-                      <select
-                        value={newDocType}
-                        onChange={(e) => setNewDocType(e.target.value)}
-                        className="w-full border rounded-md px-2 py-1.5 text-sm mb-3"
-                      >
-                        <option value="">Select correct type...</option>
-                        {DOC_TYPES.filter((t) => t !== detail.predicted_type).map((type) => (
-                          <option key={type} value={type}>
-                            {formatDocType(type)}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="w-full border rounded-md px-2 py-1.5 text-sm mb-3"
-                      rows={2}
-                      placeholder="Notes (optional)..."
-                    />
-
-                    <button
-                      onClick={handleSave}
-                      disabled={saving || (reviewAction === "change" && !newDocType)}
-                      className={cn(
-                        "w-full px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                        saving || (reviewAction === "change" && !newDocType)
-                          ? "bg-muted text-muted-foreground cursor-not-allowed"
-                          : "bg-primary text-white hover:bg-primary/90"
-                      )}
-                    >
-                      {saving ? "Saving..." : "Save Review"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
+        {/* Right: Classification Info Panel (fixed width) */}
+        <div className="w-[400px] flex-shrink-0 bg-muted/50">
+          {detailLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Spinner />
+            </div>
+          ) : !detail ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              Select a document to review
+            </div>
+          ) : (
+            <ClassificationInfoPanel
+              detail={detail}
+              docTypeInfo={currentDocTypeInfo}
+              reviewAction={reviewAction}
+              newDocType={newDocType}
+              notes={notes}
+              saving={saving}
+              onReviewActionChange={setReviewAction}
+              onNewDocTypeChange={setNewDocType}
+              onNotesChange={setNotes}
+              onSave={handleSave}
+            />
           )}
         </div>
       </div>
@@ -499,23 +342,4 @@ function ReviewStatusBadge({ status }: { status: "pending" | "confirmed" | "over
   if (status === "confirmed") return <ConfirmedBadge />;
   // Overridden
   return <StatusBadge variant="warning">Overridden</StatusBadge>;
-}
-
-function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
-  if (!active) {
-    return (
-      <svg className="w-3 h-3 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="w-3 h-3 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      {direction === "asc" ? (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-      ) : (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      )}
-    </svg>
-  );
 }

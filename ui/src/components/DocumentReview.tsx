@@ -176,6 +176,7 @@ export function DocumentReview({
           signals: selectedDoc.signals || [],
           summary: "",
           key_hints: null,
+          language: "unknown",
           pages_preview: "",
           has_pdf: payload.has_pdf || false,
           has_image: payload.has_image || false,

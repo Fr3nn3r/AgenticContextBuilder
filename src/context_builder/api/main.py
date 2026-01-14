@@ -1025,7 +1025,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
     storage = get_storage()
 
     # Get document bundle
-    doc_bundle = storage.get_doc(doc_id)
+    doc_bundle = storage.doc_store.get_doc(doc_id)
     if not doc_bundle:
         raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
@@ -1043,7 +1043,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
     classification = context.get("classification", {})
 
     # Load text preview
-    doc_text = storage.get_doc_text(doc_id)
+    doc_text = storage.doc_store.get_doc_text(doc_id)
     pages_preview = ""
     if doc_text and doc_text.pages:
         # Get first 1000 chars across pages
@@ -1084,6 +1084,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
         "signals": classification.get("signals", []),
         "summary": classification.get("summary", ""),
         "key_hints": classification.get("key_hints"),
+        "language": classification.get("language", "unknown"),
         "pages_preview": pages_preview,
         "has_pdf": has_pdf,
         "has_image": has_image,
@@ -1104,6 +1105,21 @@ def save_classification_label(doc_id: str, request: ClassificationLabelRequest):
         doc_type_truth=request.doc_type_truth,
         notes=request.notes,
     )
+
+
+@app.get("/api/classification/doc-types")
+def get_doc_type_catalog():
+    """
+    Get the document type catalog with descriptions and cues.
+
+    Returns list of doc types with:
+    - doc_type: string identifier
+    - description: human-readable description
+    - cues: list of classification cues/keywords
+    """
+    from context_builder.classification.openai_classifier import load_doc_type_catalog
+
+    return load_doc_type_catalog()
 
 
 @app.get("/api/classification/stats")
