@@ -71,6 +71,12 @@ from context_builder.api.services import (
     UsersService,
 )
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
+from context_builder.services.compliance import (
+    DecisionStorage,
+    LLMCallStorage,
+)
+from context_builder.services.compliance.config import ComplianceStorageConfig
+from context_builder.services.compliance.storage_factory import ComplianceStorageFactory
 
 
 # =============================================================================
@@ -207,6 +213,44 @@ def get_auth_service() -> AuthService:
         config_dir = _PROJECT_ROOT / "output" / "config"
         _auth_service = AuthService(config_dir, get_users_service())
     return _auth_service
+
+
+# Global ComplianceStorageConfig instance
+_compliance_config: Optional[ComplianceStorageConfig] = None
+
+
+def get_compliance_config() -> ComplianceStorageConfig:
+    """Get ComplianceStorageConfig singleton instance.
+
+    Loads configuration from environment variables with COMPLIANCE_ prefix,
+    falling back to defaults (file backend in output/logs).
+    """
+    global _compliance_config
+    if _compliance_config is None:
+        # Try loading from environment, fall back to defaults
+        try:
+            _compliance_config = ComplianceStorageConfig.from_env()
+        except Exception:
+            pass
+
+        # If not configured via env, use defaults
+        if _compliance_config is None:
+            _compliance_config = ComplianceStorageConfig(
+                storage_dir=Path(_PROJECT_ROOT / "output" / "logs")
+            )
+    return _compliance_config
+
+
+def get_decision_storage() -> DecisionStorage:
+    """Get DecisionStorage instance based on compliance config."""
+    config = get_compliance_config()
+    return ComplianceStorageFactory.create_decision_storage(config)
+
+
+def get_llm_call_storage() -> LLMCallStorage:
+    """Get LLMCallStorage instance based on compliance config."""
+    config = get_compliance_config()
+    return ComplianceStorageFactory.create_llm_storage(config)
 
 
 # =============================================================================
@@ -2006,10 +2050,8 @@ def verify_decision_ledger():
     - break_at: Record index where chain broke (if invalid)
     - reason: Reason for validation failure (if invalid)
     """
-    from context_builder.services.decision_ledger import DecisionLedger
-
-    ledger = DecisionLedger(Path(_PROJECT_ROOT / "output" / "logs"))
-    return ledger.verify_integrity()
+    storage = get_decision_storage()
+    return storage.verify_integrity()
 
 
 @app.get("/api/compliance/ledger/decisions")
@@ -2025,10 +2067,10 @@ def list_decisions(
 
     Returns decisions sorted by timestamp (newest first).
     """
-    from context_builder.services.decision_ledger import DecisionLedger
     from context_builder.schemas.decision_record import DecisionType
+    from context_builder.services.compliance.interfaces import DecisionQuery
 
-    ledger = DecisionLedger(Path(_PROJECT_ROOT / "output" / "logs"))
+    storage = get_decision_storage()
 
     # Map string to DecisionType enum
     dtype = None
@@ -2041,12 +2083,15 @@ def list_decisions(
         }
         dtype = type_map.get(decision_type.lower())
 
-    records = ledger.query(
+    # Build query filters
+    query = DecisionQuery(
         decision_type=dtype,
         doc_id=doc_id,
         claim_id=claim_id,
         limit=limit,
     )
+
+    records = storage.query(query)
 
     # Filter by since if provided
     if since:

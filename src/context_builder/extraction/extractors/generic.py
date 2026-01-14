@@ -38,6 +38,10 @@ from context_builder.schemas.extraction_result import (
 )
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
 from context_builder.services.decision_ledger import DecisionLedger
+from context_builder.services.compliance import (
+    DecisionStorage,
+    LLMCallSink,
+)
 from context_builder.schemas.decision_record import (
     DecisionRecord,
     DecisionType,
@@ -64,7 +68,22 @@ class GenericFieldExtractor(FieldExtractor):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         audit_storage_dir: Optional[Path] = None,
+        decision_storage: Optional[DecisionStorage] = None,
+        llm_sink: Optional[LLMCallSink] = None,
     ):
+        """Initialize generic field extractor.
+
+        Args:
+            spec: Document type specification defining fields to extract
+            model: Optional model override (defaults to prompt config)
+            temperature: Optional temperature override (defaults to prompt config)
+            audit_storage_dir: Optional directory for audit log storage (used if
+                decision_storage/llm_sink not provided)
+            decision_storage: Optional DecisionStorage implementation for compliance
+                logging. If not provided, creates default DecisionLedger.
+            llm_sink: Optional LLMCallSink implementation for LLM call logging.
+                If not provided, creates default audit service.
+        """
         # Load prompt config to get model defaults
         prompt_data = load_prompt(self.PROMPT_NAME)
         prompt_config = prompt_data["config"]
@@ -79,8 +98,12 @@ class GenericFieldExtractor(FieldExtractor):
 
         # Use audited client for compliance logging
         raw_client = OpenAI()
-        audit_service = get_llm_audit_service(audit_storage_dir)
-        self.audited_client = AuditedOpenAIClient(raw_client, audit_service)
+        # Use injected sink or create default audit service
+        if llm_sink is not None:
+            self.audited_client = AuditedOpenAIClient(raw_client, llm_sink)
+        else:
+            audit_service = get_llm_audit_service(audit_storage_dir)
+            self.audited_client = AuditedOpenAIClient(raw_client, audit_service)
 
         # Keep raw client for backwards compatibility
         self.client = raw_client
@@ -92,9 +115,13 @@ class GenericFieldExtractor(FieldExtractor):
             "run_id": None,
         }
 
-        # Initialize decision ledger for compliance logging
-        ledger_dir = audit_storage_dir or Path("output/logs")
-        self.decision_ledger = DecisionLedger(ledger_dir)
+        # Initialize decision storage for compliance logging
+        # Use injected storage or create default DecisionLedger
+        if decision_storage is not None:
+            self._decision_storage = decision_storage
+        else:
+            ledger_dir = audit_storage_dir or Path("output/logs")
+            self._decision_storage = DecisionLedger(ledger_dir)
 
     def extract(
         self,
@@ -201,7 +228,7 @@ class GenericFieldExtractor(FieldExtractor):
                 },
             )
 
-            self.decision_ledger.append(record)
+            self._decision_storage.append(record)
             logger.debug(f"Logged extraction decision for doc_id={result.doc.doc_id}")
 
         except Exception as e:

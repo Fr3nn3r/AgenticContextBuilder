@@ -27,6 +27,10 @@ from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_classification import DocumentClassification
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
 from context_builder.services.decision_ledger import DecisionLedger
+from context_builder.services.compliance import (
+    DecisionStorage,
+    LLMCallSink,
+)
 from context_builder.schemas.decision_record import (
     DecisionRecord,
     DecisionType,
@@ -103,13 +107,20 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         self,
         prompt_name: str = "claims_document_classification",
         audit_storage_dir: Optional[Path] = None,
+        decision_storage: Optional[DecisionStorage] = None,
+        llm_sink: Optional[LLMCallSink] = None,
     ):
         """
         Initialize OpenAI document classifier.
 
         Args:
             prompt_name: Name of prompt file in prompts/ directory (without .md)
-            audit_storage_dir: Optional directory for audit log storage
+            audit_storage_dir: Optional directory for audit log storage (used if
+                decision_storage/llm_sink not provided)
+            decision_storage: Optional DecisionStorage implementation for compliance
+                logging. If not provided, creates default DecisionLedger.
+            llm_sink: Optional LLMCallSink implementation for LLM call logging.
+                If not provided, creates default audit service.
         """
         super().__init__()
 
@@ -135,8 +146,12 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             )
 
             # Initialize audited client for compliance logging
-            audit_service = get_llm_audit_service(audit_storage_dir)
-            self.audited_client = AuditedOpenAIClient(self.client, audit_service)
+            # Use injected sink or create default audit service
+            if llm_sink is not None:
+                self.audited_client = AuditedOpenAIClient(self.client, llm_sink)
+            else:
+                audit_service = get_llm_audit_service(audit_storage_dir)
+                self.audited_client = AuditedOpenAIClient(self.client, audit_service)
 
             logger.debug("OpenAI client initialized successfully")
         except ImportError:
@@ -161,9 +176,13 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             "run_id": None,
         }
 
-        # Initialize decision ledger for compliance logging
-        ledger_dir = audit_storage_dir or Path("output/logs")
-        self.decision_ledger = DecisionLedger(ledger_dir)
+        # Initialize decision storage for compliance logging
+        # Use injected storage or create default DecisionLedger
+        if decision_storage is not None:
+            self._decision_storage = decision_storage
+        else:
+            ledger_dir = audit_storage_dir or Path("output/logs")
+            self._decision_storage = DecisionLedger(ledger_dir)
 
         logger.debug(
             f"Classifier initialized: model={self.model}, "
@@ -406,7 +425,7 @@ class OpenAIDocumentClassifier(DocumentClassifier):
                 metadata={"filename": filename, "model": self.model},
             )
 
-            self.decision_ledger.append(record)
+            self._decision_storage.append(record)
             logger.debug(f"Logged classification decision for doc_id={self._audit_context.get('doc_id')}")
 
         except Exception as e:

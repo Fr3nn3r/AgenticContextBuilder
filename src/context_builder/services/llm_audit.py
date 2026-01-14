@@ -1,84 +1,42 @@
 """LLM Audit Service for capturing all LLM API calls.
 
-This module provides a wrapper around OpenAI API calls that logs every call
-with full context for compliance audit trails. Each call is recorded with
-prompts, responses, token usage, latency, and decision context linking.
+This module provides the LLMAuditService facade class and AuditedOpenAIClient
+wrapper for logging LLM calls with full context for compliance audit trails.
+
+For new code, prefer using FileLLMCallStorage directly via dependency injection:
+
+    from context_builder.services.compliance import FileLLMCallStorage, LLMCallSink
+
+    def make_calls(sink: LLMCallSink):
+        sink.log_call(record)
 """
 
 from __future__ import annotations
 
-import json
-import logging
-import os
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-logger = logging.getLogger(__name__)
+# Import LLMCallRecord from its canonical location in schemas
+from context_builder.schemas.llm_call_record import LLMCallRecord
+from context_builder.services.compliance.file import FileLLMCallStorage
 
-
-@dataclass
-class LLMCallRecord:
-    """Record of a single LLM API call.
-
-    Captures all information needed for compliance audit:
-    - Full request (model, params, messages)
-    - Full response (content, finish reason)
-    - Token usage and cost estimation
-    - Timing and latency
-    - Decision context linking
-    """
-
-    # Identity
-    call_id: str = field(default_factory=lambda: f"llm_{uuid.uuid4().hex[:12]}")
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
-
-    # Request details
-    model: str = ""
-    temperature: float = 0.0
-    max_tokens: int = 0
-    messages: List[Dict[str, Any]] = field(default_factory=list)
-    response_format: Optional[Dict[str, Any]] = None
-
-    # Response details
-    response_content: Optional[str] = None
-    finish_reason: Optional[str] = None
-    response_raw: Optional[Dict[str, Any]] = None
-
-    # Token usage
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-    # Timing
-    latency_ms: int = 0
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-
-    # Decision context for linking
-    decision_id: Optional[str] = None
-    claim_id: Optional[str] = None
-    doc_id: Optional[str] = None
-    run_id: Optional[str] = None
-    call_purpose: Optional[str] = None  # "classification", "extraction", "vision_ocr"
-
-    # Retry tracking
-    attempt_number: int = 1
-    is_retry: bool = False
-    previous_call_id: Optional[str] = None
-
-    # Error tracking
-    error: Optional[str] = None
-    error_type: Optional[str] = None
+if TYPE_CHECKING:
+    from context_builder.services.compliance.interfaces import LLMCallSink
 
 
 class LLMAuditService:
     """Service for logging LLM API calls to JSONL file.
 
-    Provides append-only storage for LLM call records with atomic writes.
+    This class is a facade that maintains the existing API while delegating
+    to FileLLMCallStorage. For new code, prefer injecting LLMCallSink
+    interface directly.
+
+    Usage:
+        service = LLMAuditService(Path("output/logs"))
+        service.log_call(record)
     """
 
     def __init__(self, storage_dir: Path):
@@ -88,11 +46,9 @@ class LLMAuditService:
             storage_dir: Directory for storing the audit log (e.g., output/logs/)
         """
         self.storage_dir = Path(storage_dir)
-        self.log_file = self.storage_dir / "llm_calls.jsonl"
-
-    def _ensure_dir(self) -> None:
-        """Ensure storage directory exists."""
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self._storage = FileLLMCallStorage(storage_dir)
+        # Expose log_file for backwards compatibility
+        self.log_file = self._storage.storage_path
 
     def log_call(self, record: LLMCallRecord) -> LLMCallRecord:
         """Log an LLM call record.
@@ -101,40 +57,9 @@ class LLMAuditService:
             record: The call record to log
 
         Returns:
-            The record (unchanged)
+            The record (with call_id if generated)
         """
-        self._ensure_dir()
-
-        # Ensure call_id is set
-        if not record.call_id:
-            record.call_id = f"llm_{uuid.uuid4().hex[:12]}"
-
-        # Serialize the record
-        line = json.dumps(asdict(record), ensure_ascii=False, default=str) + "\n"
-
-        # Write atomically
-        tmp_file = self.log_file.with_suffix(".jsonl.tmp")
-        try:
-            existing_content = ""
-            if self.log_file.exists():
-                with open(self.log_file, "r", encoding="utf-8") as f:
-                    existing_content = f.read()
-
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(existing_content)
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
-
-            tmp_file.replace(self.log_file)
-            logger.debug(f"Logged LLM call {record.call_id}")
-
-        except IOError as e:
-            logger.warning(f"Failed to log LLM call: {e}")
-            if tmp_file.exists():
-                tmp_file.unlink()
-
-        return record
+        return self._storage.log_call(record)
 
     def get_by_id(self, call_id: str) -> Optional[LLMCallRecord]:
         """Get a call record by ID.
@@ -145,25 +70,7 @@ class LLMAuditService:
         Returns:
             LLMCallRecord if found, None otherwise
         """
-        if not self.log_file.exists():
-            return None
-
-        try:
-            with open(self.log_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        if data.get("call_id") == call_id:
-                            return LLMCallRecord(**data)
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-        except IOError as e:
-            logger.error(f"Failed to read LLM log: {e}")
-
-        return None
+        return self._storage.get_by_id(call_id)
 
     def query_by_decision(self, decision_id: str) -> List[LLMCallRecord]:
         """Get all calls linked to a decision.
@@ -174,26 +81,7 @@ class LLMAuditService:
         Returns:
             List of matching call records
         """
-        results = []
-        if not self.log_file.exists():
-            return results
-
-        try:
-            with open(self.log_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        if data.get("decision_id") == decision_id:
-                            results.append(LLMCallRecord(**data))
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-        except IOError as e:
-            logger.error(f"Failed to read LLM log: {e}")
-
-        return results
+        return self._storage.query_by_decision(decision_id)
 
 
 # Global singleton for convenience
@@ -227,10 +115,20 @@ class AuditedOpenAIClient:
     This wrapper intercepts all chat completion calls and logs them
     with full context for compliance audit trails.
 
+    The client accepts either an LLMAuditService (for backwards compatibility)
+    or any LLMCallSink implementation (for interface-based injection).
+
     Usage:
         from openai import OpenAI
         client = OpenAI()
+
+        # Option 1: With LLMAuditService (backwards compatible)
         audited = AuditedOpenAIClient(client, audit_service)
+
+        # Option 2: With LLMCallSink interface (preferred for new code)
+        from context_builder.services.compliance import FileLLMCallStorage
+        sink = FileLLMCallStorage(Path("output/logs"))
+        audited = AuditedOpenAIClient(client, sink)
 
         # Set context for linking
         audited.set_context(claim_id="CLM001", doc_id="doc_abc")
@@ -245,18 +143,27 @@ class AuditedOpenAIClient:
     def __init__(
         self,
         client: Any,
-        audit_service: Optional[LLMAuditService] = None,
+        audit_service: Optional[Union[LLMAuditService, "LLMCallSink"]] = None,
         storage_dir: Optional[Path] = None,
     ):
         """Initialize the audited client wrapper.
 
         Args:
             client: The underlying OpenAI client
-            audit_service: Optional audit service (creates default if None)
-            storage_dir: Optional storage directory for audit logs
+            audit_service: Optional audit service or LLMCallSink (creates default if None)
+            storage_dir: Optional storage directory for audit logs (ignored if audit_service provided)
         """
         self.client = client
-        self.audit_service = audit_service or get_llm_audit_service(storage_dir)
+
+        # Accept either LLMAuditService or LLMCallSink
+        if audit_service is not None:
+            self._sink: "LLMCallSink" = audit_service
+        else:
+            self._sink = get_llm_audit_service(storage_dir)
+
+        # Backwards compatibility: expose audit_service attribute
+        # This will be the sink, which may or may not be an LLMAuditService
+        self.audit_service = self._sink
 
         # Context for linking calls to decisions
         self._claim_id: Optional[str] = None
@@ -398,7 +305,7 @@ class AuditedOpenAIClient:
                 record.total_tokens = response.usage.total_tokens
 
             # Log the successful call
-            self.audit_service.log_call(record)
+            self._sink.log_call(record)
 
             # Reset retry state
             self._previous_call_id = None
@@ -416,7 +323,7 @@ class AuditedOpenAIClient:
             record.error_type = type(e).__name__
 
             # Log the failed call
-            self.audit_service.log_call(record)
+            self._sink.log_call(record)
 
             # Store call_id for retry tracking
             self._previous_call_id = call_id
@@ -430,11 +337,13 @@ class AuditedOpenAIClient:
 
 def create_audited_client(
     storage_dir: Optional[Path] = None,
+    sink: Optional["LLMCallSink"] = None,
 ) -> AuditedOpenAIClient:
     """Create an audited OpenAI client.
 
     Args:
         storage_dir: Optional storage directory for audit logs
+        sink: Optional LLMCallSink to use (preferred over storage_dir)
 
     Returns:
         AuditedOpenAIClient wrapping a new OpenAI client
@@ -442,5 +351,9 @@ def create_audited_client(
     from openai import OpenAI
 
     client = OpenAI()
+
+    if sink is not None:
+        return AuditedOpenAIClient(client, sink)
+
     audit_service = get_llm_audit_service(storage_dir)
     return AuditedOpenAIClient(client, audit_service)
