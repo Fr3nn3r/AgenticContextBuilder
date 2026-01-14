@@ -38,6 +38,7 @@ from context_builder.schemas.extraction_result import (
     ExtractionRunMetadata,
 )
 from context_builder.schemas.run_errors import DocStatus, PipelineStage, RunErrorCode, TextSource
+from context_builder.storage.version_bundles import VersionBundleStore, get_version_bundle_store
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ def _write_manifest(
     model: str,
     stage_config: Optional[StageConfig] = None,
     writer: Optional[ResultWriter] = None,
+    version_bundle_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Write manifest.json at run start. Returns manifest dict for later update."""
     # Default to full pipeline if no config
@@ -243,6 +245,7 @@ def _write_manifest(
         },
         "run_kind": stage_config.run_kind,
         "stages_executed": [s.value for s in stage_config.stages],
+        "version_bundle_id": version_bundle_id,
     }
     _write_json_atomic(run_paths.manifest_json, manifest, writer=writer)
     return manifest
@@ -428,6 +431,7 @@ class DocumentContext:
     ingestion_reused: bool = False
     classification_reused: bool = False
     current_phase: str = "setup"
+    version_bundle_id: Optional[str] = None  # For compliance traceability
 
     def to_doc_result(self) -> DocResult:
         """Convert the context into a DocResult."""
@@ -624,6 +628,7 @@ class ExtractionStage:
                 run_id=context.run_id,
                 writer=self.writer,
                 extractor_factory=extractor_factory,
+                version_bundle_id=context.version_bundle_id,
             )
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
@@ -646,6 +651,7 @@ def process_document(
     writer: Optional[ResultWriter] = None,
     providers: Optional[PipelineProviders] = None,
     phase_callback: Optional[Callable[[str, str], None]] = None,
+    version_bundle_id: Optional[str] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -687,6 +693,7 @@ def process_document(
         run_id=run_id,
         stage_config=stage_config,
         writer=writer,
+        version_bundle_id=version_bundle_id,
     )
 
     # Create phase callback wrapper that passes doc_id
@@ -741,6 +748,7 @@ def _run_extraction(
     run_id: str,
     writer: ResultWriter,
     extractor_factory: Any,
+    version_bundle_id: Optional[str] = None,
 ) -> tuple[Path, Optional[str]]:
     """Run field extraction for supported doc types.
 
@@ -770,6 +778,7 @@ def _run_extraction(
         model=extractor.model,
         prompt_version="generic_extraction_v1",
         input_hashes={"file_md5": file_md5, "content_md5": content_md5},
+        version_bundle_id=version_bundle_id,  # Link to version snapshot
     )
 
     # Run extraction
@@ -917,6 +926,15 @@ def process_claim(
     try:
         logger.info(f"Starting run {run_id} for claim {claim.claim_id}")
 
+        # Create version bundle for reproducibility (compliance requirement)
+        version_bundle_store = get_version_bundle_store(output_base)
+        version_bundle = version_bundle_store.create_version_bundle(
+            run_id=run_id,
+            model_name=model,
+            extractor_version="v1.0.0",
+        )
+        logger.info(f"Created version bundle {version_bundle.bundle_id} for run {run_id}")
+
         # Write manifest at start
         manifest = _write_manifest(
             run_paths=run_paths,
@@ -927,6 +945,7 @@ def process_claim(
             model=model,
             stage_config=stage_config,
             writer=writer,
+            version_bundle_id=version_bundle.bundle_id,
         )
 
         # Create classifier if not provided
@@ -959,6 +978,7 @@ def process_claim(
                 writer=writer,
                 providers=providers,
                 phase_callback=phase_callback,
+                version_bundle_id=version_bundle.bundle_id,
             )
             results.append(result)
 

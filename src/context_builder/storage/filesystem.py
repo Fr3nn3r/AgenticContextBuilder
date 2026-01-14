@@ -2,13 +2,17 @@
 
 Uses JSONL indexes for fast lookups when available,
 falls back to filesystem scanning with warning when indexes are missing.
+
+Includes compliance features:
+- Append-only label history for audit trails
 """
 
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .models import (
     ClaimRef,
@@ -432,7 +436,10 @@ class FileStorage:
             return None
 
     def save_label(self, doc_id: str, label_data: dict) -> None:
-        """Save label data for a document (atomic write)."""
+        """Save label data for a document (atomic write) with version history.
+
+        Compliance: Also appends to history.jsonl for audit trail.
+        """
         doc_folder = self._find_doc_folder(doc_id)
         if not doc_folder:
             raise ValueError(f"Document not found: {doc_id}")
@@ -440,17 +447,75 @@ class FileStorage:
         labels_dir = doc_folder / "labels"
         labels_dir.mkdir(parents=True, exist_ok=True)
 
+        # Add version metadata
+        version_ts = datetime.utcnow().isoformat() + "Z"
+        versioned_data = {
+            **label_data,
+            "_version_metadata": {
+                "saved_at": version_ts,
+                "version_number": self._get_next_label_version(labels_dir),
+            },
+        }
+
         label_path = labels_dir / "latest.json"
         tmp_path = labels_dir / "latest.json.tmp"
 
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(label_data, f, indent=2, ensure_ascii=False, default=str)
+                json.dump(versioned_data, f, indent=2, ensure_ascii=False, default=str)
             tmp_path.replace(label_path)
+
+            # Append to history for compliance (append-only)
+            self._append_label_history(labels_dir, versioned_data)
         except IOError as e:
             if tmp_path.exists():
                 tmp_path.unlink()
             raise IOError(f"Failed to save label: {e}")
+
+    def _get_next_label_version(self, labels_dir: Path) -> int:
+        """Get the next version number for a label."""
+        history_path = labels_dir / "history.jsonl"
+        if not history_path.exists():
+            return 1
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                return sum(1 for _ in f) + 1
+        except IOError:
+            return 1
+
+    def _append_label_history(self, labels_dir: Path, label_data: dict) -> None:
+        """Append label version to history (append-only for compliance)."""
+        history_path = labels_dir / "history.jsonl"
+        try:
+            with open(history_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(label_data, ensure_ascii=False, default=str) + "\n")
+        except IOError as e:
+            logger.warning(f"Failed to append label history: {e}")
+
+    def get_label_history(self, doc_id: str) -> List[dict]:
+        """Get all historical versions of labels for a document.
+
+        Returns list from oldest to newest.
+        """
+        doc_folder = self._find_doc_folder(doc_id)
+        if not doc_folder:
+            return []
+
+        history_path = doc_folder / "labels" / "history.jsonl"
+        if not history_path.exists():
+            return []
+
+        history = []
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        history.append(json.loads(line))
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load label history for {doc_id}: {e}")
+
+        return history
 
     def get_label_summary(self, doc_id: str) -> Optional[LabelSummary]:
         """Get label summary for a document (from index if available)."""

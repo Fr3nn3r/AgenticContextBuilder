@@ -125,7 +125,7 @@ test.describe("Claim Review", () => {
     // From fixture: doc_002 (police_report) has has_labels: true
     // Look for the checkmark SVG that indicates labeled status
     const docWithLabels = review.docStripItems.filter({
-      hasText: "police_report",
+      hasText: "police_report.pdf",
     });
     await expect(docWithLabels).toBeVisible();
 

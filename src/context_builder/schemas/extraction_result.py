@@ -71,6 +71,10 @@ class ExtractionRunMetadata(BaseModel):
         default_factory=dict,
         description="Input file hashes for reproducibility (pdf_md5, di_text_md5)"
     )
+    version_bundle_id: Optional[str] = Field(
+        default=None,
+        description="Version bundle ID linking to code/config snapshot for compliance"
+    )
 
 
 class DocumentMetadata(BaseModel):

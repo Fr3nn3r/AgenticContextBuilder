@@ -588,7 +588,7 @@ export function DocumentReview({
       {/* Main Content */}
       <div className="flex-1 flex min-h-0">
         {/* Document List - narrow left panel */}
-        <div className="w-72 border-r overflow-auto bg-card flex-shrink-0">
+        <div className="w-72 border-r overflow-auto bg-card flex-shrink-0" data-testid="document-list">
           {loading ? (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               Loading documents...

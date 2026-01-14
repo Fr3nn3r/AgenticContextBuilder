@@ -104,6 +104,7 @@ test.describe("Batch Selector - Benchmark Page", () => {
     await insights.goto();
 
     // KPI cards should be visible
+    await expect(insights.kpiRow).toBeVisible();
     await expect(insights.kpiCards.first()).toBeVisible();
 
     // Should have multiple KPI cards
@@ -111,19 +112,12 @@ test.describe("Batch Selector - Benchmark Page", () => {
     expect(kpiCount).toBeGreaterThan(0);
   });
 
-  test("tabs are visible and clickable", async ({ page }) => {
+  test("metrics page sections are visible", async ({ page }) => {
     const insights = new InsightsPage(page);
     await insights.goto();
 
-    // All tabs should be visible
-    await expect(insights.insightsTab).toBeVisible();
-    await expect(insights.historyTab).toBeVisible();
-    await expect(insights.compareTab).toBeVisible();
-
-    // Click history tab
-    await insights.switchToTab("history");
-
-    // Should show batch history table
-    await expect(page.getByText("Batch ID")).toBeVisible();
+    // KPI row and doc type scoreboard should be visible
+    await expect(insights.kpiRow).toBeVisible();
+    await expect(insights.docTypeScoreboard).toBeVisible();
   });
 });

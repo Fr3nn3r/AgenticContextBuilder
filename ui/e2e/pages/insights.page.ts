@@ -5,20 +5,18 @@ export class InsightsPage extends BasePage {
   readonly batchContextBar: Locator;
   readonly batchSelector: Locator;
   readonly runMetadata: Locator;
+  readonly kpiRow: Locator;
   readonly kpiCards: Locator;
-  readonly insightsTab: Locator;
-  readonly historyTab: Locator;
-  readonly compareTab: Locator;
+  readonly docTypeScoreboard: Locator;
 
   constructor(page: Page) {
     super(page);
     this.batchContextBar = page.getByTestId("batch-context-bar");
     this.batchSelector = page.getByTestId("batch-context-selector");
     this.runMetadata = page.getByTestId("run-metadata");
-    this.kpiCards = page.locator(".rounded-lg.border.p-3");
-    this.insightsTab = page.getByRole("button", { name: "Insights" });
-    this.historyTab = page.getByRole("button", { name: "Batch History" });
-    this.compareTab = page.getByRole("button", { name: "Compare Batches" });
+    this.kpiRow = page.getByTestId("kpi-row");
+    this.kpiCards = page.getByTestId(/kpi-/);
+    this.docTypeScoreboard = page.getByTestId("doc-type-scoreboard");
   }
 
   async goto() {
@@ -49,15 +47,5 @@ export class InsightsPage extends BasePage {
       return (await this.runMetadata.textContent()) ?? "";
     }
     return "";
-  }
-
-  async switchToTab(tab: "insights" | "history" | "compare") {
-    const tabMap = {
-      insights: this.insightsTab,
-      history: this.historyTab,
-      compare: this.compareTab,
-    };
-    await tabMap[tab].click();
-    await this.page.waitForTimeout(300);
   }
 }
