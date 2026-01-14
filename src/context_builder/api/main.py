@@ -1015,7 +1015,11 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
 
 
 @app.get("/api/classification/doc/{doc_id}")
-def get_classification_detail(doc_id: str, run_id: str = Query(..., description="Run ID")):
+def get_classification_detail(
+    doc_id: str,
+    run_id: str = Query(..., description="Run ID"),
+    claim_id: str = Query(..., description="Claim ID"),
+):
     """
     Get full classification context for a document.
 
@@ -1024,16 +1028,29 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
     """
     storage = get_storage()
 
-    # Get document bundle
-    doc_bundle = storage.doc_store.get_doc(doc_id)
-    if not doc_bundle:
-        raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+    # Find claim directory by claim_id
+    claim_root = storage.doc_store.claims_dir / claim_id
+    if not claim_root.exists():
+        # Try with CLM- prefix if not present
+        claim_root = storage.doc_store.claims_dir / f"CLM-{claim_id}"
+        if not claim_root.exists():
+            raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
 
-    claim_dir = doc_bundle.doc_root.parent.parent
-    claim_id = extract_claim_number(claim_dir.name)
+    # Get the doc directory
+    doc_root = claim_root / "docs" / doc_id
+    if not doc_root.exists():
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found in claim {claim_id}")
+
+    # Load document metadata
+    meta_path = doc_root / "meta" / "doc.json"
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail=f"Document metadata not found: {doc_id}")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        doc_metadata = json.load(f)
 
     # Load classification context
-    context_path = claim_dir / "runs" / run_id / "context" / f"{doc_id}.json"
+    context_path = claim_root / "runs" / run_id / "context" / f"{doc_id}.json"
     if not context_path.exists():
         raise HTTPException(status_code=404, detail=f"Classification context not found for run: {run_id}")
 
@@ -1053,7 +1070,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
     # Check for source file
     has_pdf = False
     has_image = False
-    source_dir = doc_bundle.doc_root / "source"
+    source_dir = doc_root / "source"
     if source_dir.exists():
         for source_file in source_dir.iterdir():
             ext = source_file.suffix.lower()
@@ -1064,7 +1081,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
 
     # Load existing label
     existing_label = None
-    labels_path = doc_bundle.doc_root / "labels" / "latest.json"
+    labels_path = doc_root / "labels" / "latest.json"
     if labels_path.exists():
         with open(labels_path, "r", encoding="utf-8") as f:
             label_data = json.load(f)
@@ -1078,7 +1095,7 @@ def get_classification_detail(doc_id: str, run_id: str = Query(..., description=
     return {
         "doc_id": doc_id,
         "claim_id": claim_id,
-        "filename": doc_bundle.metadata.get("original_filename", "Unknown"),
+        "filename": doc_metadata.get("original_filename", "Unknown"),
         "predicted_type": classification.get("document_type", "unknown"),
         "confidence": classification.get("confidence", 0.0),
         "signals": classification.get("signals", []),

@@ -86,11 +86,11 @@ export function ClassificationReview({
   }, [detail, docTypeCatalog]);
 
   // Load detail - takes explicit params to avoid closure issues
-  const loadDetail = useCallback(async (docId: string, runId: string) => {
+  const loadDetail = useCallback(async (docId: string, runId: string, claimId: string) => {
     try {
       setDetailLoading(true);
       // Fetch classification detail first
-      const classificationData = await getClassificationDetail(docId, runId);
+      const classificationData = await getClassificationDetail(docId, runId, claimId);
       setDetail(classificationData);
 
       // Then fetch full doc payload for PDF viewer
@@ -123,7 +123,7 @@ export function ClassificationReview({
       // Auto-select first document and load its detail immediately
       if (data.length > 0) {
         setSelectedDocId(data[0].doc_id);
-        loadDetail(data[0].doc_id, runId);
+        loadDetail(data[0].doc_id, runId, data[0].claim_id);
       }
     } catch (err) {
       console.error("Failed to load docs:", err);
@@ -147,10 +147,13 @@ export function ClassificationReview({
   // Load detail when doc selected manually (not auto-selected from loadDocs)
   const handleSelectDoc = useCallback((docId: string) => {
     if (docId !== selectedDocId && selectedBatchId) {
-      setSelectedDocId(docId);
-      loadDetail(docId, selectedBatchId);
+      const doc = docs.find(d => d.doc_id === docId);
+      if (doc) {
+        setSelectedDocId(docId);
+        loadDetail(docId, selectedBatchId, doc.claim_id);
+      }
     }
-  }, [selectedDocId, selectedBatchId, loadDetail]);
+  }, [selectedDocId, selectedBatchId, loadDetail, docs]);
 
   async function loadStats(runId: string) {
     try {
@@ -224,7 +227,7 @@ export function ClassificationReview({
       // Select first doc in filtered list
       const firstDoc = filteredDocs[0];
       setSelectedDocId(firstDoc.doc_id);
-      loadDetail(firstDoc.doc_id, selectedBatchId);
+      loadDetail(firstDoc.doc_id, selectedBatchId, firstDoc.claim_id);
     }
   }, [filteredDocs, selectedDocId, selectedBatchId, loadDetail, docsLoading]);
 

@@ -464,10 +464,11 @@ export async function listClassificationDocs(runId: string): Promise<Classificat
 
 export async function getClassificationDetail(
   docId: string,
-  runId: string
+  runId: string,
+  claimId: string
 ): Promise<ClassificationDetail> {
   return fetchJson<ClassificationDetail>(
-    `${API_BASE}/classification/doc/${docId}?run_id=${encodeURIComponent(runId)}`
+    `${API_BASE}/classification/doc/${docId}?run_id=${encodeURIComponent(runId)}&claim_id=${encodeURIComponent(claimId)}`
   );
 }
 
