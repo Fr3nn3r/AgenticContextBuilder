@@ -42,9 +42,15 @@ export function DocumentViewer({
   docId,
 }: DocumentViewerProps) {
   void _extraction; // Kept for backwards compatibility
-  // Default to PDF if available, otherwise text
-  const defaultTab: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
-  const [activeTab, setActiveTab] = useState<ViewerTab>(defaultTab);
+
+  // Determine default tab: prefer visual content (PDF > Image > Text)
+  function getDefaultTab(): ViewerTab {
+    if (hasPdf && sourceUrl) return "pdf";
+    if (hasImage && sourceUrl) return "image";
+    return "text";
+  }
+
+  const [activeTab, setActiveTab] = useState<ViewerTab>(getDefaultTab());
   const pdfViewerRef = useRef<PDFViewerHandle>(null);
 
   // Azure DI state for bbox highlighting
@@ -52,11 +58,10 @@ export function DocumentViewer({
   const [azureDILoading, setAzureDILoading] = useState(false);
   const [highlightBboxes, setHighlightBboxes] = useState<BoundingBox[]>([]);
 
-  // Update default tab when document changes
+  // Update default tab when document changes - prefer visual content
   useEffect(() => {
-    const newDefault: ViewerTab = (hasPdf && sourceUrl) ? "pdf" : "text";
-    setActiveTab(newDefault);
-  }, [hasPdf, sourceUrl]);
+    setActiveTab(getDefaultTab());
+  }, [hasPdf, hasImage, sourceUrl]);
 
   // Reset Azure DI when document changes
   useEffect(() => {
