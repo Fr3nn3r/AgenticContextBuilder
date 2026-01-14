@@ -521,10 +521,25 @@ class ClassificationStage:
             raise ValueError("Missing text content for classification")
 
         if context.stage_config.run_classify:
-            classification = context.classifier.classify(
-                context.text_content,
-                context.doc.original_filename,
-            )
+            # Use page-based classification if pages data is available
+            if context.pages_data and "pages" in context.pages_data:
+                pages = [p.get("text", "") for p in context.pages_data["pages"]]
+                classification = context.classifier.classify_pages(
+                    pages,
+                    context.doc.original_filename,
+                )
+                logger.info(
+                    f"Classification used {classification.get('context_tier', 'unknown')} context, "
+                    f"retried={classification.get('retried', False)}, "
+                    f"token_savings={classification.get('token_savings_estimate', 0)}"
+                )
+            else:
+                # Fallback to text-based classification
+                classification = context.classifier.classify(
+                    context.text_content,
+                    context.doc.original_filename,
+                )
+
             context.doc_type = classification.get("document_type", "unknown")
             context.language = classification.get("language", "es")
             confidence = classification.get("confidence")

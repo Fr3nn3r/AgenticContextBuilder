@@ -16,6 +16,10 @@ from context_builder.classification import (
     APIError,
     ConfigurationError,
 )
+from context_builder.classification.context_builder import (
+    build_classification_context,
+    load_all_cue_phrases,
+)
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_classification import DocumentClassification
 
@@ -283,6 +287,74 @@ class OpenAIDocumentClassifier(DocumentClassifier):
 
         # Validate and return
         return self._validate_response(response)
+
+    def classify_pages(
+        self,
+        pages: List[str],
+        filename: str = "",
+        confidence_threshold: float = 0.7,
+    ) -> Dict[str, Any]:
+        """
+        Classify document using page-based context optimization.
+
+        For long documents, this method:
+        1. Builds optimized context (first 2 + last page + cue snippets)
+        2. Classifies using optimized context
+        3. If confidence < threshold, retries with full text
+
+        Args:
+            pages: List of page texts (strings)
+            filename: Original filename (hint for classification)
+            confidence_threshold: If confidence below this, retry with full text
+
+        Returns:
+            Dict with document_type, language, confidence, summary, signals, key_hints
+            Plus additional fields: context_tier, retried, token_savings_estimate
+        """
+        if not pages:
+            from context_builder.classification import ClassificationError
+            raise ClassificationError("Empty pages list provided")
+
+        # Build optimized context
+        ctx = build_classification_context(pages)
+
+        logger.info(
+            f"Classification context: tier={ctx.tier}, "
+            f"total_chars={ctx.total_chars}, pages_included={ctx.pages_included}, "
+            f"snippets={ctx.snippets_found}"
+        )
+
+        # First classification attempt with optimized context
+        result = self.classify(ctx.text, filename)
+        result["context_tier"] = ctx.tier
+        result["retried"] = False
+
+        # Estimate token savings (rough: 1 token ~= 4 chars)
+        original_chars = ctx.total_chars
+        optimized_chars = len(ctx.text)
+        result["token_savings_estimate"] = max(0, (original_chars - optimized_chars) // 4)
+
+        # Check if we need to retry with full text
+        confidence = result.get("confidence", 0.0)
+        if confidence < confidence_threshold and ctx.tier == "optimized":
+            logger.info(
+                f"Low confidence ({confidence:.2f} < {confidence_threshold}), "
+                f"retrying with full text"
+            )
+
+            # Retry with full document text
+            full_text = "\n\n".join(pages)
+            result = self.classify(full_text, filename)
+            result["context_tier"] = "full_retry"
+            result["retried"] = True
+            result["token_savings_estimate"] = 0  # No savings on retry
+
+            logger.info(
+                f"Retry result: confidence={result.get('confidence', 0.0):.2f}, "
+                f"doc_type={result.get('document_type', 'unknown')}"
+            )
+
+        return result
 
 
 # Auto-register with factory

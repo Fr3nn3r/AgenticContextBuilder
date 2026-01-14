@@ -80,6 +80,38 @@ class DocumentClassifier(ABC):
             self.logger.exception(f"Unexpected error classifying {filename}")
             raise ClassificationError(f"Classification failed: {str(e)}") from e
 
+    def classify_pages(
+        self,
+        pages: list,
+        filename: str = "",
+        confidence_threshold: float = 0.7,
+    ) -> Dict[str, Any]:
+        """
+        Classify document using page-based context optimization.
+
+        This method uses optimized context building to reduce token usage
+        while maintaining classification accuracy. For long documents, it
+        extracts first/last pages and cue-based snippets instead of full text.
+
+        Args:
+            pages: List of page texts (strings)
+            filename: Original filename (hint for classification)
+            confidence_threshold: If confidence below this, retry with full text
+
+        Returns:
+            Dict with document_type, language, confidence, summary, signals, key_hints
+            Plus additional fields: context_tier, retried
+
+        Raises:
+            ClassificationError: If classification fails
+        """
+        # Default implementation: join pages and call classify
+        text_content = "\n\n".join(pages) if pages else ""
+        result = self.classify(text_content, filename)
+        result["context_tier"] = "full"
+        result["retried"] = False
+        return result
+
 
 class ClassifierFactory:
     """Factory for creating document classifier instances."""
