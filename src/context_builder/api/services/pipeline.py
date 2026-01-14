@@ -713,11 +713,42 @@ class PipelineService:
 
             logger.info(f"Persisted run {run.run_id} to {ws_paths.run_root}")
 
-            # Append to run index if it exists (for immediate visibility)
-            self._append_to_run_index(run, ws_paths, summary_data)
+            # Build or update indexes for fast lookups
+            self._update_indexes(run, ws_paths, summary_data)
 
         except Exception as e:
             logger.error(f"Failed to persist run {run.run_id}: {e}")
+
+    def _update_indexes(
+        self,
+        run: PipelineRun,
+        ws_paths: "WorkspaceRunPaths",
+        summary_data: dict,
+    ) -> None:
+        """Build indexes if missing, or append to existing run index.
+
+        This ensures indexes are available for fast lookups after API-triggered runs.
+        Matches CLI behavior which auto-builds indexes after pipeline completion.
+        """
+        # Registry is at workspace/registry/ (sibling to workspace/claims/)
+        registry_dir = self.output_dir.parent / "registry"
+        run_index_path = registry_dir / "run_index.jsonl"
+        doc_index_path = registry_dir / "doc_index.jsonl"
+
+        # If indexes don't exist, build them from scratch
+        if not doc_index_path.exists():
+            try:
+                from context_builder.storage.index_builder import build_all_indexes
+                logger.info("Building indexes for workspace...")
+                stats = build_all_indexes(self.output_dir.parent)
+                logger.info(f"Indexes built: {stats.get('doc_count', 0)} docs, {stats.get('run_count', 0)} runs")
+                return  # build_all_indexes already includes the current run
+            except Exception as e:
+                logger.warning(f"Index build failed (non-fatal): {e}")
+                return
+
+        # If indexes exist, just append the new run
+        self._append_to_run_index(run, ws_paths, summary_data)
 
     def _append_to_run_index(
         self,
@@ -725,7 +756,7 @@ class PipelineService:
         ws_paths: "WorkspaceRunPaths",
         summary_data: dict,
     ) -> None:
-        """Append run to the index file if it exists.
+        """Append run to the existing run index file.
 
         This allows the run to be immediately visible without rebuilding the full index.
         """

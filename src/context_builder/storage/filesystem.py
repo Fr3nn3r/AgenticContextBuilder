@@ -27,6 +27,10 @@ from .index_reader import IndexReader
 
 logger = logging.getLogger(__name__)
 
+# Module-level set tracking which registry paths have already had "no index" warnings
+# This prevents duplicate warnings when multiple FileStorage instances are created
+_warned_registry_paths: set[str] = set()
+
 
 class FileStorage:
     """Filesystem-based storage implementation with index support.
@@ -61,17 +65,17 @@ class FileStorage:
             self.registry_dir = self.output_root.parent / "registry"
 
         self._index_reader = IndexReader(self.registry_dir)
-        self._warned_no_index = False
 
     def _warn_no_index(self, operation: str) -> None:
-        """Log warning about missing indexes (once per session)."""
-        if not self._warned_no_index:
+        """Log warning about missing indexes (once per registry path per session)."""
+        registry_key = str(self.registry_dir)
+        if registry_key not in _warned_registry_paths:
             logger.warning(
                 f"Registry indexes not found at {self.registry_dir}. "
                 f"Falling back to filesystem scan for '{operation}'. "
                 f"Run 'python -m context_builder.cli index build' to create indexes."
             )
-            self._warned_no_index = True
+            _warned_registry_paths.add(registry_key)
 
     # -------------------------------------------------------------------------
     # Discovery / Listing
