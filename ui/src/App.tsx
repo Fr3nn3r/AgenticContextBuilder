@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { BatchWorkspace } from "./components/BatchWorkspace";
@@ -38,7 +38,6 @@ function App() {
   const { user, isLoading: authLoading } = useAuth();
 
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
-  const [filteredClaims, setFilteredClaims] = useState<ClaimSummary[]>([]);
   const [selectedClaim, setSelectedClaim] = useState<ClaimSummary | null>(null);
   const [docs, setDocs] = useState<DocSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +88,8 @@ function App() {
     }
   }, [selectedRunId, detailedRuns]);
 
-  // Apply filters whenever claims or filters change
-  useEffect(() => {
+  // Filter claims - useMemo ensures synchronous filtering (no race condition)
+  const filteredClaims = useMemo(() => {
     let result = [...claims];
 
     // Filter by run - only show claims that are in the selected run
@@ -126,7 +125,7 @@ function App() {
       }
     }
 
-    setFilteredClaims(result);
+    return result;
   }, [claims, searchQuery, lobFilter, statusFilter, riskFilter, selectedRunId]);
 
   async function loadRuns() {
@@ -153,7 +152,6 @@ function App() {
       setError(null);
       const data = await listClaims(runId);
       setClaims(data);
-      setFilteredClaims(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load claims");
     } finally {
@@ -190,7 +188,13 @@ function App() {
   }
 
   function handleSelectDoc(docId: string, claimId: string) {
-    navigate(`/claims/${claimId}/review?doc=${docId}`);
+    // Navigate to documents tab with claim filter and doc selection
+    if (selectedRunId) {
+      navigate(`/batches/${selectedRunId}/documents?claim=${claimId}&doc=${docId}`);
+    } else {
+      // Fallback to standalone review if no batch selected
+      navigate(`/claims/${claimId}/review?doc=${docId}`);
+    }
   }
 
   function handleNavigateToReview(claimId: string) {

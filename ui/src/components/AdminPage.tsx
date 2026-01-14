@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { listUsers, createUser, updateUser, deleteUser, type UserResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { WorkspaceManager } from './WorkspaceManager';
 
 const ROLES = ['admin', 'reviewer', 'operator', 'auditor'] as const;
+type AdminTab = 'users' | 'workspaces';
 
 interface UserFormData {
   username: string;
@@ -12,6 +14,7 @@ interface UserFormData {
 
 export function AdminPage() {
   const { user: currentUser, switchUser } = useAuth();
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,9 +169,44 @@ export function AdminPage() {
         </span>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">User Management</h1>
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 border-b border-border">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === 'users'
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          User Management
+          {activeTab === 'users' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('workspaces')}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === 'workspaces'
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Workspaces
+          {activeTab === 'workspaces' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+          )}
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'workspaces' ? (
+        <WorkspaceManager />
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-foreground">Users</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Manage users and their roles
           </p>
@@ -371,6 +409,8 @@ export function AdminPage() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

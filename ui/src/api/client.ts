@@ -788,3 +788,67 @@ export async function deleteUser(username: string): Promise<{ success: boolean }
     { method: "DELETE" }
   );
 }
+
+// =============================================================================
+// WORKSPACE API
+// =============================================================================
+
+export interface WorkspaceResponse {
+  workspace_id: string;
+  name: string;
+  path: string;
+  status: string;
+  created_at: string;
+  last_accessed_at: string | null;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface CreateWorkspaceRequest {
+  name: string;
+  path: string;
+  description?: string;
+}
+
+export interface ActivateWorkspaceResponse {
+  status: string;
+  workspace_id: string;
+  sessions_cleared: number;
+  previous_workspace_id: string | null;
+}
+
+export async function listWorkspaces(): Promise<WorkspaceResponse[]> {
+  return fetchJson<WorkspaceResponse[]>(`${API_BASE}/admin/workspaces`);
+}
+
+export async function getActiveWorkspace(): Promise<WorkspaceResponse> {
+  return fetchJson<WorkspaceResponse>(`${API_BASE}/admin/workspaces/active`);
+}
+
+export async function createWorkspace(
+  request: CreateWorkspaceRequest
+): Promise<WorkspaceResponse> {
+  return fetchJson<WorkspaceResponse>(`${API_BASE}/admin/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function activateWorkspace(
+  workspaceId: string
+): Promise<ActivateWorkspaceResponse> {
+  return fetchJson<ActivateWorkspaceResponse>(
+    `${API_BASE}/admin/workspaces/${encodeURIComponent(workspaceId)}/activate`,
+    { method: "POST" }
+  );
+}
+
+export async function deleteWorkspace(
+  workspaceId: string
+): Promise<{ status: string; workspace_id: string }> {
+  return fetchJson<{ status: string; workspace_id: string }>(
+    `${API_BASE}/admin/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: "DELETE" }
+  );
+}

@@ -11,6 +11,7 @@ from .pipeline import DocPhase, DocProgress, PipelineRun, PipelineService, Pipel
 from .prompt_config import PromptConfig, PromptConfigService
 from .audit import AuditEntry, AuditService
 from .users import Role, User, UsersService
+from .workspace import Workspace, WorkspaceRegistry, WorkspaceService, WorkspaceStatus
 
 __all__ = [
     "AuditEntry",
@@ -35,4 +36,8 @@ __all__ = [
     "UploadService",
     "User",
     "UsersService",
+    "Workspace",
+    "WorkspaceRegistry",
+    "WorkspaceService",
+    "WorkspaceStatus",
 ]

@@ -69,6 +69,8 @@ from context_builder.api.services import (
     TruthService,
     UploadService,
     UsersService,
+    Workspace,
+    WorkspaceService,
 )
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
 from context_builder.services.compliance import (
@@ -116,9 +118,16 @@ def get_storage() -> StorageFacade:
 
 
 def set_data_dir(path: Path):
-    """Set the data directory for the API."""
-    global DATA_DIR
-    DATA_DIR = path
+    """Set the data directory for the API.
+
+    Args:
+        path: Base workspace path (e.g., output/).
+              DATA_DIR will be set to path/claims.
+              STAGING_DIR will be set to path/.pending.
+    """
+    global DATA_DIR, STAGING_DIR
+    DATA_DIR = path / "claims"
+    STAGING_DIR = path / ".pending"
 
 
 def get_claims_service() -> ClaimsService:
@@ -251,6 +260,34 @@ def get_llm_call_storage() -> LLMCallStorage:
     """Get LLMCallStorage instance based on compliance config."""
     config = get_compliance_config()
     return ComplianceStorageFactory.create_llm_storage(config)
+
+
+# Global WorkspaceService instance
+_workspace_service: Optional[WorkspaceService] = None
+
+
+def get_workspace_service() -> WorkspaceService:
+    """Get WorkspaceService singleton instance."""
+    global _workspace_service
+    if _workspace_service is None:
+        _workspace_service = WorkspaceService(_PROJECT_ROOT)
+    return _workspace_service
+
+
+def _reset_service_singletons() -> None:
+    """Reset all service singletons to pick up new workspace paths.
+
+    Called after workspace switch to ensure services use new paths.
+    """
+    global _pipeline_service, _prompt_config_service, _audit_service
+    global _users_service, _auth_service, _compliance_config
+
+    _pipeline_service = None
+    _prompt_config_service = None
+    _audit_service = None
+    _users_service = None
+    _auth_service = None
+    _compliance_config = None
 
 
 # =============================================================================
@@ -637,6 +674,195 @@ def delete_user(username: str, current_user: CurrentUser = Depends(require_admin
     auth_service.invalidate_user_sessions(username)
 
     return {"success": True, "username": username}
+
+
+# =============================================================================
+# WORKSPACE MANAGEMENT ENDPOINTS
+# =============================================================================
+
+
+class WorkspaceResponse(BaseModel):
+    """Workspace response body."""
+
+    workspace_id: str
+    name: str
+    path: str
+    status: str
+    created_at: str
+    last_accessed_at: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool = False
+
+
+class CreateWorkspaceRequest(BaseModel):
+    """Create workspace request body."""
+
+    name: str
+    path: str
+    description: Optional[str] = None
+
+
+class ActivateWorkspaceResponse(BaseModel):
+    """Activate workspace response."""
+
+    status: str
+    workspace_id: str
+    sessions_cleared: int
+    previous_workspace_id: Optional[str] = None
+
+
+@app.get("/api/admin/workspaces", response_model=List[WorkspaceResponse])
+def list_workspaces(current_user: CurrentUser = Depends(require_admin)):
+    """List all registered workspaces. Requires admin role."""
+    workspace_service = get_workspace_service()
+    workspaces = workspace_service.list_workspaces()
+    active_id = workspace_service.get_active_workspace_id()
+    return [
+        WorkspaceResponse(
+            workspace_id=ws.workspace_id,
+            name=ws.name,
+            path=ws.path,
+            status=ws.status,
+            created_at=ws.created_at,
+            last_accessed_at=ws.last_accessed_at,
+            description=ws.description,
+            is_active=(ws.workspace_id == active_id),
+        )
+        for ws in workspaces
+    ]
+
+
+@app.get("/api/admin/workspaces/active", response_model=WorkspaceResponse)
+def get_active_workspace(current_user: CurrentUser = Depends(require_admin)):
+    """Get the currently active workspace."""
+    workspace_service = get_workspace_service()
+    workspace = workspace_service.get_active_workspace()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="No active workspace")
+    return WorkspaceResponse(
+        workspace_id=workspace.workspace_id,
+        name=workspace.name,
+        path=workspace.path,
+        status=workspace.status,
+        created_at=workspace.created_at,
+        last_accessed_at=workspace.last_accessed_at,
+        description=workspace.description,
+        is_active=True,
+    )
+
+
+@app.post("/api/admin/workspaces", response_model=WorkspaceResponse)
+def create_workspace(
+    request: CreateWorkspaceRequest,
+    current_user: CurrentUser = Depends(require_admin),
+):
+    """Create a new workspace. Requires admin role."""
+    workspace_service = get_workspace_service()
+
+    # Validate path is absolute
+    if not Path(request.path).is_absolute():
+        raise HTTPException(
+            status_code=400,
+            detail="Workspace path must be absolute",
+        )
+
+    workspace = workspace_service.create_workspace(
+        name=request.name,
+        path=request.path,
+        description=request.description,
+    )
+
+    if not workspace:
+        raise HTTPException(
+            status_code=400,
+            detail="Workspace already exists at this path",
+        )
+
+    return WorkspaceResponse(
+        workspace_id=workspace.workspace_id,
+        name=workspace.name,
+        path=workspace.path,
+        status=workspace.status,
+        created_at=workspace.created_at,
+        last_accessed_at=workspace.last_accessed_at,
+        description=workspace.description,
+        is_active=False,
+    )
+
+
+@app.post("/api/admin/workspaces/{workspace_id}/activate", response_model=ActivateWorkspaceResponse)
+def activate_workspace(
+    workspace_id: str,
+    current_user: CurrentUser = Depends(require_admin),
+):
+    """
+    Activate a workspace. Clears ALL sessions (logs everyone out).
+
+    This is a destructive operation - all users will need to re-login.
+    """
+    workspace_service = get_workspace_service()
+    auth_service = get_auth_service()
+    audit_service = get_audit_service()
+
+    # Get previous workspace for response
+    previous_id = workspace_service.get_active_workspace_id()
+
+    # Activate workspace
+    workspace = workspace_service.activate_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # Update DATA_DIR and STAGING_DIR
+    set_data_dir(Path(workspace.path))
+
+    # Clear ALL sessions (including current user's)
+    sessions_cleared = auth_service.clear_all_sessions()
+
+    # Reset service singletons to pick up new paths
+    _reset_service_singletons()
+
+    # Audit log (after reset, creates new audit service instance)
+    get_audit_service().log(
+        action=f"workspace.activated (from={previous_id}, to={workspace_id})",
+        user=current_user.username,
+        action_type="workspace.activated",
+        entity_type="workspace",
+        entity_id=workspace_id,
+    )
+
+    return ActivateWorkspaceResponse(
+        status="activated",
+        workspace_id=workspace_id,
+        sessions_cleared=sessions_cleared,
+        previous_workspace_id=previous_id,
+    )
+
+
+@app.delete("/api/admin/workspaces/{workspace_id}")
+def delete_workspace(
+    workspace_id: str,
+    current_user: CurrentUser = Depends(require_admin),
+):
+    """
+    Delete a workspace from the registry.
+
+    Does NOT delete the workspace files on disk - only removes from registry.
+    Cannot delete the active workspace.
+    """
+    workspace_service = get_workspace_service()
+
+    # Cannot delete active workspace
+    if workspace_service.get_active_workspace_id() == workspace_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the active workspace. Activate a different workspace first.",
+        )
+
+    success = workspace_service.delete_workspace(workspace_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    return {"status": "deleted", "workspace_id": workspace_id}
 
 
 # =============================================================================

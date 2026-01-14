@@ -191,3 +191,19 @@ class AuthService:
         if removed > 0:
             logger.info(f"Invalidated {removed} sessions for user: {username}")
         return removed
+
+    def clear_all_sessions(self) -> int:
+        """
+        Clear all active sessions. Used during workspace switch.
+
+        Returns:
+            Number of sessions cleared.
+        """
+        sessions = self._load_all()
+        count = len(sessions)
+
+        if count > 0:
+            self._save_all({})
+            logger.info(f"Cleared all {count} sessions (workspace switch)")
+
+        return count

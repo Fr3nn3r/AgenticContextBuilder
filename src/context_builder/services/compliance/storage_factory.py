@@ -2,18 +2,18 @@
 
 This module provides the ComplianceStorageFactory which creates the appropriate
 storage backend implementations based on configuration.
+
+Note: Encrypted backend imports are lazy-loaded to avoid importing the
+`cryptography` library at module load time. This prevents issues with
+uvicorn's --reload on Windows, where the spawn-based reload mechanism
+can hang when cryptography's OpenSSL bindings are imported during process spawn.
 """
 
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple
 
 from context_builder.services.compliance.config import (
     ComplianceStorageConfig,
     StorageBackendType,
-)
-from context_builder.services.compliance.crypto import EnvelopeEncryptor
-from context_builder.services.compliance.encrypted import (
-    EncryptedDecisionStorage,
-    EncryptedLLMCallStorage,
 )
 from context_builder.services.compliance.file import (
     FileDecisionStorage,
@@ -23,6 +23,14 @@ from context_builder.services.compliance.interfaces import (
     DecisionStorage,
     LLMCallStorage,
 )
+
+# Type hints only - not imported at runtime
+if TYPE_CHECKING:
+    from context_builder.services.compliance.crypto import EnvelopeEncryptor
+    from context_builder.services.compliance.encrypted import (
+        EncryptedDecisionStorage,
+        EncryptedLLMCallStorage,
+    )
 
 
 class ComplianceStorageFactory:
@@ -59,6 +67,11 @@ class ComplianceStorageFactory:
             return FileDecisionStorage(config.storage_dir)
 
         if config.backend_type == StorageBackendType.ENCRYPTED_FILE:
+            # Lazy import to avoid loading cryptography at module level
+            # This prevents uvicorn --reload hang on Windows
+            from context_builder.services.compliance.crypto import EnvelopeEncryptor
+            from context_builder.services.compliance.encrypted import EncryptedDecisionStorage
+
             encryptor = EnvelopeEncryptor(config.encryption_key_path)
             return EncryptedDecisionStorage(config.storage_dir, encryptor)
 
@@ -95,6 +108,11 @@ class ComplianceStorageFactory:
             return FileLLMCallStorage(config.storage_dir)
 
         if config.backend_type == StorageBackendType.ENCRYPTED_FILE:
+            # Lazy import to avoid loading cryptography at module level
+            # This prevents uvicorn --reload hang on Windows
+            from context_builder.services.compliance.crypto import EnvelopeEncryptor
+            from context_builder.services.compliance.encrypted import EncryptedLLMCallStorage
+
             encryptor = EnvelopeEncryptor(config.encryption_key_path)
             return EncryptedLLMCallStorage(config.storage_dir, encryptor)
 

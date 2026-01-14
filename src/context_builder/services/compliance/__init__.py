@@ -9,6 +9,10 @@ Storage backends:
 - S3 - for cloud storage (future)
 - Database - for queryable storage (future)
 
+Note: Crypto and encrypted backend imports are lazy-loaded to avoid importing
+the `cryptography` library at module load time. This prevents issues with
+uvicorn's --reload on Windows (spawn-based reload hangs with OpenSSL bindings).
+
 Usage:
     from context_builder.services.compliance import (
         DecisionStorage,
@@ -27,7 +31,7 @@ Usage:
     config = ComplianceStorageConfig(storage_dir=Path("output/logs"))
     storage = ComplianceStorageFactory.create_decision_storage(config)
 
-    # For encrypted storage:
+    # For encrypted storage (imports cryptography when accessed):
     from context_builder.services.compliance import (
         EncryptedDecisionStorage,
         EnvelopeEncryptor,
@@ -40,24 +44,9 @@ from context_builder.services.compliance.config import (
     ComplianceStorageConfig,
     StorageBackendType,
 )
-from context_builder.services.compliance.crypto import (
-    CryptoError,
-    DecryptionError,
-    EncryptionError,
-    EnvelopeEncryptor,
-    KeyLoadError,
-    generate_key,
-    generate_key_file,
-)
-from context_builder.services.compliance.encrypted import (
-    EncryptedDecisionAppender,
-    EncryptedDecisionReader,
-    EncryptedDecisionStorage,
-    EncryptedDecisionVerifier,
-    EncryptedLLMCallReader,
-    EncryptedLLMCallSink,
-    EncryptedLLMCallStorage,
-)
+# Note: crypto and encrypted modules are NOT imported here to avoid
+# loading the cryptography library at module level. They are available
+# via __getattr__ for lazy loading when actually needed.
 from context_builder.services.compliance.factories import DecisionRecordFactory
 from context_builder.services.compliance.file import (
     GENESIS_HASH,
@@ -80,6 +69,40 @@ from context_builder.services.compliance.interfaces import (
     LLMCallStorage,
 )
 from context_builder.services.compliance.storage_factory import ComplianceStorageFactory
+
+
+# Lazy-loaded crypto symbols (to avoid importing cryptography at module level)
+_CRYPTO_SYMBOLS = {
+    "CryptoError",
+    "DecryptionError",
+    "EncryptionError",
+    "EnvelopeEncryptor",
+    "KeyLoadError",
+    "generate_key",
+    "generate_key_file",
+}
+
+# Lazy-loaded encrypted backend symbols
+_ENCRYPTED_SYMBOLS = {
+    "EncryptedDecisionAppender",
+    "EncryptedDecisionReader",
+    "EncryptedDecisionStorage",
+    "EncryptedDecisionVerifier",
+    "EncryptedLLMCallReader",
+    "EncryptedLLMCallSink",
+    "EncryptedLLMCallStorage",
+}
+
+
+def __getattr__(name: str):
+    """Lazy-load crypto and encrypted modules to avoid importing cryptography at startup."""
+    if name in _CRYPTO_SYMBOLS:
+        from context_builder.services.compliance import crypto
+        return getattr(crypto, name)
+    if name in _ENCRYPTED_SYMBOLS:
+        from context_builder.services.compliance import encrypted
+        return getattr(encrypted, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # Config

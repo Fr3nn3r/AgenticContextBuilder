@@ -51,6 +51,38 @@ export function BatchWorkspace({
     }
   }, [batchId, selectedBatchId, batches, navigate]);
 
+  // Show empty state when no batches exist
+  if (batches.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground mb-2">No batches found</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Run the pipeline to create your first batch. Batches contain extraction results from processing claims.
+          </p>
+          <div className="text-xs text-muted-foreground bg-muted rounded-md p-3 font-mono">
+            python -m context_builder.cli extract -o output/claims
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Show loading state while redirecting
   if (!batchId) {
     return (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   listClassificationDocs,
   listDocs,
@@ -39,6 +40,11 @@ export function DocumentReview({
   // Batch context now handled by BatchWorkspace
   void _batches;
   void _onBatchChange;
+
+  // URL params for claim filter and doc selection (from claims tab navigation)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlClaimParam = searchParams.get("claim");
+  const urlDocParam = searchParams.get("doc");
 
   // Document list state
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
@@ -120,22 +126,33 @@ export function DocumentReview({
       setDocs(classificationDocs);
       setDocsWithExtraction(extractedDocIds);
 
-      // Auto-select first document when run changes
-      if (classificationDocs.length > 0) {
+      // Check for URL params (from claims tab navigation)
+      if (urlDocParam && classificationDocs.some(d => d.doc_id === urlDocParam)) {
+        // Select the doc from URL params
+        setSelectedDocId(urlDocParam);
+        // Set claim filter if provided
+        if (urlClaimParam && claimIds.includes(urlClaimParam)) {
+          setClaimFilter(urlClaimParam);
+        }
+        // Clear URL params after applying them (one-time use)
+        setSearchParams({}, { replace: true });
+      } else if (classificationDocs.length > 0) {
+        // Auto-select first document when run changes (default behavior)
         setSelectedDocId(classificationDocs[0].doc_id);
+        setClaimFilter("all");
       } else {
         setSelectedDocId(null);
+        setClaimFilter("all");
       }
       // Note: Don't reset docPayload/fieldLabels here - loadDetail() handles this
       // Resetting here causes flicker as UI shows empty state before detail loads
       setHasUnsavedChanges(false);
-      setClaimFilter("all");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load documents");
     } finally {
       setLoading(false);
     }
-  }, [selectedBatchId]);
+  }, [selectedBatchId, urlDocParam, urlClaimParam, setSearchParams]);
 
   useEffect(() => {
     loadDocs();
