@@ -277,6 +277,7 @@ class TestPipelineStatus:
         assert PipelineStatus.PENDING.value == "pending"
         assert PipelineStatus.RUNNING.value == "running"
         assert PipelineStatus.COMPLETED.value == "completed"
+        assert PipelineStatus.PARTIAL.value == "partial"
         assert PipelineStatus.FAILED.value == "failed"
         assert PipelineStatus.CANCELLED.value == "cancelled"
 

@@ -21,6 +21,7 @@ class PipelineStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    PARTIAL = "partial"  # Some docs succeeded, some failed
     FAILED = "failed"
     CANCELLED = "cancelled"
 
@@ -209,7 +210,13 @@ class PipelineService:
                 input_paths.append(input_path)
 
             if self._is_cancelled(run_id):
+                # Cleanup any claims already moved to input before cancellation
+                for input_path in input_paths:
+                    claim_id = input_path.name
+                    self.upload_service.cleanup_staging(claim_id)
+                    self.upload_service.cleanup_input(claim_id)
                 run.status = PipelineStatus.CANCELLED
+                self._persist_run(run)
                 return
 
             # Process each claim
@@ -352,7 +359,7 @@ class PipelineService:
             if self._is_cancelled(run_id):
                 run.status = PipelineStatus.CANCELLED
             elif total_failed > 0 and total_success > 0:
-                run.status = PipelineStatus.COMPLETED  # Partial success
+                run.status = PipelineStatus.PARTIAL
             elif total_failed > 0:
                 run.status = PipelineStatus.FAILED
             else:
@@ -456,14 +463,136 @@ class PipelineService:
         return self.active_runs.get(run_id)
 
     def get_all_runs(self) -> List[PipelineRun]:
-        """Get all tracked pipeline runs."""
-        return list(self.active_runs.values())
+        """Get all tracked pipeline runs (active + historical from disk)."""
+        from context_builder.storage import FileStorage
+
+        # Start with active in-memory runs
+        runs_by_id: Dict[str, PipelineRun] = {r.run_id: r for r in self.active_runs.values()}
+
+        # Load historical runs from disk
+        try:
+            storage = FileStorage(output_root=self.output_dir.parent)
+            historical_runs = storage.list_runs()
+
+            for run_ref in historical_runs:
+                # Skip if already in active runs
+                if run_ref.run_id in runs_by_id:
+                    continue
+
+                # Convert RunRef to PipelineRun
+                historical_run = self._load_run_from_disk(run_ref.run_id)
+                if historical_run:
+                    runs_by_id[historical_run.run_id] = historical_run
+
+        except Exception as e:
+            logger.warning(f"Failed to load historical runs: {e}")
+
+        return list(runs_by_id.values())
+
+    def _load_run_from_disk(self, run_id: str) -> Optional[PipelineRun]:
+        """Load a completed run from disk."""
+        import json
+
+        run_dir = self.output_dir.parent / "runs" / run_id
+        if not run_dir.exists():
+            return None
+
+        manifest_path = run_dir / "manifest.json"
+        summary_path = run_dir / "summary.json"
+
+        manifest = {}
+        summary = {}
+
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        if summary_path.exists():
+            try:
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Build claim_ids from manifest
+        claim_ids = []
+        claims_data = manifest.get("claims", [])
+        for claim in claims_data:
+            claim_id = claim.get("claim_id", claim.get("id"))
+            if claim_id:
+                claim_ids.append(claim_id)
+
+        # Build docs dict from claims data
+        # Each claim in manifest has claim_id and docs_count
+        docs: Dict[str, DocProgress] = {}
+        total_docs = summary.get("docs_total", 0)
+
+        # Create placeholder docs based on docs_count per claim
+        for claim in claims_data:
+            claim_id = claim.get("claim_id", claim.get("id", "unknown"))
+            docs_count = claim.get("docs_count", 0)
+            for i in range(docs_count):
+                doc_id = f"doc_{i}"
+                key = f"{claim_id}/{doc_id}"
+                docs[key] = DocProgress(
+                    doc_id=doc_id,
+                    claim_id=claim_id,
+                    filename="",
+                    phase=DocPhase.DONE,
+                )
+
+        # If no docs from claims, create placeholders from total count
+        if not docs and total_docs > 0:
+            for i in range(total_docs):
+                doc_id = f"doc_{i}"
+                claim_id = claim_ids[0] if claim_ids else "unknown"
+                key = f"{claim_id}/{doc_id}"
+                docs[key] = DocProgress(
+                    doc_id=doc_id,
+                    claim_id=claim_id,
+                    filename="",
+                    phase=DocPhase.DONE,
+                )
+
+        # Map status string to enum
+        status_str = summary.get("status", "completed")
+        status_map = {
+            "completed": PipelineStatus.COMPLETED,
+            "complete": PipelineStatus.COMPLETED,
+            "failed": PipelineStatus.FAILED,
+            "cancelled": PipelineStatus.CANCELLED,
+            "partial": PipelineStatus.PARTIAL,
+            "running": PipelineStatus.COMPLETED,  # If on disk, it's done
+        }
+        status = status_map.get(status_str, PipelineStatus.COMPLETED)
+
+        # Extract stage timings if available
+        stage_timings = {}
+        if "timings" in summary:
+            stage_timings = summary["timings"]
+
+        return PipelineRun(
+            run_id=run_id,
+            status=status,
+            claim_ids=claim_ids,
+            model=manifest.get("model", summary.get("model", "unknown")),
+            started_at=manifest.get("started_at"),
+            completed_at=manifest.get("ended_at") or summary.get("completed_at"),
+            docs=docs,
+            prompt_config_id=manifest.get("prompt_config_id", manifest.get("model")),
+            summary=summary,
+            reuse_counts=summary.get("reuse", {"ingestion": 0, "classification": 0}),
+            stage_timings=stage_timings,
+        )
 
     def delete_run(self, run_id: str) -> bool:
         """
         Delete a pipeline run.
 
-        Removes from active tracking and optionally deletes disk outputs.
+        Removes from active tracking and deletes disk outputs.
         Only completed/failed/cancelled runs can be deleted.
 
         Args:
@@ -473,26 +602,29 @@ class PipelineService:
             True if deletion was successful
         """
         run = self.active_runs.get(run_id)
-        if run is None:
+
+        # Check if it's an active run that shouldn't be deleted
+        if run is not None:
+            if run.status in (PipelineStatus.RUNNING, PipelineStatus.PENDING):
+                return False
+            # Remove from active tracking
+            del self.active_runs[run_id]
+            if run_id in self.cancel_events:
+                del self.cancel_events[run_id]
+
+        # Delete run directory from disk (works for both active and historical)
+        run_dir = self.output_dir.parent / "runs" / run_id
+        if not run_dir.exists() and run is None:
+            # Neither in memory nor on disk
             return False
 
-        # Don't allow deleting running/pending runs
-        if run.status in (PipelineStatus.RUNNING, PipelineStatus.PENDING):
-            return False
-
-        # Remove from tracking
-        del self.active_runs[run_id]
-        if run_id in self.cancel_events:
-            del self.cancel_events[run_id]
-
-        # Optionally delete run directory from disk
         try:
-            run_dir = self.output_dir.parent / "runs" / run_id
             if run_dir.exists():
                 shutil.rmtree(run_dir)
                 logger.info(f"Deleted run directory: {run_dir}")
         except Exception as e:
             logger.warning(f"Failed to delete run directory for {run_id}: {e}")
+            return False
 
         logger.info(f"Deleted pipeline run: {run_id}")
         return True

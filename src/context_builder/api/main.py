@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import asyncio
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
@@ -57,6 +57,7 @@ from context_builder.api.models import (
 )
 from context_builder.api.services import (
     AuditService,
+    AuthService,
     ClaimsService,
     DocPhase,
     DocumentsService,
@@ -64,8 +65,10 @@ from context_builder.api.services import (
     LabelsService,
     PipelineService,
     PromptConfigService,
+    Role,
     TruthService,
     UploadService,
+    UsersService,
 )
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
 
@@ -178,6 +181,91 @@ def get_audit_service() -> AuditService:
         config_dir = _PROJECT_ROOT / "output" / "config"
         _audit_service = AuditService(config_dir)
     return _audit_service
+
+
+# Global UsersService instance
+_users_service: Optional[UsersService] = None
+
+
+def get_users_service() -> UsersService:
+    """Get UsersService singleton instance."""
+    global _users_service
+    if _users_service is None:
+        config_dir = _PROJECT_ROOT / "output" / "config"
+        _users_service = UsersService(config_dir)
+    return _users_service
+
+
+# Global AuthService instance
+_auth_service: Optional[AuthService] = None
+
+
+def get_auth_service() -> AuthService:
+    """Get AuthService singleton instance."""
+    global _auth_service
+    if _auth_service is None:
+        config_dir = _PROJECT_ROOT / "output" / "config"
+        _auth_service = AuthService(config_dir, get_users_service())
+    return _auth_service
+
+
+# =============================================================================
+# AUTHENTICATION DEPENDENCY
+# =============================================================================
+
+
+class CurrentUser(BaseModel):
+    """Current authenticated user."""
+    username: str
+    role: str
+
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> CurrentUser:
+    """
+    Dependency to get the current authenticated user from the Authorization header.
+
+    Expects: Authorization: Bearer <token>
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    token = authorization[7:]  # Remove "Bearer " prefix
+
+    auth_service = get_auth_service()
+    user = auth_service.validate_session(token)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    return CurrentUser(username=user.username, role=user.role)
+
+
+def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[CurrentUser]:
+    """
+    Dependency to optionally get the current user.
+    Returns None if not authenticated instead of raising an exception.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization[7:]
+    auth_service = get_auth_service()
+    user = auth_service.validate_session(token)
+
+    if not user:
+        return None
+
+    return CurrentUser(username=user.username, role=user.role)
+
+
+def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Dependency to require admin role."""
+    if current_user.role != Role.ADMIN.value:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 
 # =============================================================================
@@ -324,6 +412,187 @@ def get_run_summary():
 def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "data_dir": str(DATA_DIR)}
+
+
+# =============================================================================
+# AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+
+class LoginRequest(BaseModel):
+    """Login request body."""
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Login response body."""
+    token: str
+    user: CurrentUser
+
+
+class UserResponse(BaseModel):
+    """User response body (without password)."""
+    username: str
+    role: str
+    created_at: str
+    updated_at: str
+
+
+class CreateUserRequest(BaseModel):
+    """Create user request body."""
+    username: str
+    password: str
+    role: str = "reviewer"
+
+
+class UpdateUserRequest(BaseModel):
+    """Update user request body."""
+    password: Optional[str] = None
+    role: Optional[str] = None
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+def login(request: LoginRequest):
+    """
+    Authenticate user and create session.
+
+    Returns token and user info on success.
+    """
+    auth_service = get_auth_service()
+    result = auth_service.login(request.username, request.password)
+
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token, user = result
+    return LoginResponse(
+        token=token,
+        user=CurrentUser(username=user.username, role=user.role),
+    )
+
+
+@app.post("/api/auth/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    """
+    Logout user and invalidate session.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return {"success": True}  # Already logged out
+
+    token = authorization[7:]
+    auth_service = get_auth_service()
+    auth_service.logout(token)
+    return {"success": True}
+
+
+@app.get("/api/auth/me", response_model=CurrentUser)
+def get_me(current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Get current authenticated user info.
+    """
+    return current_user
+
+
+# =============================================================================
+# ADMIN ENDPOINTS (User Management)
+# =============================================================================
+
+
+@app.get("/api/admin/users", response_model=List[UserResponse])
+def list_users(current_user: CurrentUser = Depends(require_admin)):
+    """
+    List all users. Requires admin role.
+    """
+    users_service = get_users_service()
+    users = users_service.list_users()
+    return [UserResponse(**u.to_public_dict()) for u in users]
+
+
+@app.post("/api/admin/users", response_model=UserResponse)
+def create_user(request: CreateUserRequest, current_user: CurrentUser = Depends(require_admin)):
+    """
+    Create a new user. Requires admin role.
+    """
+    users_service = get_users_service()
+
+    # Validate role
+    valid_roles = [r.value for r in Role]
+    if request.role not in valid_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}",
+        )
+
+    user = users_service.create_user(
+        username=request.username,
+        password=request.password,
+        role=request.role,
+    )
+
+    if not user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    return UserResponse(**user.to_public_dict())
+
+
+@app.put("/api/admin/users/{username}", response_model=UserResponse)
+def update_user(
+    username: str,
+    request: UpdateUserRequest,
+    current_user: CurrentUser = Depends(require_admin),
+):
+    """
+    Update an existing user. Requires admin role.
+
+    Cannot demote self from admin.
+    """
+    # Prevent self-demotion from admin
+    if username == current_user.username and request.role and request.role != Role.ADMIN.value:
+        raise HTTPException(status_code=400, detail="Cannot demote yourself from admin")
+
+    users_service = get_users_service()
+    user = users_service.update_user(
+        username=username,
+        password=request.password,
+        role=request.role,
+    )
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # If password was changed, invalidate user's sessions (except if updating self)
+    if request.password and username != current_user.username:
+        auth_service = get_auth_service()
+        auth_service.invalidate_user_sessions(username)
+
+    return UserResponse(**user.to_public_dict())
+
+
+@app.delete("/api/admin/users/{username}")
+def delete_user(username: str, current_user: CurrentUser = Depends(require_admin)):
+    """
+    Delete a user. Requires admin role.
+
+    Cannot delete self or last admin.
+    """
+    if username == current_user.username:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    users_service = get_users_service()
+    success = users_service.delete_user(username)
+
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="User not found or cannot delete (last admin)",
+        )
+
+    # Invalidate deleted user's sessions
+    auth_service = get_auth_service()
+    auth_service.invalidate_user_sessions(username)
+
+    return {"success": True, "username": username}
 
 
 # =============================================================================
@@ -1139,7 +1408,10 @@ class PipelineRunRequest(BaseModel):
 
 
 @app.post("/api/pipeline/run")
-async def start_pipeline_run(request: PipelineRunRequest):
+async def start_pipeline_run(
+    request: PipelineRunRequest,
+    current_user: CurrentUser = Depends(require_admin),
+):
     """
     Start pipeline execution for pending claims.
 
@@ -1148,9 +1420,15 @@ async def start_pipeline_run(request: PipelineRunRequest):
 
     Returns:
         run_id for tracking progress
+
+    Requires: Admin role
     """
     pipeline_service = get_pipeline_service()
     upload_service = get_upload_service()
+
+    # Validate claim_ids is not empty
+    if not request.claim_ids:
+        raise HTTPException(status_code=400, detail="claim_ids cannot be empty")
 
     # Validate all claims exist in staging
     for claim_id in request.claim_ids:
@@ -1187,6 +1465,16 @@ async def start_pipeline_run(request: PipelineRunRequest):
         compute_metrics=request.compute_metrics,
         dry_run=request.dry_run,
         progress_callback=broadcast_progress,
+    )
+
+    # Audit log the pipeline start
+    audit_service = get_audit_service()
+    audit_service.log(
+        action=f"pipeline.started (claims: {len(request.claim_ids)}, model: {request.model})",
+        user=current_user.username,
+        action_type="pipeline.started",
+        entity_type="run",
+        entity_id=run_id,
     )
 
     status = "dry_run" if request.dry_run else "running"
@@ -1252,7 +1540,10 @@ def list_pipeline_claims():
 
 
 @app.post("/api/pipeline/cancel/{run_id}")
-async def cancel_pipeline(run_id: str):
+async def cancel_pipeline(
+    run_id: str,
+    current_user: CurrentUser = Depends(require_admin),
+):
     """
     Cancel a running pipeline.
 
@@ -1261,10 +1552,21 @@ async def cancel_pipeline(run_id: str):
 
     Returns:
         Cancellation status
+
+    Requires: Admin role
     """
     pipeline_service = get_pipeline_service()
 
     if await pipeline_service.cancel_pipeline(run_id):
+        # Audit log the cancellation
+        audit_service = get_audit_service()
+        audit_service.log(
+            action="pipeline.cancelled",
+            user=current_user.username,
+            action_type="pipeline.cancelled",
+            entity_type="run",
+            entity_id=run_id,
+        )
         # Broadcast cancellation
         await ws_manager.broadcast(run_id, {
             "type": "run_cancelled",
@@ -1432,7 +1734,10 @@ def list_pipeline_runs():
 
 
 @app.delete("/api/pipeline/runs/{run_id}")
-def delete_pipeline_run(run_id: str):
+def delete_pipeline_run(
+    run_id: str,
+    current_user: CurrentUser = Depends(require_admin),
+):
     """
     Delete a completed/failed/cancelled pipeline run.
 
@@ -1441,10 +1746,21 @@ def delete_pipeline_run(run_id: str):
 
     Returns:
         Deletion status
+
+    Requires: Admin role
     """
     pipeline_service = get_pipeline_service()
 
     if pipeline_service.delete_run(run_id):
+        # Audit log the deletion
+        audit_service = get_audit_service()
+        audit_service.log(
+            action="pipeline.deleted",
+            user=current_user.username,
+            action_type="pipeline.deleted",
+            entity_type="run",
+            entity_id=run_id,
+        )
         return {"status": "deleted", "run_id": run_id}
 
     raise HTTPException(
