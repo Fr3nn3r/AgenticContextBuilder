@@ -626,8 +626,31 @@ class PipelineService:
             logger.warning(f"Failed to delete run directory for {run_id}: {e}")
             return False
 
+        # Rebuild run index to remove stale entry
+        self._rebuild_run_index()
+
         logger.info(f"Deleted pipeline run: {run_id}")
         return True
+
+    def _rebuild_run_index(self) -> None:
+        """Rebuild the run index after a run is added or deleted."""
+        try:
+            from context_builder.storage.index_builder import build_run_index
+            from context_builder.storage.index_reader import RUN_INDEX_FILE, write_jsonl
+
+            output_dir = self.output_dir.parent  # output/
+            registry_dir = output_dir / "registry"
+
+            if not registry_dir.exists():
+                logger.debug("Registry directory does not exist, skipping index rebuild")
+                return
+
+            run_records = build_run_index(output_dir)
+            run_index_path = registry_dir / RUN_INDEX_FILE
+            write_jsonl(run_index_path, run_records)
+            logger.info(f"Rebuilt run index with {len(run_records)} runs")
+        except Exception as e:
+            logger.warning(f"Failed to rebuild run index: {e}")
 
     def _persist_run(self, run: PipelineRun) -> None:
         """Persist run to disk for visibility in other screens.
