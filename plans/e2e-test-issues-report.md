@@ -2,86 +2,51 @@
 
 **Date:** 2026-01-14
 **Initial Test Results:** 61 passed, 12 failed, 5 skipped, 4 did not run
-**After Rerun:** 70 passed, 4 failed, 5 skipped
+**Final Status:** ✅ **77 passed, 5 skipped**
 
 ## Summary
 
-The tab rename issue ("Benchmark" → "Metrics") has been **resolved** - those 9 tests now pass.
+All issues have been **resolved**:
+- ✅ Tab rename ("Benchmark" → "Metrics") - all tests passing
+- ✅ Metrics page tabs - tests updated and passing
+- ✅ Doc strip labeled indicator - now passing
+- ✅ Document labeling flow - fixed mock routes and selectors
+- ✅ Visual regression - snapshot updated
 
-The remaining **4 failing tests** are caused by:
-1. **Metrics page tab structure change** (1 test)
-2. **Doc strip component structure change** (1 test)
-3. **Document list selector outdated** (1 test)
-4. **Visual regression - snapshot needs update** (1 test)
+## Fixes Applied
 
----
+### 1. Mock API Route Patterns (`e2e/utils/mock-api.ts`)
+Updated glob patterns to regex patterns to properly match URLs with query parameters:
+- `/api/classification/docs?run_id=...` → `/\/api\/classification\/docs(\?.*)?$/`
+- `/api/claims/:claimId/docs?run_id=...` → `/\/api\/claims\/[^/]+\/docs(\?.*)?$/`
+- `/api/classification/stats?run_id=...` → `/\/api\/classification\/stats(\?.*)?$/`
 
-## Remaining Failures (4 tests)
+### 2. Document Labeling Test Selectors (`e2e/tests/document-labeling.spec.ts`)
+- Added explicit wait for documents to load
+- Changed overly broad `div` selector to specific `.p-3` class selector
+- Fixed selected row selector from escaped Tailwind classes to simpler `.border-l-2.border-accent`
 
-### 1. Metrics Page Tabs - `batch-selector.spec.ts:114`
-
-**Error:**
-```
-Locator: getByRole('button', { name: 'Insights' })
-Expected: visible
-Error: element(s) not found
-```
-
-**Analysis:** The InsightsPage page object expects buttons named "Insights", "Batch History", and "Compare Batches" but the Metrics page structure has changed. The page object (`e2e/pages/insights.page.ts:19-21`) needs to be updated to match the current Metrics page UI.
-
----
-
-### 2. Doc Strip Structure - `claim-review.spec.ts:121`
-
-**Error:**
-```
-Locator: getByTestId('doc-strip-item').filter({ hasText: 'police_report' })
-Expected: visible
-Error: element(s) not found
-```
-
-**Analysis:** The test looks for `data-testid="doc-strip-item"` elements in the claim review page, but either:
-- The test ID has changed
-- The doc strip renders document types differently (not showing "police_report" text)
-- The doc strip component structure has changed
-
-**Fix:** Inspect `ClaimReview.tsx` and update the test selector to match the current doc strip item structure.
+### 3. Visual Regression Snapshot
+- Updated `insights-chromium-win32.png` baseline to match current Metrics page UI
 
 ---
 
-### 3. Document List Selector - `document-labeling.spec.ts:9`
+## Skipped Tests (5 tests)
 
-**Error:**
-```
-locator.click: Test timeout of 30000ms exceeded.
-waiting for locator('.w-72.border-r').getByText('loss_notice.pdf')
-```
+The following tests in `claims-table.spec.ts` remain skipped:
+- `should display claims list`
+- `should have search input`
+- `should expand claim to show documents`
+- `should navigate to review when clicking document`
+- `should filter claims by search`
 
-**Analysis:** The test uses hardcoded CSS selectors (`.w-72.border-r`) to find the document list sidebar. This selector is fragile and has broken due to layout/styling changes.
-
-**Fix:**
-- Add `data-testid="document-list"` to the document list container
-- Update test to use: `page.getByTestId('document-list').getByText('loss_notice.pdf')`
+These tests were intentionally skipped and should be reviewed to determine if they should be re-enabled or removed.
 
 ---
 
-### 4. Visual Regression - `visual.spec.ts:51`
+## Historical Issues (Resolved)
 
-**Error:**
-```
-68398 pixels (ratio 0.06 of all image pixels) are different.
-```
-
-**Analysis:** The Metrics/Insights page UI has changed since the baseline screenshot was captured. This is expected after UI updates.
-
-**Fix:** Update snapshots with:
-```bash
-cd ui && npx playwright test visual.spec.ts --update-snapshots
-```
-
----
-
-## RESOLVED - Issue #1: Benchmark Tab Renamed to Metrics (9 tests)
+### Issue #1: Benchmark Tab Renamed to Metrics (9 tests) - RESOLVED
 
 ### Root Cause
 The `BatchSubNav.tsx` component was refactored to rename the "Benchmark" tab to "Metrics":

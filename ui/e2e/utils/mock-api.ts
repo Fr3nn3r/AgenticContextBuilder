@@ -143,8 +143,8 @@ export async function setupApiMocks(page: Page) {
     }
   });
 
-  // Mock GET /api/claims/:claimId/docs
-  await page.route("**/api/claims/*/docs", async (route) => {
+  // Mock GET /api/claims/:claimId/docs (with optional query params)
+  await page.route(/\/api\/claims\/[^/]+\/docs(\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -152,8 +152,8 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock GET /api/classification/docs
-  await page.route("**/api/classification/docs", async (route) => {
+  // Mock GET /api/classification/docs (with optional query params)
+  await page.route(/\/api\/classification\/docs(\?.*)?$/, async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
@@ -179,8 +179,8 @@ export async function setupApiMocks(page: Page) {
     }
   });
 
-  // Mock GET /api/classification/stats (optional)
-  await page.route("**/api/classification/stats", async (route) => {
+  // Mock GET /api/classification/stats (with optional query params)
+  await page.route(/\/api\/classification\/stats(\?.*)?$/, async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,

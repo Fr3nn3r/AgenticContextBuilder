@@ -10,10 +10,12 @@ test.describe("Document Labeling Flow", () => {
     await page.goto("/batches/run_001/documents");
     await page.waitForLoadState("networkidle");
 
-    const docList = page.locator(".w-72.border-r");
+    const docList = page.getByTestId("document-list");
     await expect(docList).toBeVisible();
 
+    // Wait for documents to load (async API call + React state update)
     const lossNoticeItem = docList.getByText("loss_notice.pdf");
+    await expect(lossNoticeItem).toBeVisible({ timeout: 10000 });
     await lossNoticeItem.click();
 
     // Expand the first field row and confirm it to enable Save
@@ -27,12 +29,16 @@ test.describe("Document Labeling Flow", () => {
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // Expect the doc to show as labeled
-    const labeledRow = docList.locator("div").filter({ hasText: "loss_notice.pdf" });
-    await expect(labeledRow).toContainText("Labeled");
+    // Wait for save to complete and status to update
+    await page.waitForTimeout(500);
+
+    // Expect the doc to show as labeled - use specific doc item selector (p-3 class is on doc items)
+    const lossNoticeRow = docList.locator(".p-3").filter({ hasText: "loss_notice.pdf" });
+    await expect(lossNoticeRow).toContainText("Labeled");
 
     // Auto-advance should select the next pending document
-    const selectedRow = docList.locator(".bg-accent\\/10.border-l-2.border-accent");
+    // The selected doc item has border-l-2 and border-accent classes
+    const selectedRow = docList.locator(".border-l-2.border-accent");
     await expect(selectedRow).toContainText("insurance_policy.pdf");
   });
 });
