@@ -149,12 +149,6 @@ export function DocumentReview({
       return;
     }
 
-    // Warn about unsaved changes
-    if (hasUnsavedChanges) {
-      const proceed = window.confirm("You have unsaved changes. Discard them?");
-      if (!proceed) return;
-    }
-
     // Find the selected doc to get claim_id
     const selectedDoc = docs.find((d) => d.doc_id === selectedDocId);
     if (!selectedDoc) return;
@@ -237,18 +231,23 @@ export function DocumentReview({
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedDocId, selectedBatchId, docs, hasUnsavedChanges]);
+  }, [selectedDocId, selectedBatchId, docs]);
 
   // Handle document selection with change tracking
   const handleSelectDoc = (docId: string) => {
     if (docId !== selectedDocId) {
+      // Warn about unsaved changes only for manual selection
+      if (hasUnsavedChanges) {
+        const proceed = window.confirm("You have unsaved changes. Discard them?");
+        if (!proceed) return;
+      }
       setSelectedDocId(docId);
     }
   };
 
   useEffect(() => {
     loadDetail();
-  }, [selectedDocId]); // Note: not including loadDetail to avoid loops with hasUnsavedChanges
+  }, [loadDetail]); // Include loadDetail to trigger when docs are loaded
 
   // Field labeling handlers
   function handleConfirmField(fieldName: string, truthValue: string) {
