@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 /**
  * Visual Regression Tests
@@ -14,7 +14,7 @@ test.describe("Visual Regression", () => {
   test.beforeEach(async ({ page }) => {
     // Set consistent viewport size for all visual tests
     await page.setViewportSize({ width: 1440, height: 900 });
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("Claim Document Pack layout", async ({ page }) => {

@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { TemplatesPage } from "../pages/templates.page";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 test.describe("Templates Page", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("should display templates page", async ({ page }) => {

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { setupMultiBatchMocks } from "../utils/mock-api";
+import { setupAuthenticatedMultiBatchMocks } from "../utils/mock-api";
 
 /**
  * Tests that verify the Insights/Benchmark page displays batch-scoped metrics correctly.
@@ -10,7 +10,7 @@ import { setupMultiBatchMocks } from "../utils/mock-api";
 test.describe("Insights Page - Batch Scoping", () => {
   test.describe.configure({ mode: "serial" });
   test.beforeEach(async ({ page }) => {
-    await setupMultiBatchMocks(page);
+    await setupAuthenticatedMultiBatchMocks(page, "admin");
   });
 
   test("displays correct KPIs for small batch (3 docs)", async ({ page }) => {

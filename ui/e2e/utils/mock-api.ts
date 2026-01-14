@@ -15,6 +15,14 @@ const templatesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "temp
 const batchesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.json"), "utf-8"));
 const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "insights-overview.json"), "utf-8"));
 const multiBatchFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
+const usersFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "users.json"), "utf-8"));
+
+// Auth types
+export type Role = "admin" | "reviewer" | "operator" | "auditor";
+export interface User {
+  username: string;
+  role: Role;
+}
 
 export async function setupApiMocks(page: Page) {
   // Mock GET /api/claims - ensure claims have in_run: true for batch-scoped views
@@ -337,3 +345,180 @@ export async function setupMultiBatchMocks(page: Page) {
 
 // Legacy alias for backwards compatibility
 export const setupMultiRunMocks = setupMultiBatchMocks;
+
+/**
+ * Setup auth mocks for authenticated user.
+ * Sets up localStorage with auth token and user data, and mocks auth endpoints.
+ */
+export async function setupAuthMocks(page: Page, role: Role = "admin") {
+  const user = usersFixture[role] as User;
+  const token = `mock-token-${role}-${Date.now()}`;
+
+  // Set localStorage before navigation
+  await page.addInitScript(({ token, user }) => {
+    localStorage.setItem("auth_token", token);
+    localStorage.setItem("auth_user", JSON.stringify(user));
+  }, { token, user });
+
+  // Mock GET /api/auth/me - returns current user
+  await page.route("**/api/auth/me", async (route) => {
+    const authHeader = route.request().headers()["authorization"];
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(user),
+      });
+    } else {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Not authenticated" }),
+      });
+    }
+  });
+
+  // Mock POST /api/auth/login
+  await page.route("**/api/auth/login", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      const requestedUser = Object.values(usersFixture).find(
+        (u: User) => u.username === body.username
+      ) as User | undefined;
+
+      if (requestedUser && body.password === "password") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            token: `mock-token-${requestedUser.role}-${Date.now()}`,
+            user: requestedUser,
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Invalid credentials" }),
+        });
+      }
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock POST /api/auth/logout
+  await page.route("**/api/auth/logout", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "logged_out" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/admin/users (admin only)
+  await page.route("**/api/admin/users", async (route) => {
+    if (route.request().method() === "GET") {
+      if (role === "admin") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(Object.values(usersFixture)),
+        });
+      } else {
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Admin access required" }),
+        });
+      }
+    } else {
+      await route.continue();
+    }
+  });
+}
+
+/**
+ * Setup mocks for unauthenticated state.
+ * Used to test login flow - no localStorage token, /api/auth/me returns 401.
+ */
+export async function setupUnauthenticatedMocks(page: Page) {
+  // Clear any existing auth state
+  await page.addInitScript(() => {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_user");
+  });
+
+  // Mock GET /api/auth/me - returns 401
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Not authenticated" }),
+    });
+  });
+
+  // Mock POST /api/auth/login
+  await page.route("**/api/auth/login", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      const requestedUser = Object.values(usersFixture).find(
+        (u: User) => u.username === body.username
+      ) as User | undefined;
+
+      if (requestedUser && body.password === "password") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            token: `mock-token-${requestedUser.role}-${Date.now()}`,
+            user: requestedUser,
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Invalid credentials" }),
+        });
+      }
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock POST /api/auth/logout
+  await page.route("**/api/auth/logout", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "logged_out" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+}
+
+/**
+ * Setup all mocks for authenticated user (auth + API mocks combined).
+ * This is the most common setup for e2e tests.
+ */
+export async function setupAuthenticatedMocks(page: Page, role: Role = "admin") {
+  await setupAuthMocks(page, role);
+  await setupApiMocks(page);
+}
+
+/**
+ * Setup all mocks for authenticated user with multi-batch data.
+ * Use this for tests that need to switch between different batches.
+ */
+export async function setupAuthenticatedMultiBatchMocks(page: Page, role: Role = "admin") {
+  await setupAuthMocks(page, role);
+  await setupMultiBatchMocks(page);
+}

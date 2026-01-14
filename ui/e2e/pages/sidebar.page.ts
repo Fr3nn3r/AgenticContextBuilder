@@ -9,6 +9,8 @@ export class SidebarPage {
   readonly templatesLink: Locator;
   readonly pipelineLink: Locator;
   readonly newClaimLink: Locator;
+  readonly truthLink: Locator;
+  readonly adminLink: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -19,6 +21,8 @@ export class SidebarPage {
     this.templatesLink = page.getByTestId("nav-templates");
     this.pipelineLink = page.getByTestId("nav-pipeline");
     this.newClaimLink = page.getByTestId("nav-new-claim");
+    this.truthLink = page.getByTestId("nav-truth");
+    this.adminLink = page.getByTestId("nav-admin");
   }
 
   async navigateToBatches() {

@@ -1,0 +1,18 @@
+{
+  "admin": {
+    "username": "admin",
+    "role": "admin"
+  },
+  "reviewer": {
+    "username": "reviewer",
+    "role": "reviewer"
+  },
+  "operator": {
+    "username": "operator",
+    "role": "operator"
+  },
+  "auditor": {
+    "username": "auditor",
+    "role": "auditor"
+  }
+}

@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { InsightsPage } from "../pages/insights.page";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 test.describe("Batch Selector - Batch Context Bar", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("batch selector exists in context bar", async ({ page }) => {
@@ -69,7 +69,7 @@ test.describe("Batch Selector - Batch Context Bar", () => {
 
 test.describe("Batch Selector - Benchmark Page", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("batch context header shows batch metadata", async ({ page }) => {

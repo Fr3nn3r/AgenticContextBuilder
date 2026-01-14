@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { setupMultiBatchMocks } from "../utils/mock-api";
+import { setupAuthenticatedMultiBatchMocks } from "../utils/mock-api";
 
 /**
  * Tests that verify the Extraction page displays batch-scoped metrics correctly.
@@ -7,7 +7,7 @@ import { setupMultiBatchMocks } from "../utils/mock-api";
  */
 test.describe("Extraction Page - Batch Scoping", () => {
   test.beforeEach(async ({ page }) => {
-    await setupMultiBatchMocks(page);
+    await setupAuthenticatedMultiBatchMocks(page, "admin");
   });
 
   test("displays correct metrics for small batch (3 docs)", async ({ page }) => {

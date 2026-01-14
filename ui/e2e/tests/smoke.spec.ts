@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { SidebarPage } from "../pages/sidebar.page";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 test.describe("Smoke Tests", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("app loads and displays correct sidebar nav items", async ({ page }) => {

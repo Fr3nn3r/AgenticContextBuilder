@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { ClaimsTablePage } from "../pages/claims-table.page";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 // TODO: These tests are skipped because Vite's proxy forwards /api requests to a real backend,
 // bypassing Playwright's route interception. To fix, either:
@@ -9,7 +9,7 @@ import { setupApiMocks } from "../utils/mock-api";
 // 3. Seed the backend with test data before running these tests
 test.describe.skip("Claims Table", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("should display claims list", async ({ page }) => {

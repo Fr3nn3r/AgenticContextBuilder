@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { ClaimReviewPage } from "../pages/claim-review.page";
-import { setupApiMocks } from "../utils/mock-api";
+import { setupAuthenticatedMocks } from "../utils/mock-api";
 
 test.describe("Claim Review", () => {
   test.beforeEach(async ({ page }) => {
-    await setupApiMocks(page);
+    await setupAuthenticatedMocks(page, "admin");
   });
 
   test("should display 3-column layout", async ({ page }) => {
