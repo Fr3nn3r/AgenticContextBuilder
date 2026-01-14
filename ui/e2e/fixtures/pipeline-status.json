@@ -1,0 +1,19 @@
+{
+  "run_id": "run_2026_001",
+  "status": "running",
+  "claim_ids": ["CLM-2026-TEST-001"],
+  "docs": {
+    "pend_doc_001": {
+      "doc_id": "pend_doc_001",
+      "claim_id": "CLM-2026-TEST-001",
+      "filename": "loss_notice.pdf",
+      "phase": "extracting"
+    },
+    "pend_doc_002": {
+      "doc_id": "pend_doc_002",
+      "claim_id": "CLM-2026-TEST-001",
+      "filename": "police_report.pdf",
+      "phase": "classifying"
+    }
+  }
+}

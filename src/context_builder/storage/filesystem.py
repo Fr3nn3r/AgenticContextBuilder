@@ -397,8 +397,26 @@ class FileStorage:
     # Labels (Document-Scoped, Run-Independent)
     # -------------------------------------------------------------------------
 
-    def get_label(self, doc_id: str) -> Optional[dict]:
-        """Get label data for a document."""
+    def get_label(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get label data for a document.
+
+        Args:
+            doc_id: Document ID.
+            claim_id: Optional claim ID for disambiguation when doc_id exists in multiple claims.
+        """
+        # If claim_id provided, look in that specific claim folder first
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                label_path = claim_folder / "docs" / doc_id / "labels" / "latest.json"
+                if label_path.exists():
+                    try:
+                        with open(label_path, "r", encoding="utf-8") as f:
+                            return json.load(f)
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+        # Fallback to finding doc folder by doc_id alone
         doc_folder = self._find_doc_folder(doc_id)
         if not doc_folder:
             return None

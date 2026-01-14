@@ -79,6 +79,8 @@ python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
 
 ## Troubleshooting
 
+**Server management:** Do not start or stop dev servers (uvicorn, npm run dev) automatically. Always ask the user to manage servers manually to avoid spawning duplicate processes. Only start/stop servers if the user explicitly requests it.
+
 **Env vars not loading / Code changes not taking effect:**
 Multiple uvicorn processes may be running. Auto-reload spawns new processes but old ones keep serving requests.
 
@@ -86,8 +88,13 @@ Multiple uvicorn processes may be running. Auto-reload spawns new processes but 
 # Check for multiple processes on port 8000
 Get-NetTCPConnection -LocalPort 8000 -State Listen | Select OwningProcess
 
-# Kill all Python processes and restart fresh
-Get-Process python | Stop-Process -Force
+# Identify uvicorn processes specifically
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*uvicorn*' } | Select ProcessId, CommandLine
+
+# Kill only uvicorn processes (safer than killing all Python)
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*uvicorn*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+# Then restart fresh
 uvicorn context_builder.api.main:app --reload --port 8000
 ```
 

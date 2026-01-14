@@ -26,12 +26,12 @@ export class InsightsPage extends BasePage {
     await this.page.goto("/batches");
     await this.waitForLoad();
     // Click the benchmark tab
-    await this.page.getByTestId("batch-tab-benchmark").click();
+    await this.page.getByTestId("batch-tab-metrics").click();
     await this.waitForLoad();
   }
 
   async gotoWithBatch(batchId: string) {
-    await this.page.goto(`/batches/${batchId}/benchmark`);
+    await this.page.goto(`/batches/${batchId}/metrics`);
     await this.waitForLoad();
   }
 

@@ -52,7 +52,7 @@ test.describe("Visual Regression", () => {
     // Navigate to batches workspace then benchmark tab
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     // Wait for insights data to load

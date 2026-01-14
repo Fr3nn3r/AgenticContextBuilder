@@ -1,7 +1,7 @@
 import { NavLink, useParams } from "react-router-dom";
 import { cn } from "../../lib/utils";
 
-export type BatchTab = "overview" | "documents" | "classification" | "claims" | "benchmark";
+export type BatchTab = "overview" | "documents" | "classification" | "claims" | "metrics";
 
 interface BatchSubNavProps {
   className?: string;
@@ -12,7 +12,7 @@ const tabs: { id: BatchTab; label: string; path: string }[] = [
   { id: "documents", label: "Documents", path: "/documents" },
   { id: "classification", label: "Classification", path: "/classification" },
   { id: "claims", label: "Claims", path: "/claims" },
-  { id: "benchmark", label: "Benchmark", path: "/benchmark" },
+  { id: "metrics", label: "Metrics", path: "/metrics" },
 ];
 
 export function BatchSubNav({ className }: BatchSubNavProps) {

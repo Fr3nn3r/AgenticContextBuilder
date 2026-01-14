@@ -1,5 +1,6 @@
 """Service layer for API endpoints."""
 
+from .auth import AuthService, Session
 from .claims import ClaimsService
 from .documents import DocumentsService
 from .insights import InsightsService
@@ -9,10 +10,12 @@ from .upload import PendingClaim, PendingDocument, UploadService
 from .pipeline import DocPhase, DocProgress, PipelineRun, PipelineService, PipelineStatus
 from .prompt_config import PromptConfig, PromptConfigService
 from .audit import AuditEntry, AuditService
+from .users import Role, User, UsersService
 
 __all__ = [
     "AuditEntry",
     "AuditService",
+    "AuthService",
     "ClaimsService",
     "DocPhase",
     "DocProgress",
@@ -26,6 +29,10 @@ __all__ = [
     "PipelineStatus",
     "PromptConfig",
     "PromptConfigService",
+    "Role",
+    "Session",
     "TruthService",
     "UploadService",
+    "User",
+    "UsersService",
 ]

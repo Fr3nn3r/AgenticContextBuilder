@@ -16,6 +16,11 @@ const batchesFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "runs.j
 const insightsOverviewFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "insights-overview.json"), "utf-8"));
 const multiBatchFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "multi-run-data.json"), "utf-8"));
 const usersFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "users.json"), "utf-8"));
+const classificationDocsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "classification-docs.json"), "utf-8"));
+const pendingClaimsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pending-claims.json"), "utf-8"));
+const uploadResultFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "upload-result.json"), "utf-8"));
+const pipelineRunFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-run.json"), "utf-8"));
+const pipelineStatusFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-status.json"), "utf-8"));
 
 // Auth types
 export type Role = "admin" | "reviewer" | "operator" | "auditor";
@@ -43,6 +48,101 @@ export async function setupApiMocks(page: Page) {
     }
   });
 
+  // Mock upload pending claims list
+  await page.route("**/api/upload/pending", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pendingClaimsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock upload claim endpoints (POST upload, GET claim, DELETE claim)
+  await page.route(/\/api\/upload\/claim\/[^/]+$/, async (route) => {
+    const method = route.request().method();
+    if (method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(uploadResultFixture),
+      });
+      return;
+    }
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pendingClaimsFixture[0] || uploadResultFixture),
+      });
+      return;
+    }
+    if (method === "DELETE") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "deleted" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  // Mock upload document delete endpoint
+  await page.route(/\/api\/upload\/claim\/[^/]+\/doc\/[^/]+$/, async (route) => {
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "deleted" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock pipeline run start
+  await page.route("**/api/pipeline/run", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pipelineRunFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock pipeline cancel
+  await page.route(/\/api\/pipeline\/cancel\/[^/]+$/, async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock pipeline status
+  await page.route(/\/api\/pipeline\/status\/[^/]+$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pipelineStatusFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
   // Mock GET /api/claims/:claimId/docs
   await page.route("**/api/claims/*/docs", async (route) => {
     await route.fulfill({
@@ -50,6 +150,53 @@ export async function setupApiMocks(page: Page) {
       contentType: "application/json",
       body: JSON.stringify(claimReviewFixture.docs),
     });
+  });
+
+  // Mock GET /api/classification/docs
+  await page.route("**/api/classification/docs", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(classificationDocsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock POST /api/classification/doc/:docId/label
+  await page.route("**/api/classification/doc/*/label", async (route) => {
+    if (route.request().method() === "POST") {
+      const docId = route.request().url().split("/").slice(-2)[0];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "saved", doc_id: docId }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/classification/stats (optional)
+  await page.route("**/api/classification/stats", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          docs_total: classificationDocsFixture.length,
+          docs_reviewed: classificationDocsFixture.filter((d: { review_status: string }) => d.review_status !== "pending").length,
+          overrides_count: 0,
+          avg_confidence: 0.83,
+          by_predicted_type: {},
+          confusion_matrix: [],
+        }),
+      });
+    } else {
+      await route.continue();
+    }
   });
 
   // Mock GET /api/claims/:claimId/review

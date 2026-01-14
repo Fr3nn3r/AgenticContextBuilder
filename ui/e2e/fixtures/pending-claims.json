@@ -1,0 +1,22 @@
+[
+  {
+    "claim_id": "CLM-2026-TEST-001",
+    "created_at": "2026-01-14T13:15:00Z",
+    "documents": [
+      {
+        "doc_id": "pend_doc_001",
+        "original_filename": "loss_notice.pdf",
+        "file_size": 154321,
+        "content_type": "application/pdf",
+        "upload_time": "2026-01-14T13:15:05Z"
+      },
+      {
+        "doc_id": "pend_doc_002",
+        "original_filename": "police_report.pdf",
+        "file_size": 98123,
+        "content_type": "application/pdf",
+        "upload_time": "2026-01-14T13:15:07Z"
+      }
+    ]
+  }
+]

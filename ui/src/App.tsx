@@ -8,10 +8,15 @@ import { ClassificationReview } from "./components/ClassificationReview";
 import { DocumentReview } from "./components/DocumentReview";
 import { ExtractionPage } from "./components/ExtractionPage";
 import { TemplatesPage } from "./components/TemplatesPage";
-import { InsightsPage } from "./components/InsightsPage";
+import { MetricsPage } from "./components/metrics";
+import { EvaluationPage } from "./components/evaluation";
 import { NewClaimPage } from "./components/NewClaimPage";
 import { PipelineControlCenter } from "./components/PipelineControlCenter";
 import { TruthPage } from "./components/TruthPage";
+import LoginPage from "./components/LoginPage";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { AdminPage } from "./components/AdminPage";
+import { useAuth } from "./context/AuthContext";
 import type { ClaimSummary, DocSummary } from "./types";
 import {
   listClaims,
@@ -30,6 +35,7 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
   const [filteredClaims, setFilteredClaims] = useState<ClaimSummary[]>([]);
@@ -204,14 +210,16 @@ function App() {
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth" {
+  function getCurrentView(): "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "admin" {
     const path = location.pathname;
     if (path.startsWith("/batches")) return "batches";
+    if (path === "/evaluation") return "evaluation";
     if (path === "/claims/new") return "new-claim";
     if (path === "/claims/all") return "all-claims";
     if (path === "/templates") return "templates";
     if (path === "/pipeline") return "pipeline";
     if (path === "/truth") return "truth";
+    if (path === "/admin") return "admin";
     // Default to batches for claim review (accessed from batch context)
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "batches";
     return "batches";
@@ -219,6 +227,35 @@ function App() {
 
   // Check if current route is a batch workspace route (no header needed)
   const isBatchRoute = location.pathname.startsWith("/batches");
+
+  // Check if on login page (don't show sidebar/header)
+  const isLoginRoute = location.pathname === "/login";
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-primary)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[var(--color-accent-primary)] border-t-transparent rounded-full animate-spin" />
+          <p className="text-[var(--color-text-secondary)]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Login page (no sidebar/header)
+  if (isLoginRoute) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+      </Routes>
+    );
+  }
+
+  // Protected app (requires auth)
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
 
   return (
     <div className="flex h-screen bg-background">
@@ -354,18 +391,30 @@ function App() {
                   }
                 />
                 <Route
-                  path=":batchId/benchmark"
+                  path=":batchId/metrics"
                   element={
-                    <InsightsPage
+                    <MetricsPage
                       selectedBatchId={selectedRunId}
                       onBatchChange={setSelectedRunId}
                     />
                   }
                 />
+                {/* Redirect old benchmark URL to new metrics */}
+                <Route
+                  path=":batchId/benchmark"
+                  element={<Navigate to="../metrics" replace />}
+                />
               </Route>
 
               {/* Batch-independent routes */}
-              <Route path="/claims/new" element={<NewClaimPage />} />
+              <Route
+                path="/claims/new"
+                element={
+                  <ProtectedRoute screen="new-claim">
+                    <NewClaimPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/claims/all"
                 element={
@@ -395,9 +444,39 @@ function App() {
                 path="/claims/:claimId/review"
                 element={<ClaimReview onSaved={() => loadClaims(selectedRunId || undefined)} selectedRunId={selectedRunId} />}
               />
-              <Route path="/templates" element={<TemplatesPage />} />
-              <Route path="/pipeline" element={<PipelineControlCenter />} />
-              <Route path="/truth" element={<TruthPage />} />
+              <Route
+                path="/templates"
+                element={
+                  <ProtectedRoute screen="templates">
+                    <TemplatesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/pipeline"
+                element={
+                  <ProtectedRoute screen="pipeline">
+                    <PipelineControlCenter />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/truth"
+                element={
+                  <ProtectedRoute screen="ground-truth">
+                    <TruthPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute screen="admin">
+                    <AdminPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/evaluation" element={<EvaluationPage />} />
 
               {/* Redirects for backwards compatibility */}
               <Route path="/" element={<Navigate to="/batches" replace />} />
@@ -434,13 +513,7 @@ function App() {
               />
               <Route
                 path="/insights"
-                element={
-                  selectedRunId ? (
-                    <Navigate to={`/batches/${selectedRunId}/benchmark`} replace />
-                  ) : (
-                    <Navigate to="/batches" replace />
-                  )
-                }
+                element={<Navigate to="/evaluation" replace />}
               />
             </Routes>
           )}

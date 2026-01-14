@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { setupAuthenticatedMultiBatchMocks } from "../utils/mock-api";
 
 /**
- * Tests that verify the Insights/Benchmark page displays batch-scoped metrics correctly.
+ * Tests that verify the Insights/metrics page displays batch-scoped metrics correctly.
  * These tests catch bugs where global data is shown instead of data for the selected batch.
  *
  * Note: Running in serial mode to avoid race conditions with shared mock state.
@@ -17,7 +17,7 @@ test.describe("Insights Page - Batch Scoping", () => {
     // Navigate to batches workspace then benchmark tab
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     // Select small batch from context bar dropdown
@@ -32,7 +32,7 @@ test.describe("Insights Page - Batch Scoping", () => {
   test("displays correct KPIs for large batch (130 docs)", async ({ page }) => {
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     // Select large batch from context bar dropdown
@@ -51,7 +51,7 @@ test.describe("Insights Page - Batch Scoping", () => {
   test("doc type scoreboard shows data for selected batch", async ({ page }) => {
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     const scoreboardTable = page.locator('[data-testid="scoreboard-table"]');
@@ -72,7 +72,7 @@ test.describe("Insights Page - Batch Scoping", () => {
   test("doc type scoreboard shows Classified and Extracted columns", async ({ page }) => {
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     // Select large batch for more interesting data
@@ -98,7 +98,7 @@ test.describe("Insights Page - Batch Scoping", () => {
   test("KPIs and scoreboard remain consistent when refreshing", async ({ page }) => {
     await page.goto("/batches");
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("batch-tab-benchmark").click();
+    await page.getByTestId("batch-tab-metrics").click();
     await page.waitForLoadState("networkidle");
 
     // Select large batch from context bar

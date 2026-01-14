@@ -129,8 +129,8 @@ test.describe("Claim Review", () => {
     });
     await expect(docWithLabels).toBeVisible();
 
-    // The labeled doc should have a checkmark
-    const checkmark = docWithLabels.locator("svg.text-green-500");
+    // The labeled doc should have a checkmark (theme-aware class)
+    const checkmark = docWithLabels.locator("svg.text-success");
     await expect(checkmark).toBeVisible();
   });
 

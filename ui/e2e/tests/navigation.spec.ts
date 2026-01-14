@@ -104,8 +104,8 @@ test.describe("Sidebar Navigation", () => {
     await expect(page).toHaveURL(/\/batches\/[^/]+\/claims/);
 
     // Navigate to Benchmark tab
-    await page.getByTestId("batch-tab-benchmark").click();
-    await expect(page).toHaveURL(/\/batches\/[^/]+\/benchmark/);
+    await page.getByTestId("batch-tab-metrics").click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+\/metrics/);
 
     // Navigate back to Overview tab
     await page.getByTestId("batch-tab-overview").click();

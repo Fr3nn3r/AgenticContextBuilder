@@ -59,8 +59,8 @@ test.describe("Batch Selector - Batch Context Bar", () => {
     await expect(batchSelector).toHaveValue("run_002");
 
     // Navigate to Benchmark tab
-    await page.getByTestId("batch-tab-benchmark").click();
-    await expect(page).toHaveURL(/\/batches\/run_002\/benchmark/);
+    await page.getByTestId("batch-tab-metrics").click();
+    await expect(page).toHaveURL(/\/batches\/run_002\/metrics/);
 
     // Batch selector should still show the same batch
     await expect(batchSelector).toHaveValue("run_002");

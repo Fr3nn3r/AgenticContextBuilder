@@ -1,4 +1,7 @@
-"""OpenAI API implementation for document classification."""
+"""OpenAI API implementation for document classification.
+
+All LLM calls are logged via the compliance audit service.
+"""
 
 import json
 import logging
@@ -22,6 +25,14 @@ from context_builder.classification.context_builder import (
 )
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_classification import DocumentClassification
+from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
+from context_builder.services.decision_ledger import DecisionLedger
+from context_builder.schemas.decision_record import (
+    DecisionRecord,
+    DecisionType,
+    DecisionRationale,
+    DecisionOutcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +99,17 @@ class OpenAIDocumentClassifier(DocumentClassifier):
     providing optional key_hints without deep field extraction.
     """
 
-    def __init__(self, prompt_name: str = "claims_document_classification"):
+    def __init__(
+        self,
+        prompt_name: str = "claims_document_classification",
+        audit_storage_dir: Optional[Path] = None,
+    ):
         """
         Initialize OpenAI document classifier.
 
         Args:
             prompt_name: Name of prompt file in prompts/ directory (without .md)
+            audit_storage_dir: Optional directory for audit log storage
         """
         super().__init__()
 
@@ -117,6 +133,11 @@ class OpenAIDocumentClassifier(DocumentClassifier):
                 timeout=self.timeout,
                 max_retries=0,  # We handle retries ourselves
             )
+
+            # Initialize audited client for compliance logging
+            audit_service = get_llm_audit_service(audit_storage_dir)
+            self.audited_client = AuditedOpenAIClient(self.client, audit_service)
+
             logger.debug("OpenAI client initialized successfully")
         except ImportError:
             raise ConfigurationError(
@@ -132,6 +153,17 @@ class OpenAIDocumentClassifier(DocumentClassifier):
 
         # Load document type catalog
         self._load_doc_type_catalog()
+
+        # Context for audit logging (set during classification)
+        self._audit_context: Dict[str, Optional[str]] = {
+            "claim_id": None,
+            "doc_id": None,
+            "run_id": None,
+        }
+
+        # Initialize decision ledger for compliance logging
+        ledger_dir = audit_storage_dir or Path("output/logs")
+        self.decision_ledger = DecisionLedger(ledger_dir)
 
         logger.debug(
             f"Classifier initialized: model={self.model}, "
@@ -173,9 +205,40 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         )
         return prompt_data["messages"]
 
+    def set_audit_context(
+        self,
+        claim_id: Optional[str] = None,
+        doc_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> "OpenAIDocumentClassifier":
+        """Set context for audit logging.
+
+        Args:
+            claim_id: Claim identifier
+            doc_id: Document identifier
+            run_id: Pipeline run identifier
+
+        Returns:
+            Self for chaining
+        """
+        self._audit_context = {
+            "claim_id": claim_id,
+            "doc_id": doc_id,
+            "run_id": run_id,
+        }
+        self.audited_client.set_context(
+            claim_id=claim_id,
+            doc_id=doc_id,
+            run_id=run_id,
+            call_purpose="classification",
+        )
+        return self
+
     def _call_api_with_retry(self, messages: list) -> Dict[str, Any]:
         """
         Call OpenAI API with retry logic for transient failures.
+
+        All calls are logged via the compliance audit service.
 
         Args:
             messages: List of message dicts for the API
@@ -192,7 +255,14 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             try:
                 logger.debug(f"API call attempt {attempt + 1}/{self.retries}")
 
-                response = self.client.chat.completions.create(
+                # Use audited client for compliance logging
+                # Mark as retry if this is not the first attempt
+                if attempt > 0:
+                    last_call_id = self.audited_client.get_last_call_id()
+                    if last_call_id:
+                        self.audited_client.mark_retry(last_call_id)
+
+                response = self.audited_client.chat_completions_create(
                     model=self.model,
                     messages=messages,
                     temperature=self.temperature,
@@ -286,7 +356,62 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         response = self._call_api_with_retry(messages)
 
         # Validate and return
-        return self._validate_response(response)
+        result = self._validate_response(response)
+
+        # Log decision to compliance ledger
+        self._log_classification_decision(result, filename)
+
+        return result
+
+    def _log_classification_decision(
+        self, result: Dict[str, Any], filename: str = ""
+    ) -> None:
+        """Log classification decision to the compliance ledger.
+
+        Args:
+            result: Classification result dict
+            filename: Original filename
+        """
+        try:
+            # Build decision rationale from classification signals
+            signals = result.get("signals", [])
+            summary = result.get("summary", "")
+            confidence = result.get("confidence", 0.0)
+
+            rationale = DecisionRationale(
+                summary=f"Classified as {result.get('document_type', 'unknown')}: {summary}",
+                confidence=confidence,
+                llm_call_id=self.audited_client.get_last_call_id(),
+                notes=f"Signals: {', '.join(signals)}" if signals else None,
+            )
+
+            # Build decision outcome
+            outcome = DecisionOutcome(
+                doc_type=result.get("document_type"),
+                doc_type_confidence=confidence,
+                language=result.get("language"),
+            )
+
+            # Create and log decision record
+            record = DecisionRecord(
+                decision_id="",  # Will be generated by ledger
+                decision_type=DecisionType.CLASSIFICATION,
+                claim_id=self._audit_context.get("claim_id"),
+                doc_id=self._audit_context.get("doc_id"),
+                run_id=self._audit_context.get("run_id"),
+                rationale=rationale,
+                outcome=outcome,
+                actor_type="system",
+                actor_id="openai_classifier",
+                metadata={"filename": filename, "model": self.model},
+            )
+
+            self.decision_ledger.append(record)
+            logger.debug(f"Logged classification decision for doc_id={self._audit_context.get('doc_id')}")
+
+        except Exception as e:
+            # Don't fail classification if logging fails
+            logger.warning(f"Failed to log classification decision: {e}")
 
     def classify_pages(
         self,

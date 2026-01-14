@@ -1,0 +1,32 @@
+[
+  {
+    "doc_id": "doc_001",
+    "claim_id": "CLM-2024-001",
+    "filename": "loss_notice.pdf",
+    "predicted_type": "loss_notice",
+    "confidence": 0.95,
+    "signals": ["loss_notice", "policy_number"],
+    "review_status": "pending",
+    "doc_type_truth": null
+  },
+  {
+    "doc_id": "doc_003",
+    "claim_id": "CLM-2024-001",
+    "filename": "insurance_policy.pdf",
+    "predicted_type": "insurance_policy",
+    "confidence": 0.72,
+    "signals": ["policy_number", "vehicle_plate"],
+    "review_status": "pending",
+    "doc_type_truth": null
+  },
+  {
+    "doc_id": "doc_002",
+    "claim_id": "CLM-2024-001",
+    "filename": "police_report.pdf",
+    "predicted_type": "police_report",
+    "confidence": 0.82,
+    "signals": ["officer_name"],
+    "review_status": "confirmed",
+    "doc_type_truth": null
+  }
+]

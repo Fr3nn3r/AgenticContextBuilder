@@ -11,6 +11,7 @@ import {
   cancelPipeline,
   deletePipelineRun,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import type {
   PipelineClaimOption,
   PromptConfig,
@@ -153,6 +154,7 @@ function NewBatchTab({
   onStartBatch,
   isStartingBatch,
   isLoading,
+  canExecute,
 }: {
   claims: PipelineClaimOption[];
   selectedClaims: string[];
@@ -173,6 +175,7 @@ function NewBatchTab({
   onStartBatch: () => void;
   isStartingBatch: boolean;
   isLoading: boolean;
+  canExecute: boolean;
 }) {
   const [search, setSearch] = useState("");
 
@@ -187,7 +190,7 @@ function NewBatchTab({
     .reduce((sum, count) => sum + count, 0);
 
   const unprocessedClaims = claims.filter((c) => !c.last_run);
-  const canStartRun = selectedClaims.length > 0 && stages.length > 0;
+  const canStartRun = selectedClaims.length > 0 && stages.length > 0 && canExecute;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -357,6 +360,7 @@ function NewBatchTab({
               : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
           disabled={!canStartRun || isStartingBatch}
+          title={!canExecute ? "You don't have permission to run pipelines" : undefined}
         >
           {isStartingBatch ? "Starting..." : "Start Batch"}
         </button>
@@ -889,6 +893,10 @@ export function PipelineControlCenter() {
   const [isStartingBatch, setIsStartingBatch] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<string | null>(null);
 
+  // Permission check
+  const { canEdit } = useAuth();
+  const canExecutePipeline = canEdit("pipeline");
+
   // Data hooks
   const { claims, isLoading: claimsLoading, refetch: refetchClaims } = usePipelineClaims();
   const { runs: batches, isLoading: batchesLoading, refetch: refetchBatches } = usePipelineRuns();
@@ -1065,6 +1073,7 @@ export function PipelineControlCenter() {
             onStartBatch={handleStartBatch}
             isStartingBatch={isStartingBatch}
             isLoading={claimsLoading || configsLoading}
+            canExecute={canExecutePipeline}
           />
         )}
         {activeTab === "batches" && (

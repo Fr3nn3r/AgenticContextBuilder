@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
 import {
@@ -85,50 +85,8 @@ export function ClassificationReview({
     return docTypeCatalog.find((d) => d.doc_type === detail.predicted_type) || null;
   }, [detail, docTypeCatalog]);
 
-  // Load docs when run changes
-  useEffect(() => {
-    if (selectedBatchId) {
-      loadDocs(selectedBatchId);
-      loadStats(selectedBatchId);
-    }
-  }, [selectedBatchId]);
-
-  // Load detail when doc selected
-  useEffect(() => {
-    if (selectedDocId && selectedBatchId) {
-      loadDetail(selectedDocId, selectedBatchId);
-    } else {
-      setDetail(null);
-      setDocPayload(null);
-    }
-  }, [selectedDocId, selectedBatchId]);
-
-  async function loadDocs(runId: string) {
-    try {
-      setDocsLoading(true);
-      const data = await listClassificationDocs(runId);
-      setDocs(data);
-      // Auto-select first document
-      if (data.length > 0 && !selectedDocId) {
-        setSelectedDocId(data[0].doc_id);
-      }
-    } catch (err) {
-      console.error("Failed to load docs:", err);
-    } finally {
-      setDocsLoading(false);
-    }
-  }
-
-  async function loadStats(runId: string) {
-    try {
-      const data = await getClassificationStats(runId);
-      setStats(data);
-    } catch (err) {
-      console.error("Failed to load stats:", err);
-    }
-  }
-
-  async function loadDetail(docId: string, runId: string) {
+  // Load detail - takes explicit params to avoid closure issues
+  const loadDetail = useCallback(async (docId: string, runId: string) => {
     try {
       setDetailLoading(true);
       // Fetch classification detail first
@@ -153,6 +111,53 @@ export function ClassificationReview({
       console.error("Failed to load detail:", err);
     } finally {
       setDetailLoading(false);
+    }
+  }, []);
+
+  // Load docs and auto-select first document
+  const loadDocs = useCallback(async (runId: string) => {
+    try {
+      setDocsLoading(true);
+      const data = await listClassificationDocs(runId);
+      setDocs(data);
+      // Auto-select first document and load its detail immediately
+      if (data.length > 0) {
+        setSelectedDocId(data[0].doc_id);
+        loadDetail(data[0].doc_id, runId);
+      }
+    } catch (err) {
+      console.error("Failed to load docs:", err);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, [loadDetail]);
+
+  // Load docs when run changes
+  useEffect(() => {
+    if (selectedBatchId) {
+      // Reset selection when batch changes
+      setSelectedDocId(null);
+      setDetail(null);
+      setDocPayload(null);
+      loadDocs(selectedBatchId);
+      loadStats(selectedBatchId);
+    }
+  }, [selectedBatchId, loadDocs]);
+
+  // Load detail when doc selected manually (not auto-selected from loadDocs)
+  const handleSelectDoc = useCallback((docId: string) => {
+    if (docId !== selectedDocId && selectedBatchId) {
+      setSelectedDocId(docId);
+      loadDetail(docId, selectedBatchId);
+    }
+  }, [selectedDocId, selectedBatchId, loadDetail]);
+
+  async function loadStats(runId: string) {
+    try {
+      const data = await getClassificationStats(runId);
+      setStats(data);
+    } catch (err) {
+      console.error("Failed to load stats:", err);
     }
   }
 
@@ -188,12 +193,40 @@ export function ClassificationReview({
     }
   }
 
-  // Filter docs
-  const filteredDocs = docs.filter((d) => {
-    if (statusFilter === "pending") return d.review_status === "pending";
-    if (statusFilter === "reviewed") return d.review_status !== "pending";
-    return true;
-  });
+  // Filter docs - memoized to prevent unnecessary re-renders
+  const filteredDocs = useMemo(() => {
+    return docs.filter((d) => {
+      if (statusFilter === "pending") return d.review_status === "pending";
+      if (statusFilter === "reviewed") return d.review_status !== "pending";
+      return true;
+    });
+  }, [docs, statusFilter]);
+
+  // Auto-select first doc when filter changes or selection is not in filtered list
+  useEffect(() => {
+    // Don't run while docs are still loading
+    if (docsLoading || !selectedBatchId) return;
+
+    if (filteredDocs.length === 0) {
+      // No docs match filter - clear selection
+      if (selectedDocId) {
+        setSelectedDocId(null);
+        setDetail(null);
+        setDocPayload(null);
+      }
+      return;
+    }
+
+    // Check if current selection is in filtered list
+    const selectionInList = selectedDocId && filteredDocs.some(d => d.doc_id === selectedDocId);
+
+    if (!selectionInList && filteredDocs[0]) {
+      // Select first doc in filtered list
+      const firstDoc = filteredDocs[0];
+      setSelectedDocId(firstDoc.doc_id);
+      loadDetail(firstDoc.doc_id, selectedBatchId);
+    }
+  }, [filteredDocs, selectedDocId, selectedBatchId, loadDetail, docsLoading]);
 
   return (
     <div className="h-full flex flex-col">
@@ -255,7 +288,7 @@ export function ClassificationReview({
               {filteredDocs.map((doc) => (
                 <div
                   key={doc.doc_id}
-                  onClick={() => setSelectedDocId(doc.doc_id)}
+                  onClick={() => handleSelectDoc(doc.doc_id)}
                   className={cn(
                     "p-3 cursor-pointer hover:bg-muted/50 transition-colors",
                     selectedDocId === doc.doc_id && "bg-accent/10 border-l-2 border-accent"

@@ -306,7 +306,8 @@ class InsightsAggregator:
                     continue
 
                 # Load labels using Storage (run-independent)
-                labels = storage.get_label(doc_id)
+                # Pass claim_id to disambiguate when same doc_id exists in multiple claims
+                labels = storage.get_label(doc_id, claim_id)
 
                 self._process_document(
                     doc_id, claim_id, doc_type, filename, extraction, labels

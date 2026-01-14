@@ -44,7 +44,7 @@ test.describe("Smoke Tests", () => {
     await expect(page.getByTestId("batch-tab-documents")).toBeVisible();
     await expect(page.getByTestId("batch-tab-classification")).toBeVisible();
     await expect(page.getByTestId("batch-tab-claims")).toBeVisible();
-    await expect(page.getByTestId("batch-tab-benchmark")).toBeVisible();
+    await expect(page.getByTestId("batch-tab-metrics")).toBeVisible();
   });
 
   test("navigate to each screen without errors", async ({ page }) => {
@@ -100,8 +100,8 @@ test.describe("Smoke Tests", () => {
     await expect(page).toHaveURL(/\/batches\/[^/]+\/documents/);
 
     // Click Benchmark tab
-    await page.getByTestId("batch-tab-benchmark").click();
-    await expect(page).toHaveURL(/\/batches\/[^/]+\/benchmark/);
+    await page.getByTestId("batch-tab-metrics").click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+\/metrics/);
 
     // Click Overview tab to return
     await page.getByTestId("batch-tab-overview").click();

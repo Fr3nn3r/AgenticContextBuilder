@@ -1,0 +1,121 @@
+This workflow (Evidence Ingest  AI/Review  Decision  Execution) describes a **Critical Decision Support System**. In Swiss Banking or Insurance, this is high-liability territory. If the system hallucinates a recommendation or loses an approval log, the legal and financial repercussions are massive.
+
+Here is the technical specification breakdown for your engineering team, categorized by architectural layer.
+
+---
+
+### I. Infrastructure & Data Sovereignty (The Foundation)
+
+**Goal:** Ensure data never leaves the defined jurisdiction (e.g., Switzerland) and supports future "On-Premise" deployments for strict enterprise clients.
+
+1. **Containerization Strategy:**
+* **Requirement:** 100% Dockerized microservices.
+* **Orchestration:** Kubernetes (K8s) manifests or Helm charts from Day 1.
+* **Why:** This allows you to deploy to AWS Zurich (`eu-central-2`) today, but move to a client’s private OpenShift cluster tomorrow without rewriting code.
+
+
+2. **Database & Segregation:**
+* **Requirement:** PostgreSQL with **Row-Level Security (RLS)** enabled.
+* **Isolation:** The architecture must support distinct schemas or databases per tenant (TenantID injection in every query).
+* **Encryption:** Data at rest must be encrypted using AES-256. Prepare for **Customer Managed Keys (CMK)** where the client holds the key in their HSM (Hardware Security Module).
+
+
+
+---
+
+### II. The "In-Box": Evidence Ingest & Security
+
+**Goal:** Securely accept files/data without importing malware or violating privacy.
+
+3. **The "Decontamination Chamber" (File Uploads):**
+* **Requirement:** No file uploaded by a user goes directly to permanent storage.
+* **Flow:** Upload  Quarantine Bucket  Virus/Malware Scan (ClamAV or commercial API)  Permanent Storage.
+* **File Types:** Whitelist strict MIME types. Block executables.
+
+
+4. **Secure API Gateway:**
+* **Requirement:** API endpoints for evidence retrieval must use Mutual TLS (mTLS) for server-to-server communication (e.g., bank server to your server).
+* **Rate Limiting:** Aggressive throttling per tenant to prevent DDoS.
+
+
+
+---
+
+### III. The "Brain": AI, Chat & Privacy
+
+**Goal:** Enable the "Chat/Ask Questions" feature without leaking PII (Personally Identifiable Information) to public AI models (like standard OpenAI). **This is your biggest compliance risk.**
+
+5. **PII Redaction Layer (The AI Firewall):**
+* **Requirement:** Before any text/document is sent to an LLM context window, it must pass through a PII/PHI redaction filter.
+* **Tech:** Use Presidio (Microsoft) or private NLP models to detect names, IBANs, and AHV numbers. Replace them with tokens (e.g., `[CLIENT_NAME_1]`).
+* **Re-hydration:** The system re-inserts the real data only when displaying the answer to the authorized user.
+
+
+6. **Zero-Retention Agreements:**
+* **Requirement:** If using external AI (Azure OpenAI Zurich), you must configure "Zero Data Retention" (opt-out of model training).
+* **Architecture:** Abstract the LLM provider behind an interface (e.g., LangChain). Do not hardcode OpenAI. You may need to swap to a self-hosted Llama 3 model for a strict Swiss Private Bank.
+
+
+
+---
+
+### IV. The "Gavel": Decision & Non-Repudiation
+
+**Goal:** When a user clicks "Approve Liability," it must be legally binding and mathematically provable.
+
+7. **Immutable Audit Log (The "Black Box"):**
+* **Requirement:** The "Decision" event is not just a database update (`status = 'APPROVED'`). It is a distinct, append-only log entry.
+* **Data Captured:** `Timestamp`, `User_ID`, `IP_Address`, `User_Agent`, `Snapshot_of_Data_Seen`.
+* **Why:** If a user claims "I didn't see that evidence when I approved," you can replay exactly what was on their screen.
+
+
+8. **Cryptographic Signing (Digital Signature):**
+* **Requirement:** Critical decisions should generate a hash of the decision payload signed by a private system key.
+* **Formula:** 
+
+* **Storage:** Store  alongside the decision. This ensures database administrators cannot tamper with approvals manually.
+
+
+
+---
+
+### V. The Workflow Engine
+
+9. **State Machine:**
+* **Requirement:** Do not manage state with `if/else` spaghetti code. Use a defined State Machine (e.g., XState, Temporal.io, or AWS Step Functions).
+* **States:** `DRAFT`  `EVIDENCE_PENDING`  `READY_FOR_REVIEW`  `DECISION_LOCKED`  `EXECUTING`  `COMPLETE`.
+* **Why:** Regulators demand deterministic processes. You must prove a claim cannot jump from `DRAFT` to `PAID` without passing `REVIEW`.
+
+
+
+---
+
+### Summary Checklist for the Tech Team
+
+| Component | Critical Requirement | The "Why" (CEO Context) |
+| --- | --- | --- |
+| **Auth** | OIDC/SAML Support (Okta/Entra ID) | Enterprise clients won't use our passwords. |
+| **Storage** | S3-compatible, Swiss Region, Encrypted | Data residency compliance (FADP/GDPR). |
+| **Ingest** | Malware Scanning on upload | Prevent attacking the client's network. |
+| **AI** | PII Redaction / Private Instance | Prevent leaking banking secrets to US AI. |
+| **Logs** | Centralized, Immutable, Exportable | Audit trails are the primary product for CISOs. |
+| **Recovery** | RPO < 15 mins, RTO < 4 hours | Business Continuity requirements for banks. |
+
+---
+
+### CTO Blind Spot Alert
+
+**1. The "Human in the Loop" UI Requirement**
+You mentioned the system makes *recommendations*, but the user *decides*.
+
+* **The Trap:** The UI makes it too easy to blindly click "Approve All."
+* **The Fix:** Implement "Friction by Design." For high-value claims, force the user to scroll to the bottom of the evidence or type "CONFIRM" before the button becomes active. This is a UI feature that protects against negligence liability.
+
+**2. Time-Travel Debugging**
+
+* **The Trap:** A regulator asks why a decision was made 6 months ago. The data has since changed (e.g., the client moved address).
+* **The Fix:** Your evidence retrieval system needs versioning. You must link the decision to *Version 1* of the document, not the *Current Version*.
+
+### Next Step for You
+
+You have the requirements. Now you need to validate the **Data Flow**.

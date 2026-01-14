@@ -2,13 +2,19 @@
 Generic field extractor using two-pass approach:
 1. Candidate span finder (regex/keywords)
 2. LLM structured extraction on snippets
+
+All LLM calls are logged via the compliance audit service.
 """
 
+import hashlib
 import json
+import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Any
-import hashlib
+
+logger = logging.getLogger(__name__)
 
 from openai import OpenAI
 
@@ -30,6 +36,14 @@ from context_builder.schemas.extraction_result import (
     DocumentMetadata,
     PageContent,
 )
+from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
+from context_builder.services.decision_ledger import DecisionLedger
+from context_builder.schemas.decision_record import (
+    DecisionRecord,
+    DecisionType,
+    DecisionRationale,
+    DecisionOutcome,
+)
 
 
 class GenericFieldExtractor(FieldExtractor):
@@ -49,6 +63,7 @@ class GenericFieldExtractor(FieldExtractor):
         spec: DocTypeSpec,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        audit_storage_dir: Optional[Path] = None,
     ):
         # Load prompt config to get model defaults
         prompt_data = load_prompt(self.PROMPT_NAME)
@@ -61,7 +76,25 @@ class GenericFieldExtractor(FieldExtractor):
         super().__init__(spec, resolved_model)
         self.temperature = resolved_temperature
         self.max_tokens = prompt_config.get("max_tokens", 2048)
-        self.client = OpenAI()
+
+        # Use audited client for compliance logging
+        raw_client = OpenAI()
+        audit_service = get_llm_audit_service(audit_storage_dir)
+        self.audited_client = AuditedOpenAIClient(raw_client, audit_service)
+
+        # Keep raw client for backwards compatibility
+        self.client = raw_client
+
+        # Context for audit logging (set before extract())
+        self._audit_context: Dict[str, Optional[str]] = {
+            "claim_id": None,
+            "doc_id": None,
+            "run_id": None,
+        }
+
+        # Initialize decision ledger for compliance logging
+        ledger_dir = audit_storage_dir or Path("output/logs")
+        self.decision_ledger = DecisionLedger(ledger_dir)
 
     def extract(
         self,
@@ -72,6 +105,19 @@ class GenericFieldExtractor(FieldExtractor):
         """
         Extract all fields defined in the spec from document pages.
         """
+        # Set audit context for LLM call logging
+        self._audit_context = {
+            "claim_id": doc_meta.claim_id,
+            "doc_id": doc_meta.doc_id,
+            "run_id": run_metadata.run_id,
+        }
+        self.audited_client.set_context(
+            claim_id=doc_meta.claim_id,
+            doc_id=doc_meta.doc_id,
+            run_id=run_metadata.run_id,
+            call_purpose="extraction",
+        )
+
         # Step 1: Find candidate spans for all fields
         all_candidates = self._collect_all_candidates(pages)
 
@@ -87,7 +133,8 @@ class GenericFieldExtractor(FieldExtractor):
         # Step 5: Evaluate quality gate
         quality_gate = self._build_quality_gate(fields)
 
-        return ExtractionResult(
+        # Step 6: Log extraction decision
+        result = ExtractionResult(
             schema_version="extraction_result_v1",
             run=run_metadata,
             doc=doc_meta,
@@ -95,6 +142,71 @@ class GenericFieldExtractor(FieldExtractor):
             fields=fields,
             quality_gate=quality_gate,
         )
+        self._log_extraction_decision(result)
+
+        return result
+
+    def _log_extraction_decision(self, result: ExtractionResult) -> None:
+        """Log extraction decision to the compliance ledger.
+
+        Args:
+            result: The extraction result
+        """
+        try:
+            # Build decision rationale
+            fields = result.fields
+            present_fields = [f.name for f in fields if f.status == "present"]
+            missing_fields = [f.name for f in fields if f.status == "missing"]
+            avg_confidence = sum(f.confidence for f in fields if f.confidence) / len(fields) if fields else 0.0
+
+            rationale = DecisionRationale(
+                summary=f"Extracted {len(present_fields)} fields, {len(missing_fields)} missing",
+                confidence=avg_confidence,
+                llm_call_id=self.audited_client.get_last_call_id(),
+                notes=f"Quality gate: {result.quality_gate.status}",
+            )
+
+            # Build decision outcome
+            fields_extracted = [
+                {
+                    "name": f.name,
+                    "value": f.value,
+                    "confidence": f.confidence,
+                    "status": f.status,
+                }
+                for f in fields
+            ]
+
+            outcome = DecisionOutcome(
+                fields_extracted=fields_extracted,
+                quality_gate_status=result.quality_gate.status,
+                missing_required_fields=result.quality_gate.missing_required_fields,
+            )
+
+            # Create and log decision record
+            record = DecisionRecord(
+                decision_id="",  # Will be generated by ledger
+                decision_type=DecisionType.EXTRACTION,
+                claim_id=result.doc.claim_id,
+                doc_id=result.doc.doc_id,
+                run_id=result.run.run_id,
+                rationale=rationale,
+                outcome=outcome,
+                actor_type="system",
+                actor_id="generic_extractor",
+                metadata={
+                    "doc_type": result.doc.doc_type,
+                    "model": self.model,
+                    "extractor_version": self.EXTRACTOR_VERSION,
+                },
+            )
+
+            self.decision_ledger.append(record)
+            logger.debug(f"Logged extraction decision for doc_id={result.doc.doc_id}")
+
+        except Exception as e:
+            # Don't fail extraction if logging fails
+            logger.warning(f"Failed to log extraction decision: {e}")
 
     def _collect_all_candidates(
         self, pages: List[PageContent]
@@ -147,6 +259,7 @@ class GenericFieldExtractor(FieldExtractor):
         Call LLM to extract structured fields from context.
 
         Returns dict with field extractions including quotes for provenance.
+        All calls are logged via the compliance audit service.
         """
         # Build fields description for prompt
         fields_desc = self._build_fields_desc()
@@ -161,7 +274,8 @@ class GenericFieldExtractor(FieldExtractor):
         messages = prompt_data["messages"]
 
         try:
-            response = self.client.chat.completions.create(
+            # Use audited client for compliance logging
+            response = self.audited_client.chat_completions_create(
                 model=self.model,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,

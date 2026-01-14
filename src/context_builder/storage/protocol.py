@@ -140,7 +140,7 @@ class Storage(Protocol):
     # Labels (Document-Scoped, Run-Independent)
     # -------------------------------------------------------------------------
 
-    def get_label(self, doc_id: str) -> Optional[dict]:
+    def get_label(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
         """Get label data for a document.
 
         Labels are stored per-document at docs/{doc_id}/labels/latest.json,
@@ -148,6 +148,7 @@ class Storage(Protocol):
 
         Args:
             doc_id: Document identifier.
+            claim_id: Optional claim ID for disambiguation when doc_id exists in multiple claims.
 
         Returns:
             Label dict (LabelResult schema), or None if not found.
@@ -242,7 +243,7 @@ class RunStore(Protocol):
 class LabelStore(Protocol):
     """Label access interface."""
 
-    def get_label(self, doc_id: str) -> Optional[dict]:
+    def get_label(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
         ...
 
     def save_label(self, doc_id: str, label_data: dict) -> None:

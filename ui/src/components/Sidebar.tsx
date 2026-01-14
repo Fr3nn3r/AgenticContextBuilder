@@ -1,20 +1,31 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useSpacemanTheme } from "@space-man/react-theme-animation";
 import { cn } from "../lib/utils";
+import { useAuth } from "../context/AuthContext";
 
-type View = "new-claim" | "batches" | "all-claims" | "templates" | "pipeline" | "truth";
+type View = "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "admin";
 
 interface SidebarProps {
   currentView: View;
 }
 
-const navItems = [
-  { id: "new-claim" as View, label: "New Claim", path: "/claims/new", icon: PlusIcon },
-  { id: "batches" as View, label: "Batches", path: "/batches", icon: BatchesIcon },
-  { id: "all-claims" as View, label: "All Claims", path: "/claims/all", icon: ClaimsIcon },
-  { id: "truth" as View, label: "Ground Truth", path: "/truth", icon: TruthIcon },
-  { id: "templates" as View, label: "Templates", path: "/templates", icon: TemplatesIcon },
-  { id: "pipeline" as View, label: "Pipeline", path: "/pipeline", icon: PipelineIcon },
+interface NavItem {
+  id: View;
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
+}
+
+const navItems: NavItem[] = [
+  { id: "new-claim", label: "New Claim", path: "/claims/new", icon: PlusIcon },
+  { id: "batches", label: "Batches", path: "/batches", icon: BatchesIcon },
+  { id: "evaluation", label: "Evaluation", path: "/evaluation", icon: EvaluationIcon },
+  { id: "all-claims", label: "All Claims", path: "/claims/all", icon: ClaimsIcon },
+  { id: "truth", label: "Ground Truth", path: "/truth", icon: TruthIcon },
+  { id: "templates", label: "Templates", path: "/templates", icon: TemplatesIcon },
+  { id: "pipeline", label: "Pipeline", path: "/pipeline", icon: PipelineIcon },
+  { id: "admin", label: "Admin", path: "/admin", icon: AdminIcon, adminOnly: true },
 ];
 
 const COLOR_THEMES = [
@@ -26,12 +37,25 @@ const COLOR_THEMES = [
 export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
   const { theme: darkMode, switchThemeFromElement, setColorTheme, colorTheme } = useSpacemanTheme();
+  const { user, logout } = useAuth();
 
   // Use colorTheme from hook, fallback to northern-lights
   const currentColorTheme = colorTheme || 'northern-lights';
 
   // Check if current path is under /batches (for active highlighting)
   const isBatchRoute = location.pathname.startsWith("/batches");
+
+  // Filter nav items based on user role
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.adminOnly && user?.role !== "admin") {
+      return false;
+    }
+    return true;
+  });
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <div className="w-56 bg-sidebar text-sidebar-foreground flex flex-col" data-testid="sidebar">
@@ -45,7 +69,7 @@ export function Sidebar({ currentView }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           // For batches, check if any batch route is active
           const isActive =
@@ -71,6 +95,32 @@ export function Sidebar({ currentView }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* User Section */}
+      {user && (
+        <div className="p-4 border-t border-sidebar-border">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-sidebar-accent rounded-full flex items-center justify-center text-sm font-medium text-sidebar-accent-foreground">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-sidebar-foreground truncate">
+                {user.username}
+              </div>
+              <div className="text-xs text-muted-foreground capitalize">
+                {user.role}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <LogoutIcon className="w-4 h-4" />
+            Sign out
+          </button>
+        </div>
+      )}
 
       {/* Footer - Theme Controls */}
       <div className="p-4 border-t border-sidebar-border space-y-3">
@@ -234,6 +284,45 @@ function SystemIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+      />
+    </svg>
+  );
+}
+
+function AdminIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+      />
+    </svg>
+  );
+}
+
+function LogoutIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+      />
+    </svg>
+  );
+}
+
+function EvaluationIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
       />
     </svg>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   listClassificationDocs,
   listDocs,
@@ -126,8 +126,8 @@ export function DocumentReview({
       } else {
         setSelectedDocId(null);
       }
-      setDocPayload(null);
-      setFieldLabels([]);
+      // Note: Don't reset docPayload/fieldLabels here - loadDetail() handles this
+      // Resetting here causes flicker as UI shows empty state before detail loads
       setHasUnsavedChanges(false);
       setClaimFilter("all");
     } catch (err) {
@@ -403,45 +403,69 @@ export function DocumentReview({
   const docTypes = Array.from(new Set(docs.map((d) => d.predicted_type))).sort();
   const claims = Array.from(new Set(docs.map((d) => d.claim_id))).sort();
 
-  // Filter documents - only include docs with extraction
-  const filteredDocs = docs.filter((doc) => {
-    // Only include docs that have extraction
-    if (!docsWithExtraction.has(doc.doc_id)) {
-      return false;
-    }
-
-    // Claim filter
-    if (claimFilter !== "all" && doc.claim_id !== claimFilter) {
-      return false;
-    }
-
-    // Doc type filter
-    if (docTypeFilter !== "all" && doc.predicted_type !== docTypeFilter) {
-      return false;
-    }
-
-    // Status filter
-    if (statusFilter !== "all") {
-      if (statusFilter === "pending" && doc.review_status !== "pending") {
+  // Filter documents - memoized to prevent unnecessary re-renders
+  const filteredDocs = useMemo(() => {
+    return docs.filter((doc) => {
+      // Only include docs that have extraction
+      if (!docsWithExtraction.has(doc.doc_id)) {
         return false;
       }
-      if (statusFilter === "labeled" && doc.review_status === "pending") {
+
+      // Claim filter
+      if (claimFilter !== "all" && doc.claim_id !== claimFilter) {
         return false;
       }
+
+      // Doc type filter
+      if (docTypeFilter !== "all" && doc.predicted_type !== docTypeFilter) {
+        return false;
+      }
+
+      // Status filter
+      if (statusFilter !== "all") {
+        if (statusFilter === "pending" && doc.review_status !== "pending") {
+          return false;
+        }
+        if (statusFilter === "labeled" && doc.review_status === "pending") {
+          return false;
+        }
+      }
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          doc.filename.toLowerCase().includes(query) ||
+          doc.doc_id.toLowerCase().includes(query) ||
+          doc.claim_id.toLowerCase().includes(query)
+        );
+      }
+
+      return true;
+    });
+  }, [docs, docsWithExtraction, claimFilter, docTypeFilter, statusFilter, searchQuery]);
+
+  // Auto-select first doc when filter changes or selection is not in filtered list
+  useEffect(() => {
+    // Don't run while docs are still loading
+    if (loading || !selectedBatchId) return;
+
+    if (filteredDocs.length === 0) {
+      // No docs match filter - clear selection if needed
+      if (selectedDocId) {
+        setSelectedDocId(null);
+      }
+      return;
     }
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        doc.filename.toLowerCase().includes(query) ||
-        doc.doc_id.toLowerCase().includes(query) ||
-        doc.claim_id.toLowerCase().includes(query)
-      );
-    }
+    // Check if current selection is in filtered list
+    const selectionInList = selectedDocId && filteredDocs.some(d => d.doc_id === selectedDocId);
 
-    return true;
-  });
+    if (!selectionInList && filteredDocs[0]) {
+      // Select first doc in filtered list - loadDetail effect will handle loading
+      setSelectedDocId(filteredDocs[0].doc_id);
+    }
+  }, [filteredDocs, selectedDocId, loading, selectedBatchId]);
 
   // Get status badge color
   const getStatusBadge = (status: ClassificationDoc["review_status"]) => {

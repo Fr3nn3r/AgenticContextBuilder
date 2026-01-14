@@ -249,5 +249,29 @@ Cancel active run.
 2. Unit tests for API client methods.
 3. UI smoke tests for main panels.
 
+## Implementation Status
+
+### Completed (2026-01-14)
+
+**UI Changes:**
+- [x] Renamed "run" terminology to "batch" throughout PipelineControlCenter
+- [x] Fixed duplicate title issue (removed header from component, relying on App.tsx header)
+- [x] Updated tab labels: "New Batch", "Batches", "Config"
+- [x] Renamed all component props and state variables to use batch terminology
+
+**Backend Changes:**
+- [x] Updated `PipelineService.get_all_runs()` to load historical batches from disk
+- [x] Added `_load_run_from_disk()` helper to convert persisted runs to PipelineRun objects
+- [x] Updated `delete_run()` to handle deletion of historical runs not in memory
+
+**Files Modified:**
+- `ui/src/components/PipelineControlCenter.tsx` - Full batch terminology rename + header removal
+- `src/context_builder/api/services/pipeline.py` - Historical batch loading from disk
+
+### Remaining Work
+- [ ] Unit tests for batch config validation
+- [ ] Unit tests for API client methods
+- [ ] UI smoke tests for main panels
+
 ## Next Step
-Please answer the open questions. I’ll refine the requirements and turn this into a concrete UI spec (fields, states, and API contract).
+Please answer the open questions. I'll refine the requirements and turn this into a concrete UI spec (fields, states, and API contract).

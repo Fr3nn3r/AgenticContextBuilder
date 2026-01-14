@@ -1,4 +1,7 @@
-"""OpenAI Vision API implementation for data ingestion."""
+"""OpenAI Vision API implementation for data ingestion.
+
+All LLM calls are logged via the compliance audit service.
+"""
 
 import base64
 import json
@@ -6,7 +9,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Dict, Any, List, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion
@@ -23,6 +26,7 @@ from context_builder.ingestion import (
 from context_builder.utils.file_utils import get_file_metadata
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_analysis import DocumentAnalysis
+from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +44,12 @@ class OpenAIVisionIngestion(DataIngestion):
     key_information structures based on document type.
     """
 
-    def __init__(self):
-        """Initialize OpenAI Vision ingestion."""
+    def __init__(self, audit_storage_dir: Optional[Path] = None):
+        """Initialize OpenAI Vision ingestion.
+
+        Args:
+            audit_storage_dir: Optional directory for audit log storage
+        """
         super().__init__()
 
         # Get API key from environment
@@ -66,6 +74,12 @@ class OpenAIVisionIngestion(DataIngestion):
                 timeout=self.timeout,
                 max_retries=0  # We handle retries ourselves for better control
             )
+
+            # Initialize audited client for compliance logging
+            audit_service = get_llm_audit_service(audit_storage_dir)
+            self.audited_client = AuditedOpenAIClient(self.client, audit_service)
+            self.audited_client.set_context(call_purpose="vision_ocr")
+
             logger.debug("OpenAI client initialized successfully")
         except ImportError:
             raise ConfigurationError(
@@ -404,6 +418,8 @@ class OpenAIVisionIngestion(DataIngestion):
         Uses json_object mode (not .parse() API) to allow flexible key_information
         structures that adapt to different document types.
 
+        All calls are logged via the compliance audit service (without image data).
+
         Args:
             messages: Messages to send to API
             attempt: Current retry attempt number
@@ -415,9 +431,15 @@ class OpenAIVisionIngestion(DataIngestion):
             APIError: If all retries exhausted
         """
         try:
-            # Use json_object mode for flexibility
-            # We validate with Pydantic afterward
-            response = self.client.chat.completions.create(
+            # Mark as retry if this is not the first attempt
+            if attempt > 0:
+                last_call_id = self.audited_client.get_last_call_id()
+                if last_call_id:
+                    self.audited_client.mark_retry(last_call_id)
+
+            # Use audited client for compliance logging
+            # Note: Image data in messages will be logged as a reference (not full base64)
+            response = self.audited_client.chat_completions_create(
                 model=self.model,
                 messages=messages,
                 max_tokens=self.max_tokens,
