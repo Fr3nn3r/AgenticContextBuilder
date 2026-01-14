@@ -1,0 +1,46 @@
+import { useThemeAnimation } from '@space-man/react-theme-animation'
+
+function ColorThemeDemo() {
+  const { createColorThemeToggle, isColorThemeActive, toggleDarkTheme, toggleLightTheme } =
+    useThemeAnimation({
+      colorThemes: ['supabase'],
+    })
+
+  return (
+    <>
+      <button onClick={createColorThemeToggle('supabase')} className="theme-toggle-btn">
+        Supabase Theme {isColorThemeActive('supabase') ? '✅' : '❌'}
+      </button>
+      <button ref={ref} onClick={toggleDarkTheme} className="theme-toggle-btn">
+        Dark Theme
+      </button>
+      <button ref={ref} onClick={toggleLightTheme} className="theme-toggle-btn">
+        Light Theme
+      </button>
+    </>
+  )
+}
+
+// Vite Theme Provider Example
+function App() {
+  return (
+    <ViteThemeProvider
+      themes={['light', 'dark', 'system']}
+      colorThemes={['default', 'supabase']}
+      defaultTheme="system"
+      defaultColorTheme="default"
+    >
+      <ThemeToggle />
+    </ViteThemeProvider>
+  )
+}
+
+function ThemeToggle() {
+  const { createColorThemeToggle, isColorThemeActive } = useViteTheme()
+
+  return (
+    <button onClick={createColorThemeToggle('supabase')} className="theme-toggle-btn">
+      Supabase Theme {isColorThemeActive('supabase') ? '✅' : '❌'}
+    </button>
+  )
+}

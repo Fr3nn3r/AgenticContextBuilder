@@ -216,6 +216,49 @@ export interface FieldComparison {
   result: ComparisonResult;
 }
 
+export interface TruthRunValue {
+  value: string | null;
+  normalized_value: string | null;
+  outcome: "correct" | "incorrect" | "missing" | "unverifiable" | "unlabeled" | null;
+}
+
+export interface TruthFieldComparison {
+  field_name: string;
+  state: FieldState | null;
+  truth_value: string | null;
+  runs: Record<string, TruthRunValue | null>;
+}
+
+export interface TruthDocInstance {
+  doc_id: string;
+  claim_id: string;
+  doc_type: string;
+  original_filename: string;
+}
+
+export interface TruthEntry {
+  file_md5: string;
+  content_md5: string;
+  review: {
+    reviewed_at?: string;
+    reviewer?: string;
+    notes?: string;
+  };
+  doc_labels: DocLabels;
+  source_doc_ref: {
+    claim_id?: string;
+    doc_id?: string;
+    original_filename?: string;
+  };
+  doc_instances: TruthDocInstance[];
+  fields: TruthFieldComparison[];
+}
+
+export interface TruthListResponse {
+  runs: string[];
+  entries: TruthEntry[];
+}
+
 // Azure DI types for bounding box highlighting
 
 export interface AzureDIWord {
@@ -395,4 +438,102 @@ export interface WebSocketMessage {
     success: number;
     failed: number;
   };
+}
+
+// =============================================================================
+// PIPELINE CONTROL CENTER TYPES
+// =============================================================================
+
+export interface PipelineClaimOption {
+  claim_id: string;
+  doc_count: number;
+  last_run?: string;
+  last_run_id?: string;
+  is_pending: boolean;
+}
+
+export interface PipelineRunError {
+  doc: string;
+  stage: string;
+  message: string;
+}
+
+export interface EnhancedPipelineRun {
+  run_id: string;
+  friendly_name: string;
+  status: PipelineBatchStatus;
+  claim_ids: string[];
+  claims_count: number;
+  docs_total: number;
+  docs_processed: number;
+  started_at?: string;
+  completed_at?: string;
+  duration_seconds?: number;
+  stage_progress: {
+    ingest: number;
+    classify: number;
+    extract: number;
+  };
+  stage_timings: Record<string, string>;
+  reuse: Record<string, number>;
+  cost_estimate_usd?: number;
+  prompt_config?: string;
+  errors: PipelineRunError[];
+  summary?: {
+    total: number;
+    success: number;
+    failed: number;
+  };
+  model: string;
+}
+
+export interface PromptConfig {
+  id: string;
+  name: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreatePromptConfigRequest {
+  name: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface UpdatePromptConfigRequest {
+  name?: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface AuditEntry {
+  timestamp: string;
+  user: string;
+  action: string;
+  action_type: string;
+  entity_type: string;
+  entity_id: string;
+}
+
+export interface AuditListParams {
+  action_type?: string;
+  entity_type?: string;
+  since?: string;
+  limit?: number;
+}
+
+export interface StartPipelineRequest {
+  claim_ids: string[];
+  model?: string;
+  stages?: string[];
+  prompt_config_id?: string;
+  force_overwrite?: boolean;
+  compute_metrics?: boolean;
+  dry_run?: boolean;
 }

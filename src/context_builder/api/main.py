@@ -56,12 +56,15 @@ from context_builder.api.models import (
     TemplateSpec,
 )
 from context_builder.api.services import (
+    AuditService,
     ClaimsService,
     DocPhase,
     DocumentsService,
     InsightsService,
     LabelsService,
     PipelineService,
+    PromptConfigService,
+    TruthService,
     UploadService,
 )
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
@@ -134,6 +137,11 @@ def get_upload_service() -> UploadService:
     return UploadService(STAGING_DIR, DATA_DIR)
 
 
+def get_truth_service() -> TruthService:
+    """Get TruthService instance."""
+    return TruthService(DATA_DIR)
+
+
 # Global PipelineService instance (needs to maintain state across requests)
 _pipeline_service: Optional[PipelineService] = None
 
@@ -144,6 +152,32 @@ def get_pipeline_service() -> PipelineService:
     if _pipeline_service is None:
         _pipeline_service = PipelineService(DATA_DIR, get_upload_service())
     return _pipeline_service
+
+
+# Global PromptConfigService instance
+_prompt_config_service: Optional[PromptConfigService] = None
+
+
+def get_prompt_config_service() -> PromptConfigService:
+    """Get PromptConfigService singleton instance."""
+    global _prompt_config_service
+    if _prompt_config_service is None:
+        config_dir = _PROJECT_ROOT / "output" / "config"
+        _prompt_config_service = PromptConfigService(config_dir)
+    return _prompt_config_service
+
+
+# Global AuditService instance
+_audit_service: Optional[AuditService] = None
+
+
+def get_audit_service() -> AuditService:
+    """Get AuditService singleton instance."""
+    global _audit_service
+    if _audit_service is None:
+        config_dir = _PROJECT_ROOT / "output" / "config"
+        _audit_service = AuditService(config_dir)
+    return _audit_service
 
 
 # =============================================================================
@@ -486,6 +520,48 @@ def get_insights_examples(
         outcome=outcome,
         run_id=run_id,
         limit=limit,
+    )
+
+
+# =============================================================================
+# TRUTH ENDPOINTS
+# =============================================================================
+
+@app.get("/api/truth")
+def list_truth_entries(
+    file_md5: Optional[str] = Query(None),
+    doc_type: Optional[str] = Query(None),
+    claim_id: Optional[str] = Query(None),
+    reviewer: Optional[str] = Query(None),
+    reviewed_after: Optional[str] = Query(None),
+    reviewed_before: Optional[str] = Query(None),
+    field_name: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    outcome: Optional[str] = Query(None),
+    run_id: Optional[str] = Query(None),
+    filename: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+):
+    """
+    List canonical truth entries with per-run extraction comparisons.
+
+    Filters:
+    - file_md5, doc_type, claim_id, reviewer, reviewed_after/before,
+      field_name, state, outcome, run_id, filename, search.
+    """
+    return get_truth_service().list_truth_entries(
+        file_md5=file_md5,
+        doc_type=doc_type,
+        claim_id=claim_id,
+        reviewer=reviewer,
+        reviewed_after=reviewed_after,
+        reviewed_before=reviewed_before,
+        field_name=field_name,
+        state=state,
+        outcome=outcome,
+        run_id=run_id,
+        filename=filename,
+        search=search,
     )
 
 
@@ -1055,6 +1131,11 @@ def validate_claim_id(claim_id: str):
 class PipelineRunRequest(BaseModel):
     claim_ids: List[str]
     model: str = "gpt-4o"
+    stages: List[str] = ["ingest", "classify", "extract"]
+    prompt_config_id: Optional[str] = None
+    force_overwrite: bool = False
+    compute_metrics: bool = True
+    dry_run: bool = False
 
 
 @app.post("/api/pipeline/run")
@@ -1100,10 +1181,74 @@ async def start_pipeline_run(request: PipelineRunRequest):
     run_id = await pipeline_service.start_pipeline(
         claim_ids=request.claim_ids,
         model=request.model,
+        stages=request.stages,
+        prompt_config_id=request.prompt_config_id,
+        force_overwrite=request.force_overwrite,
+        compute_metrics=request.compute_metrics,
+        dry_run=request.dry_run,
         progress_callback=broadcast_progress,
     )
 
-    return {"run_id": run_id, "status": "running"}
+    status = "dry_run" if request.dry_run else "running"
+    return {"run_id": run_id, "status": status}
+
+
+@app.get("/api/pipeline/claims")
+def list_pipeline_claims():
+    """
+    List claims available for pipeline processing.
+
+    Returns pending claims from staging area with doc counts and last run info.
+    This is the claims selector for the Pipeline Control Center.
+    """
+    from datetime import datetime, timezone
+
+    upload_service = get_upload_service()
+    pipeline_service = get_pipeline_service()
+
+    pending_claims = upload_service.list_pending_claims()
+
+    # Get all runs to find last run per claim
+    all_runs = pipeline_service.get_all_runs()
+    claim_last_run: dict[str, tuple[str, str]] = {}  # claim_id -> (run_id, started_at)
+    for run in all_runs:
+        for claim_id in run.claim_ids:
+            if claim_id not in claim_last_run or (run.started_at and run.started_at > claim_last_run[claim_id][1]):
+                claim_last_run[claim_id] = (run.run_id, run.started_at or "")
+
+    def format_relative_time(iso_time: str) -> str:
+        """Convert ISO timestamp to relative time string."""
+        if not iso_time:
+            return "never processed"
+        try:
+            dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            delta = now - dt
+            if delta.days > 30:
+                return f"{delta.days // 30}mo ago"
+            elif delta.days > 0:
+                return f"{delta.days}d ago"
+            elif delta.seconds > 3600:
+                return f"{delta.seconds // 3600}h ago"
+            elif delta.seconds > 60:
+                return f"{delta.seconds // 60}m ago"
+            else:
+                return "just now"
+        except Exception:
+            return "never processed"
+
+    result = []
+    for claim in pending_claims:
+        last_run_info = claim_last_run.get(claim.claim_id)
+        result.append({
+            "claim_id": claim.claim_id,
+            "doc_count": len(claim.documents),
+            "last_run": format_relative_time(last_run_info[1]) if last_run_info else "never processed",
+            "last_run_id": last_run_info[0] if last_run_info else None,
+            "is_pending": True,
+        })
+
+    return result
 
 
 @app.post("/api/pipeline/cancel/{run_id}")
@@ -1167,28 +1312,332 @@ def get_pipeline_status(run_id: str):
     }
 
 
+def _generate_friendly_name(run_id: str) -> str:
+    """Generate a human-friendly name from run_id using adjective-animal pattern."""
+    import hashlib
+
+    adjectives = [
+        "swift", "bold", "calm", "crisp", "amber", "quiet", "brave", "fresh",
+        "clear", "warm", "cool", "bright", "quick", "keen", "wise", "fair",
+    ]
+    animals = [
+        "falcon", "tiger", "eagle", "panda", "raven", "wolf", "hawk", "bear",
+        "lion", "fox", "deer", "owl", "crane", "dove", "heron", "lynx",
+    ]
+
+    # Use hash of run_id for consistent name generation
+    h = hashlib.md5(run_id.encode()).hexdigest()
+    adj_idx = int(h[:4], 16) % len(adjectives)
+    animal_idx = int(h[4:8], 16) % len(animals)
+    num = int(h[8:10], 16) % 100
+
+    return f"{adjectives[adj_idx]}-{animals[animal_idx]}-{num}"
+
+
+def _format_duration(ms: int) -> str:
+    """Format milliseconds as human-readable duration."""
+    if ms < 1000:
+        return f"{ms}ms"
+    seconds = ms // 1000
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    remaining_seconds = seconds % 60
+    return f"{minutes}m {remaining_seconds}s"
+
+
 @app.get("/api/pipeline/runs")
 def list_pipeline_runs():
     """
-    List all tracked pipeline runs.
+    List all tracked pipeline runs with enhanced metadata.
 
     Returns:
-        List of run summaries
+        List of run summaries with friendly names, progress, timing, and errors
     """
+    from context_builder.api.services.pipeline import DocPhase
+
     pipeline_service = get_pipeline_service()
     runs = pipeline_service.get_all_runs()
 
-    return [
-        {
+    result = []
+    for run in runs:
+        # Calculate stage progress from doc phases
+        docs_done = sum(1 for d in run.docs.values() if d.phase == DocPhase.DONE)
+        docs_failed = sum(1 for d in run.docs.values() if d.phase == DocPhase.FAILED)
+        total_docs = len(run.docs) or 1
+
+        # Calculate overall progress percentage
+        progress_pct = int((docs_done + docs_failed) / total_docs * 100)
+
+        # Stage progress (simplified: based on overall completion)
+        # In a real impl, you'd track per-stage completion
+        stage_progress = {
+            "ingest": 100 if progress_pct > 0 else 0,
+            "classify": 100 if progress_pct > 30 else 0,
+            "extract": progress_pct,
+        }
+
+        # Calculate duration
+        duration_seconds = None
+        if run.started_at and run.completed_at:
+            from datetime import datetime
+            try:
+                start = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(run.completed_at.replace("Z", "+00:00"))
+                duration_seconds = int((end - start).total_seconds())
+            except Exception:
+                pass
+
+        # Collect errors
+        errors = []
+        for key, doc in run.docs.items():
+            if doc.phase == DocPhase.FAILED and doc.error:
+                stage = doc.failed_at_stage.value if doc.failed_at_stage else "unknown"
+                errors.append({
+                    "doc": doc.filename,
+                    "stage": stage,
+                    "message": doc.error,
+                })
+
+        # Format stage timings
+        stage_timings = {
+            stage: _format_duration(ms)
+            for stage, ms in run.stage_timings.items()
+        } if run.stage_timings else {}
+
+        result.append({
             "run_id": run.run_id,
+            "friendly_name": _generate_friendly_name(run.run_id),
             "status": run.status.value,
             "claim_ids": run.claim_ids,
+            "claims_count": len(run.claim_ids),
+            "docs_total": len(run.docs),
+            "docs_processed": docs_done + docs_failed,
             "started_at": run.started_at,
             "completed_at": run.completed_at,
-            "doc_count": len(run.docs),
+            "duration_seconds": duration_seconds,
+            "stage_progress": stage_progress,
+            "stage_timings": stage_timings,
+            "reuse": run.reuse_counts,
+            "cost_estimate_usd": run.cost_estimate_usd,
+            "prompt_config": run.prompt_config_id,
+            "errors": errors,
             "summary": run.summary,
+            "model": run.model,
+        })
+
+    # Sort by started_at descending (newest first)
+    result.sort(key=lambda r: r["started_at"] or "", reverse=True)
+    return result
+
+
+@app.delete("/api/pipeline/runs/{run_id}")
+def delete_pipeline_run(run_id: str):
+    """
+    Delete a completed/failed/cancelled pipeline run.
+
+    Args:
+        run_id: Run ID to delete
+
+    Returns:
+        Deletion status
+    """
+    pipeline_service = get_pipeline_service()
+
+    if pipeline_service.delete_run(run_id):
+        return {"status": "deleted", "run_id": run_id}
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Cannot delete run {run_id}: not found or still running"
+    )
+
+
+# =============================================================================
+# PROMPT CONFIG ENDPOINTS
+# =============================================================================
+
+
+class PromptConfigRequest(BaseModel):
+    """Request body for creating a prompt config."""
+    name: str
+    model: str = "gpt-4o"
+    temperature: float = 0.2
+    max_tokens: int = 4096
+
+
+class PromptConfigUpdateRequest(BaseModel):
+    """Request body for updating a prompt config."""
+    name: Optional[str] = None
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+
+@app.get("/api/pipeline/configs")
+def list_prompt_configs():
+    """List all prompt configurations."""
+    service = get_prompt_config_service()
+    configs = service.list_configs()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "model": c.model,
+            "temperature": c.temperature,
+            "max_tokens": c.max_tokens,
+            "is_default": c.is_default,
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
         }
-        for run in runs
+        for c in configs
+    ]
+
+
+@app.get("/api/pipeline/configs/{config_id}")
+def get_prompt_config(config_id: str):
+    """Get a single prompt configuration."""
+    service = get_prompt_config_service()
+    config = service.get_config(config_id)
+
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Config not found: {config_id}")
+
+    return {
+        "id": config.id,
+        "name": config.name,
+        "model": config.model,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "is_default": config.is_default,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+    }
+
+
+@app.post("/api/pipeline/configs")
+def create_prompt_config(request: PromptConfigRequest):
+    """Create a new prompt configuration."""
+    service = get_prompt_config_service()
+    config = service.create_config(
+        name=request.name,
+        model=request.model,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+    )
+    return {
+        "id": config.id,
+        "name": config.name,
+        "model": config.model,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "is_default": config.is_default,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+    }
+
+
+@app.put("/api/pipeline/configs/{config_id}")
+def update_prompt_config(config_id: str, request: PromptConfigUpdateRequest):
+    """Update an existing prompt configuration."""
+    service = get_prompt_config_service()
+
+    updates = {}
+    if request.name is not None:
+        updates["name"] = request.name
+    if request.model is not None:
+        updates["model"] = request.model
+    if request.temperature is not None:
+        updates["temperature"] = request.temperature
+    if request.max_tokens is not None:
+        updates["max_tokens"] = request.max_tokens
+
+    config = service.update_config(config_id, updates)
+
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Config not found: {config_id}")
+
+    return {
+        "id": config.id,
+        "name": config.name,
+        "model": config.model,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "is_default": config.is_default,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+    }
+
+
+@app.delete("/api/pipeline/configs/{config_id}")
+def delete_prompt_config(config_id: str):
+    """Delete a prompt configuration."""
+    service = get_prompt_config_service()
+
+    if service.delete_config(config_id):
+        return {"status": "deleted", "config_id": config_id}
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Cannot delete config {config_id}: not found or is the last config"
+    )
+
+
+@app.post("/api/pipeline/configs/{config_id}/set-default")
+def set_default_prompt_config(config_id: str):
+    """Set a prompt configuration as the default."""
+    service = get_prompt_config_service()
+    config = service.set_default(config_id)
+
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Config not found: {config_id}")
+
+    return {
+        "id": config.id,
+        "name": config.name,
+        "model": config.model,
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "is_default": config.is_default,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+    }
+
+
+# =============================================================================
+# AUDIT LOG ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/pipeline/audit")
+def list_audit_entries(
+    action_type: Optional[str] = Query(None, description="Filter by action type (e.g., run_started)"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type (run, config)"),
+    since: Optional[str] = Query(None, description="ISO timestamp to filter entries after"),
+    limit: int = Query(100, ge=1, le=1000, description="Max entries to return"),
+):
+    """
+    List audit log entries.
+
+    Returns entries sorted by timestamp descending (newest first).
+    """
+    service = get_audit_service()
+    entries = service.list_entries(
+        action_type=action_type,
+        entity_type=entity_type,
+        since=since,
+        limit=limit,
+    )
+    return [
+        {
+            "timestamp": e.timestamp,
+            "user": e.user,
+            "action": e.action,
+            "action_type": e.action_type,
+            "entity_type": e.entity_type,
+            "entity_id": e.entity_id,
+        }
+        for e in entries
     ]
 
 

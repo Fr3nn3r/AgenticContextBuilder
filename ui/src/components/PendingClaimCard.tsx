@@ -39,21 +39,21 @@ export function PendingClaimCard({
 
   return (
     <div className={cn(
-      'border rounded-lg overflow-hidden bg-white',
-      error ? 'border-red-300' : 'border-gray-200'
+      'border rounded-lg overflow-hidden bg-card',
+      error ? 'border-red-300 dark:border-red-800' : 'border-border'
     )}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-3 bg-muted border-b border-border">
         <div className="flex items-center gap-2">
-          <FolderIcon className="w-5 h-5 text-gray-500" />
-          <span className="font-medium text-gray-900">{claimId}</span>
-          <span className="text-sm text-gray-500">
+          <FolderIcon className="w-5 h-5 text-muted-foreground" />
+          <span className="font-medium text-foreground">{claimId}</span>
+          <span className="text-sm text-muted-foreground">
             ({documents.length} {documents.length === 1 ? 'document' : 'documents'})
           </span>
         </div>
         <button
           onClick={() => onRemoveClaim(claimId)}
-          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+          className="p-1.5 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
           title="Remove claim"
         >
           <TrashIcon className="w-4 h-4" />
@@ -62,7 +62,7 @@ export function PendingClaimCard({
 
       {/* Error Banner */}
       {error && (
-        <div className="px-4 py-2 bg-red-50 text-sm text-red-700 border-b border-red-200">
+        <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 border-b border-red-200 dark:border-red-800">
           {error}
         </div>
       )}
@@ -107,28 +107,28 @@ function DocumentRow({ document, onRemove }: DocumentRowProps) {
 
   const getFileIcon = (contentType: string) => {
     if (contentType === 'application/pdf') {
-      return <PdfIcon className="w-4 h-4 text-red-500" />;
+      return <PdfIcon className="w-4 h-4 text-red-500 dark:text-red-400" />;
     }
     if (contentType.startsWith('image/')) {
-      return <ImageIcon className="w-4 h-4 text-green-500" />;
+      return <ImageIcon className="w-4 h-4 text-green-500 dark:text-green-400" />;
     }
-    return <FileIcon className="w-4 h-4 text-gray-500" />;
+    return <FileIcon className="w-4 h-4 text-muted-foreground" />;
   };
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg group">
+    <div className="flex items-center gap-3 px-3 py-2 bg-muted rounded-lg group">
       {getFileIcon(document.content_type)}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">
+        <p className="text-sm font-medium text-foreground truncate">
           {document.original_filename}
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           {formatFileSize(document.file_size)}
         </p>
       </div>
       <button
         onClick={onRemove}
-        className="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="p-1 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
         title="Remove document"
       >
         <XIcon className="w-4 h-4" />

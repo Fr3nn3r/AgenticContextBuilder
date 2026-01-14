@@ -146,9 +146,9 @@ export function DocumentUploader({
         onDrop={handleDrop}
         className={cn(
           'relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
-          isDragging && 'border-blue-500 bg-blue-50',
-          !isDragging && !disabled && 'border-gray-300 hover:border-gray-400',
-          disabled && 'border-gray-200 bg-gray-50 cursor-not-allowed',
+          isDragging && 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20',
+          !isDragging && !disabled && 'border-border hover:border-muted-foreground',
+          disabled && 'border-muted bg-muted cursor-not-allowed',
           uploading && 'cursor-wait'
         )}
       >
@@ -164,26 +164,26 @@ export function DocumentUploader({
 
         {uploading ? (
           <div className="space-y-3">
-            <UploadIcon className="w-10 h-10 mx-auto text-blue-500 animate-pulse" />
-            <p className="text-sm text-gray-600">Uploading...</p>
-            <div className="w-48 mx-auto bg-gray-200 rounded-full h-2">
+            <UploadIcon className="w-10 h-10 mx-auto text-blue-500 dark:text-blue-400 animate-pulse" />
+            <p className="text-sm text-muted-foreground">Uploading...</p>
+            <div className="w-48 mx-auto bg-muted rounded-full h-2">
               <div
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
-            <p className="text-xs text-gray-500">{Math.round(uploadProgress)}%</p>
+            <p className="text-xs text-muted-foreground">{Math.round(uploadProgress)}%</p>
           </div>
         ) : (
           <div className="space-y-2">
             <UploadIcon className={cn(
               'w-10 h-10 mx-auto',
-              isDragging ? 'text-blue-500' : 'text-gray-400'
+              isDragging ? 'text-blue-500 dark:text-blue-400' : 'text-muted-foreground'
             )} />
-            <p className="text-sm text-gray-600">
-              <span className="font-medium text-blue-600">Click to upload</span> or drag and drop
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-primary">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               PDF, PNG, JPG, or TXT (max 100MB)
             </p>
           </div>
@@ -196,7 +196,7 @@ export function DocumentUploader({
           {errors.map((err, idx) => (
             <div
               key={idx}
-              className="flex items-start gap-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded"
+              className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded"
             >
               <ErrorIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <div>

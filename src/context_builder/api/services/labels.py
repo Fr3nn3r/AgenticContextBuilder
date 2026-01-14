@@ -1,5 +1,7 @@
 """Label-focused API services."""
 
+import logging
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
@@ -7,7 +9,9 @@ from fastapi import HTTPException
 
 from context_builder.api.services.utils import extract_claim_number
 from context_builder.storage import StorageFacade
+from context_builder.storage.truth_store import TruthStore
 
+logger = logging.getLogger(__name__)
 
 class LabelsService:
     """Service layer for saving document labels."""
@@ -43,10 +47,7 @@ class LabelsService:
             "doc_labels": doc_labels,
         }
 
-        try:
-            storage.label_store.save_label(doc_id, label_data)
-        except IOError as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save labels: {e}")
+        self._save_label_with_truth(storage, doc_bundle, label_data)
 
         return {"status": "saved", "doc_id": doc_id}
 
@@ -85,10 +86,7 @@ class LabelsService:
             },
         }
 
-        try:
-            storage.label_store.save_label(doc_id, label_data)
-        except IOError as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save label: {e}")
+        self._save_label_with_truth(storage, doc_bundle, label_data)
 
         return {"status": "saved"}
 
@@ -132,9 +130,55 @@ class LabelsService:
         if notes:
             label_data["review"]["notes"] = notes
 
-        try:
-            storage.label_store.save_label(doc_id, label_data)
-        except IOError as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save label: {e}")
+        self._save_label_with_truth(storage, doc_bundle, label_data)
 
         return {"status": "saved", "doc_id": doc_id}
+
+    def _save_label_with_truth(
+        self,
+        storage: StorageFacade,
+        doc_bundle,
+        label_data: Dict[str, Any],
+    ) -> None:
+        try:
+            storage.label_store.save_label(doc_bundle.doc_id, label_data)
+        except IOError as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to save label: {exc}")
+
+        file_md5 = doc_bundle.metadata.get("file_md5")
+        if not file_md5:
+            logger.warning("Skipping truth write for %s: missing file_md5", doc_bundle.doc_id)
+            return
+
+        output_root = self._resolve_output_root(doc_bundle.doc_root)
+        if not output_root:
+            logger.warning("Skipping truth write for %s: cannot resolve output root", doc_bundle.doc_id)
+            return
+
+        truth_payload = {
+            **label_data,
+            "schema_version": "label_v3",
+            "input_hashes": {
+                "file_md5": file_md5,
+                "content_md5": doc_bundle.metadata.get("content_md5", ""),
+            },
+            "source_doc_ref": {
+                "claim_id": label_data.get("claim_id"),
+                "doc_id": label_data.get("doc_id"),
+                "original_filename": doc_bundle.metadata.get("original_filename", ""),
+            },
+        }
+
+        try:
+            TruthStore(output_root).save_truth_by_file_md5(file_md5, truth_payload)
+        except IOError as exc:
+            logger.warning("Failed to save canonical truth for %s: %s", doc_bundle.doc_id, exc)
+
+    @staticmethod
+    def _resolve_output_root(doc_root: Path) -> Optional[Path]:
+        for parent in doc_root.parents:
+            if parent.name == "claims":
+                return parent.parent
+        if len(doc_root.parents) >= 4:
+            return doc_root.parents[3]
+        return None

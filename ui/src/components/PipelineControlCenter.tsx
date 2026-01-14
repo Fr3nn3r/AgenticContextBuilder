@@ -1,172 +1,71 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useCallback } from "react";
 import { cn } from "../lib/utils";
+import {
+  usePipelineClaims,
+  usePipelineRuns,
+  usePromptConfigs,
+  useAuditLog,
+} from "../hooks/usePipelineData";
+import {
+  startPipelineEnhanced,
+  cancelPipeline,
+  deletePipelineRun,
+} from "../api/client";
+import type {
+  PipelineClaimOption,
+  PromptConfig,
+  AuditEntry,
+  PipelineBatchStatus,
+} from "../types";
 
 // Types
 type Stage = "ingest" | "classify" | "extract";
-type RunStatus = "running" | "success" | "partial" | "failed" | "queued";
+type RunStatus = "running" | "success" | "partial" | "failed" | "queued" | "completed" | "cancelled" | "pending";
 type TabId = "new-run" | "runs" | "config";
 
-interface ClaimOption {
-  claim_id: string;
-  doc_count: number;
-  last_run?: string;
+// Helper to map backend status to UI status
+function mapStatus(status: PipelineBatchStatus): RunStatus {
+  const mapping: Record<PipelineBatchStatus, RunStatus> = {
+    pending: "queued",
+    running: "running",
+    completed: "success",
+    failed: "failed",
+    cancelled: "failed",
+  };
+  return mapping[status] || "failed";
 }
 
-interface RecentRun {
-  run_id: string;
-  friendly_name: string;
-  status: RunStatus;
-  prompt_config: string;
-  claims_count: number;
-  docs_total: number;
-  docs_processed: number;
-  started_at: string;
-  completed_at?: string;
-  duration?: string;
-  stage_progress: { ingest: number; classify: number; extract: number };
-  cost_estimate?: string;
-  last_log?: string;
-  errors: Array<{ doc: string; stage: string; message: string }>;
-  claims: string[];
-  timings: { ingest: string; classify: string; extract: string };
-  reuse: { ingestion: number; classification: number };
+// Helper to format relative time
+function formatRelativeTime(isoTime?: string): string {
+  if (!isoTime) return "-";
+  try {
+    const date = new Date(isoTime);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 0) return `${diffDays}d ago`;
+    if (diffHours > 0) return `${diffHours}h ago`;
+    if (diffMins > 0) return `${diffMins}m ago`;
+    return "just now";
+  } catch {
+    return "-";
+  }
 }
 
-interface PromptConfig {
-  id: string;
-  name: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  is_default: boolean;
+// Helper to format duration
+function formatDuration(seconds?: number): string {
+  if (!seconds) return "-";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
 }
 
-interface AuditEntry {
-  timestamp: string;
-  user: string;
-  action: string;
-}
-
-// Mock Data
-const CLAIM_OPTIONS: ClaimOption[] = [
-  { claim_id: "claim_001", doc_count: 6, last_run: "2d ago" },
-  { claim_id: "claim_002", doc_count: 3, last_run: undefined },
-  { claim_id: "claim_003", doc_count: 9, last_run: "1h ago" },
-  { claim_id: "claim_004", doc_count: 4, last_run: "5d ago" },
-  { claim_id: "claim_005", doc_count: 2, last_run: undefined },
-];
-
-const PROMPT_CONFIGS: PromptConfig[] = [
-  { id: "generic_v1", name: "generic_extraction_v1", model: "gpt-4o", temperature: 0.2, max_tokens: 4096, is_default: true },
-  { id: "fast_v1", name: "fast_extraction_v1", model: "gpt-4o-mini", temperature: 0.1, max_tokens: 2048, is_default: false },
-];
-
-const RECENT_RUNS: RecentRun[] = [
-  {
-    run_id: "run_20260113_090000_abc123",
-    friendly_name: "crisp-falcon-47",
-    status: "failed",
-    prompt_config: "generic_extraction_v1 (gpt-4o)",
-    claims_count: 2,
-    docs_total: 9,
-    docs_processed: 7,
-    started_at: "2h ago",
-    completed_at: "2h ago",
-    duration: "4m 12s",
-    stage_progress: { ingest: 100, classify: 100, extract: 78 },
-    cost_estimate: "$1.20",
-    last_log: "extract: 7/9 docs processed",
-    errors: [
-      { doc: "doc_003.pdf", stage: "extraction", message: "Timeout after 30s" },
-      { doc: "doc_007.pdf", stage: "extraction", message: "Missing policy_number" },
-    ],
-    claims: ["claim_001 (6 docs)", "claim_002 (3 docs)"],
-    timings: { ingest: "1m 12s", classify: "38s", extract: "2m 22s" },
-    reuse: { ingestion: 3, classification: 0 },
-  },
-  {
-    run_id: "run_20260113_080000_def456",
-    friendly_name: "amber-tiger-46",
-    status: "success",
-    prompt_config: "generic_extraction_v1 (gpt-4o)",
-    claims_count: 3,
-    docs_total: 15,
-    docs_processed: 15,
-    started_at: "5h ago",
-    completed_at: "5h ago",
-    duration: "6m 45s",
-    stage_progress: { ingest: 100, classify: 100, extract: 100 },
-    cost_estimate: "$2.34",
-    last_log: "extract: 15/15 docs processed",
-    errors: [],
-    claims: ["claim_003 (9 docs)", "claim_004 (4 docs)", "claim_005 (2 docs)"],
-    timings: { ingest: "2m 10s", classify: "1m 05s", extract: "3m 30s" },
-    reuse: { ingestion: 0, classification: 0 },
-  },
-  {
-    run_id: "run_20260113_095000_ghi789",
-    friendly_name: "swift-eagle-48",
-    status: "running",
-    prompt_config: "generic_extraction_v1 (gpt-4o)",
-    claims_count: 2,
-    docs_total: 10,
-    docs_processed: 6,
-    started_at: "10m ago",
-    stage_progress: { ingest: 100, classify: 80, extract: 20 },
-    last_log: "classify: 8/10 docs processed",
-    errors: [],
-    claims: ["claim_001 (6 docs)", "claim_004 (4 docs)"],
-    timings: { ingest: "1m 30s", classify: "ongoing", extract: "ongoing" },
-    reuse: { ingestion: 4, classification: 2 },
-  },
-  {
-    run_id: "run_20260113_100000_jkl012",
-    friendly_name: "quiet-panda-49",
-    status: "queued",
-    prompt_config: "fast_extraction_v1 (gpt-4o-mini)",
-    claims_count: 1,
-    docs_total: 3,
-    docs_processed: 0,
-    started_at: "5m ago",
-    stage_progress: { ingest: 0, classify: 0, extract: 0 },
-    last_log: "queued - waiting for capacity",
-    errors: [],
-    claims: ["claim_002 (3 docs)"],
-    timings: { ingest: "-", classify: "-", extract: "-" },
-    reuse: { ingestion: 0, classification: 0 },
-  },
-  {
-    run_id: "run_20260112_150000_mno345",
-    friendly_name: "bold-raven-45",
-    status: "partial",
-    prompt_config: "generic_extraction_v1 (gpt-4o)",
-    claims_count: 2,
-    docs_total: 8,
-    docs_processed: 6,
-    started_at: "1d ago",
-    completed_at: "1d ago",
-    duration: "3m 55s",
-    stage_progress: { ingest: 100, classify: 100, extract: 75 },
-    cost_estimate: "$1.85",
-    last_log: "extract: 6/8 docs processed",
-    errors: [
-      { doc: "doc_015.pdf", stage: "extraction", message: "OCR confidence below threshold" },
-      { doc: "doc_018.pdf", stage: "classification", message: "Unknown document type" },
-    ],
-    claims: ["claim_003 (5 docs)", "claim_005 (3 docs)"],
-    timings: { ingest: "1m 05s", classify: "45s", extract: "2m 05s" },
-    reuse: { ingestion: 2, classification: 1 },
-  },
-];
-
-const AUDIT_LOG: AuditEntry[] = [
-  { timestamp: "22:12", user: "admin", action: "Started run crisp-falcon-47" },
-  { timestamp: "22:08", user: "admin", action: "Deleted run amber-tiger-44" },
-  { timestamp: "21:59", user: "admin", action: "Cancelled run swift-eagle-43" },
-  { timestamp: "21:45", user: "admin", action: "Created config fast_extraction_v1" },
-  { timestamp: "20:30", user: "admin", action: "Started run amber-tiger-46" },
-];
-
+// Default stages for new runs
 const DEFAULT_STAGES: Stage[] = ["ingest", "classify", "extract"];
 
 // Status badge component
@@ -174,16 +73,22 @@ function StatusBadge({ status }: { status: RunStatus }) {
   const styles: Record<RunStatus, string> = {
     running: "bg-info/10 text-info",
     queued: "bg-warning/10 text-warning-foreground",
+    pending: "bg-warning/10 text-warning-foreground",
     success: "bg-success/10 text-success",
+    completed: "bg-success/10 text-success",
     partial: "bg-accent/10 text-accent-foreground",
     failed: "bg-destructive/10 text-destructive",
+    cancelled: "bg-destructive/10 text-destructive",
   };
   const labels: Record<RunStatus, string> = {
     running: "RUNNING",
     queued: "QUEUED",
+    pending: "QUEUED",
     success: "SUCCESS",
+    completed: "SUCCESS",
     partial: "PARTIAL",
     failed: "FAILED",
+    cancelled: "CANCELLED",
   };
   return (
     <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium", styles[status])}>
@@ -207,6 +112,26 @@ function ProgressBar({ value, className }: { value: number; className?: string }
   );
 }
 
+// UI-specific run type (derived from EnhancedPipelineRun)
+interface UIRun {
+  run_id: string;
+  friendly_name: string;
+  status: RunStatus;
+  prompt_config: string;
+  claims_count: number;
+  docs_total: number;
+  docs_processed: number;
+  started_at: string;
+  completed_at?: string;
+  duration?: string;
+  stage_progress: { ingest: number; classify: number; extract: number };
+  cost_estimate?: string;
+  errors: Array<{ doc: string; stage: string; message: string }>;
+  claims: string[];
+  timings: { ingest: string; classify: string; extract: string };
+  reuse: { ingestion: number; classification: number };
+}
+
 // New Run Tab
 function NewRunTab({
   claims,
@@ -216,6 +141,7 @@ function NewRunTab({
   onToggleStage,
   onApplyPreset,
   promptConfig,
+  promptConfigs,
   onPromptConfigChange,
   forceOverwrite,
   onForceOverwriteChange,
@@ -224,14 +150,18 @@ function NewRunTab({
   dryRun,
   onDryRunChange,
   activeRuns,
+  onStartRun,
+  isStartingRun,
+  isLoading,
 }: {
-  claims: ClaimOption[];
+  claims: PipelineClaimOption[];
   selectedClaims: string[];
   onToggleClaim: (id: string) => void;
   stages: Stage[];
   onToggleStage: (stage: Stage) => void;
   onApplyPreset: (preset: "full" | "classify_extract" | "extract_only") => void;
   promptConfig: string;
+  promptConfigs: PromptConfig[];
   onPromptConfigChange: (id: string) => void;
   forceOverwrite: boolean;
   onForceOverwriteChange: (v: boolean) => void;
@@ -239,7 +169,10 @@ function NewRunTab({
   onComputeMetricsChange: (v: boolean) => void;
   dryRun: boolean;
   onDryRunChange: (v: boolean) => void;
-  activeRuns: RecentRun[];
+  activeRuns: UIRun[];
+  onStartRun: () => void;
+  isStartingRun: boolean;
+  isLoading: boolean;
 }) {
   const [search, setSearch] = useState("");
 
@@ -268,30 +201,33 @@ function NewRunTab({
           className="w-full px-3 py-2 text-sm border rounded-lg bg-background mb-3"
         />
         <div className="max-h-52 overflow-auto border rounded-lg divide-y">
-          {filteredClaims.map((claim) => (
-            <label
-              key={claim.claim_id}
-              className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={selectedClaims.includes(claim.claim_id)}
-                  onChange={() => onToggleClaim(claim.claim_id)}
-                  className="rounded border-input"
-                />
-                <span className="text-sm font-medium text-foreground">{claim.claim_id}</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span>{claim.doc_count} docs</span>
-                <span className={cn(claim.last_run ? "text-muted-foreground" : "text-warning-foreground")}>
-                  {claim.last_run ? `last: ${claim.last_run}` : "never processed"}
-                </span>
-              </div>
-            </label>
-          ))}
-          {filteredClaims.length === 0 && (
+          {isLoading ? (
+            <div className="px-3 py-4 text-sm text-muted-foreground text-center">Loading claims...</div>
+          ) : filteredClaims.length === 0 ? (
             <div className="px-3 py-4 text-sm text-muted-foreground text-center">No claims match</div>
+          ) : (
+            filteredClaims.map((claim) => (
+              <label
+                key={claim.claim_id}
+                className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedClaims.includes(claim.claim_id)}
+                    onChange={() => onToggleClaim(claim.claim_id)}
+                    className="rounded border-input"
+                  />
+                  <span className="text-sm font-medium text-foreground">{claim.claim_id}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>{claim.doc_count} docs</span>
+                  <span className={cn(claim.last_run ? "text-muted-foreground" : "text-warning-foreground")}>
+                    {claim.last_run ? `last: ${claim.last_run}` : "never processed"}
+                  </span>
+                </div>
+              </label>
+            ))
           )}
         </div>
         <div className="flex items-center justify-between mt-3 text-xs">
@@ -367,7 +303,7 @@ function NewRunTab({
           onChange={(e) => onPromptConfigChange(e.target.value)}
           className="w-full px-3 py-2 text-sm border rounded-lg bg-background"
         >
-          {PROMPT_CONFIGS.map((cfg) => (
+          {promptConfigs.map((cfg) => (
             <option key={cfg.id} value={cfg.id}>
               {cfg.name} ({cfg.model}){cfg.is_default ? " - default" : ""}
             </option>
@@ -413,15 +349,16 @@ function NewRunTab({
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button
+          onClick={onStartRun}
           className={cn(
             "flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-            canStartRun
+            canStartRun && !isStartingRun
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
-          disabled={!canStartRun}
+          disabled={!canStartRun || isStartingRun}
         >
-          Start Run
+          {isStartingRun ? "Starting..." : "Start Run"}
         </button>
         <button className="px-4 py-3 rounded-lg border text-sm font-medium text-foreground hover:bg-muted/50">
           Preview
@@ -476,10 +413,16 @@ function RunsTab({
   runs,
   onSelectRun,
   selectedRunId,
+  onCancelRun,
+  onDeleteRun,
+  isLoading,
 }: {
-  runs: RecentRun[];
+  runs: UIRun[];
   onSelectRun: (id: string | null) => void;
   selectedRunId: string | null;
+  onCancelRun: (runId: string) => void;
+  onDeleteRun: (runId: string) => void;
+  isLoading: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("7d");
@@ -559,71 +502,84 @@ function RunsTab({
             </tr>
           </thead>
           <tbody>
-            {filteredRuns.map((run) => {
-              const isSelected = selectedRunId === run.run_id;
-              const overallProgress = Math.round(
-                (run.stage_progress.ingest + run.stage_progress.classify + run.stage_progress.extract) / 3
-              );
-              return (
-                <>
-                  <tr
-                    key={run.run_id}
-                    onClick={() => onSelectRun(isSelected ? null : run.run_id)}
-                    className={cn(
-                      "border-t cursor-pointer transition-colors",
-                      isSelected ? "bg-accent/10" : "hover:bg-muted/30"
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-foreground">{run.friendly_name}</div>
-                      {run.errors.length > 0 && (
-                        <div className="text-xs text-destructive mt-0.5">
-                          {run.errors.length} doc{run.errors.length > 1 ? "s" : ""} failed · {run.errors[0].message}
-                        </div>
-                      )}
-                      {run.status === "running" && run.last_log && (
-                        <div className="text-xs text-muted-foreground mt-0.5">{run.last_log}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={run.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20">
-                          <ProgressBar value={overallProgress} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{overallProgress}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{run.started_at}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{run.cost_estimate || "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button className="text-info hover:underline">Open</button>
-                        <button className="text-destructive hover:underline">Delete</button>
-                        {(run.status === "running" || run.status === "queued") && (
-                          <button className="text-warning-foreground hover:underline">Cancel</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {isSelected && selectedRun && (
-                    <tr key={`${run.run_id}-details`} className="border-t bg-muted/20">
-                      <td colSpan={6} className="px-4 py-4">
-                        <RunDetailsPanel run={selectedRun} />
-                      </td>
-                    </tr>
-                  )}
-                </>
-              );
-            })}
-            {filteredRuns.length === 0 && (
+            {isLoading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  Loading runs...
+                </td>
+              </tr>
+            ) : filteredRuns.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                   No runs match the current filters
                 </td>
               </tr>
+            ) : (
+              filteredRuns.map((run) => {
+                const isSelected = selectedRunId === run.run_id;
+                const overallProgress = Math.round(
+                  (run.stage_progress.ingest + run.stage_progress.classify + run.stage_progress.extract) / 3
+                );
+                return (
+                  <Fragment key={run.run_id}>
+                    <tr
+                      onClick={() => onSelectRun(isSelected ? null : run.run_id)}
+                      className={cn(
+                        "border-t cursor-pointer transition-colors",
+                        isSelected ? "bg-accent/10" : "hover:bg-muted/30"
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-foreground">{run.friendly_name}</div>
+                        {run.errors.length > 0 && (
+                          <div className="text-xs text-destructive mt-0.5">
+                            {run.errors.length} doc{run.errors.length > 1 ? "s" : ""} failed · {run.errors[0].message}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={run.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20">
+                            <ProgressBar value={overallProgress} />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{overallProgress}%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{run.started_at}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{run.cost_estimate || "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button className="text-info hover:underline">Open</button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteRun(run.run_id); }}
+                            className="text-destructive hover:underline"
+                          >
+                            Delete
+                          </button>
+                          {(run.status === "running" || run.status === "queued") && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onCancelRun(run.run_id); }}
+                              className="text-warning-foreground hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isSelected && selectedRun && (
+                      <tr className="border-t bg-muted/20">
+                        <td colSpan={6} className="px-4 py-4">
+                          <RunDetailsPanel run={selectedRun} onDeleteRun={onDeleteRun} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -633,7 +589,7 @@ function RunsTab({
 }
 
 // Run Details Panel
-function RunDetailsPanel({ run }: { run: RecentRun }) {
+function RunDetailsPanel({ run, onDeleteRun }: { run: UIRun; onDeleteRun: (runId: string) => void }) {
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -711,7 +667,10 @@ function RunDetailsPanel({ run }: { run: RecentRun }) {
         <button className="px-3 py-1.5 border text-xs rounded-lg text-muted-foreground hover:bg-muted/50">
           Export
         </button>
-        <button className="px-3 py-1.5 border text-xs rounded-lg text-destructive hover:bg-destructive/10">
+        <button
+          onClick={() => onDeleteRun(run.run_id)}
+          className="px-3 py-1.5 border text-xs rounded-lg text-destructive hover:bg-destructive/10"
+        >
           Delete
         </button>
       </div>
@@ -720,46 +679,94 @@ function RunDetailsPanel({ run }: { run: RecentRun }) {
 }
 
 // Config Tab
-function ConfigTab() {
+function ConfigTab({
+  configs,
+  auditEntries,
+  isLoading,
+  onRefreshConfigs,
+  onRefreshAudit,
+  onSetDefault,
+}: {
+  configs: PromptConfig[];
+  auditEntries: AuditEntry[];
+  isLoading: boolean;
+  onRefreshConfigs: () => void;
+  onRefreshAudit: () => void;
+  onSetDefault: (id: string) => void;
+}) {
+  // Format audit timestamp for display
+  const formatAuditTime = (isoTime: string): string => {
+    try {
+      const date = new Date(isoTime);
+      return date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return isoTime;
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Prompt Configs */}
       <div className="bg-card border rounded-xl p-5">
-        <h3 className="text-sm font-medium text-foreground mb-4">Prompt Configs</h3>
-        <div className="space-y-3">
-          {PROMPT_CONFIGS.map((cfg) => (
-            <div
-              key={cfg.id}
-              className={cn(
-                "border rounded-lg p-4",
-                cfg.is_default && "border-info/30 bg-info/5"
-              )}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-sm font-medium text-foreground">
-                    {cfg.name}
-                    {cfg.is_default && (
-                      <span className="ml-2 text-xs text-info bg-info/10 px-2 py-0.5 rounded-full">
-                        default
-                      </span>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-foreground">Prompt Configs</h3>
+          <button
+            onClick={onRefreshConfigs}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground text-center py-4">Loading...</div>
+        ) : configs.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-4">No configs found</div>
+        ) : (
+          <div className="space-y-3">
+            {configs.map((cfg) => (
+              <div
+                key={cfg.id}
+                className={cn(
+                  "border rounded-lg p-4",
+                  cfg.is_default && "border-info/30 bg-info/5"
+                )}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {cfg.name}
+                      {cfg.is_default && (
+                        <span className="ml-2 text-xs text-info bg-info/10 px-2 py-0.5 rounded-full">
+                          default
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Model: {cfg.model} · Temp: {cfg.temperature} · Max tokens: {cfg.max_tokens}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="text-xs text-info hover:underline">View</button>
+                    <button className="text-xs text-muted-foreground hover:underline">Edit</button>
+                    {!cfg.is_default && (
+                      <button
+                        onClick={() => onSetDefault(cfg.id)}
+                        className="text-xs text-muted-foreground hover:underline"
+                      >
+                        Set as default
+                      </button>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Model: {cfg.model} · Temp: {cfg.temperature} · Max tokens: {cfg.max_tokens}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="text-xs text-info hover:underline">View</button>
-                  <button className="text-xs text-muted-foreground hover:underline">Edit</button>
-                  {!cfg.is_default && (
-                    <button className="text-xs text-muted-foreground hover:underline">Set as default</button>
-                  )}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
         <button className="mt-4 text-sm text-info hover:underline">+ Add new config</button>
       </div>
 
@@ -773,22 +780,29 @@ function ConfigTab() {
               <option>Runs</option>
               <option>Configs</option>
             </select>
-            <select className="px-2 py-1 text-xs border rounded-lg bg-background">
-              <option>Last 7 days</option>
-              <option>Last 30 days</option>
-              <option>All time</option>
-            </select>
+            <button
+              onClick={onRefreshAudit}
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              Refresh
+            </button>
           </div>
         </div>
-        <div className="space-y-2">
-          {AUDIT_LOG.map((entry, idx) => (
-            <div key={idx} className="text-xs text-muted-foreground flex gap-2">
-              <span className="text-muted-foreground/70 w-12">{entry.timestamp}</span>
-              <span className="text-muted-foreground/70 w-12">{entry.user}</span>
-              <span className="text-foreground">{entry.action}</span>
-            </div>
-          ))}
-        </div>
+        {auditEntries.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-4">No audit entries</div>
+        ) : (
+          <div className="space-y-2">
+            {auditEntries.map((entry, idx) => (
+              <div key={idx} className="text-xs text-muted-foreground flex gap-2">
+                <span className="text-muted-foreground/70 w-28 flex-shrink-0">
+                  {formatAuditTime(entry.timestamp)}
+                </span>
+                <span className="text-muted-foreground/70 w-16 flex-shrink-0">{entry.user}</span>
+                <span className="text-foreground">{entry.action}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <button className="mt-4 text-xs text-info hover:underline">View full audit log</button>
       </div>
     </div>
@@ -800,13 +814,109 @@ export function PipelineControlCenter() {
   const [activeTab, setActiveTab] = useState<TabId>("new-run");
   const [selectedClaims, setSelectedClaims] = useState<string[]>([]);
   const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
-  const [promptConfig, setPromptConfig] = useState("generic_v1");
+  const [promptConfig, setPromptConfig] = useState<string>("");
   const [forceOverwrite, setForceOverwrite] = useState(false);
   const [computeMetrics, setComputeMetrics] = useState(true);
   const [dryRun, setDryRun] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [isStartingRun, setIsStartingRun] = useState(false);
 
-  const activeRuns = RECENT_RUNS.filter((r) => r.status === "running" || r.status === "queued");
+  // Data hooks
+  const { claims, isLoading: claimsLoading, refetch: refetchClaims } = usePipelineClaims();
+  const { runs, isLoading: runsLoading, refetch: refetchRuns } = usePipelineRuns();
+  const { configs, isLoading: configsLoading, refetch: refetchConfigs, setDefault: setDefaultConfig } = usePromptConfigs();
+  const { entries: auditEntries, isLoading: auditLoading, refetch: refetchAudit } = useAuditLog({ limit: 50 });
+
+  // Set default prompt config when configs load
+  useMemo(() => {
+    if (configs.length > 0 && !promptConfig) {
+      const defaultConfig = configs.find((c) => c.is_default) || configs[0];
+      setPromptConfig(defaultConfig.id);
+    }
+  }, [configs, promptConfig]);
+
+  // Transform runs to UI format
+  const transformedRuns = useMemo(() => {
+    return runs.map((run) => ({
+      run_id: run.run_id,
+      friendly_name: run.friendly_name,
+      status: mapStatus(run.status) as RunStatus,
+      prompt_config: run.prompt_config || run.model,
+      claims_count: run.claims_count,
+      docs_total: run.docs_total,
+      docs_processed: run.docs_processed,
+      started_at: formatRelativeTime(run.started_at),
+      completed_at: run.completed_at ? formatRelativeTime(run.completed_at) : undefined,
+      duration: formatDuration(run.duration_seconds),
+      stage_progress: run.stage_progress,
+      cost_estimate: run.cost_estimate_usd ? `$${run.cost_estimate_usd.toFixed(2)}` : undefined,
+      errors: run.errors,
+      claims: run.claim_ids.map((id) => id),
+      timings: run.stage_timings as { ingest: string; classify: string; extract: string },
+      reuse: run.reuse as { ingestion: number; classification: number },
+    }));
+  }, [runs]);
+
+  const activeRuns = useMemo(
+    () => transformedRuns.filter((r) => r.status === "running" || r.status === "queued"),
+    [transformedRuns]
+  );
+
+  // Handlers
+  const handleStartRun = useCallback(async () => {
+    if (selectedClaims.length === 0) return;
+
+    setIsStartingRun(true);
+    try {
+      const selectedConfig = configs.find((c) => c.id === promptConfig);
+      await startPipelineEnhanced({
+        claim_ids: selectedClaims,
+        model: selectedConfig?.model || "gpt-4o",
+        stages,
+        prompt_config_id: promptConfig,
+        force_overwrite: forceOverwrite,
+        compute_metrics: computeMetrics,
+        dry_run: dryRun,
+      });
+      // Refresh data and clear selection
+      await Promise.all([refetchRuns(), refetchClaims(), refetchAudit()]);
+      setSelectedClaims([]);
+    } catch (error) {
+      console.error("Failed to start run:", error);
+    } finally {
+      setIsStartingRun(false);
+    }
+  }, [selectedClaims, stages, promptConfig, forceOverwrite, computeMetrics, dryRun, configs, refetchRuns, refetchClaims, refetchAudit]);
+
+  const handleCancelRun = useCallback(async (runId: string) => {
+    try {
+      await cancelPipeline(runId);
+      await Promise.all([refetchRuns(), refetchAudit()]);
+    } catch (error) {
+      console.error("Failed to cancel run:", error);
+    }
+  }, [refetchRuns, refetchAudit]);
+
+  const handleDeleteRun = useCallback(async (runId: string) => {
+    try {
+      await deletePipelineRun(runId);
+      await Promise.all([refetchRuns(), refetchAudit()]);
+      if (selectedRunId === runId) {
+        setSelectedRunId(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete run:", error);
+    }
+  }, [refetchRuns, refetchAudit, selectedRunId]);
+
+  const handleSetDefault = useCallback(async (configId: string) => {
+    try {
+      await setDefaultConfig(configId);
+      await refetchAudit();
+    } catch (error) {
+      console.error("Failed to set default config:", error);
+    }
+  }, [setDefaultConfig, refetchAudit]);
 
   function toggleClaim(claimId: string) {
     setSelectedClaims((prev) =>
@@ -873,13 +983,14 @@ export function PipelineControlCenter() {
       <div className="flex-1 overflow-auto bg-background p-6">
         {activeTab === "new-run" && (
           <NewRunTab
-            claims={CLAIM_OPTIONS}
+            claims={claims}
             selectedClaims={selectedClaims}
             onToggleClaim={toggleClaim}
             stages={stages}
             onToggleStage={toggleStage}
             onApplyPreset={applyPreset}
             promptConfig={promptConfig}
+            promptConfigs={configs}
             onPromptConfigChange={setPromptConfig}
             forceOverwrite={forceOverwrite}
             onForceOverwriteChange={setForceOverwrite}
@@ -888,16 +999,31 @@ export function PipelineControlCenter() {
             dryRun={dryRun}
             onDryRunChange={setDryRun}
             activeRuns={activeRuns}
+            onStartRun={handleStartRun}
+            isStartingRun={isStartingRun}
+            isLoading={claimsLoading || configsLoading}
           />
         )}
         {activeTab === "runs" && (
           <RunsTab
-            runs={RECENT_RUNS}
+            runs={transformedRuns}
             onSelectRun={setSelectedRunId}
             selectedRunId={selectedRunId}
+            onCancelRun={handleCancelRun}
+            onDeleteRun={handleDeleteRun}
+            isLoading={runsLoading}
           />
         )}
-        {activeTab === "config" && <ConfigTab />}
+        {activeTab === "config" && (
+          <ConfigTab
+            configs={configs}
+            auditEntries={auditEntries}
+            isLoading={configsLoading || auditLoading}
+            onRefreshConfigs={refetchConfigs}
+            onRefreshAudit={refetchAudit}
+            onSetDefault={handleSetDefault}
+          />
+        )}
       </div>
     </div>
   );

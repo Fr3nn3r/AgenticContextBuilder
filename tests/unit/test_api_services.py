@@ -12,6 +12,9 @@ class FakeStorage:
         self._extraction = extraction
         self._label = label
         self.saved_label = None
+        self.doc_store = self
+        self.run_store = self
+        self.label_store = self
 
     def list_runs(self):
         return self._runs
@@ -119,7 +122,11 @@ def test_labels_service_save_labels_writes_schema(tmp_path):
         doc_id="doc1",
         claim_id="claim123",
         claim_folder="claim123",
-        metadata={"original_filename": "file.pdf"},
+        metadata={
+            "original_filename": "file.pdf",
+            "file_md5": "abc123def4567890abc123def4567890",
+            "content_md5": "def456abc1237890def456abc1237890",
+        },
         doc_root=doc_root,
     )
     fake_storage = FakeStorage(doc_bundle=doc_bundle)
@@ -137,6 +144,17 @@ def test_labels_service_save_labels_writes_schema(tmp_path):
     assert fake_storage.saved_label["schema_version"] == "label_v3"
     assert fake_storage.saved_label["review"]["reviewer"] == "Ana"
     assert fake_storage.saved_label["doc_labels"]["doc_type_correct"] is True
+
+    truth_path = (
+        tmp_path
+        / "registry"
+        / "truth"
+        / "abc123def4567890abc123def4567890"
+        / "latest.json"
+    )
+    assert truth_path.exists()
+    truth_data = json.loads(truth_path.read_text(encoding="utf-8"))
+    assert truth_data["input_hashes"]["file_md5"] == "abc123def4567890abc123def4567890"
 
 
 def test_insights_service_overview_uses_aggregator(monkeypatch, tmp_path):

@@ -46,6 +46,7 @@ from .models import (
 )
 from .index_reader import IndexReader
 from .index_builder import build_all_indexes
+from .truth_store import TruthStore
 
 __all__ = [
     # Protocol
@@ -68,4 +69,5 @@ __all__ = [
     # Index utilities
     "IndexReader",
     "build_all_indexes",
+    "TruthStore",
 ]

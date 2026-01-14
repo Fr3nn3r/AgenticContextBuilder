@@ -430,6 +430,43 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== EVAL SUBCOMMAND ==========
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Evaluate a run against canonical truth",
+        epilog="""
+Examples:
+  %(prog)s eval run --run-id run_20260101_010101_abc123 --output output
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    eval_subparsers = eval_parser.add_subparsers(dest="eval_command", help="Eval commands")
+    eval_subparsers.required = True
+
+    eval_run_parser = eval_subparsers.add_parser(
+        "run",
+        help="Evaluate a run and emit per-doc + summary eval outputs",
+    )
+    eval_run_parser.add_argument(
+        "--run-id",
+        required=True,
+        metavar="ID",
+        help="Run ID to evaluate",
+    )
+    eval_run_parser.add_argument(
+        "--output",
+        metavar="DIR",
+        default="output",
+        help="Output root directory (default: output)",
+    )
+    eval_run_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    eval_run_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     return parser
 
 
@@ -1103,6 +1140,32 @@ def main():
                 except Exception as e:
                     logger.error(f"Index build failed: {e}")
                     sys.exit(1)
+
+        elif args.command == "eval":
+            # ========== EVAL COMMAND ==========
+            if args.eval_command == "run":
+                from context_builder.pipeline.eval import evaluate_run
+
+                if args.verbose:
+                    logging.getLogger().setLevel(logging.DEBUG)
+                elif args.quiet:
+                    logging.getLogger().setLevel(logging.WARNING)
+
+                output_dir = Path(args.output)
+                if not output_dir.exists():
+                    logger.error(f"Output directory not found: {output_dir}")
+                    sys.exit(1)
+
+                summary = evaluate_run(output_dir, args.run_id)
+
+                if not args.quiet:
+                    print(f"\n[OK] Eval complete for {args.run_id}")
+                    print(f"    Docs evaluated: {summary['docs_evaluated']}/{summary['docs_total']}")
+                    print(f"    Fields labeled: {summary['fields_labeled']}")
+                    print(f"    Correct: {summary['correct']}")
+                    print(f"    Incorrect: {summary['incorrect']}")
+                    print(f"    Missing: {summary['missing']}")
+                    print(f"    Unverifiable: {summary['unverifiable']}")
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")

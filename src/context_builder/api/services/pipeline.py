@@ -60,6 +60,15 @@ class PipelineRun:
     completed_at: Optional[str] = None
     summary: Optional[Dict[str, Any]] = None
     model: str = "gpt-4o"
+    # Extended fields for UI control center
+    stages: List[str] = field(default_factory=lambda: ["ingest", "classify", "extract"])
+    prompt_config_id: Optional[str] = None
+    force_overwrite: bool = False
+    compute_metrics: bool = True
+    # Tracking fields
+    stage_timings: Dict[str, int] = field(default_factory=dict)  # stage -> ms
+    reuse_counts: Dict[str, int] = field(default_factory=dict)   # stage -> count reused
+    cost_estimate_usd: Optional[float] = None
 
 
 # Progress callback type: (run_id, doc_id, phase, error, failed_at_stage)
@@ -96,6 +105,11 @@ class PipelineService:
         self,
         claim_ids: List[str],
         model: str = "gpt-4o",
+        stages: Optional[List[str]] = None,
+        prompt_config_id: Optional[str] = None,
+        force_overwrite: bool = False,
+        compute_metrics: bool = True,
+        dry_run: bool = False,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> str:
         """
@@ -104,11 +118,19 @@ class PipelineService:
         Args:
             claim_ids: List of pending claim IDs to process
             model: Model name for extraction
+            stages: Stages to run (ingest, classify, extract). Default: all
+            prompt_config_id: Reference to prompt config (for tracking)
+            force_overwrite: Reprocess even if outputs exist
+            compute_metrics: Compute metrics.json at end
+            dry_run: Preview only, no actual processing
             progress_callback: Optional callback for progress updates
 
         Returns:
             Run ID for tracking
         """
+        if stages is None:
+            stages = ["ingest", "classify", "extract"]
+
         run_id = self._generate_run_id()
 
         # Initialize run tracking
@@ -118,6 +140,10 @@ class PipelineService:
             status=PipelineStatus.PENDING,
             started_at=datetime.utcnow().isoformat() + "Z",
             model=model,
+            stages=stages,
+            prompt_config_id=prompt_config_id,
+            force_overwrite=force_overwrite,
+            compute_metrics=compute_metrics,
         )
 
         # Build initial doc list from pending claims
@@ -136,6 +162,17 @@ class PipelineService:
         async with self._lock:
             self.active_runs[run_id] = run
             self.cancel_events[run_id] = asyncio.Event()
+
+        # Handle dry run - return early with estimated work
+        if dry_run:
+            run.status = PipelineStatus.COMPLETED
+            run.completed_at = datetime.utcnow().isoformat() + "Z"
+            run.summary = {
+                "dry_run": True,
+                "total": len(run.docs),
+                "stages": stages,
+            }
+            return run_id
 
         # Start background task
         asyncio.create_task(
@@ -246,9 +283,16 @@ class PipelineService:
                     return callback
 
                 try:
-                    # Detect which stages can be skipped based on existing outputs
+                    # Build stage config from run settings
                     doc_ids = [doc.doc_id for doc in claim.documents]
-                    stage_config = self._detect_stages_for_claim(claim_id, doc_ids)
+                    if run.force_overwrite:
+                        # Force overwrite: use exactly the stages specified
+                        stage_config = self._build_stage_config(run.stages)
+                    else:
+                        # Smart detection: skip stages with existing outputs
+                        stage_config = self._detect_stages_for_claim(
+                            claim_id, doc_ids, requested_stages=run.stages
+                        )
 
                     # Process the claim in a thread pool to allow event loop
                     # to process broadcast tasks while processing runs
@@ -415,6 +459,44 @@ class PipelineService:
         """Get all tracked pipeline runs."""
         return list(self.active_runs.values())
 
+    def delete_run(self, run_id: str) -> bool:
+        """
+        Delete a pipeline run.
+
+        Removes from active tracking and optionally deletes disk outputs.
+        Only completed/failed/cancelled runs can be deleted.
+
+        Args:
+            run_id: Run ID to delete
+
+        Returns:
+            True if deletion was successful
+        """
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return False
+
+        # Don't allow deleting running/pending runs
+        if run.status in (PipelineStatus.RUNNING, PipelineStatus.PENDING):
+            return False
+
+        # Remove from tracking
+        del self.active_runs[run_id]
+        if run_id in self.cancel_events:
+            del self.cancel_events[run_id]
+
+        # Optionally delete run directory from disk
+        try:
+            run_dir = self.output_dir.parent / "runs" / run_id
+            if run_dir.exists():
+                shutil.rmtree(run_dir)
+                logger.info(f"Deleted run directory: {run_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to delete run directory for {run_id}: {e}")
+
+        logger.info(f"Deleted pipeline run: {run_id}")
+        return True
+
     def _persist_run(self, run: PipelineRun) -> None:
         """Persist run to disk for visibility in other screens.
 
@@ -520,7 +602,31 @@ class PipelineService:
         except Exception as e:
             logger.warning(f"Failed to append to run index: {e}")
 
-    def _detect_stages_for_claim(self, claim_id: str, doc_ids: List[str]) -> "StageConfig":
+    def _build_stage_config(self, stages: List[str]) -> "StageConfig":
+        """Build StageConfig from stage name strings.
+
+        Args:
+            stages: List of stage names (ingest, classify, extract)
+
+        Returns:
+            StageConfig with the requested stages
+        """
+        from context_builder.pipeline.run import StageConfig, PipelineStage
+
+        stage_map = {
+            "ingest": PipelineStage.INGEST,
+            "classify": PipelineStage.CLASSIFY,
+            "extract": PipelineStage.EXTRACT,
+        }
+        pipeline_stages = [stage_map[s] for s in stages if s in stage_map]
+        return StageConfig(stages=pipeline_stages)
+
+    def _detect_stages_for_claim(
+        self,
+        claim_id: str,
+        doc_ids: List[str],
+        requested_stages: Optional[List[str]] = None,
+    ) -> "StageConfig":
         """Detect which stages can be skipped based on existing outputs.
 
         Checks for existing ingestion (pages.json) and classification (doc.json)
@@ -529,12 +635,17 @@ class PipelineService:
         Args:
             claim_id: Claim ID to check
             doc_ids: List of document IDs in the claim
+            requested_stages: Optional list of requested stages to constrain to
 
         Returns:
             StageConfig with appropriate stages enabled/disabled
         """
         from context_builder.pipeline.run import StageConfig, PipelineStage
         from context_builder.pipeline.paths import get_claim_paths, get_doc_paths
+
+        # Default to all stages if not specified
+        if requested_stages is None:
+            requested_stages = ["ingest", "classify", "extract"]
 
         claim_paths = get_claim_paths(self.output_dir, claim_id)
 
@@ -552,13 +663,14 @@ class PipelineService:
             if not doc_paths.doc_json.exists():
                 can_skip_classify = False
 
-        # Build stage list based on what can be skipped
+        # Build stage list based on what can be skipped AND what was requested
         stages = []
-        if not can_skip_ingest:
+        if "ingest" in requested_stages and not can_skip_ingest:
             stages.append(PipelineStage.INGEST)
-        if not can_skip_classify:
+        if "classify" in requested_stages and not can_skip_classify:
             stages.append(PipelineStage.CLASSIFY)
-        stages.append(PipelineStage.EXTRACT)  # Always run extraction for new run
+        if "extract" in requested_stages:
+            stages.append(PipelineStage.EXTRACT)  # Always run extraction if requested
 
         if can_skip_ingest or can_skip_classify:
             logger.info(

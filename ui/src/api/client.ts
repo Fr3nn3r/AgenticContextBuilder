@@ -10,6 +10,7 @@ import type {
   ClaimReviewPayload,
   DocReviewRequest,
   TemplateSpec,
+  TruthListResponse,
 } from "../types";
 
 const API_BASE = "/api";
@@ -109,6 +110,32 @@ export async function saveDocReview(
 
 export async function getTemplates(): Promise<TemplateSpec[]> {
   return fetchJson<TemplateSpec[]>(`${API_BASE}/templates`);
+}
+
+export async function getTruthEntries(params: {
+  file_md5?: string;
+  doc_type?: string;
+  claim_id?: string;
+  reviewer?: string;
+  reviewed_after?: string;
+  reviewed_before?: string;
+  field_name?: string;
+  state?: string;
+  outcome?: string;
+  run_id?: string;
+  filename?: string;
+  search?: string;
+} = {}): Promise<TruthListResponse> {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) {
+      query.set(key, value);
+    }
+  });
+  const suffix = query.toString();
+  return fetchJson<TruthListResponse>(
+    `${API_BASE}/truth${suffix ? `?${suffix}` : ""}`
+  );
 }
 
 // Get URL for document source file (PDF/image)
@@ -440,7 +467,19 @@ export async function getClassificationStats(runId: string): Promise<Classificat
 // UPLOAD API
 // =============================================================================
 
-import type { PendingClaim, PendingDocument, PipelineBatch } from "../types";
+import type {
+  AuditEntry,
+  AuditListParams,
+  CreatePromptConfigRequest,
+  EnhancedPipelineRun,
+  PendingClaim,
+  PendingDocument,
+  PipelineBatch,
+  PipelineClaimOption,
+  PromptConfig,
+  StartPipelineRequest,
+  UpdatePromptConfigRequest,
+} from "../types";
 
 export interface UploadResult {
   claim_id: string;
@@ -573,3 +612,101 @@ export async function listPipelineBatches(): Promise<PipelineBatch[]> {
 
 /** @deprecated Use listPipelineBatches instead */
 export const listPipelineRuns = listPipelineBatches;
+
+// =============================================================================
+// PIPELINE CONTROL CENTER API
+// =============================================================================
+
+export async function listPipelineClaims(): Promise<PipelineClaimOption[]> {
+  return fetchJson<PipelineClaimOption[]>(`${API_BASE}/pipeline/claims`);
+}
+
+export async function listEnhancedPipelineRuns(): Promise<EnhancedPipelineRun[]> {
+  return fetchJson<EnhancedPipelineRun[]>(`${API_BASE}/pipeline/runs`);
+}
+
+export async function startPipelineEnhanced(
+  request: StartPipelineRequest
+): Promise<{ run_id: string; status: string }> {
+  return fetchJson<{ run_id: string; status: string }>(`${API_BASE}/pipeline/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function deletePipelineRun(runId: string): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/pipeline/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" }
+  );
+}
+
+// =============================================================================
+// PROMPT CONFIG API
+// =============================================================================
+
+export async function listPromptConfigs(): Promise<PromptConfig[]> {
+  return fetchJson<PromptConfig[]>(`${API_BASE}/pipeline/configs`);
+}
+
+export async function getPromptConfig(configId: string): Promise<PromptConfig> {
+  return fetchJson<PromptConfig>(`${API_BASE}/pipeline/configs/${encodeURIComponent(configId)}`);
+}
+
+export async function createPromptConfig(
+  request: CreatePromptConfigRequest
+): Promise<PromptConfig> {
+  return fetchJson<PromptConfig>(`${API_BASE}/pipeline/configs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function updatePromptConfig(
+  configId: string,
+  request: UpdatePromptConfigRequest
+): Promise<PromptConfig> {
+  return fetchJson<PromptConfig>(
+    `${API_BASE}/pipeline/configs/${encodeURIComponent(configId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    }
+  );
+}
+
+export async function deletePromptConfig(configId: string): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/pipeline/configs/${encodeURIComponent(configId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function setDefaultPromptConfig(configId: string): Promise<PromptConfig> {
+  return fetchJson<PromptConfig>(
+    `${API_BASE}/pipeline/configs/${encodeURIComponent(configId)}/set-default`,
+    { method: "POST" }
+  );
+}
+
+// =============================================================================
+// AUDIT LOG API
+// =============================================================================
+
+export async function listAuditEntries(params?: AuditListParams): Promise<AuditEntry[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.action_type) searchParams.set("action_type", params.action_type);
+  if (params?.entity_type) searchParams.set("entity_type", params.entity_type);
+  if (params?.since) searchParams.set("since", params.since);
+  if (params?.limit) searchParams.set("limit", String(params.limit));
+
+  const queryString = searchParams.toString();
+  const url = queryString
+    ? `${API_BASE}/pipeline/audit?${queryString}`
+    : `${API_BASE}/pipeline/audit`;
+
+  return fetchJson<AuditEntry[]>(url);
+}

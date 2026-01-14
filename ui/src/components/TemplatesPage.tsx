@@ -32,7 +32,7 @@ export function TemplatesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading templates...</div>
+        <div className="text-muted-foreground">Loading templates...</div>
       </div>
     );
   }
@@ -40,10 +40,10 @@ export function TemplatesPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <p className="text-red-600 mb-4">{error}</p>
+        <p className="text-destructive mb-4">{error}</p>
         <button
           onClick={loadTemplates}
-          className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
         >
           Retry
         </button>
@@ -62,14 +62,14 @@ export function TemplatesPage() {
             className={cn(
               "px-4 py-3 rounded-lg border text-left whitespace-nowrap transition-colors",
               selectedTemplate?.doc_type === template.doc_type
-                ? "border-gray-900 bg-gray-900 text-white"
-                : "border-gray-200 bg-white hover:border-gray-300"
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card hover:border-muted-foreground"
             )}
           >
             <div className="font-medium">{formatDocType(template.doc_type)}</div>
             <div className={cn(
               "text-xs",
-              selectedTemplate?.doc_type === template.doc_type ? "text-gray-300" : "text-gray-500"
+              selectedTemplate?.doc_type === template.doc_type ? "text-primary-foreground/70" : "text-muted-foreground"
             )}>
               {template.version}
             </div>
@@ -79,24 +79,24 @@ export function TemplatesPage() {
 
       {/* Selected template details */}
       {selectedTemplate && (
-        <div className="bg-white rounded-lg border">
+        <div className="bg-card rounded-lg border border-border">
           {/* Template header */}
-          <div className="p-4 border-b">
-            <h3 className="text-lg font-semibold text-gray-900">
+          <div className="p-4 border-b border-border">
+            <h3 className="text-lg font-semibold text-foreground">
               {formatDocType(selectedTemplate.doc_type)}
             </h3>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Version: {selectedTemplate.version}
             </p>
           </div>
 
           {/* Fields section */}
-          <div className="p-4 border-b">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Fields</h4>
+          <div className="p-4 border-b border-border">
+            <h4 className="text-sm font-semibold text-foreground mb-3">Fields</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Required fields */}
               <div>
-                <h5 className="text-xs font-medium text-gray-500 uppercase mb-2">Required</h5>
+                <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">Required</h5>
                 <div className="space-y-2">
                   {selectedTemplate.required_fields.map((field) => (
                     <FieldCard
@@ -111,7 +111,7 @@ export function TemplatesPage() {
 
               {/* Optional fields */}
               <div>
-                <h5 className="text-xs font-medium text-gray-500 uppercase mb-2">Optional</h5>
+                <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">Optional</h5>
                 <div className="space-y-2">
                   {selectedTemplate.optional_fields.map((field) => (
                     <FieldCard
@@ -127,28 +127,28 @@ export function TemplatesPage() {
 
           {/* Quality gate section */}
           <div className="p-4">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Quality Gate Rules</h4>
+            <h4 className="text-sm font-semibold text-foreground mb-3">Quality Gate Rules</h4>
             <div className="space-y-2 text-sm">
               {selectedTemplate.quality_gate.pass_if && (
                 <div className="flex items-start gap-2">
-                  <span className="w-16 text-green-600 font-medium">PASS if:</span>
-                  <code className="text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                  <span className="w-16 text-green-600 dark:text-green-400 font-medium">PASS if:</span>
+                  <code className="text-foreground bg-muted px-2 py-0.5 rounded">
                     {selectedTemplate.quality_gate.pass_if.join(" AND ")}
                   </code>
                 </div>
               )}
               {selectedTemplate.quality_gate.warn_if && (
                 <div className="flex items-start gap-2">
-                  <span className="w-16 text-yellow-600 font-medium">WARN if:</span>
-                  <code className="text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                  <span className="w-16 text-yellow-600 dark:text-yellow-400 font-medium">WARN if:</span>
+                  <code className="text-foreground bg-muted px-2 py-0.5 rounded">
                     {selectedTemplate.quality_gate.warn_if.join(" OR ")}
                   </code>
                 </div>
               )}
               {selectedTemplate.quality_gate.fail_if && (
                 <div className="flex items-start gap-2">
-                  <span className="w-16 text-red-600 font-medium">FAIL if:</span>
-                  <code className="text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                  <span className="w-16 text-red-600 dark:text-red-400 font-medium">FAIL if:</span>
+                  <code className="text-foreground bg-muted px-2 py-0.5 rounded">
                     {selectedTemplate.quality_gate.fail_if.join(" OR ")}
                   </code>
                 </div>
@@ -159,7 +159,7 @@ export function TemplatesPage() {
       )}
 
       {templates.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-muted-foreground">
           No extraction templates available.
         </div>
       )}
@@ -175,31 +175,31 @@ interface FieldRule {
 
 function FieldCard({ name, rule, required }: { name: string; rule?: FieldRule; required?: boolean }) {
   return (
-    <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+    <div className="p-3 bg-muted rounded-lg border border-border">
       <div className="flex items-center gap-2 mb-1">
-        <span className="font-medium text-gray-900">{formatFieldName(name)}</span>
+        <span className="font-medium text-foreground">{formatFieldName(name)}</span>
         {required && (
-          <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">Required</span>
+          <span className="text-xs px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded">Required</span>
         )}
       </div>
-      <code className="text-xs text-gray-500">{name}</code>
+      <code className="text-xs text-muted-foreground">{name}</code>
       {rule && (
-        <div className="mt-2 text-xs text-gray-600 space-y-1">
+        <div className="mt-2 text-xs text-muted-foreground space-y-1">
           {rule.normalize && (
             <div>
-              <span className="text-gray-400">Normalize:</span> {rule.normalize}
+              <span className="text-muted-foreground/70">Normalize:</span> {rule.normalize}
             </div>
           )}
           {rule.validate && (
             <div>
-              <span className="text-gray-400">Validate:</span> {rule.validate}
+              <span className="text-muted-foreground/70">Validate:</span> {rule.validate}
             </div>
           )}
           {rule.hints && rule.hints.length > 0 && (
             <div>
-              <span className="text-gray-400">Hints:</span>{" "}
-              <span className="text-gray-500">{rule.hints.slice(0, 5).join(", ")}</span>
-              {rule.hints.length > 5 && <span className="text-gray-400"> +{rule.hints.length - 5} more</span>}
+              <span className="text-muted-foreground/70">Hints:</span>{" "}
+              <span className="text-muted-foreground">{rule.hints.slice(0, 5).join(", ")}</span>
+              {rule.hints.length > 5 && <span className="text-muted-foreground/70"> +{rule.hints.length - 5} more</span>}
             </div>
           )}
         </div>

@@ -149,10 +149,12 @@ output/
 │   ├── manifest.json
 │   ├── summary.json
 │   └── metrics.json
+│   └── eval/                       # Run evaluation outputs (canonical truth)
 └── registry/                 # JSONL indexes for fast lookups
     ├── doc_index.jsonl
     ├── label_index.jsonl
     └── run_index.jsonl
+    └── truth/{file_md5}/latest.json  # Canonical ground truth (by file hash)
 ```
 
 ---
@@ -192,6 +194,13 @@ python -m context_builder.cli acquire <input_path> -p <provider> -o <output_dir>
 ```bash
 # Rebuild JSONL indexes for fast lookups
 python -m context_builder.cli index build --root output
+```
+
+### `eval` - Evaluate a Run Against Canonical Truth
+
+```bash
+# Evaluate a run using canonical truth (by file_md5)
+python -m context_builder.cli eval run --run-id <run_id> --output output
 ```
 
 ---
