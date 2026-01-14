@@ -36,6 +36,65 @@ except ImportError:
     pass  # Azure DI dependencies not installed
 
 
+# =============================================================================
+# Workspace Configuration
+# =============================================================================
+
+def get_project_root() -> Path:
+    """Find project root by looking for .contextbuilder directory."""
+    current = Path.cwd()
+    for parent in [current] + list(current.parents):
+        if (parent / ".contextbuilder").is_dir():
+            return parent
+    return current
+
+
+def get_active_workspace() -> Optional[dict]:
+    """Read active workspace from .contextbuilder/workspaces.json.
+
+    Returns:
+        Workspace dict with keys: workspace_id, name, path, status
+        None if no workspace config found
+    """
+    project_root = get_project_root()
+    workspaces_file = project_root / ".contextbuilder" / "workspaces.json"
+
+    if not workspaces_file.exists():
+        return None
+
+    try:
+        with open(workspaces_file, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        active_id = config.get("active_workspace_id")
+        if not active_id:
+            return None
+
+        for ws in config.get("workspaces", []):
+            if ws.get("workspace_id") == active_id:
+                return ws
+
+        return None
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def get_workspace_claims_dir() -> Path:
+    """Get claims directory for active workspace, or default to output/claims."""
+    workspace = get_active_workspace()
+    if workspace and workspace.get("path"):
+        return Path(workspace["path"]) / "claims"
+    return Path("output/claims")
+
+
+def get_workspace_logs_dir() -> Path:
+    """Get logs directory for active workspace, or default to output/logs."""
+    workspace = get_active_workspace()
+    if workspace and workspace.get("path"):
+        return Path(workspace["path"]) / "logs"
+    return Path("output/logs")
+
+
 # Configure colored logging
 def setup_colored_logging(verbose: bool = False):
     """Set up colored logging configuration."""
@@ -331,8 +390,8 @@ Examples:
         "-o",
         "--output-dir",
         metavar="DIR",
-        default="output/claims",
-        help="Output directory for structured results (default: output/claims)",
+        default=None,
+        help="Output directory for structured results (default: active workspace or output/claims)",
     )
 
     # Model configuration for pipeline
@@ -858,8 +917,14 @@ def main():
                 logger.error(f"Input path is not a directory: {input_path}")
                 sys.exit(1)
 
-            # Create output directory if needed
-            output_dir = Path(args.output_dir)
+            # Resolve output directory from workspace config or default
+            if args.output_dir:
+                output_dir = Path(args.output_dir)
+            else:
+                output_dir = get_workspace_claims_dir()
+                workspace = get_active_workspace()
+                if workspace:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {output_dir}")
             if not output_dir.exists():
                 logger.info(f"Creating output directory: {output_dir}")
                 try:

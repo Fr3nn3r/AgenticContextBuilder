@@ -11,6 +11,14 @@ import {
   getPipelineStatus,
   listPipelineBatches,
   getAzureDI,
+  // Compliance API functions
+  verifyDecisionLedger,
+  listDecisions,
+  listVersionBundles,
+  getVersionBundle,
+  getConfigHistory,
+  getTruthHistory,
+  getLabelHistory,
 } from "../client";
 
 describe("api client", () => {
@@ -316,6 +324,215 @@ describe("api client", () => {
       const result2 = await getAzureDI("doc_404", "claim_404");
       expect(result2).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new fetch
+    });
+  });
+
+  // ============================================================================
+  // Compliance API Tests
+  // ============================================================================
+
+  describe("compliance API", () => {
+    test("verifyDecisionLedger calls correct endpoint", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ valid: true, total_records: 100 }),
+      } as unknown as Response);
+
+      const result = await verifyDecisionLedger();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/ledger/verify",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result.valid).toBe(true);
+      expect(result.total_records).toBe(100);
+    });
+
+    test("listDecisions calls correct endpoint with no params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await listDecisions();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/ledger/decisions",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+    });
+
+    test("listDecisions includes all filter params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await listDecisions({
+        decision_type: "classification",
+        doc_id: "doc_123",
+        claim_id: "claim_456",
+        since: "2026-01-01T00:00:00Z",
+        limit: 50,
+      });
+
+      const call = fetchMock.mock.calls[0][0] as string;
+      expect(call).toContain("decision_type=classification");
+      expect(call).toContain("doc_id=doc_123");
+      expect(call).toContain("claim_id=claim_456");
+      expect(call).toContain("since=2026-01-01T00%3A00%3A00Z");
+      expect(call).toContain("limit=50");
+    });
+
+    test("listDecisions omits undefined params", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await listDecisions({ decision_type: "extraction" });
+
+      const call = fetchMock.mock.calls[0][0] as string;
+      expect(call).toContain("decision_type=extraction");
+      expect(call).not.toContain("doc_id");
+      expect(call).not.toContain("claim_id");
+    });
+
+    test("listVersionBundles calls correct endpoint", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { run_id: "run_1", bundle_id: "vb_1", model_name: "gpt-4o" },
+        ],
+      } as unknown as Response);
+
+      const result = await listVersionBundles();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/version-bundles",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].run_id).toBe("run_1");
+    });
+
+    test("getVersionBundle calls correct endpoint with run_id", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          bundle_id: "vb_123",
+          run_id: "run_abc",
+          model_name: "gpt-4o",
+          git_commit: "abc123",
+        }),
+      } as unknown as Response);
+
+      const result = await getVersionBundle("run_abc");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/version-bundles/run_abc",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result.bundle_id).toBe("vb_123");
+      expect(result.git_commit).toBe("abc123");
+    });
+
+    test("getVersionBundle encodes special characters in run_id", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ bundle_id: "vb_1" }),
+      } as unknown as Response);
+
+      await getVersionBundle("run/with/slashes");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/version-bundles/run%2Fwith%2Fslashes",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+    });
+
+    test("getConfigHistory calls correct endpoint", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { timestamp: "2026-01-14T12:00:00Z", action: "create", config_id: "cfg_1" },
+        ],
+      } as unknown as Response);
+
+      const result = await getConfigHistory();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/config-history?limit=100",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    test("getConfigHistory accepts custom limit", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [],
+      } as unknown as Response);
+
+      await getConfigHistory(50);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/config-history?limit=50",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+    });
+
+    test("getTruthHistory calls correct endpoint", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          file_md5: "abc123",
+          version_count: 3,
+          versions: [],
+        }),
+      } as unknown as Response);
+
+      const result = await getTruthHistory("abc123");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/truth-history/abc123",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result.file_md5).toBe("abc123");
+      expect(result.version_count).toBe(3);
+    });
+
+    test("getLabelHistory calls correct endpoint", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          doc_id: "DOC-001",
+          version_count: 2,
+          versions: [],
+        }),
+      } as unknown as Response);
+
+      const result = await getLabelHistory("DOC-001");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/label-history/DOC-001",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
+      expect(result.doc_id).toBe("DOC-001");
+    });
+
+    test("getLabelHistory encodes special characters", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ doc_id: "DOC/SPECIAL", version_count: 0, versions: [] }),
+      } as unknown as Response);
+
+      await getLabelHistory("DOC/SPECIAL");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/compliance/label-history/DOC%2FSPECIAL",
+        expect.objectContaining({ headers: expect.any(Headers) })
+      );
     });
   });
 });

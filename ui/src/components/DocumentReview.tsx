@@ -634,6 +634,7 @@ export function DocumentReview({
                 <div
                   key={doc.doc_id}
                   onClick={() => handleSelectDoc(doc.doc_id)}
+                  data-testid="doc-list-item"
                   className={cn(
                     "p-3 cursor-pointer hover:bg-muted/50 transition-colors",
                     selectedDocId === doc.doc_id && "bg-accent/10 border-l-2 border-accent"

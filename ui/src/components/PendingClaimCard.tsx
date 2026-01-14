@@ -46,7 +46,7 @@ export function PendingClaimCard({
       <div className="flex items-center justify-between px-4 py-3 bg-muted border-b border-border">
         <div className="flex items-center gap-2">
           <FolderIcon className="w-5 h-5 text-muted-foreground" />
-          <span className="font-medium text-foreground">{claimId}</span>
+          <span className="font-medium text-foreground" data-testid="generated-claim-id">{claimId}</span>
           <span className="text-sm text-muted-foreground">
             ({documents.length} {documents.length === 1 ? 'document' : 'documents'})
           </span>

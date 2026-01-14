@@ -48,6 +48,28 @@ ExtractorFactory = None
 IngestionFactory = None
 
 
+def _get_workspace_logs_dir(output_base: Path) -> Path:
+    """Derive workspace logs directory from output base path.
+
+    If output_base is workspace-scoped (e.g., workspaces/default/claims),
+    returns the sibling logs directory (workspaces/default/logs).
+    Otherwise falls back to output/logs.
+
+    Args:
+        output_base: The claims output directory
+
+    Returns:
+        Path to logs directory for compliance storage
+    """
+    # If output_base ends with /claims, sibling is /logs
+    if output_base.name == "claims":
+        logs_dir = output_base.parent / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir
+    # Fallback to output/logs relative to project root
+    return Path("output/logs")
+
+
 @dataclass
 class PhaseTimings:
     """Per-phase timing breakdown in milliseconds."""
@@ -432,6 +454,7 @@ class DocumentContext:
     classification_reused: bool = False
     current_phase: str = "setup"
     version_bundle_id: Optional[str] = None  # For compliance traceability
+    audit_storage_dir: Optional[Path] = None  # Workspace-scoped compliance logs dir
 
     def to_doc_result(self) -> DocResult:
         """Convert the context into a DocResult."""
@@ -629,6 +652,7 @@ class ExtractionStage:
                 writer=self.writer,
                 extractor_factory=extractor_factory,
                 version_bundle_id=context.version_bundle_id,
+                audit_storage_dir=context.audit_storage_dir,
             )
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
@@ -652,6 +676,7 @@ def process_document(
     providers: Optional[PipelineProviders] = None,
     phase_callback: Optional[Callable[[str, str], None]] = None,
     version_bundle_id: Optional[str] = None,
+    audit_storage_dir: Optional[Path] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -694,6 +719,7 @@ def process_document(
         stage_config=stage_config,
         writer=writer,
         version_bundle_id=version_bundle_id,
+        audit_storage_dir=audit_storage_dir,
     )
 
     # Create phase callback wrapper that passes doc_id
@@ -749,6 +775,7 @@ def _run_extraction(
     writer: ResultWriter,
     extractor_factory: Any,
     version_bundle_id: Optional[str] = None,
+    audit_storage_dir: Optional[Path] = None,
 ) -> tuple[Path, Optional[str]]:
     """Run field extraction for supported doc types.
 
@@ -757,7 +784,7 @@ def _run_extraction(
     """
     # Import extractors to ensure they're registered
     import context_builder.extraction.extractors  # noqa: F401
-    extractor = extractor_factory.create(doc_type)
+    extractor = extractor_factory.create(doc_type, audit_storage_dir=audit_storage_dir)
 
     # Convert pages to PageContent objects
     pages = pages_json_to_page_content(pages_data)
@@ -955,7 +982,9 @@ def process_claim(
             classifier = providers.classifier_factory.create("openai")
         if classifier is None:
             from context_builder.classification import ClassifierFactory
-            classifier = ClassifierFactory.create("openai")
+            # Use workspace-aware audit storage for compliance logging
+            audit_dir = _get_workspace_logs_dir(output_base)
+            classifier = ClassifierFactory.create("openai", audit_storage_dir=audit_dir)
 
         # Process each document
         results: List[DocResult] = []
@@ -966,6 +995,9 @@ def process_claim(
             doc_paths, _, _ = create_doc_structure(
                 output_base, claim.claim_id, doc.doc_id, run_id
             )
+
+            # Compute audit dir for workspace-aware compliance logging
+            audit_dir = _get_workspace_logs_dir(output_base)
 
             result = process_document(
                 doc=doc,
@@ -979,6 +1011,7 @@ def process_claim(
                 providers=providers,
                 phase_callback=phase_callback,
                 version_bundle_id=version_bundle.bundle_id,
+                audit_storage_dir=audit_dir,
             )
             results.append(result)
 

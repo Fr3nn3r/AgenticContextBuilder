@@ -219,8 +219,8 @@ def get_documents_service() -> DocumentsService:
 
 
 def get_labels_service() -> LabelsService:
-    """Get LabelsService instance."""
-    return LabelsService(get_storage)
+    """Get LabelsService instance with workspace-scoped compliance logging."""
+    return LabelsService(get_storage, ledger_dir=_get_workspace_logs_dir())
 
 
 def get_insights_service() -> InsightsService:
@@ -2408,55 +2408,66 @@ def list_decisions(
 
     Returns decisions sorted by timestamp (newest first).
     """
+    import traceback
     from context_builder.schemas.decision_record import DecisionType
     from context_builder.services.compliance.interfaces import DecisionQuery
 
-    storage = get_decision_storage()
+    try:
+        storage = get_decision_storage()
 
-    # Map string to DecisionType enum
-    dtype = None
-    if decision_type:
-        type_map = {
-            "classification": DecisionType.CLASSIFICATION,
-            "extraction": DecisionType.EXTRACTION,
-            "human_review": DecisionType.HUMAN_REVIEW,
-            "override": DecisionType.OVERRIDE,
-        }
-        dtype = type_map.get(decision_type.lower())
+        # Map string to DecisionType enum
+        dtype = None
+        if decision_type:
+            type_map = {
+                "classification": DecisionType.CLASSIFICATION,
+                "extraction": DecisionType.EXTRACTION,
+                "human_review": DecisionType.HUMAN_REVIEW,
+                "override": DecisionType.OVERRIDE,
+            }
+            dtype = type_map.get(decision_type.lower())
 
-    # Build query filters
-    query = DecisionQuery(
-        decision_type=dtype,
-        doc_id=doc_id,
-        claim_id=claim_id,
-        limit=limit,
-    )
+        # Build query filters
+        query = DecisionQuery(
+            decision_type=dtype,
+            doc_id=doc_id,
+            claim_id=claim_id,
+            limit=limit,
+        )
 
-    records = storage.query(query)
+        records = storage.query(query)
 
-    # Filter by since if provided
-    if since:
-        from datetime import datetime
-        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
-        records = [r for r in records if r.timestamp and datetime.fromisoformat(r.timestamp.replace("Z", "+00:00")) >= since_dt]
+        # Filter by since if provided
+        if since:
+            from datetime import datetime
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            records = [r for r in records if r.created_at and datetime.fromisoformat(r.created_at.replace("Z", "+00:00")) >= since_dt]
 
-    return [
-        {
-            "decision_id": r.decision_id,
-            "decision_type": r.decision_type.value,
-            "timestamp": r.timestamp,
-            "claim_id": r.claim_id,
-            "doc_id": r.doc_id,
-            "actor_type": r.actor_type,
-            "actor_id": r.actor_id,
-            "rationale": {
-                "summary": r.rationale.summary if r.rationale else None,
-                "confidence": r.rationale.confidence if r.rationale else None,
-            },
-            "prev_hash": r.prev_hash[:16] + "..." if r.prev_hash else None,
-        }
-        for r in records
-    ]
+        result = []
+        for r in records:
+            try:
+                result.append({
+                    "decision_id": r.decision_id,
+                    "decision_type": r.decision_type.value,
+                    "timestamp": r.created_at,
+                    "claim_id": r.claim_id,
+                    "doc_id": r.doc_id,
+                    "actor_type": r.actor_type,
+                    "actor_id": r.actor_id,
+                    "rationale": {
+                        "summary": r.rationale.summary if r.rationale else None,
+                        "confidence": r.rationale.confidence if r.rationale else None,
+                    },
+                    "prev_hash": r.previous_hash[:16] + "..." if r.previous_hash else None,
+                })
+            except Exception as e:
+                print(f"[list_decisions] Error processing record {r.decision_id}: {e}")
+                print(f"[list_decisions] Record data: {r}")
+                raise
+        return result
+    except Exception as e:
+        print(f"[list_decisions] ERROR: {e}")
+        print(f"[list_decisions] Traceback: {traceback.format_exc()}")
+        raise
 
 
 @app.get("/api/compliance/version-bundles")
@@ -2636,12 +2647,15 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
     Messages from client:
     - "pong" - Keepalive response
     """
+    print(f"[WS] Connection attempt for run_id={run_id}")
     await ws_manager.connect(websocket, run_id)
+    print(f"[WS] Connected for run_id={run_id}")
 
     try:
         # Send current state on connect (for reconnection sync)
         pipeline_service = get_pipeline_service()
         run = pipeline_service.get_run_status(run_id)
+        print(f"[WS] Got run status: {run.status.value if run else 'NOT_FOUND'}")
 
         if run:
             await websocket.send_json({
@@ -2660,8 +2674,28 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
                     for key, doc in run.docs.items()
                 },
             })
+            print(f"[WS] Sent sync message for run_id={run_id}")
 
-        # Keep connection alive
+            # If run already completed, send completion and close
+            if run.status.value in ("completed", "failed", "cancelled"):
+                print(f"[WS] Run already {run.status.value}, sending completion")
+                await websocket.send_json({
+                    "type": "run_complete",
+                    "run_id": run_id,
+                    "status": run.status.value,
+                    "summary": run.summary,
+                })
+                return  # Close connection - run is done
+        else:
+            print(f"[WS] Run {run_id} not found in active runs")
+            # Run not found - send error and close
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Run {run_id} not found",
+            })
+            return
+
+        # Keep connection alive while run is in progress
         while True:
             try:
                 data = await asyncio.wait_for(
@@ -2676,19 +2710,25 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
                 try:
                     await websocket.send_json({"type": "ping"})
                 except Exception:
+                    print(f"[WS] Failed to send ping, closing")
                     break
 
             # Check if run is complete
             run = pipeline_service.get_run_status(run_id)
             if run and run.status.value in ("completed", "failed", "cancelled"):
+                print(f"[WS] Run {run_id} completed with status {run.status.value}")
                 await websocket.send_json({
                     "type": "run_complete",
                     "run_id": run_id,
                     "status": run.status.value,
                     "summary": run.summary,
                 })
+                break  # Exit loop after sending completion
 
     except WebSocketDisconnect:
-        pass
+        print(f"[WS] Client disconnected for run_id={run_id}")
+    except Exception as e:
+        print(f"[WS] Error for run_id={run_id}: {e}")
     finally:
         ws_manager.disconnect(websocket, run_id)
+        print(f"[WS] Cleaned up connection for run_id={run_id}")

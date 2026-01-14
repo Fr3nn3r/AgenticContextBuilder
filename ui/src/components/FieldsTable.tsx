@@ -203,7 +203,7 @@ export function FieldsTable({
           const rowBg = isUnlabeled ? "bg-amber-50/40" : "";
 
           return (
-            <div key={field.name} className={cn("border-l-4", borderColor, rowBg)}>
+            <div key={field.name} data-testid="field-row" className={cn("border-l-4", borderColor, rowBg)}>
               {/* Collapsed Row */}
               <div
                 className="px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"

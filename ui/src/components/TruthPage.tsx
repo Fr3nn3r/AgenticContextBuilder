@@ -161,6 +161,7 @@ export function TruthPage() {
             className="w-full rounded-lg border border-input bg-background text-foreground px-3 py-2 text-sm"
             value={runId}
             onChange={(event) => setRunId(event.target.value)}
+            data-testid="truth-run-filter"
           >
             <option value="">All runs</option>
             {availableRuns.map((run) => (
@@ -171,6 +172,7 @@ export function TruthPage() {
             className="w-full rounded-lg border border-input bg-background text-foreground px-3 py-2 text-sm"
             value={state}
             onChange={(event) => setState(event.target.value)}
+            data-testid="truth-state-filter"
           >
             <option value="">All states</option>
             <option value="LABELED">LABELED</option>
