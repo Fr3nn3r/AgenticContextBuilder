@@ -14,4 +14,11 @@ def test_truth_store_save_and_get(tmp_path: Path) -> None:
     store.save_truth_by_file_md5(file_md5, payload)
     loaded = store.get_truth_by_file_md5(file_md5)
 
-    assert loaded == payload
+    # Original payload fields are preserved
+    assert loaded["schema_version"] == payload["schema_version"]
+    assert loaded["doc_id"] == payload["doc_id"]
+
+    # Version metadata is added
+    assert "_version_metadata" in loaded
+    assert "saved_at" in loaded["_version_metadata"]
+    assert loaded["_version_metadata"]["version_number"] == 1
