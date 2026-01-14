@@ -95,7 +95,7 @@ See `tests/unit/test_azure_di_impl.py::TestEnvironmentVariableLoading` for regre
 
 ## Folders
 
-- `plans/` - save implementation plans here
+- `plans/` - **Always** save implementation plans here when using plan mode. Use naming: `YYYYMMDD-Meaningful-Name.md` (e.g., `20260114-Auth-System-Refactor.md`)
 - `phases/` - write summary after each phase
 - `scratch/` - temp notes, ignore unless referenced
 
