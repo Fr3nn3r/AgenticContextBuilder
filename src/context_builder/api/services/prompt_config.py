@@ -1,4 +1,9 @@
-"""Service for managing prompt configurations."""
+"""Service for managing prompt configurations.
+
+Includes compliance features:
+- Append-only change history for audit trails
+- Version tracking for config changes
+"""
 
 import json
 import logging
@@ -32,7 +37,12 @@ class PromptConfig:
 
 
 class PromptConfigService:
-    """Service for CRUD operations on prompt configurations."""
+    """Service for CRUD operations on prompt configurations.
+
+    Compliance features:
+    - Append-only history log for all config changes
+    - Change tracking with timestamps and action types
+    """
 
     def __init__(self, config_dir: Path):
         """
@@ -43,6 +53,7 @@ class PromptConfigService:
         """
         self.config_dir = config_dir
         self.config_file = config_dir / "prompt_configs.json"
+        self.history_file = config_dir / "prompt_configs_history.jsonl"
         self._ensure_defaults()
 
     def _ensure_defaults(self) -> None:
@@ -69,7 +80,7 @@ class PromptConfigService:
                     is_default=False,
                 ),
             ]
-            self._save_all(defaults)
+            self._save_all(defaults, action="init", changed_config_id=None)
             logger.info(f"Created default prompt configs at {self.config_file}")
 
     def _load_all(self) -> List[PromptConfig]:
@@ -85,15 +96,59 @@ class PromptConfigService:
             logger.error(f"Failed to load prompt configs: {e}")
             return []
 
-    def _save_all(self, configs: List[PromptConfig]) -> None:
-        """Save all configs to disk."""
+    def _save_all(
+        self,
+        configs: List[PromptConfig],
+        action: str = "update",
+        changed_config_id: Optional[str] = None,
+    ) -> None:
+        """Save all configs to disk with history logging."""
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True)
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump([asdict(c) for c in configs], f, indent=2)
+
+            # Log to history for compliance (append-only)
+            self._log_change(action, changed_config_id, configs)
         except Exception as e:
             logger.error(f"Failed to save prompt configs: {e}")
             raise
+
+    def _log_change(
+        self,
+        action: str,
+        config_id: Optional[str],
+        configs: List[PromptConfig],
+    ) -> None:
+        """Append change entry to history log (append-only for compliance)."""
+        try:
+            entry = {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "action": action,
+                "config_id": config_id,
+                "snapshot": [asdict(c) for c in configs],
+            }
+            with open(self.history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except IOError as exc:
+            logger.warning(f"Failed to log config change: {exc}")
+
+    def get_config_history(self) -> List[Dict[str, Any]]:
+        """Get all historical config changes (oldest to newest)."""
+        if not self.history_file.exists():
+            return []
+
+        history = []
+        try:
+            with open(self.history_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        history.append(json.loads(line))
+        except (json.JSONDecodeError, IOError) as exc:
+            logger.warning(f"Failed to load config history: {exc}")
+
+        return history
 
     def list_configs(self) -> List[PromptConfig]:
         """List all prompt configurations."""
@@ -147,7 +202,7 @@ class PromptConfigService:
         )
 
         configs.append(config)
-        self._save_all(configs)
+        self._save_all(configs, action="create", changed_config_id=config_id)
         logger.info(f"Created prompt config: {config_id}")
         return config
 
@@ -173,7 +228,7 @@ class PromptConfigService:
 
                 config.updated_at = datetime.utcnow().isoformat() + "Z"
                 configs[i] = config
-                self._save_all(configs)
+                self._save_all(configs, action="update", changed_config_id=config_id)
                 logger.info(f"Updated prompt config: {config_id}")
                 return config
 
@@ -199,7 +254,7 @@ class PromptConfigService:
             new_configs[0].is_default = True
             new_configs[0].updated_at = datetime.utcnow().isoformat() + "Z"
 
-        self._save_all(new_configs)
+        self._save_all(new_configs, action="delete", changed_config_id=config_id)
         logger.info(f"Deleted prompt config: {config_id}")
         return True
 
@@ -217,7 +272,7 @@ class PromptConfigService:
                 config.is_default = False
 
         if found_config:
-            self._save_all(configs)
+            self._save_all(configs, action="set_default", changed_config_id=config_id)
             logger.info(f"Set default prompt config: {config_id}")
             return found_config
 
