@@ -120,8 +120,12 @@ export function DocumentReview({
       setDocs(classificationDocs);
       setDocsWithExtraction(extractedDocIds);
 
-      // Clear selection when run changes
-      setSelectedDocId(null);
+      // Auto-select first document when run changes
+      if (classificationDocs.length > 0) {
+        setSelectedDocId(classificationDocs[0].doc_id);
+      } else {
+        setSelectedDocId(null);
+      }
       setDocPayload(null);
       setFieldLabels([]);
       setHasUnsavedChanges(false);

@@ -108,6 +108,10 @@ export function ClassificationReview({
       setDocsLoading(true);
       const data = await listClassificationDocs(runId);
       setDocs(data);
+      // Auto-select first document
+      if (data.length > 0 && !selectedDocId) {
+        setSelectedDocId(data[0].doc_id);
+      }
     } catch (err) {
       console.error("Failed to load docs:", err);
     } finally {
