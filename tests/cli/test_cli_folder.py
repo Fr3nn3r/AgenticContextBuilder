@@ -288,8 +288,9 @@ class TestMainFolderProcessing:
     def mock_ingestion(self):
         """Mock ingestion."""
         mock = Mock()
-        mock.process = Mock(return_value={"file_name": "test", "data": "result"})
-        with patch('context_builder.cli.IngestionFactory.create', return_value=mock):
+        mock.process = Mock(return_value={"file_name": "test", "data": {"result": "ok"}})
+        with patch('context_builder.cli.IngestionFactory') as factory:
+            factory.create.return_value = mock
             yield mock
 
     def test_main_folder_success(self, tmp_path, mock_env, mock_ingestion, monkeypatch, capsys):

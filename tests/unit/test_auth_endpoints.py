@@ -249,7 +249,7 @@ class TestListUsersEndpoint:
 
         assert response.status_code == 200
         users = response.json()
-        assert len(users) == 3  # su + reviewer1 + operator1
+        assert len(users) == 6  # 4 defaults (su, ted, seb, tod) + reviewer1 + operator1
         usernames = [u["username"] for u in users]
         assert "su" in usernames
         assert "reviewer1" in usernames

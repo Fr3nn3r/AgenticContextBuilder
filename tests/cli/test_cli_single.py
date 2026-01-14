@@ -49,8 +49,8 @@ class TestCLISingleFileProcessing:
         # Verify factory was called
         mock_factory.create.assert_called_once_with("openai")
 
-        # Verify process was called
-        mock_ingestion.process.assert_called_once_with(test_file)
+        # Verify process was called with envelope=True
+        mock_ingestion.process.assert_called_once_with(test_file, envelope=True)
 
         # Verify result
         assert result["file_name"] == "test.jpg"
@@ -123,8 +123,8 @@ class TestCLISingleFileProcessing:
         # Factory should not be called when ingestion is provided
         mock_factory.create.assert_not_called()
 
-        # Existing ingestion should be used
-        existing_ingestion.process.assert_called_once_with(test_file)
+        # Existing ingestion should be used (with envelope=True)
+        existing_ingestion.process.assert_called_once_with(test_file, envelope=True)
 
     def test_process_file_logs_info(self, tmp_path, mock_factory, mock_ingestion, caplog):
         """Test processing logs appropriate messages."""
@@ -178,7 +178,7 @@ class TestCLISaveSingleResult:
 
     def test_save_single_result_with_session(self, tmp_path):
         """Test saving with session ID."""
-        result = {"data": "test"}
+        result = {"data": {"content": "test"}}
         output_dir = tmp_path
         original_file = Path("doc.pdf")
         session_id = "abc123"
@@ -188,8 +188,8 @@ class TestCLISaveSingleResult:
         with open(output_path) as f:
             saved = json.load(f)
 
-        assert saved["session_id"] == "abc123"
-        assert saved["data"] == "test"
+        assert saved["data"]["session_id"] == "abc123"
+        assert saved["data"]["content"] == "test"
 
     def test_save_single_result_unicode(self, tmp_path):
         """Test saving results with Unicode content."""
@@ -210,7 +210,7 @@ class TestCLISaveSingleResult:
 
     def test_save_single_result_logs_info(self, tmp_path, caplog):
         """Test saving logs info message."""
-        result = {"data": "test"}
+        result = {"data": {"content": "test"}}
         session_id = "xyz789"
 
         with caplog.at_level(logging.INFO):
@@ -249,9 +249,11 @@ class TestCLIMainSingleFile:
         mock = Mock()
         mock.process = Mock(return_value={
             "file_name": "test.jpg",
-            "pages": [{"text": "content"}]
+            "pages": [{"text": "content"}],
+            "data": {"result": "ok"}
         })
-        with patch('context_builder.cli.IngestionFactory.create', return_value=mock):
+        with patch('context_builder.cli.IngestionFactory') as factory:
+            factory.create.return_value = mock
             yield mock
 
     def test_main_single_file_success(self, tmp_path, mock_env, mock_ingestion, capsys, monkeypatch):

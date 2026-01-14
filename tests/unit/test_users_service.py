@@ -10,18 +10,25 @@ from context_builder.api.services.users import UsersService, User, Role
 class TestUsersServiceInit:
     """Tests for UsersService initialization."""
 
-    def test_init_creates_default_superuser(self, tmp_path: Path):
-        """First init creates 'su' user with admin role."""
+    def test_init_creates_default_users(self, tmp_path: Path):
+        """First init creates default users (su, ted, seb, tod) - one per role."""
         service = UsersService(tmp_path)
 
         users = service.list_users()
-        assert len(users) == 1
-        assert users[0].username == "su"
-        assert users[0].role == Role.ADMIN.value
+        assert len(users) == 4  # su (admin), ted (reviewer), seb (operator), tod (auditor)
+        usernames = [u.username for u in users]
+        assert "su" in usernames
+        assert "ted" in usernames
+        assert "seb" in usernames
+        assert "tod" in usernames
+
+        # Verify su is admin
+        su = service.get_user("su")
+        assert su.role == Role.ADMIN.value
 
     def test_init_does_not_overwrite_existing_users(self, tmp_path: Path):
         """Second init preserves existing users."""
-        # First init creates default user
+        # First init creates default users
         service1 = UsersService(tmp_path)
         service1.create_user("testuser", "password", Role.REVIEWER.value)
 
@@ -29,7 +36,7 @@ class TestUsersServiceInit:
         service2 = UsersService(tmp_path)
         users = service2.list_users()
 
-        assert len(users) == 2
+        assert len(users) == 5  # 4 defaults + testuser
         usernames = [u.username for u in users]
         assert "su" in usernames
         assert "testuser" in usernames
@@ -157,20 +164,24 @@ class TestListUsers:
 
         users = service.list_users()
 
-        assert len(users) == 3  # su + 2 created
+        assert len(users) == 6  # 4 defaults + 2 created
         usernames = [u.username for u in users]
         assert "su" in usernames
         assert "user1" in usernames
         assert "user2" in usernames
 
-    def test_list_users_empty_returns_default(self, tmp_path: Path):
-        """Even empty list has default superuser."""
+    def test_list_users_empty_returns_defaults(self, tmp_path: Path):
+        """Fresh service has all default users."""
         service = UsersService(tmp_path)
 
         users = service.list_users()
 
-        assert len(users) == 1
-        assert users[0].username == "su"
+        assert len(users) == 4  # 4 default users
+        usernames = [u.username for u in users]
+        assert "su" in usernames
+        assert "ted" in usernames
+        assert "seb" in usernames
+        assert "tod" in usernames
 
 
 class TestAuthenticate:
@@ -350,9 +361,10 @@ class TestPersistence:
         with open(users_file) as f:
             data = json.load(f)
 
-        assert len(data) == 2  # su + testuser
+        assert len(data) == 5  # 4 defaults + testuser
         usernames = [u["username"] for u in data]
         assert "testuser" in usernames
+        assert "su" in usernames
 
     def test_users_loaded_from_file(self, tmp_path: Path):
         """Users are loaded from existing file."""

@@ -16,6 +16,14 @@ class FakeClassifier:
             "confidence": 0.9,
         }
 
+    def classify_pages(self, pages, filename="", confidence_threshold=0.7):
+        """Required interface for pipeline integration."""
+        return {
+            "document_type": "invoice",
+            "language": "en",
+            "confidence": 0.9,
+        }
+
 
 class FakeClassifierFactory:
     def __init__(self, classifier):
