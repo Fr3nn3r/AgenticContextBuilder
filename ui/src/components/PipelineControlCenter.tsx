@@ -20,12 +20,12 @@ import type {
 
 // Types
 type Stage = "ingest" | "classify" | "extract";
-type RunStatus = "running" | "success" | "partial" | "failed" | "queued" | "completed" | "cancelled" | "pending";
-type TabId = "new-run" | "runs" | "config";
+type BatchStatus = "running" | "success" | "partial" | "failed" | "queued" | "completed" | "cancelled" | "pending";
+type TabId = "new-batch" | "batches" | "config";
 
 // Helper to map backend status to UI status
-function mapStatus(status: PipelineBatchStatus): RunStatus {
-  const mapping: Record<PipelineBatchStatus, RunStatus> = {
+function mapStatus(status: PipelineBatchStatus): BatchStatus {
+  const mapping: Record<PipelineBatchStatus, BatchStatus> = {
     pending: "queued",
     running: "running",
     completed: "success",
@@ -69,8 +69,8 @@ function formatDuration(seconds?: number): string {
 const DEFAULT_STAGES: Stage[] = ["ingest", "classify", "extract"];
 
 // Status badge component
-function StatusBadge({ status }: { status: RunStatus }) {
-  const styles: Record<RunStatus, string> = {
+function StatusBadge({ status }: { status: BatchStatus }) {
+  const styles: Record<BatchStatus, string> = {
     running: "bg-info/10 text-info",
     queued: "bg-warning/10 text-warning-foreground",
     pending: "bg-warning/10 text-warning-foreground",
@@ -80,7 +80,7 @@ function StatusBadge({ status }: { status: RunStatus }) {
     failed: "bg-destructive/10 text-destructive",
     cancelled: "bg-destructive/10 text-destructive",
   };
-  const labels: Record<RunStatus, string> = {
+  const labels: Record<BatchStatus, string> = {
     running: "RUNNING",
     queued: "QUEUED",
     pending: "QUEUED",
@@ -112,11 +112,11 @@ function ProgressBar({ value, className }: { value: number; className?: string }
   );
 }
 
-// UI-specific run type (derived from EnhancedPipelineRun)
-interface UIRun {
-  run_id: string;
+// UI-specific batch type (derived from EnhancedPipelineRun)
+interface UIBatch {
+  batch_id: string;
   friendly_name: string;
-  status: RunStatus;
+  status: BatchStatus;
   prompt_config: string;
   claims_count: number;
   docs_total: number;
@@ -132,8 +132,8 @@ interface UIRun {
   reuse: { ingestion: number; classification: number };
 }
 
-// New Run Tab
-function NewRunTab({
+// New Batch Tab
+function NewBatchTab({
   claims,
   selectedClaims,
   onToggleClaim,
@@ -149,9 +149,9 @@ function NewRunTab({
   onComputeMetricsChange,
   dryRun,
   onDryRunChange,
-  activeRuns,
-  onStartRun,
-  isStartingRun,
+  activeBatches,
+  onStartBatch,
+  isStartingBatch,
   isLoading,
 }: {
   claims: PipelineClaimOption[];
@@ -169,9 +169,9 @@ function NewRunTab({
   onComputeMetricsChange: (v: boolean) => void;
   dryRun: boolean;
   onDryRunChange: (v: boolean) => void;
-  activeRuns: UIRun[];
-  onStartRun: () => void;
-  isStartingRun: boolean;
+  activeBatches: UIBatch[];
+  onStartBatch: () => void;
+  isStartingBatch: boolean;
   isLoading: boolean;
 }) {
   const [search, setSearch] = useState("");
@@ -349,53 +349,53 @@ function NewRunTab({
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button
-          onClick={onStartRun}
+          onClick={onStartBatch}
           className={cn(
             "flex-1 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-            canStartRun && !isStartingRun
+            canStartRun && !isStartingBatch
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
-          disabled={!canStartRun || isStartingRun}
+          disabled={!canStartRun || isStartingBatch}
         >
-          {isStartingRun ? "Starting..." : "Start Run"}
+          {isStartingBatch ? "Starting..." : "Start Batch"}
         </button>
         <button className="px-4 py-3 rounded-lg border text-sm font-medium text-foreground hover:bg-muted/50">
           Preview
         </button>
       </div>
 
-      {/* Active Runs */}
-      {activeRuns.length > 0 && (
+      {/* Active Batches */}
+      {activeBatches.length > 0 && (
         <div className="bg-info/5 border border-info/20 rounded-xl p-4">
           <h3 className="text-sm font-medium text-info mb-3">
-            Active Runs ({activeRuns.length})
+            Active Batches ({activeBatches.length})
           </h3>
           <div className="space-y-2">
-            {activeRuns.map((run) => (
+            {activeBatches.map((batch) => (
               <div
-                key={run.run_id}
+                key={batch.batch_id}
                 className="flex items-center justify-between bg-card rounded-lg px-3 py-2 border"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-foreground">{run.friendly_name}</span>
-                  <StatusBadge status={run.status} />
+                  <span className="text-sm font-medium text-foreground">{batch.friendly_name}</span>
+                  <StatusBadge status={batch.status} />
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="w-24">
                     <ProgressBar
                       value={
-                        (run.stage_progress.ingest + run.stage_progress.classify + run.stage_progress.extract) / 3
+                        (batch.stage_progress.ingest + batch.stage_progress.classify + batch.stage_progress.extract) / 3
                       }
                     />
                   </div>
                   <span className="text-xs text-muted-foreground">
                     {Math.round(
-                      (run.stage_progress.ingest + run.stage_progress.classify + run.stage_progress.extract) / 3
+                      (batch.stage_progress.ingest + batch.stage_progress.classify + batch.stage_progress.extract) / 3
                     )}%
                   </span>
                   <button className="text-xs text-info hover:underline">View</button>
-                  {run.status === "queued" && (
+                  {batch.status === "queued" && (
                     <button className="text-xs text-destructive hover:underline">Cancel</button>
                   )}
                 </div>
@@ -408,38 +408,38 @@ function NewRunTab({
   );
 }
 
-// Runs Tab
-function RunsTab({
-  runs,
-  onSelectRun,
-  selectedRunId,
-  onCancelRun,
-  onDeleteRun,
+// Batches Tab
+function BatchesTab({
+  batches,
+  onSelectBatch,
+  selectedBatchId,
+  onCancelBatch,
+  onDeleteBatch,
   isLoading,
 }: {
-  runs: UIRun[];
-  onSelectRun: (id: string | null) => void;
-  selectedRunId: string | null;
-  onCancelRun: (runId: string) => void;
-  onDeleteRun: (runId: string) => void;
+  batches: UIBatch[];
+  onSelectBatch: (id: string | null) => void;
+  selectedBatchId: string | null;
+  onCancelBatch: (batchId: string) => void;
+  onDeleteBatch: (batchId: string) => void;
   isLoading: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("7d");
   const [needsAttention, setNeedsAttention] = useState(false);
 
-  const filteredRuns = useMemo(() => {
-    let result = runs;
+  const filteredBatches = useMemo(() => {
+    let result = batches;
     if (statusFilter !== "all") {
-      result = result.filter((r) => r.status === statusFilter);
+      result = result.filter((b) => b.status === statusFilter);
     }
     if (needsAttention) {
-      result = result.filter((r) => r.status === "failed" || r.status === "partial");
+      result = result.filter((b) => b.status === "failed" || b.status === "partial");
     }
     return result;
-  }, [runs, statusFilter, needsAttention]);
+  }, [batches, statusFilter, needsAttention]);
 
-  const selectedRun = runs.find((r) => r.run_id === selectedRunId);
+  const selectedBatch = batches.find((b) => b.batch_id === selectedBatchId);
 
   return (
     <div className="space-y-4">
@@ -488,16 +488,16 @@ function RunsTab({
         </button>
       </div>
 
-      {/* Runs Table */}
+      {/* Batches Table */}
       <div className="bg-card border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-muted-foreground text-xs">
             <tr>
-              <th className="text-left px-4 py-3 font-medium">Run</th>
+              <th className="text-left px-4 py-3 font-medium">Batch</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="text-left px-4 py-3 font-medium">Progress</th>
+              <th className="text-left px-4 py-3 font-medium">Scope</th>
               <th className="text-left px-4 py-3 font-medium">Started</th>
-              <th className="text-left px-4 py-3 font-medium">Cost</th>
+              <th className="text-left px-4 py-3 font-medium">Duration</th>
               <th className="text-left px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
@@ -505,63 +505,65 @@ function RunsTab({
             {isLoading ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  Loading runs...
+                  Loading batches...
                 </td>
               </tr>
-            ) : filteredRuns.length === 0 ? (
+            ) : filteredBatches.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  No runs match the current filters
+                  No batches match the current filters
                 </td>
               </tr>
             ) : (
-              filteredRuns.map((run) => {
-                const isSelected = selectedRunId === run.run_id;
-                const overallProgress = Math.round(
-                  (run.stage_progress.ingest + run.stage_progress.classify + run.stage_progress.extract) / 3
-                );
+              filteredBatches.map((batch) => {
+                const isSelected = selectedBatchId === batch.batch_id;
+                const isRunning = batch.status === "running" || batch.status === "queued";
                 return (
-                  <Fragment key={run.run_id}>
+                  <Fragment key={batch.batch_id}>
                     <tr
-                      onClick={() => onSelectRun(isSelected ? null : run.run_id)}
+                      onClick={() => onSelectBatch(isSelected ? null : batch.batch_id)}
                       className={cn(
                         "border-t cursor-pointer transition-colors",
                         isSelected ? "bg-accent/10" : "hover:bg-muted/30"
                       )}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{run.friendly_name}</div>
-                        {run.errors.length > 0 && (
-                          <div className="text-xs text-destructive mt-0.5">
-                            {run.errors.length} doc{run.errors.length > 1 ? "s" : ""} failed · {run.errors[0].message}
+                        <div className="font-medium text-foreground">{batch.friendly_name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{batch.prompt_config}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={batch.status} />
+                        {batch.errors.length > 0 && (
+                          <div className="text-xs text-destructive mt-1">
+                            {batch.errors.length} error{batch.errors.length > 1 ? "s" : ""}
                           </div>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={run.status} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20">
-                            <ProgressBar value={overallProgress} />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{overallProgress}%</span>
+                        <div className="text-sm text-foreground">
+                          {batch.claims_count} claim{batch.claims_count !== 1 ? "s" : ""}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {batch.docs_total} doc{batch.docs_total !== 1 ? "s" : ""}
+                          {isRunning && batch.docs_processed > 0 && (
+                            <span className="text-info ml-1">({batch.docs_processed} done)</span>
+                          )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{run.started_at}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{run.cost_estimate || "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{batch.started_at}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{batch.duration || "—"}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button className="text-info hover:underline">Open</button>
                           <button
-                            onClick={(e) => { e.stopPropagation(); onDeleteRun(run.run_id); }}
+                            onClick={(e) => { e.stopPropagation(); onDeleteBatch(batch.batch_id); }}
                             className="text-destructive hover:underline"
                           >
                             Delete
                           </button>
-                          {(run.status === "running" || run.status === "queued") && (
+                          {isRunning && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); onCancelRun(run.run_id); }}
+                              onClick={(e) => { e.stopPropagation(); onCancelBatch(batch.batch_id); }}
                               className="text-warning-foreground hover:underline"
                             >
                               Cancel
@@ -570,10 +572,10 @@ function RunsTab({
                         </div>
                       </td>
                     </tr>
-                    {isSelected && selectedRun && (
+                    {isSelected && selectedBatch && (
                       <tr className="border-t bg-muted/20">
                         <td colSpan={6} className="px-4 py-4">
-                          <RunDetailsPanel run={selectedRun} onDeleteRun={onDeleteRun} />
+                          <BatchDetailsPanel batch={selectedBatch} onDeleteBatch={onDeleteBatch} />
                         </td>
                       </tr>
                     )}
@@ -588,60 +590,125 @@ function RunsTab({
   );
 }
 
-// Run Details Panel
-function RunDetailsPanel({ run, onDeleteRun }: { run: UIRun; onDeleteRun: (runId: string) => void }) {
+// Batch Details Panel
+function BatchDetailsPanel({ batch, onDeleteBatch }: { batch: UIBatch; onDeleteBatch: (batchId: string) => void }) {
+  const [showAllClaims, setShowAllClaims] = useState(false);
+  const isRunning = batch.status === "running" || batch.status === "queued";
+  const maxClaimsToShow = 5;
+  const hasMoreClaims = batch.claims.length > maxClaimsToShow;
+  const displayedClaims = showAllClaims ? batch.claims : batch.claims.slice(0, maxClaimsToShow);
+
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-sm font-medium text-foreground">
-            Run: {run.friendly_name}
-            <span className="text-muted-foreground font-normal ml-2">· Started {run.started_at}</span>
-            {run.duration && <span className="text-muted-foreground font-normal ml-2">· Duration: {run.duration}</span>}
+      {/* Summary Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-card border rounded-lg p-3">
+          <div className="text-xs text-muted-foreground">Claims</div>
+          <div className="text-lg font-semibold text-foreground">{batch.claims_count}</div>
+        </div>
+        <div className="bg-card border rounded-lg p-3">
+          <div className="text-xs text-muted-foreground">Documents</div>
+          <div className="text-lg font-semibold text-foreground">
+            {batch.docs_total}
+            {isRunning && batch.docs_processed > 0 && (
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({batch.docs_processed} done)
+              </span>
+            )}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Config: {run.prompt_config}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Claims: {run.claims.join(", ")} · Total: {run.docs_total} docs
-          </div>
+        </div>
+        <div className="bg-card border rounded-lg p-3">
+          <div className="text-xs text-muted-foreground">Model</div>
+          <div className="text-sm font-medium text-foreground truncate">{batch.prompt_config}</div>
+        </div>
+        <div className="bg-card border rounded-lg p-3">
+          <div className="text-xs text-muted-foreground">Duration</div>
+          <div className="text-lg font-semibold text-foreground">{batch.duration || "—"}</div>
         </div>
       </div>
 
-      {/* Stage Breakdown */}
+      {/* Claims List */}
       <div className="bg-card border rounded-lg p-4">
-        <h4 className="text-xs font-medium text-muted-foreground mb-3">Stage Breakdown</h4>
-        <div className="space-y-3">
-          {(["ingest", "classify", "extract"] as const).map((stage) => {
-            const progress = run.stage_progress[stage];
-            const timing = run.timings[stage];
-            const reuse = stage === "ingest" ? run.reuse.ingestion : stage === "classify" ? run.reuse.classification : 0;
-            return (
-              <div key={stage} className="flex items-center gap-4">
-                <span className="w-16 text-xs text-muted-foreground">{stage}</span>
-                <div className="flex-1">
-                  <ProgressBar value={progress} />
-                </div>
-                <span className="w-12 text-xs text-muted-foreground text-right">
-                  {progress === 100 ? "done" : `${progress}%`}
-                </span>
-                <span className="w-16 text-xs text-muted-foreground/70 text-right">{timing}</span>
-                {reuse > 0 && (
-                  <span className="text-xs text-info">[reused: {reuse}]</span>
-                )}
-              </div>
-            );
-          })}
+        <h4 className="text-xs font-medium text-muted-foreground mb-2">Claims Processed</h4>
+        <div className="flex flex-wrap gap-1.5">
+          {displayedClaims.map((claim) => (
+            <span
+              key={claim}
+              className="px-2 py-1 bg-muted text-xs text-foreground rounded"
+              title={claim}
+            >
+              {claim.length > 30 ? `${claim.slice(0, 30)}...` : claim}
+            </span>
+          ))}
+          {hasMoreClaims && !showAllClaims && (
+            <button
+              onClick={() => setShowAllClaims(true)}
+              className="px-2 py-1 text-xs text-info hover:underline"
+            >
+              +{batch.claims.length - maxClaimsToShow} more
+            </button>
+          )}
+          {hasMoreClaims && showAllClaims && (
+            <button
+              onClick={() => setShowAllClaims(false)}
+              className="px-2 py-1 text-xs text-muted-foreground hover:underline"
+            >
+              Show less
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Stage Timings (only show for completed, or progress for running) */}
+      {isRunning ? (
+        <div className="bg-card border rounded-lg p-4">
+          <h4 className="text-xs font-medium text-muted-foreground mb-3">Progress</h4>
+          <div className="space-y-3">
+            {(["ingest", "classify", "extract"] as const).map((stage) => {
+              const progress = batch.stage_progress[stage];
+              return (
+                <div key={stage} className="flex items-center gap-4">
+                  <span className="w-16 text-xs text-muted-foreground capitalize">{stage}</span>
+                  <div className="flex-1">
+                    <ProgressBar value={progress} />
+                  </div>
+                  <span className="w-12 text-xs text-muted-foreground text-right">
+                    {progress}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-card border rounded-lg p-4">
+          <h4 className="text-xs font-medium text-muted-foreground mb-3">Stage Timings</h4>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            {(["ingest", "classify", "extract"] as const).map((stage) => {
+              const timing = batch.timings[stage];
+              const reuse = stage === "ingest" ? batch.reuse.ingestion : stage === "classify" ? batch.reuse.classification : 0;
+              return (
+                <div key={stage}>
+                  <div className="text-xs text-muted-foreground capitalize mb-1">{stage}</div>
+                  <div className="text-sm font-medium text-foreground">{timing || "—"}</div>
+                  {reuse > 0 && (
+                    <div className="text-xs text-info mt-0.5">{reuse} reused</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Errors */}
-      {run.errors.length > 0 && (
+      {batch.errors.length > 0 && (
         <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4">
-          <h4 className="text-xs font-medium text-destructive mb-2">Errors ({run.errors.length})</h4>
-          <ul className="space-y-1.5">
-            {run.errors.map((err, idx) => (
+          <h4 className="text-xs font-medium text-destructive mb-2">
+            Errors ({batch.errors.length})
+          </h4>
+          <ul className="space-y-1.5 max-h-32 overflow-auto">
+            {batch.errors.map((err, idx) => (
               <li key={idx} className="text-xs text-destructive">
                 <span className="font-medium">{err.doc}</span>
                 <span className="text-destructive/60 mx-1">·</span>
@@ -655,23 +722,23 @@ function RunDetailsPanel({ run, onDeleteRun }: { run: UIRun; onDeleteRun: (runId
       )}
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 pt-2 border-t">
         <button className="px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded-lg hover:bg-primary/90">
           View Documents
         </button>
-        {(run.status === "failed" || run.status === "partial") && (
+        {(batch.status === "failed" || batch.status === "partial") && (
           <button className="px-3 py-1.5 bg-warning/10 text-warning-foreground text-xs rounded-lg hover:bg-warning/20">
             Retry Failed
           </button>
         )}
         <button className="px-3 py-1.5 border text-xs rounded-lg text-muted-foreground hover:bg-muted/50">
-          Export
+          Export Summary
         </button>
         <button
-          onClick={() => onDeleteRun(run.run_id)}
+          onClick={() => onDeleteBatch(batch.batch_id)}
           className="px-3 py-1.5 border text-xs rounded-lg text-destructive hover:bg-destructive/10"
         >
-          Delete
+          Delete Batch
         </button>
       </div>
     </div>
@@ -811,19 +878,20 @@ function ConfigTab({
 
 // Main Component
 export function PipelineControlCenter() {
-  const [activeTab, setActiveTab] = useState<TabId>("new-run");
+  const [activeTab, setActiveTab] = useState<TabId>("new-batch");
   const [selectedClaims, setSelectedClaims] = useState<string[]>([]);
   const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
   const [promptConfig, setPromptConfig] = useState<string>("");
   const [forceOverwrite, setForceOverwrite] = useState(false);
   const [computeMetrics, setComputeMetrics] = useState(true);
   const [dryRun, setDryRun] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [isStartingRun, setIsStartingRun] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [isStartingBatch, setIsStartingBatch] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<string | null>(null);
 
   // Data hooks
   const { claims, isLoading: claimsLoading, refetch: refetchClaims } = usePipelineClaims();
-  const { runs, isLoading: runsLoading, refetch: refetchRuns } = usePipelineRuns();
+  const { runs: batches, isLoading: batchesLoading, refetch: refetchBatches } = usePipelineRuns();
   const { configs, isLoading: configsLoading, refetch: refetchConfigs, setDefault: setDefaultConfig } = usePromptConfigs();
   const { entries: auditEntries, isLoading: auditLoading, refetch: refetchAudit } = useAuditLog({ limit: 50 });
 
@@ -835,38 +903,38 @@ export function PipelineControlCenter() {
     }
   }, [configs, promptConfig]);
 
-  // Transform runs to UI format
-  const transformedRuns = useMemo(() => {
-    return runs.map((run) => ({
-      run_id: run.run_id,
-      friendly_name: run.friendly_name,
-      status: mapStatus(run.status) as RunStatus,
-      prompt_config: run.prompt_config || run.model,
-      claims_count: run.claims_count,
-      docs_total: run.docs_total,
-      docs_processed: run.docs_processed,
-      started_at: formatRelativeTime(run.started_at),
-      completed_at: run.completed_at ? formatRelativeTime(run.completed_at) : undefined,
-      duration: formatDuration(run.duration_seconds),
-      stage_progress: run.stage_progress,
-      cost_estimate: run.cost_estimate_usd ? `$${run.cost_estimate_usd.toFixed(2)}` : undefined,
-      errors: run.errors,
-      claims: run.claim_ids.map((id) => id),
-      timings: run.stage_timings as { ingest: string; classify: string; extract: string },
-      reuse: run.reuse as { ingestion: number; classification: number },
+  // Transform batches to UI format
+  const transformedBatches: UIBatch[] = useMemo(() => {
+    return batches.map((batch) => ({
+      batch_id: batch.run_id,
+      friendly_name: batch.friendly_name,
+      status: mapStatus(batch.status) as BatchStatus,
+      prompt_config: batch.prompt_config || batch.model,
+      claims_count: batch.claims_count,
+      docs_total: batch.docs_total,
+      docs_processed: batch.docs_processed,
+      started_at: formatRelativeTime(batch.started_at),
+      completed_at: batch.completed_at ? formatRelativeTime(batch.completed_at) : undefined,
+      duration: formatDuration(batch.duration_seconds),
+      stage_progress: batch.stage_progress,
+      cost_estimate: batch.cost_estimate_usd ? `$${batch.cost_estimate_usd.toFixed(2)}` : undefined,
+      errors: batch.errors,
+      claims: batch.claim_ids.map((id) => id),
+      timings: batch.stage_timings as { ingest: string; classify: string; extract: string },
+      reuse: batch.reuse as { ingestion: number; classification: number },
     }));
-  }, [runs]);
+  }, [batches]);
 
-  const activeRuns = useMemo(
-    () => transformedRuns.filter((r) => r.status === "running" || r.status === "queued"),
-    [transformedRuns]
+  const activeBatches = useMemo(
+    () => transformedBatches.filter((b) => b.status === "running" || b.status === "queued"),
+    [transformedBatches]
   );
 
   // Handlers
-  const handleStartRun = useCallback(async () => {
+  const handleStartBatch = useCallback(async () => {
     if (selectedClaims.length === 0) return;
 
-    setIsStartingRun(true);
+    setIsStartingBatch(true);
     try {
       const selectedConfig = configs.find((c) => c.id === promptConfig);
       await startPipelineEnhanced({
@@ -879,35 +947,42 @@ export function PipelineControlCenter() {
         dry_run: dryRun,
       });
       // Refresh data and clear selection
-      await Promise.all([refetchRuns(), refetchClaims(), refetchAudit()]);
+      await Promise.all([refetchBatches(), refetchClaims(), refetchAudit()]);
       setSelectedClaims([]);
     } catch (error) {
-      console.error("Failed to start run:", error);
+      console.error("Failed to start batch:", error);
     } finally {
-      setIsStartingRun(false);
+      setIsStartingBatch(false);
     }
-  }, [selectedClaims, stages, promptConfig, forceOverwrite, computeMetrics, dryRun, configs, refetchRuns, refetchClaims, refetchAudit]);
+  }, [selectedClaims, stages, promptConfig, forceOverwrite, computeMetrics, dryRun, configs, refetchBatches, refetchClaims, refetchAudit]);
 
-  const handleCancelRun = useCallback(async (runId: string) => {
+  const handleCancelBatch = useCallback(async (batchId: string) => {
     try {
-      await cancelPipeline(runId);
-      await Promise.all([refetchRuns(), refetchAudit()]);
+      await cancelPipeline(batchId);
+      await Promise.all([refetchBatches(), refetchAudit()]);
     } catch (error) {
-      console.error("Failed to cancel run:", error);
+      console.error("Failed to cancel batch:", error);
     }
-  }, [refetchRuns, refetchAudit]);
+  }, [refetchBatches, refetchAudit]);
 
-  const handleDeleteRun = useCallback(async (runId: string) => {
+  const handleDeleteBatch = useCallback((batchId: string) => {
+    setBatchToDelete(batchId);
+  }, []);
+
+  const confirmDeleteBatch = useCallback(async () => {
+    if (!batchToDelete) return;
     try {
-      await deletePipelineRun(runId);
-      await Promise.all([refetchRuns(), refetchAudit()]);
-      if (selectedRunId === runId) {
-        setSelectedRunId(null);
+      await deletePipelineRun(batchToDelete);
+      await Promise.all([refetchBatches(), refetchAudit()]);
+      if (selectedBatchId === batchToDelete) {
+        setSelectedBatchId(null);
       }
     } catch (error) {
-      console.error("Failed to delete run:", error);
+      console.error("Failed to delete batch:", error);
+    } finally {
+      setBatchToDelete(null);
     }
-  }, [refetchRuns, refetchAudit, selectedRunId]);
+  }, [batchToDelete, refetchBatches, refetchAudit, selectedBatchId]);
 
   const handleSetDefault = useCallback(async (configId: string) => {
     try {
@@ -935,25 +1010,13 @@ export function PipelineControlCenter() {
   }
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: "new-run", label: "New Run" },
-    { id: "runs", label: "Runs" },
+    { id: "new-batch", label: "New Batch" },
+    { id: "batches", label: "Batches" },
     { id: "config", label: "Config" },
   ];
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="border-b bg-card px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Pipeline Control Center</h1>
-          <p className="text-sm text-muted-foreground">Admin operations console</p>
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground">env: local</span>
-          <span className="px-2 py-1 rounded-full bg-destructive/10 text-destructive">admin</span>
-        </div>
-      </div>
-
       {/* Tabs */}
       <div className="border-b bg-card px-6">
         <div className="flex gap-1">
@@ -969,9 +1032,9 @@ export function PipelineControlCenter() {
               )}
             >
               {tab.label}
-              {tab.id === "runs" && activeRuns.length > 0 && (
+              {tab.id === "batches" && activeBatches.length > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 text-xs bg-info/10 text-info rounded-full">
-                  {activeRuns.length}
+                  {activeBatches.length}
                 </span>
               )}
             </button>
@@ -981,8 +1044,8 @@ export function PipelineControlCenter() {
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto bg-background p-6">
-        {activeTab === "new-run" && (
-          <NewRunTab
+        {activeTab === "new-batch" && (
+          <NewBatchTab
             claims={claims}
             selectedClaims={selectedClaims}
             onToggleClaim={toggleClaim}
@@ -998,20 +1061,20 @@ export function PipelineControlCenter() {
             onComputeMetricsChange={setComputeMetrics}
             dryRun={dryRun}
             onDryRunChange={setDryRun}
-            activeRuns={activeRuns}
-            onStartRun={handleStartRun}
-            isStartingRun={isStartingRun}
+            activeBatches={activeBatches}
+            onStartBatch={handleStartBatch}
+            isStartingBatch={isStartingBatch}
             isLoading={claimsLoading || configsLoading}
           />
         )}
-        {activeTab === "runs" && (
-          <RunsTab
-            runs={transformedRuns}
-            onSelectRun={setSelectedRunId}
-            selectedRunId={selectedRunId}
-            onCancelRun={handleCancelRun}
-            onDeleteRun={handleDeleteRun}
-            isLoading={runsLoading}
+        {activeTab === "batches" && (
+          <BatchesTab
+            batches={transformedBatches}
+            onSelectBatch={setSelectedBatchId}
+            selectedBatchId={selectedBatchId}
+            onCancelBatch={handleCancelBatch}
+            onDeleteBatch={handleDeleteBatch}
+            isLoading={batchesLoading}
           />
         )}
         {activeTab === "config" && (
@@ -1025,6 +1088,33 @@ export function PipelineControlCenter() {
           />
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {batchToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-lg p-6 max-w-md mx-4 shadow-lg border border-border">
+            <h3 className="text-lg font-semibold mb-2">Delete Batch?</h3>
+            <p className="text-muted-foreground mb-4">
+              This will permanently delete the batch and all its extraction results.
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setBatchToDelete(null)}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-muted/50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteBatch}
+                className="px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90"
+              >
+                Delete Batch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
