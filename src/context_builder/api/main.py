@@ -103,10 +103,88 @@ app.add_middleware(
 # Data directory - now points to output/claims with new structure
 # Compute path relative to project root (3 levels up from this file)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 
-# Staging directory for pending uploads
+# Default paths (will be overwritten by active workspace on startup)
+DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 STAGING_DIR: Path = _PROJECT_ROOT / "output" / ".pending"
+
+
+def _load_active_workspace_on_startup() -> None:
+    """Load the active workspace from registry and set DATA_DIR/STAGING_DIR."""
+    global DATA_DIR, STAGING_DIR
+    registry_path = _PROJECT_ROOT / ".contextbuilder" / "workspaces.json"
+
+    if not registry_path.exists():
+        print(f"[startup] No workspace registry found, using default: {DATA_DIR}")
+        return
+
+    try:
+        with open(registry_path, "r", encoding="utf-8") as f:
+            registry = json.load(f)
+
+        active_id = registry.get("active_workspace_id")
+        if not active_id:
+            print(f"[startup] No active workspace in registry, using default: {DATA_DIR}")
+            return
+
+        for ws in registry.get("workspaces", []):
+            if ws.get("workspace_id") == active_id:
+                workspace_path = Path(ws.get("path", ""))
+                if workspace_path.exists():
+                    DATA_DIR = workspace_path / "claims"
+                    STAGING_DIR = workspace_path / ".pending"
+                    print(f"[startup] Loaded active workspace '{active_id}': {workspace_path}")
+                else:
+                    print(f"[startup] WARNING: Active workspace path does not exist: {workspace_path}")
+                return
+
+        print(f"[startup] WARNING: Active workspace '{active_id}' not found in registry")
+    except Exception as e:
+        print(f"[startup] WARNING: Failed to load workspace registry: {e}")
+
+
+# Load active workspace on module import
+_load_active_workspace_on_startup()
+
+
+def _get_global_config_dir() -> Path:
+    """Get global config directory (.contextbuilder/).
+
+    Used for data shared across all workspaces:
+    - Users and authentication
+    - Sessions
+    - Global audit logs
+    """
+    config_dir = _PROJECT_ROOT / ".contextbuilder"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+def _get_workspace_config_dir() -> Path:
+    """Get workspace-scoped config directory.
+
+    Used for data specific to the active workspace:
+    - Pipeline prompt configs
+    - Workspace-specific settings
+    """
+    # DATA_DIR is {workspace}/claims, so parent is workspace root
+    config_dir = DATA_DIR.parent / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+def _get_workspace_logs_dir() -> Path:
+    """Get workspace-scoped logs directory.
+
+    Used for compliance logs specific to the active workspace:
+    - Decision ledger
+    - LLM call logs
+    """
+    # DATA_DIR is {workspace}/claims, so parent is workspace root
+    logs_dir = DATA_DIR.parent / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return logs_dir
+
 
 # Storage abstraction layer (uses indexes when available)
 from context_builder.storage import FileStorage, StorageFacade
@@ -177,11 +255,10 @@ _prompt_config_service: Optional[PromptConfigService] = None
 
 
 def get_prompt_config_service() -> PromptConfigService:
-    """Get PromptConfigService singleton instance."""
+    """Get PromptConfigService singleton instance (workspace-scoped)."""
     global _prompt_config_service
     if _prompt_config_service is None:
-        config_dir = _PROJECT_ROOT / "output" / "config"
-        _prompt_config_service = PromptConfigService(config_dir)
+        _prompt_config_service = PromptConfigService(_get_workspace_config_dir())
     return _prompt_config_service
 
 
@@ -190,11 +267,10 @@ _audit_service: Optional[AuditService] = None
 
 
 def get_audit_service() -> AuditService:
-    """Get AuditService singleton instance."""
+    """Get AuditService singleton instance (global, shared across workspaces)."""
     global _audit_service
     if _audit_service is None:
-        config_dir = _PROJECT_ROOT / "output" / "config"
-        _audit_service = AuditService(config_dir)
+        _audit_service = AuditService(_get_global_config_dir())
     return _audit_service
 
 
@@ -203,11 +279,10 @@ _users_service: Optional[UsersService] = None
 
 
 def get_users_service() -> UsersService:
-    """Get UsersService singleton instance."""
+    """Get UsersService singleton instance (global, shared across workspaces)."""
     global _users_service
     if _users_service is None:
-        config_dir = _PROJECT_ROOT / "output" / "config"
-        _users_service = UsersService(config_dir)
+        _users_service = UsersService(_get_global_config_dir())
     return _users_service
 
 
@@ -216,11 +291,10 @@ _auth_service: Optional[AuthService] = None
 
 
 def get_auth_service() -> AuthService:
-    """Get AuthService singleton instance."""
+    """Get AuthService singleton instance (global, shared across workspaces)."""
     global _auth_service
     if _auth_service is None:
-        config_dir = _PROJECT_ROOT / "output" / "config"
-        _auth_service = AuthService(config_dir, get_users_service())
+        _auth_service = AuthService(_get_global_config_dir(), get_users_service())
     return _auth_service
 
 
@@ -229,10 +303,10 @@ _compliance_config: Optional[ComplianceStorageConfig] = None
 
 
 def get_compliance_config() -> ComplianceStorageConfig:
-    """Get ComplianceStorageConfig singleton instance.
+    """Get ComplianceStorageConfig singleton instance (workspace-scoped).
 
     Loads configuration from environment variables with COMPLIANCE_ prefix,
-    falling back to defaults (file backend in output/logs).
+    falling back to workspace logs directory.
     """
     global _compliance_config
     if _compliance_config is None:
@@ -242,10 +316,10 @@ def get_compliance_config() -> ComplianceStorageConfig:
         except Exception:
             pass
 
-        # If not configured via env, use defaults
+        # If not configured via env, use workspace logs directory
         if _compliance_config is None:
             _compliance_config = ComplianceStorageConfig(
-                storage_dir=Path(_PROJECT_ROOT / "output" / "logs")
+                storage_dir=_get_workspace_logs_dir()
             )
     return _compliance_config
 
@@ -275,19 +349,20 @@ def get_workspace_service() -> WorkspaceService:
 
 
 def _reset_service_singletons() -> None:
-    """Reset all service singletons to pick up new workspace paths.
+    """Reset workspace-scoped service singletons to pick up new workspace paths.
 
     Called after workspace switch to ensure services use new paths.
-    """
-    global _pipeline_service, _prompt_config_service, _audit_service
-    global _users_service, _auth_service, _compliance_config
 
+    Note: Global services (users, auth, audit) are NOT reset since they are
+    shared across all workspaces and stored in .contextbuilder/.
+    """
+    global _pipeline_service, _prompt_config_service, _compliance_config
+
+    # Only reset workspace-scoped singletons
     _pipeline_service = None
     _prompt_config_service = None
-    _audit_service = None
-    _users_service = None
-    _auth_service = None
     _compliance_config = None
+    # Note: _users_service, _auth_service, _audit_service are global and NOT reset
 
 
 # =============================================================================
@@ -347,6 +422,34 @@ def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> Curr
     if current_user.role != Role.ADMIN.value:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
+
+
+def require_role(allowed_roles: list[str]):
+    """Factory for role-based access control dependency.
+
+    Args:
+        allowed_roles: List of role values that are permitted access
+
+    Returns:
+        Dependency function that validates user role
+
+    Example:
+        @app.get("/api/compliance/ledger")
+        def get_ledger(user: CurrentUser = Depends(require_role(["admin", "auditor"]))):
+            ...
+    """
+    def role_checker(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Required role: {' or '.join(allowed_roles)}"
+            )
+        return current_user
+    return role_checker
+
+
+# Pre-built role checker for compliance endpoints (admin or auditor)
+require_compliance_access = require_role([Role.ADMIN.value, Role.AUDITOR.value])
 
 
 # =============================================================================
@@ -814,6 +917,11 @@ def activate_workspace(
 
     # Update DATA_DIR and STAGING_DIR
     set_data_dir(Path(workspace.path))
+
+    # Ensure workspace directories exist
+    workspace_path = Path(workspace.path)
+    (workspace_path / "config").mkdir(parents=True, exist_ok=True)
+    (workspace_path / "logs").mkdir(parents=True, exist_ok=True)
 
     # Clear ALL sessions (including current user's)
     sessions_cleared = auth_service.clear_all_sessions()
@@ -2266,9 +2374,13 @@ def list_audit_entries(
 
 
 @app.get("/api/compliance/ledger/verify")
-def verify_decision_ledger():
+def verify_decision_ledger(
+    _user: CurrentUser = Depends(require_compliance_access),
+):
     """
     Verify the integrity of the decision ledger hash chain.
+
+    Requires: admin or auditor role
 
     Returns:
     - valid: Whether the chain is intact
@@ -2287,9 +2399,12 @@ def list_decisions(
     claim_id: Optional[str] = Query(None, description="Filter by claim ID"),
     since: Optional[str] = Query(None, description="ISO timestamp to filter entries after"),
     limit: int = Query(100, ge=1, le=1000, description="Max entries to return"),
+    _user: CurrentUser = Depends(require_compliance_access),
 ):
     """
     List decision records from the compliance ledger.
+
+    Requires: admin or auditor role
 
     Returns decisions sorted by timestamp (newest first).
     """
@@ -2345,9 +2460,13 @@ def list_decisions(
 
 
 @app.get("/api/compliance/version-bundles")
-def list_version_bundles():
+def list_version_bundles(
+    _user: CurrentUser = Depends(require_compliance_access),
+):
     """
     List all version bundle snapshots.
+
+    Requires: admin or auditor role
 
     Returns list of run IDs with version bundles.
     """
@@ -2374,9 +2493,14 @@ def list_version_bundles():
 
 
 @app.get("/api/compliance/version-bundles/{run_id}")
-def get_version_bundle(run_id: str):
+def get_version_bundle(
+    run_id: str,
+    _user: CurrentUser = Depends(require_compliance_access),
+):
     """
     Get full version bundle details for a specific run.
+
+    Requires: admin or auditor role
 
     Returns all captured version information for reproducibility.
     """
@@ -2406,9 +2530,12 @@ def get_version_bundle(run_id: str):
 @app.get("/api/compliance/config-history")
 def get_config_change_history(
     limit: int = Query(100, ge=1, le=1000, description="Max entries to return"),
+    _user: CurrentUser = Depends(require_compliance_access),
 ):
     """
     Get prompt configuration change history.
+
+    Requires: admin or auditor role
 
     Returns append-only log of all config changes for audit.
     """
@@ -2420,9 +2547,14 @@ def get_config_change_history(
 
 
 @app.get("/api/compliance/truth-history/{file_md5}")
-def get_truth_history(file_md5: str):
+def get_truth_history(
+    file_md5: str,
+    _user: CurrentUser = Depends(require_compliance_access),
+):
     """
     Get truth version history for a specific file.
+
+    Requires: admin or auditor role
 
     Returns all historical versions of ground truth labels.
     """
@@ -2447,9 +2579,14 @@ def get_truth_history(file_md5: str):
 
 
 @app.get("/api/compliance/label-history/{doc_id}")
-def get_label_history(doc_id: str):
+def get_label_history(
+    doc_id: str,
+    _user: CurrentUser = Depends(require_compliance_access),
+):
     """
     Get label version history for a specific document.
+
+    Requires: admin or auditor role
 
     Returns all historical versions of labels for audit.
     """

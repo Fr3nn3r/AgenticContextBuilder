@@ -16,6 +16,13 @@ import { TruthPage } from "./components/TruthPage";
 import LoginPage from "./components/LoginPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AdminPage } from "./components/AdminPage";
+import {
+  ComplianceOverview,
+  ComplianceLedger,
+  ComplianceVerification,
+  ComplianceVersionBundles,
+  ComplianceControls,
+} from "./pages/compliance";
 import { useAuth } from "./context/AuthContext";
 import type { ClaimSummary, DocSummary } from "./types";
 import {
@@ -210,11 +217,12 @@ function App() {
     if (path === "/templates") return "Extraction Templates";
     if (path === "/pipeline") return "Pipeline Control Center";
     if (path === "/truth") return "Ground Truth";
+    if (path.startsWith("/compliance")) return "Compliance";
     return "ContextBuilder";
   }
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "admin" {
+  function getCurrentView(): "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "compliance" | "admin" {
     const path = location.pathname;
     if (path.startsWith("/batches")) return "batches";
     if (path === "/evaluation") return "evaluation";
@@ -223,6 +231,7 @@ function App() {
     if (path === "/templates") return "templates";
     if (path === "/pipeline") return "pipeline";
     if (path === "/truth") return "truth";
+    if (path.startsWith("/compliance")) return "compliance";
     if (path === "/admin") return "admin";
     // Default to batches for claim review (accessed from batch context)
     if (path.startsWith("/claims/") && path.endsWith("/review")) return "batches";
@@ -480,6 +489,49 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* Compliance routes */}
+              <Route
+                path="/compliance"
+                element={
+                  <ProtectedRoute screen="compliance">
+                    <ComplianceOverview />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/compliance/ledger"
+                element={
+                  <ProtectedRoute screen="compliance">
+                    <ComplianceLedger />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/compliance/verification"
+                element={
+                  <ProtectedRoute screen="compliance">
+                    <ComplianceVerification />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/compliance/version-bundles"
+                element={
+                  <ProtectedRoute screen="compliance">
+                    <ComplianceVersionBundles />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/compliance/controls"
+                element={
+                  <ProtectedRoute screen="compliance">
+                    <ComplianceControls />
+                  </ProtectedRoute>
+                }
+              />
+
               <Route path="/evaluation" element={<EvaluationPage />} />
 
               {/* Redirects for backwards compatibility */}

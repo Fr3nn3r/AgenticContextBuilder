@@ -130,15 +130,25 @@ class VersionBundleStore:
         Returns:
             Combined hash of all prompt templates
         """
-        # Try common prompt locations
+        # Use absolute path resolution from this module's location
+        module_dir = Path(__file__).resolve().parent.parent  # context_builder/
+        project_root = module_dir.parent.parent  # project root
+
+        # Try common prompt locations (ordered by priority)
         possible_paths = [
-            Path("prompts"),
-            Path("src/context_builder/prompts"),
-            Path(__file__).parent.parent / "prompts",
+            module_dir / "prompts",                    # src/context_builder/prompts
+            project_root / "prompts",                  # project_root/prompts
+            project_root / "src" / "context_builder" / "prompts",  # explicit path
         ]
+
         for path in possible_paths:
             if path.exists():
-                return self._hash_directory(path, "*.md")
+                result = self._hash_directory(path, "*.md")
+                if result:
+                    logger.debug(f"Computed prompt template hash from {path}")
+                    return result
+
+        logger.warning(f"No prompt templates found. Searched: {[str(p) for p in possible_paths]}")
         return None
 
     def _get_extraction_spec_hash(self) -> Optional[str]:
@@ -147,14 +157,24 @@ class VersionBundleStore:
         Returns:
             Combined hash of extraction specs
         """
-        # Try common spec locations
+        # Use absolute path resolution from this module's location
+        module_dir = Path(__file__).resolve().parent.parent  # context_builder/
+        project_root = module_dir.parent.parent  # project root
+
+        # Try common spec locations (ordered by priority)
         possible_paths = [
-            Path("src/context_builder/extraction/specs"),
-            Path(__file__).parent.parent / "extraction" / "specs",
+            module_dir / "extraction" / "specs",      # src/context_builder/extraction/specs
+            project_root / "src" / "context_builder" / "extraction" / "specs",  # explicit path
         ]
+
         for path in possible_paths:
             if path.exists():
-                return self._hash_directory(path, "*.yaml")
+                result = self._hash_directory(path, "*.yaml")
+                if result:
+                    logger.debug(f"Computed extraction spec hash from {path}")
+                    return result
+
+        logger.warning(f"No extraction specs found. Searched: {[str(p) for p in possible_paths]}")
         return None
 
     def create_version_bundle(

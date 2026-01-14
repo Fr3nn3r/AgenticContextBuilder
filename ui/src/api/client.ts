@@ -852,3 +852,78 @@ export async function deleteWorkspace(
     { method: "DELETE" }
   );
 }
+
+// =============================================================================
+// COMPLIANCE API
+// =============================================================================
+
+import type {
+  DecisionRecord,
+  VerificationResult,
+  VersionBundle,
+  VersionBundleSummary,
+  ConfigHistoryEntry,
+  TruthHistory,
+  LabelHistory,
+  DecisionType,
+} from "../types";
+
+export interface DecisionQueryParams {
+  decision_type?: DecisionType;
+  doc_id?: string;
+  claim_id?: string;
+  since?: string;
+  limit?: number;
+}
+
+export async function verifyDecisionLedger(): Promise<VerificationResult> {
+  return fetchJson<VerificationResult>(`${API_BASE}/compliance/ledger/verify`);
+}
+
+export async function listDecisions(
+  params: DecisionQueryParams = {}
+): Promise<DecisionRecord[]> {
+  const query = new URLSearchParams();
+  if (params.decision_type) query.set("decision_type", params.decision_type);
+  if (params.doc_id) query.set("doc_id", params.doc_id);
+  if (params.claim_id) query.set("claim_id", params.claim_id);
+  if (params.since) query.set("since", params.since);
+  if (params.limit) query.set("limit", String(params.limit));
+
+  const queryString = query.toString();
+  const url = queryString
+    ? `${API_BASE}/compliance/ledger/decisions?${queryString}`
+    : `${API_BASE}/compliance/ledger/decisions`;
+
+  return fetchJson<DecisionRecord[]>(url);
+}
+
+export async function listVersionBundles(): Promise<VersionBundleSummary[]> {
+  return fetchJson<VersionBundleSummary[]>(`${API_BASE}/compliance/version-bundles`);
+}
+
+export async function getVersionBundle(runId: string): Promise<VersionBundle> {
+  return fetchJson<VersionBundle>(
+    `${API_BASE}/compliance/version-bundles/${encodeURIComponent(runId)}`
+  );
+}
+
+export async function getConfigHistory(
+  limit: number = 100
+): Promise<ConfigHistoryEntry[]> {
+  return fetchJson<ConfigHistoryEntry[]>(
+    `${API_BASE}/compliance/config-history?limit=${limit}`
+  );
+}
+
+export async function getTruthHistory(fileMd5: string): Promise<TruthHistory> {
+  return fetchJson<TruthHistory>(
+    `${API_BASE}/compliance/truth-history/${encodeURIComponent(fileMd5)}`
+  );
+}
+
+export async function getLabelHistory(docId: string): Promise<LabelHistory> {
+  return fetchJson<LabelHistory>(
+    `${API_BASE}/compliance/label-history/${encodeURIComponent(docId)}`
+  );
+}

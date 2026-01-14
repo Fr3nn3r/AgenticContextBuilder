@@ -544,3 +544,91 @@ export interface StartPipelineRequest {
   compute_metrics?: boolean;
   dry_run?: boolean;
 }
+
+// =============================================================================
+// COMPLIANCE TYPES
+// =============================================================================
+
+export type DecisionType = "classification" | "extraction" | "human_review" | "override";
+
+export interface DecisionRationale {
+  summary: string | null;
+  confidence: number | null;
+}
+
+export interface DecisionRecord {
+  decision_id: string;
+  decision_type: DecisionType;
+  timestamp: string;
+  claim_id: string | null;
+  doc_id: string | null;
+  actor_type: string | null;
+  actor_id: string | null;
+  rationale: DecisionRationale;
+  prev_hash: string | null;
+}
+
+export interface VerificationResult {
+  valid: boolean;
+  record_count: number;
+  break_at: number | null;
+  reason: string | null;
+}
+
+export interface VersionBundle {
+  bundle_id: string;
+  run_id: string;
+  created_at: string;
+  git_commit: string | null;
+  git_dirty: boolean | null;
+  contextbuilder_version: string;
+  extractor_version: string;
+  model_name: string;
+  model_version: string | null;
+  prompt_template_hash: string | null;
+  extraction_spec_hash: string | null;
+}
+
+export interface VersionBundleSummary {
+  run_id: string;
+  bundle_id: string;
+  created_at: string;
+  git_commit: string | null;
+  git_dirty: boolean | null;
+  model_name: string;
+  extractor_version: string;
+}
+
+export interface ConfigHistoryEntry {
+  timestamp: string;
+  action: string;
+  config_id: string;
+  user?: string;
+  changes?: Record<string, unknown>;
+}
+
+export interface TruthHistoryVersion {
+  version_number: number | null;
+  saved_at: string | null;
+  reviewer: string | null;
+  field_count: number;
+}
+
+export interface TruthHistory {
+  file_md5: string;
+  version_count: number;
+  versions: TruthHistoryVersion[];
+}
+
+export interface LabelHistoryVersion {
+  version_number: number | null;
+  saved_at: string | null;
+  reviewer: string | null;
+  field_count: number;
+}
+
+export interface LabelHistory {
+  doc_id: string;
+  version_count: number;
+  versions: LabelHistoryVersion[];
+}

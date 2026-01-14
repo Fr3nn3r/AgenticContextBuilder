@@ -13,6 +13,7 @@ export type Screen =
   | 'ground-truth'
   | 'templates'
   | 'new-claim'
+  | 'compliance'
   | 'admin';
 
 export interface User {
@@ -43,6 +44,7 @@ const SCREEN_ACCESS: Record<Screen, Role[]> = {
   'ground-truth': ['admin', 'reviewer', 'operator', 'auditor'],
   'templates': ['admin', 'reviewer', 'auditor'],
   'new-claim': ['admin', 'reviewer', 'operator'],
+  'compliance': ['admin', 'auditor'],
   'admin': ['admin'],
 };
 
@@ -56,6 +58,7 @@ const SCREEN_EDIT: Record<Screen, Role[]> = {
   'ground-truth': ['admin', 'reviewer'],
   'templates': ['admin'],
   'new-claim': ['admin', 'reviewer', 'operator'],
+  'compliance': ['admin'],
   'admin': ['admin'],
 };
 
