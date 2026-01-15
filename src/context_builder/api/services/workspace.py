@@ -86,6 +86,7 @@ class WorkspaceService:
         "logs",
         "registry",
         "config",
+        "version_bundles",
         ".pending",
         ".input",
     ]

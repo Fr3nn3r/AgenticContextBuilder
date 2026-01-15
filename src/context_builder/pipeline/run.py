@@ -1006,7 +1006,9 @@ def process_claim(
         logger.info(f"Starting run {run_id} for claim {claim.claim_id}")
 
         # Create version bundle for reproducibility (compliance requirement)
-        version_bundle_store = get_version_bundle_store(output_base)
+        # Use workspace root (parent of claims dir) so bundles are at {workspace}/version_bundles/
+        workspace_root = output_base.parent
+        version_bundle_store = get_version_bundle_store(workspace_root)
         version_bundle = version_bundle_store.create_version_bundle(
             run_id=run_id,
             model_name=model,

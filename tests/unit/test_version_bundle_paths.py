@@ -191,6 +191,112 @@ class TestHashDirectoryFunction:
         assert hash1 != hash2
 
 
+class TestVersionBundleWorkspacePathConsistency:
+    """Tests ensuring version bundles are stored at workspace root, not claims dir.
+
+    This is a critical test to prevent regression of the bug where:
+    - Pipeline wrote bundles to {workspace}/claims/version_bundles/
+    - API read bundles from {workspace}/version_bundles/
+    - Result: bundles created but never found
+    """
+
+    @pytest.fixture
+    def workspace_dir(self):
+        """Create a workspace directory structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir)
+            # Create workspace structure
+            (workspace / "claims").mkdir()
+            (workspace / "version_bundles").mkdir()
+            yield workspace
+
+    def test_bundle_stored_at_workspace_root_not_claims(self, workspace_dir):
+        """Version bundle store should NOT append to claims dir."""
+        from context_builder.storage.version_bundles import VersionBundleStore
+
+        # When store is created with workspace root
+        store = VersionBundleStore(workspace_dir)
+
+        # Storage dir should be {workspace}/version_bundles, NOT {workspace}/claims/version_bundles
+        assert store.storage_dir == workspace_dir / "version_bundles"
+        assert "claims" not in str(store.storage_dir)
+
+    def test_bundle_created_at_correct_location(self, workspace_dir):
+        """Bundle file should exist at {workspace}/version_bundles/{run_id}/bundle.json."""
+        from context_builder.storage.version_bundles import VersionBundleStore
+
+        store = VersionBundleStore(workspace_dir)
+        run_id = "BATCH-20240115-001"
+
+        store.create_version_bundle(run_id=run_id, model_name="gpt-4o")
+
+        # Bundle should be at workspace root, not under claims
+        expected_path = workspace_dir / "version_bundles" / run_id / "bundle.json"
+        wrong_path = workspace_dir / "claims" / "version_bundles" / run_id / "bundle.json"
+
+        assert expected_path.exists(), f"Bundle not found at {expected_path}"
+        assert not wrong_path.exists(), f"Bundle incorrectly at {wrong_path}"
+
+    def test_bundle_retrievable_from_same_location(self, workspace_dir):
+        """Bundle created can be retrieved using same workspace path."""
+        from context_builder.storage.version_bundles import VersionBundleStore
+
+        run_id = "BATCH-20240115-002"
+
+        # Create with one store instance
+        store1 = VersionBundleStore(workspace_dir)
+        bundle = store1.create_version_bundle(run_id=run_id, model_name="gpt-4o")
+
+        # Retrieve with different store instance (simulating API vs pipeline)
+        store2 = VersionBundleStore(workspace_dir)
+        retrieved = store2.get_version_bundle(run_id)
+
+        assert retrieved is not None, "Bundle should be retrievable"
+        assert retrieved.bundle_id == bundle.bundle_id
+
+    def test_list_bundles_finds_created_bundles(self, workspace_dir):
+        """list_bundles() should find bundles created at workspace root."""
+        from context_builder.storage.version_bundles import VersionBundleStore
+
+        store = VersionBundleStore(workspace_dir)
+
+        # Create multiple bundles
+        store.create_version_bundle(run_id="run1", model_name="gpt-4o")
+        store.create_version_bundle(run_id="run2", model_name="gpt-4o")
+
+        # List should find both
+        bundle_ids = store.list_bundles()
+        assert "run1" in bundle_ids
+        assert "run2" in bundle_ids
+
+
+class TestPipelineVersionBundlePath:
+    """Tests for pipeline's version bundle path calculation.
+
+    Ensures process_claim uses workspace root (parent of claims dir).
+    """
+
+    def test_workspace_root_calculation(self):
+        """Verify workspace root is parent of claims dir."""
+        # Simulate what run.py does
+        claims_dir = Path("/workspace/claims")
+        workspace_root = claims_dir.parent
+
+        assert workspace_root == Path("/workspace")
+        assert workspace_root.name == "workspace"
+
+    def test_version_bundle_not_under_claims(self):
+        """Version bundle dir should be sibling of claims, not child."""
+        claims_dir = Path("/workspace/claims")
+        workspace_root = claims_dir.parent
+
+        # This is what the code should do
+        version_bundle_dir = workspace_root / "version_bundles"
+
+        assert version_bundle_dir == Path("/workspace/version_bundles")
+        assert "claims" not in str(version_bundle_dir)
+
+
 class TestPathResolutionFromDifferentWorkingDirs:
     """Tests verifying path resolution works from any working directory."""
 

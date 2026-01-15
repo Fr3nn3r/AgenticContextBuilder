@@ -2552,6 +2552,42 @@ def verify_decision_ledger(
     return storage.verify_integrity()
 
 
+@app.delete("/api/compliance/ledger/reset")
+def reset_decision_ledger(
+    current_user: CurrentUser = Depends(require_admin),
+):
+    """
+    Reset the decision ledger (delete all records).
+
+    Requires: admin role (not just auditor)
+
+    WARNING: This permanently deletes all compliance records in the active workspace.
+    Use only for development/testing purposes.
+
+    Returns:
+    - status: "reset"
+    - records_deleted: Number of records that were deleted
+    """
+    logs_dir = _get_workspace_logs_dir()
+    decisions_file = logs_dir / "decisions.jsonl"
+
+    records_deleted = 0
+    if decisions_file.exists():
+        # Count records before deletion
+        try:
+            with open(decisions_file, "r", encoding="utf-8") as f:
+                records_deleted = sum(1 for line in f if line.strip())
+        except Exception:
+            pass
+        # Delete the file
+        decisions_file.unlink()
+
+    return {
+        "status": "reset",
+        "records_deleted": records_deleted,
+    }
+
+
 @app.get("/api/compliance/ledger/decisions")
 def list_decisions(
     decision_type: Optional[str] = Query(None, description="Filter by type: classification, extraction, human_review, override"),
@@ -2643,7 +2679,13 @@ def list_version_bundles(
     """
     from context_builder.storage.version_bundles import get_version_bundle_store
 
-    store = get_version_bundle_store(Path(_PROJECT_ROOT / "output"))
+    # Use active workspace path for version bundles
+    workspace_service = get_workspace_service()
+    workspace = workspace_service.get_active_workspace()
+    if not workspace:
+        raise HTTPException(status_code=500, detail="No active workspace configured")
+
+    store = get_version_bundle_store(Path(workspace.path))
     run_ids = store.list_bundles()
 
     bundles = []
@@ -2677,7 +2719,13 @@ def get_version_bundle(
     """
     from context_builder.storage.version_bundles import get_version_bundle_store
 
-    store = get_version_bundle_store(Path(_PROJECT_ROOT / "output"))
+    # Use active workspace path for version bundles
+    workspace_service = get_workspace_service()
+    workspace = workspace_service.get_active_workspace()
+    if not workspace:
+        raise HTTPException(status_code=500, detail="No active workspace configured")
+
+    store = get_version_bundle_store(Path(workspace.path))
     bundle = store.get_version_bundle(run_id)
 
     if not bundle:
