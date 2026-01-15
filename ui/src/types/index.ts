@@ -366,6 +366,7 @@ export interface PendingDocument {
   file_size: number;
   content_type: string;
   upload_time: string;
+  file_md5?: string;
 }
 
 export interface PendingClaim {
@@ -389,6 +390,7 @@ export interface DocProgress {
   phase: DocPipelinePhase;
   failed_at_stage?: DocPipelinePhase;  // Which stage failed (ingesting/classifying/extracting)
   error?: string;
+  file_md5?: string;  // MD5 hash of file content
 }
 
 export type PipelineBatchStatus =

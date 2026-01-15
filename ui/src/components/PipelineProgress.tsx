@@ -16,6 +16,7 @@ export interface PipelineProgressProps {
   batchId: string;
   status: PipelineBatchStatus;
   docs: Record<string, DocProgress>;
+  claimIds?: string[];
   summary?: {
     total: number;
     success: number;
@@ -44,6 +45,7 @@ export function PipelineProgress({
   batchId,
   status,
   docs,
+  claimIds = [],
   summary,
   onCancel,
   isConnected: _isConnected = true,
@@ -60,42 +62,88 @@ export function PipelineProgress({
   const isRunning = status === 'running' || status === 'pending';
   const isComplete = status === 'completed' || status === 'failed' || status === 'cancelled';
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-card shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-muted border-b border-border">
-        <div className="flex items-center gap-3">
-          <StatusBadge status={status} />
-          <span className="text-sm text-muted-foreground font-mono">Batch: {batchId}</span>
-          {/* Connection status indicators */}
-          {_isConnected && isRunning && !isConnecting && !isReconnecting && (
+      {/* Header with Batch ID and Claim IDs */}
+      <div className="px-4 py-3 bg-muted border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <StatusBadge status={status} />
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-muted-foreground">Batch:</span>
+              <code className="text-sm font-mono text-foreground bg-background px-1.5 py-0.5 rounded">
+                {batchId}
+              </code>
+              <button
+                onClick={() => copyToClipboard(batchId)}
+                className="p-1 text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
+                title="Copy Batch ID"
+              >
+                <CopyIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {isRunning && onCancel && (
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors font-medium"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+        {claimIds.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">Claims:</span>
+            {claimIds.map((claimId) => (
+              <div key={claimId} className="flex items-center gap-1">
+                <code className="text-xs font-mono text-foreground bg-background px-1.5 py-0.5 rounded">
+                  {claimId}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(claimId)}
+                  className="p-0.5 text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
+                  title={`Copy ${claimId}`}
+                >
+                  <CopyIcon className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Connection status indicators */}
+      {isRunning && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/50 border-b border-border">
+          {_isConnected && !isConnecting && !isReconnecting && (
             <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded flex items-center gap-1">
               <LiveDotIcon className="w-2 h-2" />
               Connected
             </span>
           )}
-          {isConnecting && isRunning && (
+          {isConnecting && (
             <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded flex items-center gap-1">
               <SpinnerIcon className="w-3 h-3 animate-spin" />
               Connecting...
             </span>
           )}
-          {isReconnecting && isRunning && (
+          {isReconnecting && (
             <span className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 px-2 py-0.5 rounded flex items-center gap-1">
               <SpinnerIcon className="w-3 h-3 animate-spin" />
               Reconnecting...
             </span>
           )}
         </div>
-        {isRunning && onCancel && (
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors font-medium"
-          >
-            Cancel
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Overall Progress Bar (when running) */}
       {isRunning && (
@@ -183,7 +231,9 @@ function DocumentProgressRow({ doc }: DocumentProgressRowProps) {
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{doc.filename}</p>
-          <p className="text-xs text-muted-foreground font-mono">{doc.claim_id}</p>
+          <p className="text-xs text-muted-foreground font-mono">
+            {doc.file_md5 ? `MD5: ${doc.file_md5.slice(0, 12)}...` : doc.doc_id}
+          </p>
         </div>
         <PhaseLabel phase={doc.phase} failedAtStage={failedAtStage} />
       </div>
@@ -407,5 +457,18 @@ function LiveDotIcon({ className }: { className?: string }) {
       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
       <span className="relative inline-flex rounded-full h-full w-full bg-green-500" />
     </span>
+  );
+}
+
+function CopyIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+      />
+    </svg>
   );
 }

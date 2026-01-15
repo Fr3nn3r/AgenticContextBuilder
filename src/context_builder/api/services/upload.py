@@ -1,5 +1,6 @@
 """Upload service for managing pending claims and document staging."""
 
+import hashlib
 import json
 import shutil
 import uuid
@@ -31,6 +32,7 @@ class PendingDocument:
     content_type: str
     upload_time: str
     extension: str
+    file_md5: str = ""  # MD5 hash of file content
 
 
 @dataclass
@@ -172,8 +174,9 @@ class UploadService:
         if file_size == 0:
             raise HTTPException(status_code=400, detail="File is empty")
 
-        # Generate document ID
+        # Generate document ID and calculate MD5 hash
         doc_id = str(uuid.uuid4())[:8]
+        file_md5 = hashlib.md5(content).hexdigest()
 
         # Create document entry
         doc = PendingDocument(
@@ -183,6 +186,7 @@ class UploadService:
             content_type=file.content_type or "application/octet-stream",
             upload_time=datetime.utcnow().isoformat() + "Z",
             extension=extension,
+            file_md5=file_md5,
         )
 
         # Save file to staging

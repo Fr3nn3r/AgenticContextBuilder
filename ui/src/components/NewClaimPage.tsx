@@ -164,6 +164,7 @@ export function NewClaimPage() {
             claim_id: claim.claim_id,
             filename: doc.original_filename,
             phase: 'pending',
+            file_md5: doc.file_md5,
           };
         });
       });
@@ -291,6 +292,7 @@ export function NewClaimPage() {
               batchId={currentBatch.batch_id}
               status={currentBatch.status}
               docs={docs}
+              claimIds={currentBatch.claim_ids}
               summary={currentBatch.summary}
               onCancel={() => setShowCancelConfirm(true)}
               isConnected={isConnected}
