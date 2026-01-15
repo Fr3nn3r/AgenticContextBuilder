@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext'
 import { FilterProvider } from './context/FilterContext'
 import { BatchProvider } from './context/BatchContext'
 import { ClaimsProvider } from './context/ClaimsContext'
+import { HelpTooltipProvider } from './components/shared'
 import App from './App'
 import './index.css'
 
@@ -24,7 +25,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <BatchProvider>
             <FilterProvider>
               <ClaimsProvider>
-                <App />
+                <HelpTooltipProvider>
+                  <App />
+                </HelpTooltipProvider>
               </ClaimsProvider>
             </FilterProvider>
           </BatchProvider>

@@ -483,6 +483,28 @@ export async function clearBaseline(): Promise<{ status: string }> {
   return fetchJson<{ status: string }>(`${API_BASE}/insights/baseline`, { method: "DELETE" });
 }
 
+// =============================================================================
+// EVOLUTION API
+// =============================================================================
+
+import type { EvolutionSummary, DocTypeMatrixResponse } from "../types";
+
+/**
+ * Get pipeline evolution timeline with scope and accuracy metrics.
+ * Shows how the pipeline has evolved over time across version bundles.
+ */
+export async function getEvolutionTimeline(): Promise<EvolutionSummary> {
+  return fetchJson<EvolutionSummary>(`${API_BASE}/evolution/timeline`);
+}
+
+/**
+ * Get doc type evolution matrix.
+ * Shows per-doc-type field counts and accuracy across spec versions.
+ */
+export async function getEvolutionDocTypes(): Promise<DocTypeMatrixResponse> {
+  return fetchJson<DocTypeMatrixResponse>(`${API_BASE}/evolution/doc-types`);
+}
+
 // Azure DI API for bounding box highlighting
 
 import type { AzureDIOutputExtended } from "../types";

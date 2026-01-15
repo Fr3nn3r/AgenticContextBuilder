@@ -68,3 +68,6 @@ export { BatchSubNav, type BatchTab } from "./BatchSubNav";
 // Header components
 export { ThemePopover } from "./ThemePopover";
 export { HeaderUserMenu } from "./HeaderUserMenu";
+
+// Help tooltips
+export { HelpTerm, HelpIcon, HelpTooltipProvider } from "./HelpTerm";

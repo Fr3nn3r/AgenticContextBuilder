@@ -229,6 +229,185 @@ class DocumentsService:
         with open(azure_di_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def get_doc_runs(self, doc_id: str, claim_id: str) -> List[dict]:
+        """
+        Get all pipeline runs that processed this document.
+
+        Returns list of runs with extraction summary for each.
+        """
+        claim_dir = self._find_claim_dir(claim_id)
+        if not claim_dir:
+            return []
+
+        runs_dir = claim_dir / "runs"
+        if not runs_dir.exists():
+            return []
+
+        result = []
+        for run_dir in sorted(runs_dir.iterdir(), reverse=True):
+            if not run_dir.is_dir():
+                continue
+            if not (run_dir.name.startswith("run_") or run_dir.name.startswith("BATCH-")):
+                continue
+
+            # Check if this run has extraction for this document
+            extraction_path = run_dir / "extraction" / f"{doc_id}.json"
+            if not extraction_path.exists():
+                continue
+
+            # Load run metadata
+            run_info: dict = {
+                "run_id": run_dir.name,
+                "timestamp": None,
+                "model": "unknown",
+                "status": "complete",
+                "extraction": None,
+            }
+
+            # Try to get timestamp and model from manifest
+            manifest_path = run_dir / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
+                        manifest = json.load(f)
+                        run_info["timestamp"] = manifest.get("started_at") or manifest.get("completed_at")
+                        run_info["model"] = manifest.get("model", "unknown")
+                except Exception:
+                    pass
+
+            # Load extraction summary
+            try:
+                with open(extraction_path, "r", encoding="utf-8") as f:
+                    ext_data = json.load(f)
+                    quality_gate = ext_data.get("quality_gate", {})
+                    fields = ext_data.get("fields", [])
+                    run_info["extraction"] = {
+                        "field_count": len(fields),
+                        "gate_status": quality_gate.get("status"),
+                    }
+            except Exception:
+                pass
+
+            result.append(run_info)
+
+        return result
+
+    def list_all_documents(
+        self,
+        claim_id: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        has_truth: Optional[bool] = None,
+        search: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Tuple[List[dict], int]:
+        """
+        List all documents across all claims with optional filters.
+
+        Returns (documents, total_count) for pagination.
+        """
+        storage = self.storage_factory()
+        all_docs: List[dict] = []
+
+        if not self.data_dir.exists():
+            return [], 0
+
+        # Iterate through all claims
+        for claim_dir in self.data_dir.iterdir():
+            if not claim_dir.is_dir():
+                continue
+
+            current_claim_id = extract_claim_number(claim_dir.name)
+
+            # Filter by claim_id if specified
+            if claim_id and current_claim_id != claim_id and claim_dir.name != claim_id:
+                continue
+
+            docs_dir = claim_dir / "docs"
+            if not docs_dir.exists():
+                continue
+
+            # Get latest run for quality status
+            run_dir = get_latest_run_dir_for_claim(claim_dir)
+            extraction_dir = run_dir / "extraction" if run_dir else None
+
+            for doc_folder in docs_dir.iterdir():
+                if not doc_folder.is_dir():
+                    continue
+
+                doc_id = doc_folder.name
+                meta_path = doc_folder / "meta" / "doc.json"
+
+                if not meta_path.exists():
+                    continue
+
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+
+                filename = meta.get("original_filename", "Unknown")
+                current_doc_type = meta.get("doc_type", "unknown")
+                language = meta.get("language", "es")
+
+                # Filter by doc_type
+                if doc_type and current_doc_type != doc_type:
+                    continue
+
+                # Check for labels (truth)
+                label_data = storage.label_store.get_label(doc_id)
+                doc_has_truth = label_data is not None
+
+                # Filter by has_truth
+                if has_truth is not None and doc_has_truth != has_truth:
+                    continue
+
+                # Filter by search term (filename or doc_id)
+                if search:
+                    search_lower = search.lower()
+                    if search_lower not in filename.lower() and search_lower not in doc_id.lower():
+                        continue
+
+                # Get quality status from latest extraction
+                quality_status = None
+                if extraction_dir:
+                    extraction_path = extraction_dir / f"{doc_id}.json"
+                    if extraction_path.exists():
+                        try:
+                            with open(extraction_path, "r", encoding="utf-8") as f:
+                                ext_data = json.load(f)
+                                quality_gate = ext_data.get("quality_gate", {})
+                                quality_status = quality_gate.get("status")
+                        except Exception:
+                            pass
+
+                # Get reviewer info from labels
+                last_reviewed = None
+                reviewer = None
+                if label_data:
+                    last_reviewed = label_data.get("reviewed_at")
+                    reviewer = label_data.get("reviewer")
+
+                all_docs.append({
+                    "doc_id": doc_id,
+                    "claim_id": current_claim_id,
+                    "filename": filename,
+                    "doc_type": current_doc_type,
+                    "language": language,
+                    "has_truth": doc_has_truth,
+                    "last_reviewed": last_reviewed,
+                    "reviewer": reviewer,
+                    "quality_status": quality_status,
+                })
+
+        # Sort by last_reviewed (most recent first), then by filename
+        all_docs.sort(key=lambda d: (d["last_reviewed"] or "", d["filename"]), reverse=True)
+
+        total = len(all_docs)
+
+        # Apply pagination
+        paginated = all_docs[offset:offset + limit]
+
+        return paginated, total
+
     def _find_claim_dir(self, claim_id: str) -> Optional[Path]:
         if not self.data_dir.exists():
             return None

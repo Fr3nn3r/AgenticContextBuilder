@@ -25,7 +25,8 @@ export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
 
   // Get data from contexts
   const { claims, filteredClaims, docs, selectClaim } = useClaims();
-  const { selectedRunId } = useBatch();
+  const { selectedRunId: _selectedRunId } = useBatch();
+  void _selectedRunId; // No longer used - documents now link directly to Document Detail
   const {
     searchQuery,
     lobFilter,
@@ -94,11 +95,8 @@ export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
   }
 
   function handleSelectDoc(docId: string, claimId: string) {
-    if (selectedRunId) {
-      navigate(`/batches/${selectedRunId}/documents?claim=${claimId}&doc=${docId}`);
-    } else {
-      navigate(`/claims/${claimId}/review?doc=${docId}`);
-    }
+    // Navigate directly to Document Detail page
+    navigate(`/documents/${claimId}/${docId}`);
   }
 
   function handleNavigateToReview(claimId: string) {

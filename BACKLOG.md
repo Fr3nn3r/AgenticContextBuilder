@@ -28,6 +28,42 @@ _Currently active work. Add handoff notes inline._
 
 ## Done (Recent)
 
+- [x] **Phase 4: Update remaining links** (2026-01-15)
+  - ClaimsTable: Document clicks now go to `/documents/:claimId/:docId`
+  - ClaimReview: Made read-only with "Edit Ground Truth" button
+  - Each doc in list has "Open in Document Detail" icon button
+  - Reduced ClaimReview from 493 to 446 lines
+  - Files: `ClaimsTable.tsx`, `ClaimReview.tsx`
+
+- [x] **Phase 3: Simplify Batches Documents Tab** (2026-01-15)
+  - Made `/batches/:batchId/documents` read-only (removed ground truth editing)
+  - Added "Edit Ground Truth" button → navigates to Document Detail page
+  - Kept batch-scoped operational view with filters and document viewer
+  - Reduced component from 788 to 629 lines (20% reduction)
+  - Files: `DocumentReview.tsx`
+
+- [x] **Phase 2: Documents List Page** (2026-01-15)
+  - Created `/documents` - master list of ALL documents across all claims
+  - Filters: claim, doc_type, has_truth, quality status, search
+  - Clickable rows navigate to Document Detail page
+  - Pagination support
+  - Backend: `GET /api/documents` with filtering + pagination
+  - Files: `DocumentsListPage.tsx`, `AppRoutes.tsx`, `client.ts`, `documents.py`, `main.py`
+
+- [x] **Phase 1: Document Detail Page** (2026-01-15)
+  - Created `/documents/:claimId/:docId` - standalone document view
+  - Three tabs: Overview, Ground Truth, Run History
+  - Ground truth editing decoupled from batch context
+  - Backend API: `GET /api/docs/{doc_id}/runs` for run history
+  - TruthPage now links to Document Detail
+  - Files: `DocumentDetailPage.tsx`, `AppRoutes.tsx`, `client.ts`, `documents.py`, `main.py`
+
+- [x] **Versioning Policy & Bump Script** (2026-01-15)
+  - Synced versions to 0.2.0 (backend + frontend)
+  - Created `scripts/version-bump.ps1` for patch/minor/major bumps
+  - Added commit conventions to CLAUDE.md
+  - Commit: 0126d4c
+
 - [x] **Batches Overview UI Improvements** (2026-01-15)
   - All 10 tasks completed for ExtractionPage.tsx
   - Removed redundant batch header card

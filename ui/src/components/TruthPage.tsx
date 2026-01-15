@@ -212,7 +212,7 @@ export function TruthPage() {
               key={entry.file_md5}
               entry={entry}
               runs={data.runs}
-              onOpenDoc={(docId, claimId) => navigate(`/claims/${claimId}/review?doc=${docId}`)}
+              onOpenDoc={(docId, claimId) => navigate(`/documents/${claimId}/${docId}?tab=ground-truth`)}
             />
           ))
         )}

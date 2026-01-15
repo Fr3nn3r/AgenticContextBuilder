@@ -11,6 +11,8 @@ import { EvaluationPage } from "./components/evaluation";
 import { NewClaimPage } from "./components/NewClaimPage";
 import { PipelineControlCenter } from "./components/PipelineControlCenter";
 import { TruthPage } from "./components/TruthPage";
+import { DocumentDetailPage } from "./components/DocumentDetailPage";
+import { DocumentsListPage } from "./components/DocumentsListPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AdminPage } from "./components/AdminPage";
 import {
@@ -140,6 +142,10 @@ export function AppRoutes() {
         element={<ClaimReview onSaved={refreshClaims} selectedRunId={selectedRunId} />}
       />
       <Route
+        path="/documents/:claimId/:docId"
+        element={<DocumentDetailPage />}
+      />
+      <Route
         path="/templates"
         element={
           <ProtectedRoute screen="templates">
@@ -216,19 +222,12 @@ export function AppRoutes() {
 
       <Route path="/evaluation" element={<EvaluationPage />} />
 
+      {/* All Documents page (batch-independent) */}
+      <Route path="/documents" element={<DocumentsListPage />} />
+
       {/* Redirects for backwards compatibility */}
       <Route path="/" element={<Navigate to="/batches" replace />} />
       <Route path="/dashboard" element={<Navigate to="/batches" replace />} />
-      <Route
-        path="/documents"
-        element={
-          selectedRunId ? (
-            <Navigate to={`/batches/${selectedRunId}/documents`} replace />
-          ) : (
-            <Navigate to="/batches" replace />
-          )
-        }
-      />
       <Route
         path="/classification"
         element={

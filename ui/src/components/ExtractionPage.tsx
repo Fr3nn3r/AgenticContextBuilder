@@ -9,6 +9,7 @@ import {
   FailBadge,
   PageLoadingSkeleton,
   SelectToViewEmptyState,
+  HelpTerm,
 } from "./shared";
 import type { DetailedRunInfo, InsightsOverview, DocTypeMetrics } from "../api/client";
 
@@ -165,6 +166,7 @@ export function ExtractionPage({
                 {/* Ingestion Card */}
                 <PhaseCard
                   title="Ingestion"
+                  helpTerm="ingestion"
                   icon={<DownloadIcon />}
                   color="blue"
                   healthStatus={selectedBatch.phases.ingestion.failed > 0 ? "error" : "healthy"}
@@ -189,6 +191,7 @@ export function ExtractionPage({
                 {/* Classification Card */}
                 <PhaseCard
                   title="Classification"
+                  helpTerm="classification"
                   icon={<TagIcon />}
                   color="purple"
                   healthStatus={selectedBatch.phases.classification.low_confidence > 0 ? "warning" : "healthy"}
@@ -227,6 +230,7 @@ export function ExtractionPage({
                 {/* Extraction Card */}
                 <PhaseCard
                   title="Extraction"
+                  helpTerm="extraction"
                   icon={<ExtractIcon />}
                   color="green"
                   healthStatus={
@@ -256,6 +260,7 @@ export function ExtractionPage({
                 {/* Quality Gate Card */}
                 <PhaseCard
                   title="Quality Gate"
+                  helpTerm="qualityGate"
                   icon={<ShieldIcon />}
                   color="amber"
                   healthStatus={
@@ -287,7 +292,9 @@ export function ExtractionPage({
                   {overview && (
                     <div className="mt-2 pt-2 border-t">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Evidence rate</span>
+                        <span className="text-sm text-muted-foreground">
+                          <HelpTerm term="evidenceRate">Evidence rate</HelpTerm>
+                        </span>
                         <span
                           className={cn(
                             "text-lg font-bold px-2 py-0.5 rounded",
@@ -318,7 +325,7 @@ export function ExtractionPage({
                   <div className="space-y-4">
                     <ProgressBar
                       testId="label-coverage"
-                      label="Label Coverage (truth)"
+                      label={<><HelpTerm term="labelCoverage">Label Coverage</HelpTerm> (truth)</>}
                       description="Labeled docs / total docs in run"
                       value={overview?.docs_reviewed || 0}
                       total={selectedBatch.docs_total}
@@ -328,7 +335,7 @@ export function ExtractionPage({
                     />
                     <ProgressBar
                       testId="extraction-coverage"
-                      label="Extraction Coverage"
+                      label={<HelpTerm term="extractionCoverage">Extraction Coverage</HelpTerm>}
                       description="Docs with extraction / total docs in run"
                       value={overview?.docs_with_extraction || 0}
                       total={selectedBatch.docs_total}
@@ -349,13 +356,17 @@ export function ExtractionPage({
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 font-medium text-muted-foreground">Type</th>
-                          <th className="text-right py-2 font-medium text-muted-foreground">Classified</th>
-                          <th className="text-right py-2 font-medium text-muted-foreground">Extracted</th>
                           <th className="text-right py-2 font-medium text-muted-foreground">
-                            Presence
+                            <HelpTerm term="classification">Classified</HelpTerm>
                           </th>
                           <th className="text-right py-2 font-medium text-muted-foreground">
-                            Evidence
+                            <HelpTerm term="extraction">Extracted</HelpTerm>
+                          </th>
+                          <th className="text-right py-2 font-medium text-muted-foreground">
+                            <HelpTerm term="presence">Presence</HelpTerm>
+                          </th>
+                          <th className="text-right py-2 font-medium text-muted-foreground">
+                            <HelpTerm term="evidenceRate">Evidence</HelpTerm>
                           </th>
                         </tr>
                       </thead>
@@ -503,9 +514,11 @@ interface PhaseCardProps {
   duration?: number | null;
   children?: React.ReactNode;
   testId?: string;
+  /** Optional terminology key for contextual help tooltip on the title */
+  helpTerm?: "ingestion" | "classification" | "extraction" | "qualityGate";
 }
 
-function PhaseCard({ title, icon, color, healthStatus, metrics, duration, children, testId }: PhaseCardProps) {
+function PhaseCard({ title, icon, color, healthStatus, metrics, duration, children, testId, helpTerm }: PhaseCardProps) {
   const colorClasses = {
     blue: "bg-info/10 text-info",
     purple: "bg-secondary/10 text-secondary",
@@ -537,7 +550,9 @@ function PhaseCard({ title, icon, color, healthStatus, metrics, duration, childr
           >
             {icon}
           </div>
-          <h4 className="font-medium text-foreground">{title}</h4>
+          <h4 className="font-medium text-foreground">
+            {helpTerm ? <HelpTerm term={helpTerm}>{title}</HelpTerm> : title}
+          </h4>
           {healthStatus && (
             <span
               className={cn(
@@ -589,7 +604,7 @@ function PhaseCard({ title, icon, color, healthStatus, metrics, duration, childr
 }
 
 interface ProgressBarProps {
-  label: string;
+  label: React.ReactNode;
   description?: string;
   value: number;
   total: number;

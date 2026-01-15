@@ -734,3 +734,82 @@ export interface VersionInfo {
   git_commit: string | null;
   display: string;
 }
+
+// =============================================================================
+// EVOLUTION TYPES
+// =============================================================================
+
+/** Single point in the pipeline evolution timeline */
+export interface EvolutionDataPoint {
+  spec_hash: string;
+  first_seen: string;
+  last_seen: string;
+  bundle_count: number;
+
+  // Scope metrics
+  doc_types_count: number;
+  doc_types_list: string[];
+  total_fields: number;
+  fields_by_type: Record<string, number>;
+
+  // Accuracy metrics
+  representative_run_id: string;
+  accuracy_rate: number | null;
+  correct_count: number;
+  incorrect_count: number;
+  missing_count: number;
+  docs_evaluated: number;
+
+  // Version info
+  model_name: string;
+  contextbuilder_version: string;
+  git_commit: string | null;
+}
+
+/** Scope growth metrics */
+export interface ScopeGrowth {
+  start_doc_types: number;
+  end_doc_types: number;
+  start_fields: number;
+  end_fields: number;
+  doc_types_added: string[];
+  fields_delta: number;
+}
+
+/** Accuracy trend metrics */
+export interface AccuracyTrend {
+  start_accuracy: number | null;
+  end_accuracy: number | null;
+  delta: number | null;
+  trend: "improving" | "stable" | "regressing" | "no_data";
+}
+
+/** A doc type's appearance at a specific spec version */
+export interface DocTypeAppearance {
+  spec_hash: string;
+  field_count: number;
+  accuracy_rate: number | null;
+}
+
+/** Evolution of a single doc type across versions */
+export interface DocTypeEvolution {
+  doc_type: string;
+  first_version: string;
+  current_fields: number;
+  appearances: DocTypeAppearance[];
+}
+
+/** Complete evolution summary for the dashboard */
+export interface EvolutionSummary {
+  timeline: EvolutionDataPoint[];
+  spec_versions: string[];
+  scope_growth: ScopeGrowth;
+  accuracy_trend: AccuracyTrend;
+  doc_type_matrix: DocTypeEvolution[];
+}
+
+/** Doc type matrix response */
+export interface DocTypeMatrixResponse {
+  doc_types: DocTypeEvolution[];
+  spec_versions: string[];
+}

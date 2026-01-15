@@ -3,6 +3,7 @@
 from .auth import AuthService, Session
 from .claims import ClaimsService
 from .documents import DocumentsService
+from .evolution import EvolutionService
 from .insights import InsightsService
 from .labels import LabelsService
 from .truth import TruthService
@@ -21,6 +22,7 @@ __all__ = [
     "DocPhase",
     "DocProgress",
     "DocumentsService",
+    "EvolutionService",
     "InsightsService",
     "LabelsService",
     "PendingClaim",

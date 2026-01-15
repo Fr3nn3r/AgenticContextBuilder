@@ -63,6 +63,7 @@ from context_builder.api.services import (
     ClaimsService,
     DocPhase,
     DocumentsService,
+    EvolutionService,
     InsightsService,
     LabelsService,
     PipelineService,
@@ -325,6 +326,11 @@ def get_labels_service() -> LabelsService:
 def get_insights_service() -> InsightsService:
     """Get InsightsService instance."""
     return InsightsService(DATA_DIR)
+
+
+def get_evolution_service() -> EvolutionService:
+    """Get EvolutionService instance."""
+    return EvolutionService(DATA_DIR)
 
 
 def get_upload_service() -> UploadService:
@@ -628,6 +634,31 @@ def list_claim_runs():
     Reads from global runs directory (output/runs/) when available.
     """
     return get_claims_service().list_runs()
+
+
+@app.get("/api/documents")
+def list_all_documents(
+    claim_id: Optional[str] = Query(None, description="Filter by claim ID"),
+    doc_type: Optional[str] = Query(None, description="Filter by document type"),
+    has_truth: Optional[bool] = Query(None, description="Filter by has ground truth"),
+    search: Optional[str] = Query(None, description="Search in filename or doc_id"),
+    limit: int = Query(100, ge=1, le=1000, description="Max documents to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+):
+    """
+    List all documents across all claims with optional filters.
+
+    Returns paginated list of documents with metadata.
+    """
+    docs, total = get_documents_service().list_all_documents(
+        claim_id=claim_id,
+        doc_type=doc_type,
+        has_truth=has_truth,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return {"documents": docs, "total": total}
 
 
 @app.get("/api/claims/{claim_id}/docs", response_model=List[DocSummary])
@@ -1239,6 +1270,17 @@ def get_doc_azure_di(doc_id: str, claim_id: Optional[str] = Query(None)):
     return get_documents_service().get_doc_azure_di(doc_id)
 
 
+@app.get("/api/docs/{doc_id}/runs")
+def get_doc_runs(doc_id: str, claim_id: str = Query(..., description="Claim ID containing the document")):
+    """
+    Get all pipeline runs that processed this document.
+
+    Returns list of runs with run_id, timestamp, model, status, and extraction summary.
+    Used by the Document Detail page to show run history.
+    """
+    return get_documents_service().get_doc_runs(doc_id, claim_id)
+
+
 # =============================================================================
 # INSIGHTS ENDPOINTS
 # =============================================================================
@@ -1461,6 +1503,31 @@ def clear_baseline_endpoint():
 
 
 # =============================================================================
+# EVOLUTION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/evolution/timeline")
+def get_evolution_timeline():
+    """Get pipeline evolution timeline with scope and accuracy metrics.
+
+    Returns timeline data showing how the pipeline's scope (doc types, fields)
+    and accuracy have evolved across version bundles over time.
+    """
+    return get_evolution_service().get_evolution_timeline()
+
+
+@app.get("/api/evolution/doc-types")
+def get_evolution_doc_types():
+    """Get doc type evolution matrix.
+
+    Returns per-doc-type evolution data showing field counts and accuracy
+    across all spec versions.
+    """
+    return get_evolution_service().get_doc_type_matrix()
+
+
+# =============================================================================
 # CLASSIFICATION REVIEW ENDPOINTS
 # =============================================================================
 
@@ -1473,7 +1540,6 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
     review_status (pending/confirmed/overridden), and doc_type_truth.
     """
     storage = get_storage()
-    global_runs_dir = get_global_runs_dir(DATA_DIR)
 
     # Build list of docs from all claims
     docs = []
@@ -1488,8 +1554,8 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
         if not docs_dir.exists() or not run_dir.exists():
             continue
 
-        context_dir = run_dir / "context"
-        if not context_dir.exists():
+        extraction_dir = run_dir / "extraction"
+        if not extraction_dir.exists():
             continue
 
         claim_id = extract_claim_number(claim_dir.name)
@@ -1500,23 +1566,23 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
 
             doc_id = doc_folder.name
             meta_path = doc_folder / "meta" / "doc.json"
-            context_path = context_dir / f"{doc_id}.json"
+            extraction_path = extraction_dir / f"{doc_id}.json"
 
-            if not meta_path.exists() or not context_path.exists():
+            if not meta_path.exists() or not extraction_path.exists():
                 continue
 
             # Load metadata
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
 
-            # Load classification context
-            with open(context_path, "r", encoding="utf-8") as f:
-                context = json.load(f)
+            # Load extraction result (contains doc type and confidence)
+            with open(extraction_path, "r", encoding="utf-8") as f:
+                extraction = json.load(f)
 
-            classification = context.get("classification", {})
-            predicted_type = classification.get("document_type", meta.get("doc_type", "unknown"))
-            confidence = classification.get("confidence", meta.get("doc_type_confidence", 0.0))
-            signals = classification.get("signals", [])
+            doc_info = extraction.get("doc", {})
+            predicted_type = doc_info.get("doc_type", meta.get("doc_type", "unknown"))
+            confidence = doc_info.get("doc_type_confidence", meta.get("doc_type_confidence", 0.0))
+            signals = []  # Extraction files don't have classification signals
 
             # Check for existing label (from registry/labels/)
             review_status = "pending"
