@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { formatDocType, formatFieldName, formatTimestamp } from "../../lib/formatters";
 import {
@@ -19,9 +19,20 @@ import {
   type RunInfo,
   type RunComparison,
 } from "../../api/client";
+import { EvolutionView } from "./EvolutionView";
+
+type EvaluationTab = "compare" | "evolution";
 
 export function EvaluationPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Tab state (persisted in URL)
+  const activeTab = (searchParams.get("tab") as EvaluationTab) || "evolution";
+
+  const setActiveTab = (tab: EvaluationTab) => {
+    setSearchParams({ tab });
+  };
 
   // Run state
   const [runs, setRuns] = useState<RunInfo[]>([]);
@@ -119,7 +130,7 @@ export function EvaluationPage() {
     evidence: run.evidence_rate || 0,
   }));
 
-  if (loading) {
+  if (loading && activeTab === "compare") {
     return <PageLoadingSkeleton message="Loading evaluation data..." />;
   }
 
@@ -130,27 +141,105 @@ export function EvaluationPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Evaluation</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Compare batches and track extraction quality over time
+            Track pipeline evolution and compare batch quality
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {baselineRunId && (
-            <span className="text-xs text-success bg-success/10 px-2 py-1 rounded flex items-center gap-1">
-              <BaselineBadge />
-              {baselineRunId}
-            </span>
-          )}
-          {baselineRunId && (
-            <button
-              onClick={handleClearBaseline}
-              className="text-xs px-2 py-1 text-muted-foreground hover:text-foreground"
-            >
-              Clear Baseline
-            </button>
+          {activeTab === "compare" && baselineRunId && (
+            <>
+              <span className="text-xs text-success bg-success/10 px-2 py-1 rounded flex items-center gap-1">
+                <BaselineBadge />
+                {baselineRunId}
+              </span>
+              <button
+                onClick={handleClearBaseline}
+                className="text-xs px-2 py-1 text-muted-foreground hover:text-foreground"
+              >
+                Clear Baseline
+              </button>
+            </>
           )}
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-1 border-b">
+        <button
+          onClick={() => setActiveTab("evolution")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "evolution"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Pipeline Evolution
+        </button>
+        <button
+          onClick={() => setActiveTab("compare")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "compare"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Compare Runs
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "evolution" ? (
+        <EvolutionView />
+      ) : (
+        <CompareRunsView
+          runs={runs}
+          baselineRunId={baselineRunId}
+          comparison={comparison}
+          compareBaselineId={compareBaselineId}
+          compareCurrentId={compareCurrentId}
+          trendData={trendData}
+          setCompareBaselineId={setCompareBaselineId}
+          setCompareCurrentId={setCompareCurrentId}
+          handleSetBaseline={handleSetBaseline}
+          handleViewRun={handleViewRun}
+        />
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// COMPARE RUNS VIEW (extracted from original)
+// =============================================================================
+
+interface CompareRunsViewProps {
+  runs: RunInfo[];
+  baselineRunId: string | null;
+  comparison: RunComparison | null;
+  compareBaselineId: string | null;
+  compareCurrentId: string | null;
+  trendData: Array<{ run_id: string; timestamp?: string | null; accuracy: number; presence: number; evidence: number }>;
+  setCompareBaselineId: (id: string | null) => void;
+  setCompareCurrentId: (id: string | null) => void;
+  handleSetBaseline: (id: string) => void;
+  handleViewRun: (id: string) => void;
+}
+
+function CompareRunsView({
+  runs,
+  baselineRunId,
+  comparison,
+  compareBaselineId,
+  compareCurrentId,
+  trendData,
+  setCompareBaselineId,
+  setCompareCurrentId,
+  handleSetBaseline,
+  handleViewRun,
+}: CompareRunsViewProps) {
+  return (
+    <div className="space-y-6">
       {/* Run Comparison Selectors */}
       <div className="bg-card rounded-lg border shadow-sm p-4">
         <h2 className="text-sm font-semibold mb-3">Compare Runs</h2>

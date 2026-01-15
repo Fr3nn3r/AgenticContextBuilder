@@ -23,6 +23,20 @@ class DecisionType(str, Enum):
     OVERRIDE = "override"
 
 
+class ScopeSnapshot(BaseModel):
+    """Captures pipeline scope at bundle creation time.
+
+    Records the document types and fields supported by the extraction pipeline,
+    enabling tracking of scope evolution over time.
+    """
+
+    doc_types: List[str] = Field(default_factory=list, description="List of supported doc types")
+    total_fields: int = Field(default=0, description="Total field count across all doc types")
+    fields_by_type: Dict[str, int] = Field(
+        default_factory=dict, description="Field count per doc type"
+    )
+
+
 class VersionBundle(BaseModel):
     """Captures all version information at decision time.
 
@@ -40,6 +54,9 @@ class VersionBundle(BaseModel):
     model_version: Optional[str] = Field(None, description="Specific model version/date if known")
     prompt_template_hash: Optional[str] = Field(None, description="Hash of prompt template used")
     extraction_spec_hash: Optional[str] = Field(None, description="Hash of extraction specs")
+    scope_snapshot: Optional[ScopeSnapshot] = Field(
+        None, description="Snapshot of pipeline scope at bundle creation"
+    )
 
 
 class EvidenceCitation(BaseModel):

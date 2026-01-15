@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from context_builder.schemas.decision_record import VersionBundle
+from context_builder.schemas.decision_record import ScopeSnapshot, VersionBundle
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +202,44 @@ class VersionBundleStore:
         logger.warning(f"No extraction specs found. Searched: {[str(p) for p in possible_paths]}")
         return None
 
+    def _capture_scope_snapshot(self) -> Optional[ScopeSnapshot]:
+        """Capture current extraction spec scope.
+
+        Returns:
+            ScopeSnapshot with doc types and field counts, or None if specs unavailable.
+        """
+        try:
+            from context_builder.extraction.spec_loader import get_spec, list_available_specs
+
+            doc_types = list_available_specs()
+            fields_by_type: Dict[str, int] = {}
+
+            for dt in doc_types:
+                try:
+                    spec = get_spec(dt)
+                    fields_by_type[dt] = len(spec.all_fields)
+                except FileNotFoundError:
+                    logger.debug(f"Spec not found for doc type: {dt}")
+                    continue
+                except Exception as e:
+                    logger.debug(f"Failed to load spec for {dt}: {e}")
+                    continue
+
+            if not fields_by_type:
+                return None
+
+            return ScopeSnapshot(
+                doc_types=list(fields_by_type.keys()),
+                total_fields=sum(fields_by_type.values()),
+                fields_by_type=fields_by_type,
+            )
+        except ImportError:
+            logger.debug("spec_loader not available, skipping scope capture")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to capture scope snapshot: {e}")
+            return None
+
     def create_version_bundle(
         self,
         run_id: str,
@@ -238,6 +276,7 @@ class VersionBundleStore:
             model_version=model_version,
             prompt_template_hash=self._get_prompt_template_hash(),
             extraction_spec_hash=self._get_extraction_spec_hash(),
+            scope_snapshot=self._capture_scope_snapshot(),
         )
 
         # Save to storage
@@ -299,6 +338,22 @@ class VersionBundleStore:
             for d in self.storage_dir.iterdir()
             if d.is_dir() and (d / "bundle.json").exists()
         ]
+
+    def get_all_bundles(self) -> list[tuple[str, VersionBundle]]:
+        """Get all version bundles with their run IDs.
+
+        Returns:
+            List of (run_id, VersionBundle) tuples, sorted by created_at.
+        """
+        bundles = []
+        for run_id in self.list_bundles():
+            bundle = self.get_version_bundle(run_id)
+            if bundle:
+                bundles.append((run_id, bundle))
+
+        # Sort by created_at timestamp
+        bundles.sort(key=lambda x: x[1].created_at)
+        return bundles
 
 
 # Singleton for convenience
