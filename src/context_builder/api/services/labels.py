@@ -15,6 +15,7 @@ from context_builder.api.services.utils import extract_claim_number
 from context_builder.storage import StorageFacade
 from context_builder.storage.truth_store import TruthStore
 from context_builder.storage.index_builder import upsert_label_entry
+from context_builder.storage.workspace_paths import get_workspace_logs_dir
 from context_builder.services.decision_ledger import DecisionLedger
 from context_builder.schemas.decision_record import (
     DecisionRecord,
@@ -41,7 +42,8 @@ class LabelsService:
         self.storage_factory = storage_factory
         self.registry_dir = registry_dir
         # Initialize decision ledger for compliance logging
-        self.decision_ledger = DecisionLedger(ledger_dir or Path("output/logs"))
+        # Use workspace-aware path when not explicitly provided
+        self.decision_ledger = DecisionLedger(ledger_dir or get_workspace_logs_dir())
 
     def save_labels(
         self,

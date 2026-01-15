@@ -43,6 +43,7 @@ from context_builder.services.compliance import (
     DecisionStorage,
     LLMCallSink,
 )
+from context_builder.storage.workspace_paths import get_workspace_logs_dir
 from context_builder.schemas.decision_record import (
     DecisionRecord,
     DecisionType,
@@ -121,7 +122,8 @@ class GenericFieldExtractor(FieldExtractor):
         if decision_storage is not None:
             self._decision_storage = decision_storage
         else:
-            ledger_dir = audit_storage_dir or Path("output/logs")
+            # Use workspace-aware path when not explicitly provided
+            ledger_dir = audit_storage_dir or get_workspace_logs_dir()
             self._decision_storage = DecisionLedger(ledger_dir)
 
     def extract(

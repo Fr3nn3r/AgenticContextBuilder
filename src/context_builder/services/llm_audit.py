@@ -25,6 +25,7 @@ from context_builder.schemas.llm_call_record import (
     LLMCallRecord,
 )
 from context_builder.services.compliance.file import FileLLMCallStorage
+from context_builder.storage.workspace_paths import get_workspace_logs_dir
 
 if TYPE_CHECKING:
     from context_builder.services.compliance.interfaces import LLMCallSink
@@ -94,6 +95,10 @@ _default_service: Optional[LLMAuditService] = None
 def get_llm_audit_service(storage_dir: Optional[Path] = None) -> LLMAuditService:
     """Get or create the default LLM audit service.
 
+    When no storage_dir is provided, uses the active workspace's logs directory
+    from .contextbuilder/workspaces.json. Falls back to output/logs only if
+    no workspace is configured.
+
     Args:
         storage_dir: Optional directory override
 
@@ -106,10 +111,21 @@ def get_llm_audit_service(storage_dir: Optional[Path] = None) -> LLMAuditService
         return LLMAuditService(storage_dir)
 
     if _default_service is None:
-        default_dir = Path("output/logs")
+        # Use workspace-aware path instead of hardcoded output/logs
+        default_dir = get_workspace_logs_dir()
         _default_service = LLMAuditService(default_dir)
 
     return _default_service
+
+
+def reset_llm_audit_service() -> None:
+    """Reset the global LLM audit service singleton.
+
+    Call this after workspace switch to ensure the service
+    is recreated with the new workspace's logs directory.
+    """
+    global _default_service
+    _default_service = None
 
 
 class AuditedOpenAIClient:

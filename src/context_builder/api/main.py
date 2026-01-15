@@ -81,6 +81,8 @@ from context_builder.services.compliance import (
 )
 from context_builder.services.compliance.config import ComplianceStorageConfig
 from context_builder.services.compliance.storage_factory import ComplianceStorageFactory
+from context_builder.services.llm_audit import reset_llm_audit_service
+from context_builder.storage.workspace_paths import reset_workspace_cache
 
 
 # =============================================================================
@@ -459,6 +461,13 @@ def _reset_service_singletons() -> None:
     _pipeline_service = None
     _prompt_config_service = None
     _compliance_config = None
+
+    # Reset LLM audit service singleton so it recreates with new workspace path
+    reset_llm_audit_service()
+
+    # Reset workspace path cache to force re-reading registry
+    reset_workspace_cache()
+
     # Note: _users_service, _auth_service, _audit_service are global and NOT reset
 
 
@@ -916,7 +925,7 @@ class CreateWorkspaceRequest(BaseModel):
     """Create workspace request body."""
 
     name: str
-    path: str
+    path: Optional[str] = None  # Auto-generated if not provided
     description: Optional[str] = None
 
 
@@ -977,8 +986,8 @@ def create_workspace(
     """Create a new workspace. Requires admin role."""
     workspace_service = get_workspace_service()
 
-    # Validate path is absolute
-    if not Path(request.path).is_absolute():
+    # Validate path is absolute if provided
+    if request.path and not Path(request.path).is_absolute():
         raise HTTPException(
             status_code=400,
             detail="Workspace path must be absolute",
@@ -986,7 +995,7 @@ def create_workspace(
 
     workspace = workspace_service.create_workspace(
         name=request.name,
-        path=request.path,
+        path=request.path,  # None triggers auto-generation
         description=request.description,
     )
 

@@ -55,9 +55,14 @@ class TestComplianceStorageConfigDefaults:
         assert config.backend_type == StorageBackendType.FILE
 
     def test_default_storage_dir(self):
-        """Default storage dir is output/logs."""
+        """Default storage_dir field is None (resolved via get_storage_dir())."""
         config = ComplianceStorageConfig()
-        assert config.storage_dir == Path("output/logs")
+        # Field defaults to None; actual path resolved via get_storage_dir()
+        assert config.storage_dir is None
+        # get_storage_dir() returns workspace-aware path
+        resolved = config.get_storage_dir()
+        assert isinstance(resolved, Path)
+        assert resolved.name == "logs"  # Should end with /logs
 
     def test_default_encryption_key_path(self):
         """Default encryption key path is None."""
@@ -199,7 +204,8 @@ class TestEnvironmentLoading:
         with mock.patch.dict(os.environ, {}, clear=True):
             config = ComplianceStorageConfig.from_env()
             assert config.backend_type == StorageBackendType.FILE
-            assert config.storage_dir == Path("output/logs")
+            # storage_dir defaults to None, resolved via get_storage_dir()
+            assert config.storage_dir is None
 
     def test_from_env_reads_backend_type(self):
         """from_env reads COMPLIANCE_BACKEND_TYPE."""

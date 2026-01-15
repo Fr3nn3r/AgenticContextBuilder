@@ -47,6 +47,13 @@ from .models import (
 from .index_reader import IndexReader
 from .index_builder import build_all_indexes
 from .truth_store import TruthStore
+from .workspace_paths import (
+    get_workspace_logs_dir,
+    get_workspace_claims_dir,
+    get_workspace_registry_dir,
+    get_active_workspace_path,
+    reset_workspace_cache,
+)
 
 __all__ = [
     # Protocol
@@ -70,4 +77,10 @@ __all__ = [
     "IndexReader",
     "build_all_indexes",
     "TruthStore",
+    # Workspace paths
+    "get_workspace_logs_dir",
+    "get_workspace_claims_dir",
+    "get_workspace_registry_dir",
+    "get_active_workspace_path",
+    "reset_workspace_cache",
 ]

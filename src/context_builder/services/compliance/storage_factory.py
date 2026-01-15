@@ -66,8 +66,11 @@ class ComplianceStorageFactory:
         """
         config.validate_for_backend()
 
+        # Use get_storage_dir() for workspace-aware path resolution
+        storage_dir = config.get_storage_dir()
+
         if config.backend_type == StorageBackendType.FILE:
-            return FileDecisionStorage(config.storage_dir)
+            return FileDecisionStorage(storage_dir)
 
         if config.backend_type == StorageBackendType.ENCRYPTED_FILE:
             # Lazy import to avoid loading cryptography at module level
@@ -76,7 +79,7 @@ class ComplianceStorageFactory:
             from context_builder.services.compliance.encrypted import EncryptedDecisionStorage
 
             encryptor = EnvelopeEncryptor(config.encryption_key_path)
-            return EncryptedDecisionStorage(config.storage_dir, encryptor)
+            return EncryptedDecisionStorage(storage_dir, encryptor)
 
         if config.backend_type == StorageBackendType.S3:
             raise ValueError(
@@ -107,8 +110,11 @@ class ComplianceStorageFactory:
         """
         config.validate_for_backend()
 
+        # Use get_storage_dir() for workspace-aware path resolution
+        storage_dir = config.get_storage_dir()
+
         if config.backend_type == StorageBackendType.FILE:
-            return FileLLMCallStorage(config.storage_dir)
+            return FileLLMCallStorage(storage_dir)
 
         if config.backend_type == StorageBackendType.ENCRYPTED_FILE:
             # Lazy import to avoid loading cryptography at module level
@@ -117,7 +123,7 @@ class ComplianceStorageFactory:
             from context_builder.services.compliance.encrypted import EncryptedLLMCallStorage
 
             encryptor = EnvelopeEncryptor(config.encryption_key_path)
-            return EncryptedLLMCallStorage(config.storage_dir, encryptor)
+            return EncryptedLLMCallStorage(storage_dir, encryptor)
 
         if config.backend_type == StorageBackendType.S3:
             raise ValueError(

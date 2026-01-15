@@ -10,6 +10,12 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
+# Lazy import to avoid circular dependency
+def _get_default_storage_dir() -> Path:
+    """Get workspace-aware default storage directory."""
+    from context_builder.storage.workspace_paths import get_workspace_logs_dir
+    return get_workspace_logs_dir()
+
 
 class StorageBackendType(str, Enum):
     """Supported storage backend types."""
@@ -25,7 +31,7 @@ class ComplianceStorageConfig(BaseModel):
 
     Attributes:
         backend_type: The storage backend to use (file, encrypted_file, etc.)
-        storage_dir: Base directory for file-based storage
+        storage_dir: Base directory for file-based storage. Defaults to workspace logs dir.
         encryption_key_path: Path to encryption key (for encrypted backend)
         encryption_algorithm: Encryption algorithm to use
         pii_vault_enabled: Enable PII vault tokenization (Phase 3)
@@ -38,13 +44,12 @@ class ComplianceStorageConfig(BaseModel):
     Example:
         >>> config = ComplianceStorageConfig(
         ...     backend_type=StorageBackendType.FILE,
-        ...     storage_dir=Path("output/logs"),
         ...     pii_vault_enabled=True,
         ... )
     """
 
     backend_type: StorageBackendType = StorageBackendType.FILE
-    storage_dir: Path = Path("output/logs")
+    storage_dir: Optional[Path] = None  # Defaults to workspace logs dir
 
     # Encrypted backend options (Phase 5)
     encryption_key_path: Optional[Path] = None
@@ -88,9 +93,19 @@ class ComplianceStorageConfig(BaseModel):
             return Path(v)
         return v
 
+    def get_storage_dir(self) -> Path:
+        """Get the storage directory, defaulting to workspace logs dir if not set.
+
+        Returns:
+            Path to storage directory. Uses workspace-aware default if storage_dir is None.
+        """
+        if self.storage_dir is not None:
+            return self.storage_dir
+        return _get_default_storage_dir()
+
     def get_pii_vault_dir(self) -> Path:
         """Get the PII vault directory, defaulting to storage_dir if not set."""
-        return self.pii_vault_dir or self.storage_dir
+        return self.pii_vault_dir or self.get_storage_dir()
 
     def validate_for_backend(self) -> None:
         """Validate that required options are set for the selected backend.
