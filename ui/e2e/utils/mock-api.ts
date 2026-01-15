@@ -22,6 +22,17 @@ const uploadResultFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "u
 const pipelineRunFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-run.json"), "utf-8"));
 const pipelineStatusFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-status.json"), "utf-8"));
 
+// Compliance fixtures
+const complianceDecisionsFixture = JSON.parse(
+  fs.readFileSync(path.join(fixturesDir, "compliance-decisions.json"), "utf-8")
+);
+const complianceVerificationFixture = JSON.parse(
+  fs.readFileSync(path.join(fixturesDir, "compliance-verification.json"), "utf-8")
+);
+const complianceBundlesFixture = JSON.parse(
+  fs.readFileSync(path.join(fixturesDir, "compliance-bundles.json"), "utf-8")
+);
+
 // Auth types
 export type Role = "admin" | "reviewer" | "operator" | "auditor";
 export interface User {
@@ -668,4 +679,167 @@ export async function setupAuthenticatedMocks(page: Page, role: Role = "admin") 
 export async function setupAuthenticatedMultiBatchMocks(page: Page, role: Role = "admin") {
   await setupAuthMocks(page, role);
   await setupMultiBatchMocks(page);
+}
+
+// ============================================================================
+// Compliance Mocks
+// ============================================================================
+
+export interface ComplianceMockOptions {
+  /** Verification scenario: valid, invalid, or empty hash chain */
+  verification?: "valid" | "invalid" | "empty";
+  /** Decision list scenario: normal data or empty */
+  decisions?: "normal" | "empty";
+}
+
+/**
+ * Setup compliance endpoint mocks.
+ * Can be configured to return different scenarios for testing edge cases.
+ *
+ * @param page - Playwright page object
+ * @param options - Configuration for mock scenarios
+ */
+export async function setupComplianceMocks(
+  page: Page,
+  options: ComplianceMockOptions = {}
+): Promise<void> {
+  const { verification = "valid", decisions = "normal" } = options;
+
+  // Mock GET /api/compliance/ledger/verify
+  await page.route("**/api/compliance/ledger/verify", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(complianceVerificationFixture[verification]),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/ledger/decisions (with filtering support)
+  await page.route(/\/api\/compliance\/ledger\/decisions(\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") {
+      // Parse query params for filtering
+      const url = new URL(route.request().url());
+      const typeFilter = url.searchParams.get("decision_type");
+      const claimFilter = url.searchParams.get("claim_id");
+      const docFilter = url.searchParams.get("doc_id");
+
+      // Start with base data or empty
+      let filteredDecisions =
+        decisions === "empty" ? [] : [...complianceDecisionsFixture];
+
+      // Apply filters
+      if (typeFilter) {
+        filteredDecisions = filteredDecisions.filter(
+          (d: { decision_type: string }) => d.decision_type === typeFilter
+        );
+      }
+      if (claimFilter) {
+        filteredDecisions = filteredDecisions.filter((d: { claim_id?: string }) =>
+          d.claim_id?.toLowerCase().includes(claimFilter.toLowerCase())
+        );
+      }
+      if (docFilter) {
+        filteredDecisions = filteredDecisions.filter((d: { doc_id?: string }) =>
+          d.doc_id?.toLowerCase().includes(docFilter.toLowerCase())
+        );
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filteredDecisions),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/version-bundles (list)
+  await page.route(/\/api\/compliance\/version-bundles$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(complianceBundlesFixture.list),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/version-bundles/:runId (detail)
+  await page.route(/\/api\/compliance\/version-bundles\/[^/]+$/, async (route) => {
+    if (route.request().method() === "GET") {
+      const url = route.request().url();
+      const runId = url.split("/").pop();
+      const detail =
+        complianceBundlesFixture.detail[runId!] ||
+        complianceBundlesFixture.detail["run-2026-01-15-001"];
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detail),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/config-history
+  await page.route("**/api/compliance/config-history", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/truth-history/:fileMd5
+  await page.route(/\/api\/compliance\/truth-history\/[^/]+$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ file_md5: "mock", version_count: 0, versions: [] }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/compliance/label-history/:docId
+  await page.route(/\/api\/compliance\/label-history\/[^/]+$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ doc_id: "mock", version_count: 0, versions: [] }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+}
+
+/**
+ * Setup all mocks for authenticated user with compliance data.
+ * Use this for compliance-specific tests.
+ */
+export async function setupAuthenticatedComplianceMocks(
+  page: Page,
+  role: Role = "admin",
+  complianceOptions: ComplianceMockOptions = {}
+): Promise<void> {
+  await setupAuthMocks(page, role);
+  await setupApiMocks(page);
+  await setupComplianceMocks(page, complianceOptions);
 }

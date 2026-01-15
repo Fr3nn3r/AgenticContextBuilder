@@ -406,30 +406,13 @@ class FileStorage:
     # -------------------------------------------------------------------------
 
     def get_label(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
-        """Get label data for a document.
+        """Get label data for a document from global registry.
 
         Args:
             doc_id: Document ID.
-            claim_id: Optional claim ID for disambiguation when doc_id exists in multiple claims.
+            claim_id: Ignored (kept for API compatibility). Labels are stored globally by doc_id.
         """
-        # If claim_id provided, look in that specific claim folder first
-        if claim_id:
-            claim_folder = self._find_claim_folder(claim_id)
-            if claim_folder:
-                label_path = claim_folder / "docs" / doc_id / "labels" / "latest.json"
-                if label_path.exists():
-                    try:
-                        with open(label_path, "r", encoding="utf-8") as f:
-                            return json.load(f)
-                    except (json.JSONDecodeError, IOError):
-                        pass
-
-        # Fallback to finding doc folder by doc_id alone
-        doc_folder = self._find_doc_folder(doc_id)
-        if not doc_folder:
-            return None
-
-        label_path = doc_folder / "labels" / "latest.json"
+        label_path = self._get_label_path(doc_id)
         if not label_path.exists():
             return None
 
@@ -439,16 +422,28 @@ class FileStorage:
         except (json.JSONDecodeError, IOError):
             return None
 
+    def _get_label_path(self, doc_id: str) -> Path:
+        """Get the registry path for a document's label."""
+        return self.registry_dir / "labels" / f"{doc_id}.json"
+
+    def _get_label_history_path(self, doc_id: str) -> Path:
+        """Get the registry path for a document's label history."""
+        return self.registry_dir / "labels" / f"{doc_id}_history.jsonl"
+
     def save_label(self, doc_id: str, label_data: dict) -> None:
-        """Save label data for a document (atomic write) with version history.
+        """Save label data for a document to global registry (atomic write) with version history.
 
         Compliance: Also appends to history.jsonl for audit trail.
+        Labels are stored in registry/labels/{doc_id}.json to avoid
+        ambiguity when the same doc_id exists in multiple claims.
         """
+        # Verify doc exists (but we don't need the folder for storage)
         doc_folder = self._find_doc_folder(doc_id)
         if not doc_folder:
             raise ValueError(f"Document not found: {doc_id}")
 
-        labels_dir = doc_folder / "labels"
+        # Ensure registry/labels directory exists
+        labels_dir = self.registry_dir / "labels"
         labels_dir.mkdir(parents=True, exist_ok=True)
 
         # Add version metadata
@@ -457,12 +452,12 @@ class FileStorage:
             **label_data,
             "_version_metadata": {
                 "saved_at": version_ts,
-                "version_number": self._get_next_label_version(labels_dir),
+                "version_number": self._get_next_label_version(doc_id),
             },
         }
 
-        label_path = labels_dir / "latest.json"
-        tmp_path = labels_dir / "latest.json.tmp"
+        label_path = self._get_label_path(doc_id)
+        tmp_path = label_path.with_suffix(".json.tmp")
 
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -470,15 +465,15 @@ class FileStorage:
             tmp_path.replace(label_path)
 
             # Append to history for compliance (append-only)
-            self._append_label_history(labels_dir, versioned_data)
+            self._append_label_history(doc_id, versioned_data)
         except IOError as e:
             if tmp_path.exists():
                 tmp_path.unlink()
             raise IOError(f"Failed to save label: {e}")
 
-    def _get_next_label_version(self, labels_dir: Path) -> int:
+    def _get_next_label_version(self, doc_id: str) -> int:
         """Get the next version number for a label."""
-        history_path = labels_dir / "history.jsonl"
+        history_path = self._get_label_history_path(doc_id)
         if not history_path.exists():
             return 1
         try:
@@ -487,9 +482,9 @@ class FileStorage:
         except IOError:
             return 1
 
-    def _append_label_history(self, labels_dir: Path, label_data: dict) -> None:
+    def _append_label_history(self, doc_id: str, label_data: dict) -> None:
         """Append label version to history (append-only for compliance)."""
-        history_path = labels_dir / "history.jsonl"
+        history_path = self._get_label_history_path(doc_id)
         try:
             with open(history_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(label_data, ensure_ascii=False, default=str) + "\n")
@@ -497,15 +492,11 @@ class FileStorage:
             logger.warning(f"Failed to append label history: {e}")
 
     def get_label_history(self, doc_id: str) -> List[dict]:
-        """Get all historical versions of labels for a document.
+        """Get all historical versions of labels for a document from global registry.
 
         Returns list from oldest to newest.
         """
-        doc_folder = self._find_doc_folder(doc_id)
-        if not doc_folder:
-            return []
-
-        history_path = doc_folder / "labels" / "history.jsonl"
+        history_path = self._get_label_history_path(doc_id)
         if not history_path.exists():
             return []
 

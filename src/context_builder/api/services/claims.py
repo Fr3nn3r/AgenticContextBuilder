@@ -34,6 +34,7 @@ class ClaimsService:
                 detail=f"Data directory not found: {self.data_dir}",
             )
 
+        storage = self.storage_factory()
         claims = []
         for claim_dir in self._iter_claim_dirs():
             docs_dir = claim_dir / "docs"
@@ -107,10 +108,11 @@ class ClaimsService:
                             if amount:
                                 total_amount = max(total_amount, amount)
 
+            # Count labeled docs using storage layer (reads from registry/labels/)
             for doc_folder in docs_dir.iterdir():
                 if doc_folder.is_dir():
-                    labels_path = doc_folder / "labels" / "latest.json"
-                    if labels_path.exists():
+                    doc_id = doc_folder.name
+                    if storage.file_storage.get_label(doc_id) is not None:
                         labeled_count += 1
 
             avg_risk = total_risk_score // max(extracted_count, 1)
@@ -227,6 +229,7 @@ class ClaimsService:
         )
 
     def get_claim_review(self, claim_id: str) -> ClaimReviewPayload:
+        storage = self.storage_factory()
         claim_dir = self._find_claim_dir(claim_id)
         if not claim_dir:
             raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
@@ -300,8 +303,8 @@ class ClaimsService:
                         elif quality_status == "fail":
                             gate_counts["fail"] += 1
 
-            labels_path = doc_folder / "labels" / "latest.json"
-            has_labels = labels_path.exists()
+            # Use storage layer to check for labels (reads from registry/labels/)
+            has_labels = storage.file_storage.get_label(doc_id) is not None
 
             if not has_labels:
                 unlabeled_count += 1

@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { SpacemanThemeProvider, ThemeAnimationType } from '@space-man/react-theme-animation'
 import { AuthProvider } from './context/AuthContext'
+import { FilterProvider } from './context/FilterContext'
+import { BatchProvider } from './context/BatchContext'
+import { ClaimsProvider } from './context/ClaimsContext'
 import App from './App'
 import './index.css'
 
@@ -18,7 +21,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     >
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <BatchProvider>
+            <FilterProvider>
+              <ClaimsProvider>
+                <App />
+              </ClaimsProvider>
+            </FilterProvider>
+          </BatchProvider>
         </AuthProvider>
       </BrowserRouter>
     </SpacemanThemeProvider>

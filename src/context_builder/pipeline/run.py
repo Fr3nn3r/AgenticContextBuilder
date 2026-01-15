@@ -455,6 +455,7 @@ class DocumentContext:
     current_phase: str = "setup"
     version_bundle_id: Optional[str] = None  # For compliance traceability
     audit_storage_dir: Optional[Path] = None  # Workspace-scoped compliance logs dir
+    pii_vault: Optional[Any] = None  # PII vault for tokenizing extraction results
 
     def to_doc_result(self) -> DocResult:
         """Convert the context into a DocResult."""
@@ -653,6 +654,7 @@ class ExtractionStage:
                 extractor_factory=extractor_factory,
                 version_bundle_id=context.version_bundle_id,
                 audit_storage_dir=context.audit_storage_dir,
+                pii_vault=context.pii_vault,
             )
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
@@ -677,6 +679,7 @@ def process_document(
     phase_callback: Optional[Callable[[str, str], None]] = None,
     version_bundle_id: Optional[str] = None,
     audit_storage_dir: Optional[Path] = None,
+    pii_vault: Optional[Any] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -697,6 +700,9 @@ def process_document(
         run_id: Current run identifier
         stage_config: Configuration for which stages to run (default: all)
         phase_callback: Optional callback(phase_name, doc_id) for phase transitions
+        version_bundle_id: Optional version bundle ID for compliance traceability
+        audit_storage_dir: Optional workspace-scoped compliance logs directory
+        pii_vault: Optional PII vault for tokenizing extraction results
 
     Returns:
         DocResult with processing status and paths
@@ -720,6 +726,7 @@ def process_document(
         writer=writer,
         version_bundle_id=version_bundle_id,
         audit_storage_dir=audit_storage_dir,
+        pii_vault=pii_vault,
     )
 
     # Create phase callback wrapper that passes doc_id
@@ -776,8 +783,26 @@ def _run_extraction(
     extractor_factory: Any,
     version_bundle_id: Optional[str] = None,
     audit_storage_dir: Optional[Path] = None,
+    pii_vault: Optional[Any] = None,
 ) -> tuple[Path, Optional[str]]:
     """Run field extraction for supported doc types.
+
+    Args:
+        doc_id: Document identifier.
+        file_md5: MD5 hash of input file.
+        content_md5: MD5 hash of content.
+        claim_id: Parent claim identifier.
+        pages_data: Page content data.
+        doc_type: Document type.
+        doc_type_confidence: Classification confidence.
+        language: Document language.
+        run_paths: Output paths for this run.
+        run_id: Extraction run identifier.
+        writer: Result writer instance.
+        extractor_factory: Factory for creating extractors.
+        version_bundle_id: Optional version bundle ID.
+        audit_storage_dir: Optional directory for audit logs.
+        pii_vault: Optional PII vault for tokenizing PII in extraction results.
 
     Returns:
         Tuple of (extraction_path, quality_gate_status)
@@ -811,9 +836,25 @@ def _run_extraction(
     # Run extraction
     result = extractor.extract(pages, doc_meta, run_meta)
 
-    # Write extraction result
+    # PII Tokenization: Replace PII with vault tokens before persisting
+    result_data = result.model_dump()
+    if pii_vault is not None:
+        from context_builder.services.compliance.pii import PIITokenizer
+
+        tokenizer = PIITokenizer(claim_id=claim_id, vault_id=pii_vault.vault_id)
+        tokenization = tokenizer.tokenize(result, run_id)
+
+        if tokenization.vault_entries:
+            pii_vault.store_batch(tokenization.vault_entries)
+            logger.info(
+                f"Tokenized {len(tokenization.vault_entries)} PII values for doc {doc_id}"
+            )
+
+        result_data = tokenization.redacted_result  # Use redacted for persistence
+
+    # Write extraction result (with tokens if PII vault enabled)
     output_path = run_paths.extraction_dir / f"{doc_id}.json"
-    writer.write_json(output_path, result.model_dump())
+    writer.write_json(output_path, result_data)
 
     # Get quality gate status
     quality_gate_status = result.quality_gate.status if result.quality_gate else None
@@ -899,6 +940,7 @@ def process_claim(
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
     phase_callback: Optional[Callable[[str, str], None]] = None,
     providers: Optional[PipelineProviders] = None,
+    pii_vault_enabled: bool = False,
 ) -> ClaimResult:
     """
     Process all documents in a claim through selected pipeline stages.
@@ -915,6 +957,8 @@ def process_claim(
         stage_config: Configuration for which stages to run (default: all)
         progress_callback: Optional callback(idx, total, filename) for progress reporting
         phase_callback: Optional callback(phase_name, doc_id) for real-time phase updates
+        providers: Optional pipeline providers
+        pii_vault_enabled: If True, tokenize PII in extraction results
 
     Returns:
         ClaimResult with aggregated stats
@@ -986,6 +1030,18 @@ def process_claim(
             audit_dir = _get_workspace_logs_dir(output_base)
             classifier = ClassifierFactory.create("openai", audit_storage_dir=audit_dir)
 
+        # Create PII vault if enabled
+        pii_vault = None
+        if pii_vault_enabled:
+            from context_builder.services.compliance.pii import EncryptedPIIVaultStorage
+            pii_vault_dir = _get_workspace_logs_dir(output_base)
+            pii_vault = EncryptedPIIVaultStorage(
+                storage_dir=pii_vault_dir,
+                claim_id=claim.claim_id,
+                create_if_missing=True,
+            )
+            logger.info(f"Created PII vault {pii_vault.vault_id} for claim {claim.claim_id}")
+
         # Process each document
         results: List[DocResult] = []
         for idx, doc in enumerate(claim.documents):
@@ -1012,6 +1068,7 @@ def process_claim(
                 phase_callback=phase_callback,
                 version_bundle_id=version_bundle.bundle_id,
                 audit_storage_dir=audit_dir,
+                pii_vault=pii_vault,
             )
             results.append(result)
 

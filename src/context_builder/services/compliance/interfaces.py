@@ -13,7 +13,7 @@ Design principles:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Dict, List, Optional, Protocol, runtime_checkable
 
 # Re-export DecisionQuery for convenience (used by consumers for type hints and queries)
 from context_builder.schemas.decision_record import DecisionQuery
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         IntegrityReport,
     )
     from context_builder.schemas.llm_call_record import LLMCallRecord
+    from context_builder.schemas.pii_vault import PIIVaultEntry
 
 
 @runtime_checkable
@@ -174,3 +175,151 @@ class LLMCallStorage(LLMCallSink, LLMCallReader, Protocol):
     """
 
     pass
+
+
+# =============================================================================
+# PII Vault Protocols
+# =============================================================================
+
+
+@runtime_checkable
+class PIISink(Protocol):
+    """Protocol for storing PII in the vault.
+
+    Implementations must:
+    - Encrypt entries before persisting
+    - Update the vault index atomically
+    - Ensure atomic writes (no partial entries)
+    """
+
+    def store(self, entry: "PIIVaultEntry") -> "PIIVaultEntry":
+        """Store a single PII vault entry.
+
+        Args:
+            entry: The vault entry to store.
+
+        Returns:
+            The stored entry.
+
+        Raises:
+            IOError: If the write fails.
+        """
+        ...
+
+    def store_batch(self, entries: List["PIIVaultEntry"]) -> List["PIIVaultEntry"]:
+        """Store multiple PII vault entries atomically.
+
+        Args:
+            entries: List of vault entries to store.
+
+        Returns:
+            List of stored entries.
+
+        Raises:
+            IOError: If the write fails.
+        """
+        ...
+
+
+@runtime_checkable
+class PIIReader(Protocol):
+    """Protocol for reading PII from the vault."""
+
+    def get(self, entry_id: str) -> Optional["PIIVaultEntry"]:
+        """Retrieve a PII entry by its identifier.
+
+        Args:
+            entry_id: The entry identifier to look up.
+
+        Returns:
+            The PIIVaultEntry if found, None otherwise.
+        """
+        ...
+
+    def get_batch(self, entry_ids: List[str]) -> Dict[str, "PIIVaultEntry"]:
+        """Retrieve multiple PII entries by their identifiers.
+
+        Args:
+            entry_ids: List of entry identifiers to look up.
+
+        Returns:
+            Dict mapping entry_id -> PIIVaultEntry for found entries.
+        """
+        ...
+
+    def list_by_doc(self, doc_id: str) -> List["PIIVaultEntry"]:
+        """Get all PII entries for a document.
+
+        Args:
+            doc_id: The document identifier.
+
+        Returns:
+            List of vault entries for the document.
+        """
+        ...
+
+
+@runtime_checkable
+class PIIShredder(Protocol):
+    """Protocol for crypto-shredding PII vaults.
+
+    Crypto-shredding is the process of destroying the encryption key,
+    making the encrypted data permanently unrecoverable. This implements
+    the "right to erasure" requirement from GDPR and similar regulations.
+    """
+
+    def shred_vault(self, vault_id: str, reason: str) -> bool:
+        """Crypto-shred an entire vault by destroying its KEK.
+
+        This permanently destroys access to all PII in the vault.
+        The encrypted data remains but is cryptographically unrecoverable.
+
+        Args:
+            vault_id: The vault identifier (vault_<claim_id>).
+            reason: Reason for shredding (for audit trail).
+
+        Returns:
+            True if shredded successfully, False if vault not found.
+        """
+        ...
+
+    def shred_entries(self, entry_ids: List[str], reason: str) -> int:
+        """Mark specific entries as shredded.
+
+        Note: For true crypto-shredding, use shred_vault() which destroys
+        the KEK. This method marks entries as deleted in the index for
+        cases where individual entry deletion is needed.
+
+        Args:
+            entry_ids: List of entry identifiers to shred.
+            reason: Reason for shredding (for audit trail).
+
+        Returns:
+            Number of entries shredded.
+        """
+        ...
+
+
+@runtime_checkable
+class PIIVault(PIISink, PIIReader, PIIShredder, Protocol):
+    """Combined interface for full PII vault operations.
+
+    This protocol combines sink (store), reader (retrieve), and
+    shredder (crypto-delete) capabilities.
+
+    Properties:
+        vault_id: The vault identifier (vault_<claim_id>)
+    """
+
+    @property
+    def vault_id(self) -> str:
+        """Return the vault identifier."""
+        ...
+
+    def is_shredded(self) -> bool:
+        """Check if the vault has been crypto-shredded.
+
+        Returns:
+            True if the vault KEK has been destroyed.
+        """
+        ...

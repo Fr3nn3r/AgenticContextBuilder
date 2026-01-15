@@ -42,8 +42,9 @@ from typing import Any, Dict, List, Optional
 import asyncio
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from context_builder.api.models import (
     ClaimReviewPayload,
     ClaimSummary,
@@ -92,9 +93,17 @@ app = FastAPI(
 )
 
 # CORS for React frontend
+# In production (Render), frontend is served from same origin, so CORS is less critical
+# But we keep localhost for development
+_cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+if _os.getenv("RENDER_WORKSPACE_PATH"):
+    # On Render, allow any onrender.com subdomain for preview deploys
+    _cors_origins.append("https://*.onrender.com")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",  # Allow all Render preview URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,10 +117,25 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
 STAGING_DIR: Path = _PROJECT_ROOT / "output" / ".pending"
 
+# Check for Render persistent disk environment variable
+_RENDER_WORKSPACE = _os.getenv("RENDER_WORKSPACE_PATH")
+
 
 def _load_active_workspace_on_startup() -> None:
     """Load the active workspace from registry and set DATA_DIR/STAGING_DIR."""
     global DATA_DIR, STAGING_DIR
+
+    # If running on Render with persistent disk, use that path
+    if _RENDER_WORKSPACE:
+        workspace_path = Path(_RENDER_WORKSPACE)
+        workspace_path.mkdir(parents=True, exist_ok=True)
+        DATA_DIR = workspace_path / "claims"
+        STAGING_DIR = workspace_path / ".pending"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        STAGING_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"[startup] Using Render workspace: {workspace_path}")
+        return
+
     registry_path = _PROJECT_ROOT / ".contextbuilder" / "workspaces.json"
 
     if not registry_path.exists():
@@ -592,7 +616,8 @@ def get_run_summary():
     return get_claims_service().get_run_summary()
 
 
-@app.get("/health")
+@app.get("/api/health")
+@app.get("/health")  # Keep both for compatibility
 def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "data_dir": str(DATA_DIR)}
@@ -1356,24 +1381,22 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
             confidence = classification.get("confidence", meta.get("doc_type_confidence", 0.0))
             signals = classification.get("signals", [])
 
-            # Check for existing label
-            labels_path = doc_folder / "labels" / "latest.json"
+            # Check for existing label (from registry/labels/)
             review_status = "pending"
             doc_type_truth = None
 
-            if labels_path.exists():
-                with open(labels_path, "r", encoding="utf-8") as f:
-                    label_data = json.load(f)
-                    doc_labels = label_data.get("doc_labels", {})
-                    doc_type_correct = doc_labels.get("doc_type_correct", True)
-                    doc_type_truth = doc_labels.get("doc_type_truth")
+            label_data = storage.file_storage.get_label(doc_id)
+            if label_data:
+                doc_labels = label_data.get("doc_labels", {})
+                doc_type_correct = doc_labels.get("doc_type_correct", True)
+                doc_type_truth = doc_labels.get("doc_type_truth")
 
-                    if doc_type_correct and doc_type_truth is None:
-                        review_status = "confirmed"
-                    elif not doc_type_correct and doc_type_truth:
-                        review_status = "overridden"
-                    elif doc_type_correct:
-                        review_status = "confirmed"
+                if doc_type_correct and doc_type_truth is None:
+                    review_status = "confirmed"
+                elif not doc_type_correct and doc_type_truth:
+                    review_status = "overridden"
+                elif doc_type_correct:
+                    review_status = "confirmed"
 
             docs.append({
                 "doc_id": doc_id,
@@ -2732,3 +2755,33 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
     finally:
         ws_manager.disconnect(websocket, run_id)
         print(f"[WS] Cleaned up connection for run_id={run_id}")
+
+
+# =============================================================================
+# STATIC FILE SERVING (Production)
+# =============================================================================
+# Serve React frontend in production when ui/dist exists
+
+_UI_DIST_DIR = _PROJECT_ROOT / "ui" / "dist"
+
+if _UI_DIST_DIR.exists() and _UI_DIST_DIR.is_dir():
+    print(f"[startup] Serving static frontend from {_UI_DIST_DIR}")
+
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=_UI_DIST_DIR / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve React SPA for all non-API routes."""
+        # Don't intercept API routes or WebSocket
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            raise HTTPException(status_code=404)
+
+        # Serve index.html for SPA routing
+        index_path = _UI_DIST_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path, media_type="text/html")
+        raise HTTPException(status_code=404, detail="Frontend not found")
+else:
+    print(f"[startup] No frontend build found at {_UI_DIST_DIR} (dev mode)")

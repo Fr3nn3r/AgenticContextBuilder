@@ -8,11 +8,7 @@
 
 _Currently active work. Add handoff notes inline._
 
-<!-- Example:
-- [ ] **Task name** @window-id
-  - Working on: src/path/file.py
-  - Handoff: Finished X, next step is Y
--->
+(empty)
 
 ---
 
@@ -20,47 +16,40 @@ _Currently active work. Add handoff notes inline._
 
 ### Compliance - High Priority
 
-- [ ] **Compliance API corrections** (Phase 0)
-  - Fix endpoint response fields to match DecisionRecord schema
-  - Add tests for `/api/compliance/ledger/decisions` and `/verify`
-  - See: `tasks/0_todo/compliance-adoption-plan.md` for details
-
 - [ ] **LLM call linking**
   - Update AuditedOpenAIClient to retain call_id
   - Record `llm_call_ids` list in DecisionRationale
 
-- [ ] **Version bundle propagation**
-  - Add version_bundle_id to all decision types
-  - Pass through classifier/extractor context
-
-### Compliance - PII & Security
-
-- [ ] **PII vault implementation**
-  - File-based storage: `output/pii_vault/{ref_id}.json`
-  - Redact PII in decision records and audit logs
-
-### Compliance - UI Demo
-
-- [ ] **Compliance dashboard** (exec view)
-  - Hash chain integrity status, ledger volume, version bundle coverage
-  - Summary cards with status indicators
-
-- [ ] **Decision ledger explorer** (auditor view)
-  - Filterable list by decision_type, claim_id, time range
-  - Drilldown to decision detail
-
-- [ ] **Integrity verification center**
-  - Run/display hash chain verification
-  - Verification history timeline
-
 ### Infrastructure
 
-- [ ] **Fix hardcoded paths**
+- [ ] **Fix hardcoded paths** (remaining)
   - See: `plans/20260114-Fix-Hardcoded-Paths.md`
+  - Labels path fixed (2026-01-15), check for others
 
 ---
 
 ## Done (Recent)
+
+- [x] **Compliance UI suite** (2026-01-14)
+  - Dashboard: `ui/src/pages/compliance/Overview.tsx`
+  - Ledger explorer: `Ledger.tsx` with filters (type, claim, doc)
+  - Verification center: `Verification.tsx` with hash chain checks
+  - Version bundles: `VersionBundles.tsx`
+
+- [x] **PII vault implementation** (2026-01-14)
+  - Encrypted vault storage: `services/compliance/pii/vault_storage.py`
+  - Per-vault KEK for crypto-shredding
+  - Config loader and tokenizer
+
+- [x] **Version bundle propagation** (2026-01-14)
+  - `version_bundle_id` in DecisionRecord schema
+  - Propagated through pipeline/run.py and factories
+
+- [x] **Refactor labels to global registry storage** (2026-01-15)
+  - Labels now stored at `registry/labels/{doc_id}.json` instead of per-claim
+  - Fixed 6 hardcoded path locations in api/services and pipeline/metrics
+  - Migration script: `scripts/migrate_labels_to_registry.py` (migrated 141 labels)
+  - Commit: TBD
 
 - [x] **Multi-window session management** (2026-01-15)
   - Added worktree scripts, session protocol

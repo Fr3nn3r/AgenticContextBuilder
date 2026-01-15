@@ -23,6 +23,7 @@ class DocumentsService:
         self.storage_factory = storage_factory
 
     def list_docs(self, claim_id: str, run_id: Optional[str] = None) -> List[DocSummary]:
+        storage = self.storage_factory()
         claim_dir = self._find_claim_dir(claim_id)
         if not claim_dir or not claim_dir.exists():
             raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
@@ -70,8 +71,8 @@ class DocumentsService:
                         if fields:
                             confidence = sum(field.get("confidence", 0) for field in fields) / len(fields)
 
-            labels_path = doc_folder / "labels" / "latest.json"
-            has_labels = labels_path.exists()
+            # Use storage layer to check for labels (reads from registry/labels/)
+            has_labels = storage.file_storage.get_label(doc_id) is not None
 
             docs.append(DocSummary(
                 doc_id=doc_id,

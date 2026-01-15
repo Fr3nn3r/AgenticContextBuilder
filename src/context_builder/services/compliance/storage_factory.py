@@ -9,7 +9,8 @@ uvicorn's --reload on Windows, where the spawn-based reload mechanism
 can hang when cryptography's OpenSSL bindings are imported during process spawn.
 """
 
-from typing import TYPE_CHECKING, Tuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from context_builder.services.compliance.config import (
     ComplianceStorageConfig,
@@ -22,6 +23,7 @@ from context_builder.services.compliance.file import (
 from context_builder.services.compliance.interfaces import (
     DecisionStorage,
     LLMCallStorage,
+    PIIVault,
 )
 
 # Type hints only - not imported at runtime
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
         EncryptedDecisionStorage,
         EncryptedLLMCallStorage,
     )
+    from context_builder.services.compliance.pii import EncryptedPIIVaultStorage
 
 
 class ComplianceStorageFactory:
@@ -148,4 +151,39 @@ class ComplianceStorageFactory:
         return (
             ComplianceStorageFactory.create_decision_storage(config),
             ComplianceStorageFactory.create_llm_storage(config),
+        )
+
+    @staticmethod
+    def create_pii_vault(
+        config: ComplianceStorageConfig,
+        claim_id: str,
+        vault_id: Optional[str] = None,
+    ) -> Optional[PIIVault]:
+        """Create a PII vault for a claim.
+
+        Args:
+            config: Storage configuration
+            claim_id: The claim identifier
+            vault_id: Optional vault ID (generated from claim_id if not provided)
+
+        Returns:
+            PIIVault implementation if pii_vault_enabled, None otherwise
+
+        Example:
+            >>> config = ComplianceStorageConfig(pii_vault_enabled=True)
+            >>> vault = ComplianceStorageFactory.create_pii_vault(config, "CLM001")
+            >>> if vault:
+            ...     vault.store(entry)
+        """
+        if not config.pii_vault_enabled:
+            return None
+
+        # Lazy import to avoid loading crypto at module level
+        from context_builder.services.compliance.pii import EncryptedPIIVaultStorage
+
+        return EncryptedPIIVaultStorage(
+            storage_dir=config.get_pii_vault_dir(),
+            claim_id=claim_id,
+            vault_id=vault_id,
+            create_if_missing=True,
         )

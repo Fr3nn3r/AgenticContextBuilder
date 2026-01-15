@@ -28,6 +28,8 @@ class ComplianceStorageConfig(BaseModel):
         storage_dir: Base directory for file-based storage
         encryption_key_path: Path to encryption key (for encrypted backend)
         encryption_algorithm: Encryption algorithm to use
+        pii_vault_enabled: Enable PII vault tokenization (Phase 3)
+        pii_vault_dir: Directory for PII vaults (defaults to storage_dir)
         s3_bucket: S3 bucket name (for S3 backend)
         s3_prefix: Key prefix in S3 bucket
         s3_region: AWS region for S3
@@ -37,6 +39,7 @@ class ComplianceStorageConfig(BaseModel):
         >>> config = ComplianceStorageConfig(
         ...     backend_type=StorageBackendType.FILE,
         ...     storage_dir=Path("output/logs"),
+        ...     pii_vault_enabled=True,
         ... )
     """
 
@@ -46,6 +49,10 @@ class ComplianceStorageConfig(BaseModel):
     # Encrypted backend options (Phase 5)
     encryption_key_path: Optional[Path] = None
     encryption_algorithm: str = "AES-256-GCM"
+
+    # PII Vault options (Phase 3)
+    pii_vault_enabled: bool = False
+    pii_vault_dir: Optional[Path] = None  # Defaults to storage_dir if not set
 
     # S3 backend options (future)
     s3_bucket: Optional[str] = None
@@ -72,6 +79,18 @@ class ComplianceStorageConfig(BaseModel):
         if isinstance(v, str):
             return Path(v)
         return v
+
+    @field_validator("pii_vault_dir", mode="before")
+    @classmethod
+    def convert_pii_vault_dir(cls, v):
+        """Convert string paths to Path objects."""
+        if isinstance(v, str):
+            return Path(v)
+        return v
+
+    def get_pii_vault_dir(self) -> Path:
+        """Get the PII vault directory, defaulting to storage_dir if not set."""
+        return self.pii_vault_dir or self.storage_dir
 
     def validate_for_backend(self) -> None:
         """Validate that required options are set for the selected backend.
@@ -103,6 +122,8 @@ class ComplianceStorageConfig(BaseModel):
             {prefix}BACKEND_TYPE: Storage backend type
             {prefix}STORAGE_DIR: Base storage directory
             {prefix}ENCRYPTION_KEY_PATH: Path to encryption key
+            {prefix}PII_VAULT_ENABLED: Enable PII vault (true/false)
+            {prefix}PII_VAULT_DIR: PII vault directory
             {prefix}S3_BUCKET: S3 bucket name
             {prefix}S3_PREFIX: S3 key prefix
             {prefix}S3_REGION: AWS region
@@ -129,6 +150,14 @@ class ComplianceStorageConfig(BaseModel):
         encryption_key_path = os.getenv(f"{prefix}ENCRYPTION_KEY_PATH")
         if encryption_key_path:
             kwargs["encryption_key_path"] = Path(encryption_key_path)
+
+        pii_vault_enabled = os.getenv(f"{prefix}PII_VAULT_ENABLED")
+        if pii_vault_enabled:
+            kwargs["pii_vault_enabled"] = pii_vault_enabled.lower() in ("true", "1", "yes")
+
+        pii_vault_dir = os.getenv(f"{prefix}PII_VAULT_DIR")
+        if pii_vault_dir:
+            kwargs["pii_vault_dir"] = Path(pii_vault_dir)
 
         s3_bucket = os.getenv(f"{prefix}S3_BUCKET")
         if s3_bucket:

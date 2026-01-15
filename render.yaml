@@ -1,0 +1,29 @@
+# Render Blueprint - ContextBuilder
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: contextbuilder
+    runtime: python
+    buildCommand: |
+      pip install -e .
+      cd ui && npm install && npm run build
+    startCommand: uvicorn context_builder.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: NODE_VERSION
+        value: "20"
+      - key: RENDER_WORKSPACE_PATH
+        value: /data/workspaces/default
+      - key: OPENAI_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: AZURE_DI_ENDPOINT
+        sync: false  # Optional - set if using Azure Document Intelligence
+      - key: AZURE_DI_KEY
+        sync: false  # Optional - set if using Azure Document Intelligence
+    disk:
+      name: workspaces
+      mountPath: /data/workspaces
+      sizeGB: 1
+    healthCheckPath: /api/health

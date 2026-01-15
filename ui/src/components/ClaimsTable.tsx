@@ -1,6 +1,5 @@
 import { useState, Fragment } from "react";
-import type { ClaimSummary, DocSummary } from "../types";
-import type { ClaimRunInfo } from "../api/client";
+import { useNavigate } from "react-router-dom";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
 import {
@@ -12,55 +11,36 @@ import {
   NotInRunBadge,
   NoSearchResultsEmptyState,
 } from "./shared";
+import { useClaims } from "../context/ClaimsContext";
+import { useFilters } from "../context/FilterContext";
+import { useBatch } from "../context/BatchContext";
 
 interface ClaimsTableProps {
-  claims: ClaimSummary[];
-  totalCount: number;
-  selectedClaim: ClaimSummary | null;
-  docs: DocSummary[];
-  searchQuery: string;
-  lobFilter: string;
-  statusFilter: string;
-  riskFilter: string;
-  // Run props
-  runs: ClaimRunInfo[];
-  selectedRunId: string | null;
-  onRunChange: (runId: string | null) => void;
-  // Callbacks
-  onSearchChange: (query: string) => void;
-  onLobFilterChange: (lob: string) => void;
-  onStatusFilterChange: (status: string) => void;
-  onRiskFilterChange: (risk: string) => void;
-  onSelectClaim: (claim: ClaimSummary) => void;
-  onSelectDoc: (docId: string, claimId: string) => void;
-  onNavigateToReview: (claimId: string) => void;
+  /** If true, shows all claims instead of filtered claims */
+  showAllClaims?: boolean;
 }
 
-export function ClaimsTable({
-  claims,
-  totalCount,
-  selectedClaim: _selectedClaim,
-  docs,
-  searchQuery,
-  lobFilter,
-  statusFilter,
-  riskFilter,
-  runs: _runs,
-  selectedRunId: _selectedRunId,
-  onRunChange: _onRunChange,
-  onSearchChange,
-  onLobFilterChange,
-  onStatusFilterChange,
-  onRiskFilterChange,
-  onSelectClaim,
-  onSelectDoc,
-  onNavigateToReview,
-}: ClaimsTableProps) {
-  // Batch context now handled by BatchWorkspace
-  void _selectedClaim;
-  void _runs;
-  void _selectedRunId;
-  void _onRunChange;
+export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
+  const navigate = useNavigate();
+
+  // Get data from contexts
+  const { claims, filteredClaims, docs, selectClaim } = useClaims();
+  const { selectedRunId } = useBatch();
+  const {
+    searchQuery,
+    lobFilter,
+    statusFilter,
+    riskFilter,
+    setSearchQuery,
+    setLobFilter,
+    setStatusFilter,
+    setRiskFilter,
+  } = useFilters();
+
+  // Use filtered or all claims based on prop
+  const displayClaims = showAllClaims ? claims : filteredClaims;
+  const totalCount = claims.length;
+
   const [expandedClaim, setExpandedClaim] = useState<string | null>(null);
 
   // Sorting state
@@ -78,7 +58,7 @@ export function ClaimsTable({
   }
 
   // Sort claims
-  const sortedClaims = [...claims].sort((a, b) => {
+  const sortedClaims = [...displayClaims].sort((a, b) => {
     let comparison = 0;
     switch (sortColumn) {
       case "claim_id":
@@ -91,7 +71,6 @@ export function ClaimsTable({
         comparison = a.labeled_count - b.labeled_count;
         break;
       case "gate":
-        // Sort by fail count (higher = worse = later in asc)
         comparison = a.gate_fail_count - b.gate_fail_count;
         break;
       case "last_processed":
@@ -102,23 +81,35 @@ export function ClaimsTable({
   });
 
   // Count claims in run vs not in run
-  const claimsInRun = claims.filter((c) => c.in_run).length;
-  const claimsNotInRun = claims.filter((c) => !c.in_run).length;
+  const claimsInRun = displayClaims.filter((c) => c.in_run).length;
+  const claimsNotInRun = displayClaims.filter((c) => !c.in_run).length;
 
-  function handleClaimClick(claim: ClaimSummary) {
+  function handleClaimClick(claim: typeof claims[0]) {
     if (expandedClaim === claim.claim_id) {
       setExpandedClaim(null);
     } else {
       setExpandedClaim(claim.claim_id);
-      onSelectClaim(claim);
+      selectClaim(claim);
     }
   }
 
-  // Calculate KPIs only from claims in this run
-  const claimsInRunData = claims.filter((c) => c.in_run);
-  const totalDocsLabeled = claims.reduce((sum, c) => sum + c.labeled_count, 0);  // Labels are run-independent
-  const totalDocs = claims.reduce((sum, c) => sum + c.doc_count, 0);
-  const totalGateFail = claimsInRunData.reduce((sum, c) => sum + c.gate_fail_count, 0);  // Run-dependent
+  function handleSelectDoc(docId: string, claimId: string) {
+    if (selectedRunId) {
+      navigate(`/batches/${selectedRunId}/documents?claim=${claimId}&doc=${docId}`);
+    } else {
+      navigate(`/claims/${claimId}/review?doc=${docId}`);
+    }
+  }
+
+  function handleNavigateToReview(claimId: string) {
+    navigate(`/claims/${claimId}/review`);
+  }
+
+  // Calculate KPIs
+  const claimsInRunData = displayClaims.filter((c) => c.in_run);
+  const totalDocsLabeled = displayClaims.reduce((sum, c) => sum + c.labeled_count, 0);
+  const totalDocs = displayClaims.reduce((sum, c) => sum + c.doc_count, 0);
+  const totalGateFail = claimsInRunData.reduce((sum, c) => sum + c.gate_fail_count, 0);
 
   return (
     <div className="p-6">
@@ -150,10 +141,9 @@ export function ClaimsTable({
       {/* Filters and Search */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          {/* Gate Status Filter */}
           <select
             value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value)}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Gate Status</option>
@@ -162,20 +152,18 @@ export function ClaimsTable({
             <option value="all_pass">All PASS</option>
           </select>
 
-          {/* Unlabeled Filter */}
           <select
             value={lobFilter}
-            onChange={(e) => onLobFilterChange(e.target.value)}
+            onChange={(e) => setLobFilter(e.target.value)}
             className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Claims</option>
             <option value="has_unlabeled">Has unlabeled docs</option>
           </select>
 
-          {/* Risk Filter (kept for backwards compatibility) */}
           <select
             value={riskFilter}
-            onChange={(e) => onRiskFilterChange(e.target.value)}
+            onChange={(e) => setRiskFilter(e.target.value)}
             className="px-3 py-2 bg-card border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-muted"
           >
             <option value="all">All Priority</option>
@@ -185,7 +173,6 @@ export function ClaimsTable({
           </select>
         </div>
 
-        {/* Search */}
         <div className="relative">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70"
@@ -204,7 +191,7 @@ export function ClaimsTable({
             type="text"
             placeholder="Search by Claim ID..."
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 pr-4 py-2 w-64 bg-card border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-muted"
           />
         </div>
@@ -332,12 +319,11 @@ export function ClaimsTable({
                   </td>
                 </tr>
 
-                {/* Expanded docs row - Document Pack Queue */}
+                {/* Expanded docs row */}
                 {expandedClaim === claim.claim_id && (
                   <tr>
                     <td colSpan={7} className="bg-muted/50 border-b">
                       <div className="px-6 py-4">
-                        {/* Document Pack Header */}
                         <div className="flex items-center justify-between mb-3">
                           <div>
                             <h4 className="text-sm font-semibold text-foreground">Document Pack</h4>
@@ -349,7 +335,7 @@ export function ClaimsTable({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onNavigateToReview(claim.claim_id);
+                                handleNavigateToReview(claim.claim_id);
                               }}
                               className="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded hover:bg-primary/90 transition-colors"
                             >
@@ -361,24 +347,19 @@ export function ClaimsTable({
                           <p className="text-sm text-muted-foreground">Loading documents...</p>
                         ) : (
                           <div className="space-y-2">
-                            {/* Sort docs: Unlabeled first, then FAIL > WARN > PASS */}
                             {[...docs].sort((a, b) => {
-                              // Unlabeled first
                               if (!a.has_labels && b.has_labels) return -1;
                               if (a.has_labels && !b.has_labels) return 1;
-                              // Then by gate status: FAIL > WARN > PASS
                               const statusOrder = { fail: 0, warn: 1, pass: 2 };
-                              const aStatus = a.quality_status || "pass";
-                              const bStatus = b.quality_status || "pass";
-                              const aOrder = statusOrder[aStatus as keyof typeof statusOrder] ?? 2;
-                              const bOrder = statusOrder[bStatus as keyof typeof statusOrder] ?? 2;
+                              const aOrder = statusOrder[(a.quality_status || "pass") as keyof typeof statusOrder] ?? 2;
+                              const bOrder = statusOrder[(b.quality_status || "pass") as keyof typeof statusOrder] ?? 2;
                               return aOrder - bOrder;
                             }).map((doc) => (
                               <button
                                 key={doc.doc_id}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onSelectDoc(doc.doc_id, claim.claim_id);
+                                  handleSelectDoc(doc.doc_id, claim.claim_id);
                                 }}
                                 className="w-full flex items-center justify-between p-3 bg-card rounded-lg border hover:border-border transition-colors text-left"
                               >
@@ -399,22 +380,10 @@ export function ClaimsTable({
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {/* Gate Badge */}
                                   {doc.quality_status && <GateStatusBadge status={doc.quality_status as "pass" | "warn" | "fail"} />}
-                                  {/* Labeled/Unlabeled Badge */}
                                   {doc.has_labels ? <LabeledBadge /> : <UnlabeledBadge />}
-                                  <svg
-                                    className="w-4 h-4 text-muted-foreground/70"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M9 5l7 7-7 7"
-                                    />
+                                  <svg className="w-4 h-4 text-muted-foreground/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
                               </button>
@@ -430,7 +399,7 @@ export function ClaimsTable({
           </tbody>
         </table>
 
-        {claims.length === 0 && <NoSearchResultsEmptyState />}
+        {displayClaims.length === 0 && <NoSearchResultsEmptyState />}
       </div>
     </div>
   );
@@ -444,7 +413,6 @@ function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "
       </svg>
     );
   }
-  // Show single arrow for active sort
   return (
     <svg className="w-4 h-4 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       {direction === "asc" ? (
@@ -477,42 +445,15 @@ function LobBadge({ lob }: { lob: string }) {
 function GateSummary({ pass, warn, fail }: { pass: number; warn: number; fail: number }) {
   return (
     <div className="flex items-center gap-1 text-xs">
-      {pass > 0 && (
-        <span className="px-1.5 py-0.5 bg-success/10 text-success rounded">
-          {pass} PASS
-        </span>
-      )}
-      {warn > 0 && (
-        <span className="px-1.5 py-0.5 bg-warning/10 text-warning-foreground rounded">
-          {warn} WARN
-        </span>
-      )}
-      {fail > 0 && (
-        <span className="px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">
-          {fail} FAIL
-        </span>
-      )}
-      {pass === 0 && warn === 0 && fail === 0 && (
-        <span className="text-muted-foreground/70">-</span>
-      )}
+      {pass > 0 && <span className="px-1.5 py-0.5 bg-success/10 text-success rounded">{pass} PASS</span>}
+      {warn > 0 && <span className="px-1.5 py-0.5 bg-warning/10 text-warning-foreground rounded">{warn} WARN</span>}
+      {fail > 0 && <span className="px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">{fail} FAIL</span>}
+      {pass === 0 && warn === 0 && fail === 0 && <span className="text-muted-foreground/70">-</span>}
     </div>
   );
 }
 
 function QualityDot({ status }: { status: string | null }) {
-  const colors: Record<string, string> = {
-    pass: "bg-success",
-    warn: "bg-warning",
-    fail: "bg-destructive",
-  };
-
-  return (
-    <span
-      className={cn(
-        "w-2 h-2 rounded-full",
-        status ? colors[status] || "bg-gray-300" : "bg-gray-300"
-      )}
-    />
-  );
+  const colors: Record<string, string> = { pass: "bg-success", warn: "bg-warning", fail: "bg-destructive" };
+  return <span className={cn("w-2 h-2 rounded-full", status ? colors[status] || "bg-gray-300" : "bg-gray-300")} />;
 }
-

@@ -34,18 +34,21 @@ def compute_run_metrics(
     """
     docs_dir = claim_dir / "docs"
     extraction_dir = run_paths.extraction_dir
+    # Labels are stored in registry/labels/ (sibling of claims/)
+    registry_labels_dir = claim_dir.parent.parent / "registry" / "labels"
 
     # Collect all doc_ids from extractions in this run
     extraction_files = list(extraction_dir.glob("*.json"))
     doc_ids_in_run = {f.stem for f in extraction_files}
 
-    # Collect all doc_ids with labels
+    # Collect all doc_ids with labels (from registry)
     labeled_doc_ids = set()
     for doc_folder in docs_dir.iterdir():
         if doc_folder.is_dir():
-            labels_path = doc_folder / "labels" / "latest.json"
+            doc_id = doc_folder.name
+            labels_path = registry_labels_dir / f"{doc_id}.json"
             if labels_path.exists():
-                labeled_doc_ids.add(doc_folder.name)
+                labeled_doc_ids.add(doc_id)
 
     # Total docs in claim
     total_doc_ids = {d.name for d in docs_dir.iterdir() if d.is_dir()}
@@ -61,7 +64,7 @@ def compute_run_metrics(
 
     # Load extractions and labels for detailed metrics
     field_metrics = _compute_field_metrics(
-        extraction_dir, docs_dir, labeled_doc_ids & doc_ids_in_run
+        extraction_dir, registry_labels_dir, labeled_doc_ids & doc_ids_in_run
     )
 
     # Build metrics dict
@@ -85,7 +88,7 @@ def compute_run_metrics(
 
 def _compute_field_metrics(
     extraction_dir: Path,
-    docs_dir: Path,
+    registry_labels_dir: Path,
     doc_ids: set,
 ) -> Dict[str, Any]:
     """
@@ -94,6 +97,11 @@ def _compute_field_metrics(
     Only includes documents where doc_type_correct is True (not False or missing).
     Documents with wrong doc_type are excluded from accuracy metrics to avoid
     contaminating results with misclassified documents.
+
+    Args:
+        extraction_dir: Directory containing extraction JSON files
+        registry_labels_dir: Directory containing label JSON files (registry/labels/)
+        doc_ids: Set of doc_ids to process
 
     Returns:
         Dict with field presence, accuracy, and evidence metrics
@@ -141,7 +149,7 @@ def _compute_field_metrics(
 
     for doc_id in doc_ids:
         extraction_path = extraction_dir / f"{doc_id}.json"
-        labels_path = docs_dir / doc_id / "labels" / "latest.json"
+        labels_path = registry_labels_dir / f"{doc_id}.json"
 
         if not extraction_path.exists() or not labels_path.exists():
             continue
