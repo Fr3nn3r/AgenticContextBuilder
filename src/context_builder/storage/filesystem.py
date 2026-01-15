@@ -202,7 +202,8 @@ class FileStorage:
         for run_folder in sorted(self.runs_dir.iterdir(), reverse=True):
             if not run_folder.is_dir():
                 continue
-            if not run_folder.name.startswith("run_"):
+            # Support both old (run_) and new (BATCH-) naming conventions
+            if not (run_folder.name.startswith("run_") or run_folder.name.startswith("BATCH-")):
                 continue
 
             # Only include complete runs
@@ -646,21 +647,87 @@ class FileStorage:
     # Delete Operations
     # -------------------------------------------------------------------------
 
-    def delete_run(self, run_id: str) -> Tuple[bool, int]:
-        """Delete a pipeline run and all associated data.
+    def delete_claim(self, claim_id: str) -> bool:
+        """Delete a claim folder and all its documents.
+
+        Note: Labels are stored separately in registry/labels/ and are NOT deleted.
+        This preserves labeled data for compliance/audit purposes.
+
+        Args:
+            claim_id: The claim ID or folder name to delete
+
+        Returns:
+            True if deletion was successful
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            logger.warning(f"Claim not found for deletion: {claim_id}")
+            return False
+
+        try:
+            shutil.rmtree(claim_folder)
+            logger.info(f"Deleted claim folder: {claim_folder}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete claim folder {claim_folder}: {e}")
+            return False
+
+    def get_claims_for_run(self, run_id: str) -> List[str]:
+        """Get the list of claim IDs that were processed in a run.
+
+        Reads from the run manifest to determine which claims belong to a batch.
+
+        Args:
+            run_id: The run ID to look up
+
+        Returns:
+            List of claim IDs (folder names) associated with this run
+        """
+        claim_ids = []
+
+        # Read from global run manifest
+        global_run_dir = self.runs_dir / run_id
+        manifest_path = global_run_dir / "manifest.json"
+
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                    for claim in manifest.get("claims", []):
+                        claim_id = claim.get("claim_id")
+                        if claim_id:
+                            claim_ids.append(claim_id)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to read manifest for {run_id}: {e}")
+
+        return claim_ids
+
+    def delete_run(
+        self, run_id: str, delete_claims: bool = False
+    ) -> Tuple[bool, int, int]:
+        """Delete a pipeline run and optionally its associated claims.
 
         Removes:
         - Global run directory (output/runs/{run_id}/)
         - Per-claim run directories (output/claims/{claim_id}/runs/{run_id}/)
+        - Optionally: claim folders themselves (but NOT labels)
 
         Args:
             run_id: The run ID to delete
+            delete_claims: If True, also delete claim folders created by this run.
+                          Labels are preserved in registry/labels/.
 
         Returns:
-            Tuple of (success: bool, claims_affected: int)
+            Tuple of (success: bool, claims_affected: int, claims_deleted: int)
         """
         global_deleted = False
         claims_affected = 0
+        claims_deleted = 0
+
+        # Get claims associated with this run BEFORE deleting manifest
+        claims_to_delete = []
+        if delete_claims:
+            claims_to_delete = self.get_claims_for_run(run_id)
 
         # Delete global run directory
         global_run_dir = self.runs_dir / run_id
@@ -671,7 +738,7 @@ class FileStorage:
                 logger.info(f"Deleted global run directory: {global_run_dir}")
             except Exception as e:
                 logger.error(f"Failed to delete global run directory {global_run_dir}: {e}")
-                return (False, 0)
+                return (False, 0, 0)
 
         # Delete per-claim run directories
         if self.claims_dir.exists():
@@ -690,7 +757,25 @@ class FileStorage:
         if claims_affected > 0:
             logger.info(f"Deleted {claims_affected} per-claim run directories for {run_id}")
 
+        # Delete claim folders if requested
+        if delete_claims and claims_to_delete:
+            for claim_id in claims_to_delete:
+                if self.delete_claim(claim_id):
+                    claims_deleted += 1
+
+            if claims_deleted > 0:
+                logger.info(f"Deleted {claims_deleted} claims for run {run_id}")
+
+        # Clean up version_bundles entry for this run
+        version_bundles_dir = self.claims_dir / "version_bundles" / run_id
+        if version_bundles_dir.exists():
+            try:
+                shutil.rmtree(version_bundles_dir)
+                logger.debug(f"Deleted version bundle: {version_bundles_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to delete version bundle {version_bundles_dir}: {e}")
+
         # Invalidate indexes so they reload on next access
         self.invalidate_indexes()
 
-        return (global_deleted or claims_affected > 0, claims_affected)
+        return (global_deleted or claims_affected > 0 or claims_deleted > 0, claims_affected, claims_deleted)

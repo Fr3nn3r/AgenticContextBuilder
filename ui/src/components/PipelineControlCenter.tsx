@@ -1115,7 +1115,8 @@ export function PipelineControlCenter() {
           <div className="bg-card rounded-lg p-6 max-w-md mx-4 shadow-lg border border-border">
             <h3 className="text-lg font-semibold mb-2">Delete Batch?</h3>
             <p className="text-muted-foreground mb-4">
-              This will permanently delete the batch and all its extraction results.
+              This will permanently delete the batch, its extraction results, and all
+              claims created in this batch. Labels you've added will be preserved.
               This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">

@@ -597,18 +597,21 @@ class PipelineService:
             stage_timings=stage_timings,
         )
 
-    def delete_run(self, run_id: str) -> bool:
+    def delete_run(self, run_id: str, delete_claims: bool = True) -> bool:
         """
-        Delete a pipeline run.
+        Delete a pipeline run and its associated claims.
 
         Removes from active tracking and deletes disk outputs via FileStorage:
         - Global run directory (output/runs/{run_id}/)
         - Per-claim run directories (output/claims/{claim_id}/runs/{run_id}/)
+        - Claim folders created by this run (labels are preserved in registry/)
 
         Only completed/failed/cancelled runs can be deleted.
 
         Args:
             run_id: Run ID to delete
+            delete_claims: If True (default), also delete claims created by this run.
+                          Labels are preserved in registry/labels/.
 
         Returns:
             True if deletion was successful
@@ -632,18 +635,23 @@ class PipelineService:
             # Neither in memory nor on disk
             return False
 
-        # Use FileStorage API to delete run data
+        # Use FileStorage API to delete run data and claims
         storage = FileStorage(self.output_dir.parent)
-        success, claims_affected = storage.delete_run(run_id)
+        success, claims_affected, claims_deleted = storage.delete_run(
+            run_id, delete_claims=delete_claims
+        )
 
         if not success:
             logger.warning(f"Failed to delete run {run_id} via storage API")
             return False
 
-        # Rebuild run index to remove stale entry
-        self._rebuild_run_index()
+        # Rebuild all indexes to remove stale entries
+        self._rebuild_all_indexes()
 
-        logger.info(f"Deleted pipeline run: {run_id} ({claims_affected} claims affected)")
+        logger.info(
+            f"Deleted pipeline run: {run_id} "
+            f"({claims_affected} run dirs, {claims_deleted} claims deleted)"
+        )
         return True
 
     def _rebuild_run_index(self) -> None:
@@ -665,6 +673,20 @@ class PipelineService:
             logger.info(f"Rebuilt run index with {len(run_records)} runs")
         except Exception as e:
             logger.warning(f"Failed to rebuild run index: {e}")
+
+    def _rebuild_all_indexes(self) -> None:
+        """Rebuild all indexes after a deletion (doc, run, label)."""
+        try:
+            from context_builder.storage.index_builder import build_all_indexes
+
+            output_dir = self.output_dir.parent  # output/
+            stats = build_all_indexes(output_dir)
+            logger.info(
+                f"Rebuilt all indexes: {stats.get('doc_count', 0)} docs, "
+                f"{stats.get('run_count', 0)} runs, {stats.get('label_count', 0)} labels"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to rebuild indexes: {e}")
 
     def _persist_run(self, run: PipelineRun) -> None:
         """Persist run to disk for visibility in other screens.
