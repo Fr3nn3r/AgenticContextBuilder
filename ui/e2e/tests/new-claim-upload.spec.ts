@@ -54,4 +54,52 @@ test.describe("New Claim Upload", () => {
     await expect(page.getByText("Overall Progress")).toBeVisible();
     await expect(page.getByText(/Batch:/)).toBeVisible();
   });
+
+  test("shows View in Batches button on completion and navigates to batch documents", async ({ page }) => {
+    // Mock WebSocket to immediately send batch_complete after connection
+    await page.addInitScript(() => {
+      const OriginalWebSocket = window.WebSocket;
+      (window as unknown as { WebSocket: typeof WebSocket }).WebSocket = class extends OriginalWebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          // Send batch_complete event shortly after connection
+          this.addEventListener("open", () => {
+            setTimeout(() => {
+              const completeEvent = new MessageEvent("message", {
+                data: JSON.stringify({
+                  type: "batch_complete",
+                  summary: { total: 1, success: 1, failed: 0 },
+                }),
+              });
+              this.dispatchEvent(completeEvent);
+            }, 100);
+          });
+        }
+      };
+    });
+
+    await page.goto("/claims/new");
+
+    const fileInput = page.locator('input[type="file"]').first();
+    await fileInput.setInputFiles({
+      name: "test_doc.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4 test"),
+    });
+
+    const runButton = page.getByRole("button", { name: /Run Pipeline/i });
+    await runButton.click();
+
+    // Wait for completion state - "View in Batches" button should appear
+    const viewButton = page.getByRole("link", { name: "View in Batches" });
+    await expect(viewButton).toBeVisible({ timeout: 5000 });
+
+    // Verify the href points to batch documents page (format: /batches/{batch_id}/documents)
+    const href = await viewButton.getAttribute("href");
+    expect(href).toMatch(/^\/batches\/[^/]+\/documents$/);
+
+    // Click and verify navigation to batch documents page
+    await viewButton.click();
+    await expect(page).toHaveURL(/\/batches\/[^/]+\/documents$/);
+  });
 });

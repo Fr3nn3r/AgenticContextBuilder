@@ -307,10 +307,10 @@ export function NewClaimPage() {
                   Upload More Claims
                 </button>
                 <a
-                  href={`/claims?run_id=${currentBatch?.batch_id || ''}`}
+                  href={`/batches/${currentBatch?.batch_id}/documents`}
                   className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
                 >
-                  View in Claims Review
+                  View in Batches
                 </a>
               </div>
             )}
