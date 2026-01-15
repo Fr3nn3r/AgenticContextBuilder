@@ -431,6 +431,13 @@ Examples:
         default="ingest,classify,extract",
         help="Comma-separated stages to run: ingest,classify,extract (default: all)",
     )
+    pipeline_run_group.add_argument(
+        "--doc-types",
+        metavar="TYPES",
+        default=None,
+        help="Comma-separated doc types to extract (e.g., fnol_form,police_report). "
+             "Use 'list' to show available types. Default: extract all supported types.",
+    )
 
     # Logging options for pipeline
     pipeline_logging_group = pipeline_parser.add_argument_group("Logging Options")
@@ -907,6 +914,16 @@ def main():
 
         elif args.command == "pipeline":
             # ========== PIPELINE COMMAND ==========
+            # Handle --doc-types list before path validation
+            if getattr(args, 'doc_types', None) and args.doc_types.lower() == "list":
+                from context_builder.extraction.spec_loader import list_available_specs
+                available_types = list_available_specs()
+                print("\nAvailable document types for extraction:")
+                for dt in available_types:
+                    print(f"  - {dt}")
+                print(f"\nUsage: --doc-types {','.join(available_types[:3])}")
+                sys.exit(0)
+
             # Validate input path
             input_path = Path(args.input_path)
             if not input_path.exists():
@@ -985,11 +1002,30 @@ def main():
             # Parse stages argument
             try:
                 stages = parse_stages(args.stages)
-                stage_config = StageConfig(stages=stages)
-                logger.info(f"Pipeline stages: {[s.value for s in stages]} (run_kind={stage_config.run_kind})")
             except ValueError as e:
                 print(f"[!] Invalid --stages argument: {e}")
                 sys.exit(1)
+
+            # Parse --doc-types argument (note: "list" is handled earlier before path validation)
+            doc_type_filter = None
+            if args.doc_types:
+                from context_builder.extraction.spec_loader import list_available_specs
+                available_types = list_available_specs()
+
+                # Parse comma-separated list
+                doc_type_filter = [t.strip() for t in args.doc_types.split(",") if t.strip()]
+
+                # Validate doc types
+                invalid_types = [t for t in doc_type_filter if t not in available_types]
+                if invalid_types:
+                    print(f"[!] Invalid doc type(s): {', '.join(invalid_types)}")
+                    print(f"    Available types: {', '.join(available_types)}")
+                    sys.exit(1)
+
+                logger.info(f"Doc type filter: {doc_type_filter}")
+
+            stage_config = StageConfig(stages=stages, doc_type_filter=doc_type_filter)
+            logger.info(f"Pipeline stages: {[s.value for s in stages]} (run_kind={stage_config.run_kind})")
 
             # Determine if progress bars should be shown
             show_progress = (

@@ -87,6 +87,7 @@ class StageConfig:
     stages: List[PipelineStage] = field(
         default_factory=lambda: [PipelineStage.INGEST, PipelineStage.CLASSIFY, PipelineStage.EXTRACT]
     )
+    doc_type_filter: Optional[List[str]] = None  # If set, only extract these doc types
 
     @property
     def run_ingest(self) -> bool:
@@ -99,6 +100,12 @@ class StageConfig:
     @property
     def run_extract(self) -> bool:
         return PipelineStage.EXTRACT in self.stages
+
+    def should_extract_doc_type(self, doc_type: str) -> bool:
+        """Check if a doc_type should be extracted based on filter."""
+        if self.doc_type_filter is None:
+            return True  # No filter, extract all
+        return doc_type in self.doc_type_filter
 
     @property
     def run_kind(self) -> str:
@@ -644,7 +651,15 @@ class ExtractionStage:
         if context.stage_config.run_extract and extractor_factory is None:
             from context_builder.extraction.base import ExtractorFactory as DefaultExtractorFactory
             extractor_factory = DefaultExtractorFactory
-        if context.stage_config.run_extract and extractor_factory.is_supported(doc_type):
+
+        # Check if extraction should run for this doc type
+        should_extract = (
+            context.stage_config.run_extract
+            and extractor_factory.is_supported(doc_type)
+            and context.stage_config.should_extract_doc_type(doc_type)
+        )
+
+        if should_extract:
             if context.pages_data is None:
                 raise ValueError("Missing pages data for extraction")
             context.extraction_path, context.quality_gate_status = _run_extraction(
@@ -667,6 +682,8 @@ class ExtractionStage:
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
             logger.debug(f"Extraction skipped by --stages: {context.doc.original_filename}")
+        elif not context.stage_config.should_extract_doc_type(doc_type):
+            logger.debug(f"Extraction skipped by --doc-types filter: {doc_type} ({context.doc.original_filename})")
         else:
             logger.debug(f"No extractor for {doc_type}: {context.doc.original_filename}")
 
