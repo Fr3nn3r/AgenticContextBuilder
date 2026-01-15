@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -33,6 +34,10 @@ interface BatchContextType {
   dashboardLoading: boolean;
   // Actions
   refreshRuns: () => Promise<void>;
+  isRefreshing: boolean;
+  // Polling control
+  pollingEnabled: boolean;
+  setPollingEnabled: (enabled: boolean) => void;
 }
 
 const BatchContext = createContext<BatchContextType | null>(null);
@@ -41,16 +46,23 @@ interface BatchProviderProps {
   children: ReactNode;
 }
 
+// Polling interval in milliseconds (30 seconds)
+const POLLING_INTERVAL = 30000;
+
 export function BatchProvider({ children }: BatchProviderProps) {
   const [searchParams] = useSearchParams();
 
   // Run state
   const [runs, setRuns] = useState<ClaimRunInfo[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Detailed runs (with phase metrics for ExtractionPage)
   const [detailedRuns, setDetailedRuns] = useState<DetailedRunInfo[]>([]);
   const [selectedDetailedRun, setSelectedDetailedRun] = useState<DetailedRunInfo | null>(null);
+
+  // Polling state (disabled by default to avoid UI flickering)
+  const [pollingEnabled, setPollingEnabled] = useState(false);
 
   // Dashboard insights state
   const [dashboardOverview, setDashboardOverview] = useState<InsightsOverview | null>(null);
@@ -58,8 +70,11 @@ export function BatchProvider({ children }: BatchProviderProps) {
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
   // Load runs from API
-  const loadRuns = useCallback(async () => {
+  const loadRuns = useCallback(async (isManualRefresh = false) => {
     try {
+      if (isManualRefresh) {
+        setIsRefreshing(true);
+      }
       const [claimRuns, detailed] = await Promise.all([
         listClaimRuns(),
         getDetailedRuns(),
@@ -73,8 +88,17 @@ export function BatchProvider({ children }: BatchProviderProps) {
       }
     } catch (err) {
       console.error('Failed to load runs:', err);
+    } finally {
+      if (isManualRefresh) {
+        setIsRefreshing(false);
+      }
     }
   }, [selectedRunId]);
+
+  // Manual refresh handler (with loading indicator)
+  const refreshRuns = useCallback(async () => {
+    await loadRuns(true);
+  }, [loadRuns]);
 
   // Load dashboard data for a specific run
   const loadDashboardData = useCallback(async (runId: string) => {
@@ -120,6 +144,22 @@ export function BatchProvider({ children }: BatchProviderProps) {
     }
   }, [selectedRunId, detailedRuns, loadDashboardData]);
 
+  // Polling for new runs (background refresh without loading indicator)
+  const pollingEnabledRef = useRef(pollingEnabled);
+  pollingEnabledRef.current = pollingEnabled;
+
+  useEffect(() => {
+    if (!pollingEnabled) return;
+
+    const intervalId = setInterval(() => {
+      if (pollingEnabledRef.current) {
+        loadRuns(false); // Silent refresh (no loading indicator)
+      }
+    }, POLLING_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [pollingEnabled, loadRuns]);
+
   return (
     <BatchContext.Provider
       value={{
@@ -131,7 +171,10 @@ export function BatchProvider({ children }: BatchProviderProps) {
         dashboardOverview,
         dashboardDocTypes,
         dashboardLoading,
-        refreshRuns: loadRuns,
+        refreshRuns,
+        isRefreshing,
+        pollingEnabled,
+        setPollingEnabled,
       }}
     >
       {children}

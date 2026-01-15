@@ -8,6 +8,8 @@ interface BatchWorkspaceProps {
   selectedBatchId: string | null;
   onBatchChange: (batchId: string) => void;
   selectedBatch: DetailedRunInfo | null;
+  onRefresh?: () => Promise<void>;
+  isRefreshing?: boolean;
 }
 
 export function BatchWorkspace({
@@ -15,6 +17,8 @@ export function BatchWorkspace({
   selectedBatchId,
   onBatchChange,
   selectedBatch,
+  onRefresh,
+  isRefreshing,
 }: BatchWorkspaceProps) {
   const { batchId } = useParams<{ batchId: string }>();
   const navigate = useNavigate();
@@ -99,6 +103,8 @@ export function BatchWorkspace({
         selectedBatchId={selectedBatchId}
         onBatchChange={handleBatchChange}
         selectedBatch={selectedBatch}
+        onRefresh={onRefresh}
+        isRefreshing={isRefreshing}
       />
       <BatchSubNav
         counts={

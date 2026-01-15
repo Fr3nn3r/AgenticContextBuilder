@@ -37,6 +37,8 @@ export function AppRoutes() {
     dashboardOverview,
     dashboardDocTypes,
     dashboardLoading,
+    refreshRuns,
+    isRefreshing,
   } = useBatch();
 
   return (
@@ -50,6 +52,8 @@ export function AppRoutes() {
             selectedBatchId={selectedRunId}
             onBatchChange={setSelectedRunId}
             selectedBatch={selectedDetailedRun}
+            onRefresh={refreshRuns}
+            isRefreshing={isRefreshing}
           />
         }
       >
