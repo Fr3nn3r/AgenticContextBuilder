@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "../lib/utils";
-import { formatDocType } from "../lib/formatters";
+import { formatDocType, formatRelativeTime, formatTimestamp } from "../lib/formatters";
 import {
   ScoreBadge,
   CompleteBadge,
@@ -10,6 +10,8 @@ import {
   SelectToViewEmptyState,
 } from "./shared";
 import type { DetailedRunInfo, InsightsOverview, DocTypeMetrics } from "../api/client";
+
+const SIDEBAR_COLLAPSED_KEY = "batch_history_collapsed";
 
 interface ExtractionPageProps {
   batches: DetailedRunInfo[];
@@ -30,6 +32,19 @@ export function ExtractionPage({
   docTypes,
   loading,
 }: ExtractionPageProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+    }
+    return false;
+  });
+
+  const toggleSidebar = () => {
+    const newValue = !sidebarCollapsed;
+    setSidebarCollapsed(newValue);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newValue));
+  };
+
   // Sort batches by batch_id (descending - most recent first)
   const sortedBatches = useMemo(() => {
     return [...batches].sort((a, b) => b.run_id.localeCompare(a.run_id));
@@ -38,36 +53,86 @@ export function ExtractionPage({
   return (
     <div className="flex h-full" data-testid="extraction-page">
       {/* Left Panel: Batch History */}
-      <div className="w-72 border-r bg-muted/50 flex flex-col">
-        <div className="p-4 border-b bg-card">
-          <h3 className="font-semibold text-foreground">Batch History</h3>
-          <p className="text-xs text-muted-foreground mt-1">{batches.length} batches</p>
+      <div
+        className={cn(
+          "border-r bg-muted/50 flex flex-col transition-all duration-200",
+          sidebarCollapsed ? "w-14" : "w-72"
+        )}
+      >
+        <div className={cn("border-b bg-card flex items-center", sidebarCollapsed ? "p-2 justify-center" : "p-4 justify-between")}>
+          {!sidebarCollapsed && (
+            <div>
+              <h3 className="font-semibold text-foreground">Batch History</h3>
+              <p className="text-xs text-muted-foreground mt-1">{batches.length} batches</p>
+            </div>
+          )}
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <ChevronIcon className={cn("w-4 h-4 transition-transform", sidebarCollapsed && "rotate-180")} />
+          </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {sortedBatches.map((batch) => (
-            <button
-              key={batch.run_id}
-              data-testid={`batch-item-${batch.run_id}`}
-              onClick={() => onBatchChange(batch.run_id)}
-              className={cn(
-                "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
-                selectedBatchId === batch.run_id
-                  ? "bg-accent/10 border border-accent/50"
-                  : "hover:bg-muted"
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground truncate" title={batch.run_id}>
-                  {batch.run_id}
-                </span>
-                <BatchStatusBadge status={batch.status} />
-              </div>
-              <div className="text-xs text-muted-foreground/70 mt-0.5">
-                {batch.model || "Unknown model"} &bull; {batch.docs_total} docs
-              </div>
-            </button>
-          ))}
-          {batches.length === 0 && (
+        <div className={cn("flex-1 overflow-y-auto", sidebarCollapsed ? "p-1" : "p-2")}>
+          {sidebarCollapsed ? (
+            // Collapsed view: status dots
+            <>
+              {sortedBatches.map((batch) => (
+                <button
+                  key={batch.run_id}
+                  onClick={() => onBatchChange(batch.run_id)}
+                  className={cn(
+                    "w-10 h-10 rounded flex items-center justify-center mb-1 transition-colors",
+                    selectedBatchId === batch.run_id
+                      ? "bg-accent/10 ring-2 ring-accent/50"
+                      : "hover:bg-muted"
+                  )}
+                  title={`${batch.run_id}\n${formatRelativeTime(batch.timestamp)} • ${batch.docs_total} docs`}
+                >
+                  <span
+                    className={cn(
+                      "w-3 h-3 rounded-full",
+                      batch.status === "complete" && "bg-success",
+                      batch.status === "partial" && "bg-warning",
+                      batch.status === "failed" && "bg-destructive"
+                    )}
+                  />
+                </button>
+              ))}
+            </>
+          ) : (
+            // Expanded view: full batch items
+            <>
+              {sortedBatches.map((batch) => (
+                <button
+                  key={batch.run_id}
+                  data-testid={`batch-item-${batch.run_id}`}
+                  onClick={() => onBatchChange(batch.run_id)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
+                    selectedBatchId === batch.run_id
+                      ? "bg-accent/10 border border-accent/50"
+                      : "hover:bg-muted"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground truncate" title={batch.run_id}>
+                      {batch.run_id}
+                    </span>
+                    <BatchStatusBadge status={batch.status} />
+                  </div>
+                  <div className="text-xs text-muted-foreground/70 mt-0.5">
+                    <span title={batch.timestamp ? formatTimestamp(batch.timestamp) : undefined}>
+                      {formatRelativeTime(batch.timestamp)}
+                    </span>
+                    {" "}&bull; {batch.docs_total} docs
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+          {batches.length === 0 && !sidebarCollapsed && (
             <div className="text-center py-8 text-muted-foreground/70 text-sm">No batches found</div>
           )}
         </div>
@@ -587,6 +652,14 @@ function WarningIcon({ className }: { className?: string }) {
 }
 
 // Icons
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

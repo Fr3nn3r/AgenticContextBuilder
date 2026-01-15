@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "../../lib/utils";
-import { formatTimestamp } from "../../lib/formatters";
+import { formatTimestamp, formatRelativeTime } from "../../lib/formatters";
 import type { DetailedRunInfo } from "../../api/client";
 
 interface BatchContextBarProps {
@@ -74,9 +74,12 @@ export function BatchContextBar({
               {selectedBatch.docs_total} docs
             </span>
             {selectedBatch.timestamp && (
-              <span className="flex items-center gap-1">
+              <span
+                className="flex items-center gap-1 cursor-default"
+                title={formatTimestamp(selectedBatch.timestamp)}
+              >
                 <ClockIcon className="w-4 h-4" />
-                {formatTimestamp(selectedBatch.timestamp)}
+                {formatRelativeTime(selectedBatch.timestamp)}
               </span>
             )}
             <StatusBadge status={selectedBatch.status} />

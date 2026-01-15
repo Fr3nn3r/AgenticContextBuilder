@@ -100,7 +100,16 @@ export function BatchWorkspace({
         onBatchChange={handleBatchChange}
         selectedBatch={selectedBatch}
       />
-      <BatchSubNav />
+      <BatchSubNav
+        counts={
+          selectedBatch
+            ? {
+                documents: selectedBatch.docs_total,
+                claims: selectedBatch.claims_count,
+              }
+            : undefined
+        }
+      />
       <div className="flex-1 overflow-auto">
         <Outlet />
       </div>
