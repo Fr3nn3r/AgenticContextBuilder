@@ -28,6 +28,11 @@ def extract_claim_number(folder_name: str) -> str:
     return match.group(1) if match else folder_name
 
 
+def _is_run_dir(name: str) -> bool:
+    """Check if directory name matches a run naming convention."""
+    return name.startswith("run_") or name.startswith("BATCH-")
+
+
 def get_latest_run_dir_for_claim(claim_dir: Path) -> Optional[Path]:
     """Get the most recent run directory for a claim."""
     runs_dir = claim_dir / "runs"
@@ -35,7 +40,7 @@ def get_latest_run_dir_for_claim(claim_dir: Path) -> Optional[Path]:
         return None
 
     run_dirs = sorted(
-        [d for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("run_")],
+        [d for d in runs_dir.iterdir() if d.is_dir() and _is_run_dir(d.name)],
         reverse=True,
     )
     return run_dirs[0] if run_dirs else None
