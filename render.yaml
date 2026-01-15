@@ -11,7 +11,7 @@ services:
     startCommand: uvicorn context_builder.api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.11"
       - key: NODE_VERSION
         value: "20"
       - key: RENDER_WORKSPACE_PATH
