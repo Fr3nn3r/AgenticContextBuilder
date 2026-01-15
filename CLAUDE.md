@@ -45,6 +45,39 @@ python -m context_builder.cli extract --model gpt-4o
 - Test new/changed logic with PyTest or Jest
 - Do not start/stop dev servers automatically - ask user first
 
+## Versioning & Commits
+
+**Current version**: Check `pyproject.toml` (backend) and `ui/package.json` (frontend) - kept in sync.
+
+### Semantic Versioning (MAJOR.MINOR.PATCH)
+| Bump | When | Examples |
+|------|------|----------|
+| PATCH | Bug fixes, no API changes | Fix extraction bug, UI styling fix |
+| MINOR | New features, backward-compatible | New doc type, new screen, new endpoint |
+| MAJOR | Breaking changes | Workspace structure change, API breaking change |
+
+### Commit Message Prefixes
+Use these prefixes to indicate the type of change:
+- `fix:` - Bug fix (triggers PATCH bump)
+- `feat:` - New feature (triggers MINOR bump)
+- `BREAKING CHANGE:` - Breaking change (triggers MAJOR bump)
+- `chore:` - Maintenance, deps, configs (no version bump)
+- `docs:` - Documentation only (no version bump)
+- `refactor:` - Code restructure, no behavior change (no version bump)
+- `test:` - Adding/updating tests (no version bump)
+
+### Version Bump Script
+```powershell
+.\scripts\version-bump.ps1 patch    # 0.2.0 -> 0.2.1
+.\scripts\version-bump.ps1 minor    # 0.2.0 -> 0.3.0
+.\scripts\version-bump.ps1 major    # 0.2.0 -> 1.0.0
+.\scripts\version-bump.ps1 patch -DryRun  # Preview only
+```
+
+### When to Bump
+- Bump version **before releasing** or **after merging a feature branch**
+- Group related commits, then bump once (don't bump on every commit)
+
 ## Testing Best Practices
 - **Full suite is fast**: `python -m pytest tests/unit/ --no-cov -q` runs 850+ tests in ~15 seconds
 - **Use `--no-cov`** to skip coverage collection (significantly faster)

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useSpacemanTheme } from "@space-man/react-theme-animation";
 import { cn } from "../lib/utils";
 import { useAuth } from "../context/AuthContext";
 import { getAppVersion } from "../api/client";
@@ -31,16 +30,9 @@ const navItems: NavItem[] = [
   { id: "admin", label: "Admin", path: "/admin", icon: AdminIcon, adminOnly: true },
 ];
 
-const COLOR_THEMES = [
-  { id: 'northern-lights', name: 'Northern Lights' },
-  { id: 'default', name: 'Default' },
-  { id: 'pink', name: 'Pink' },
-] as const;
-
 export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
-  const { theme: darkMode, switchThemeFromElement, setColorTheme, colorTheme } = useSpacemanTheme();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [versionDisplay, setVersionDisplay] = useState("ContextBuilder");
 
   // Fetch version on mount
@@ -49,9 +41,6 @@ export function Sidebar({ currentView }: SidebarProps) {
       .then((info) => setVersionDisplay(`ContextBuilder ${info.display}`))
       .catch(() => setVersionDisplay("ContextBuilder"));
   }, []);
-
-  // Use colorTheme from hook, fallback to northern-lights
-  const currentColorTheme = colorTheme || 'northern-lights';
 
   // Check if current path is under /batches (for active highlighting)
   const isBatchRoute = location.pathname.startsWith("/batches");
@@ -64,10 +53,6 @@ export function Sidebar({ currentView }: SidebarProps) {
     }
     return true;
   });
-
-  const handleLogout = async () => {
-    await logout();
-  };
 
   return (
     <div className="w-56 bg-sidebar text-sidebar-foreground flex flex-col" data-testid="sidebar">
@@ -108,94 +93,9 @@ export function Sidebar({ currentView }: SidebarProps) {
         })}
       </nav>
 
-      {/* User Section */}
-      {user && (
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 bg-sidebar-accent rounded-full flex items-center justify-center text-sm font-medium text-sidebar-accent-foreground">
-              {user.username.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-sidebar-foreground truncate">
-                {user.username}
-              </div>
-              <div className="text-xs text-muted-foreground capitalize">
-                {user.role}
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-          >
-            <LogoutIcon className="w-4 h-4" />
-            Sign out
-          </button>
-        </div>
-      )}
-
-      {/* Footer - Theme Controls */}
-      <div className="p-4 border-t border-sidebar-border space-y-3">
-        {/* Color Theme Selector */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Theme</span>
-          <select
-            value={currentColorTheme}
-            onChange={(e) => setColorTheme(e.target.value)}
-            className="text-xs bg-sidebar-accent text-sidebar-accent-foreground rounded px-2 py-1 border-0 cursor-pointer"
-          >
-            {COLOR_THEMES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Dark Mode Toggle */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Mode</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => switchThemeFromElement("light", e.currentTarget)}
-              className={cn(
-                "p-1.5 rounded text-xs transition-colors",
-                darkMode === "light"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-muted-foreground hover:text-sidebar-foreground"
-              )}
-              title="Light mode"
-            >
-              <SunIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => switchThemeFromElement("dark", e.currentTarget)}
-              className={cn(
-                "p-1.5 rounded text-xs transition-colors",
-                darkMode === "dark"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-muted-foreground hover:text-sidebar-foreground"
-              )}
-              title="Dark mode"
-            >
-              <MoonIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => switchThemeFromElement("system", e.currentTarget)}
-              className={cn(
-                "p-1.5 rounded text-xs transition-colors",
-                darkMode === "system"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-muted-foreground hover:text-sidebar-foreground"
-              )}
-              title="System preference"
-            >
-              <SystemIcon className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="text-xs text-muted-foreground pt-1">
+      {/* Footer - Version */}
+      <div className="p-4 border-t border-sidebar-border mt-auto">
+        <div className="text-xs text-muted-foreground">
           {versionDisplay}
         </div>
       </div>
@@ -262,45 +162,6 @@ function TruthIcon({ className }: { className?: string }) {
   );
 }
 
-function SunIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-      />
-    </svg>
-  );
-}
-
-function MoonIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-      />
-    </svg>
-  );
-}
-
-function SystemIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-      />
-    </svg>
-  );
-}
-
 function AdminIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -322,19 +183,6 @@ function ComplianceIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-      />
-    </svg>
-  );
-}
-
-function LogoutIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
       />
     </svg>
   );

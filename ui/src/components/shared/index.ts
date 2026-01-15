@@ -64,3 +64,7 @@ export { BatchSelector } from "./BatchSelector";
 // Batch workspace components
 export { BatchContextBar } from "./BatchContextBar";
 export { BatchSubNav, type BatchTab } from "./BatchSubNav";
+
+// Header components
+export { ThemePopover } from "./ThemePopover";
+export { HeaderUserMenu } from "./HeaderUserMenu";
