@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
 import {
@@ -30,25 +30,10 @@ export function ExtractionPage({
   docTypes,
   loading,
 }: ExtractionPageProps) {
-  const [copiedBatchId, setCopiedBatchId] = useState(false);
-
   // Sort batches by batch_id (descending - most recent first)
   const sortedBatches = useMemo(() => {
     return [...batches].sort((a, b) => b.run_id.localeCompare(a.run_id));
   }, [batches]);
-
-  const copyBatchId = () => {
-    if (selectedBatch) {
-      navigator.clipboard.writeText(selectedBatch.run_id);
-      setCopiedBatchId(true);
-      setTimeout(() => setCopiedBatchId(false), 2000);
-    }
-  };
-
-  // Get doc types from classification distribution
-  const docTypesInBatch = selectedBatch
-    ? Object.keys(selectedBatch.phases.classification.distribution)
-    : [];
 
   return (
     <div className="flex h-full" data-testid="extraction-page">
@@ -99,64 +84,8 @@ export function ExtractionPage({
             </div>
           ) : (
             <>
-              {/* Batch Context Header */}
-              <div className="bg-card rounded-lg border p-4 mb-6">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-muted-foreground">Batch ID:</span>
-                      <code className="text-sm bg-muted px-2 py-0.5 rounded">
-                        {selectedBatch.run_id}
-                      </code>
-                      <button
-                        onClick={copyBatchId}
-                        className="text-muted-foreground/70 hover:text-muted-foreground"
-                        title="Copy batch ID"
-                      >
-                        {copiedBatchId ? (
-                          <CheckIcon className="w-4 h-4 text-success" />
-                        ) : (
-                          <CopyIcon className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <span>
-                        {selectedBatch.timestamp
-                          ? new Date(selectedBatch.timestamp).toLocaleString()
-                          : "Unknown time"}
-                      </span>
-                      <BatchStatusBadge status={selectedBatch.status} />
-                      <span>
-                        Duration:{" "}
-                        {selectedBatch.duration_seconds
-                          ? `${selectedBatch.duration_seconds}s`
-                          : "—"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 pt-4 border-t text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Claims:</span>{" "}
-                    <span className="font-medium">{selectedBatch.claims_count}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Docs:</span>{" "}
-                    <span className="font-medium">{selectedBatch.docs_total}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Doc types:</span>{" "}
-                    <span className="font-medium">
-                      {docTypesInBatch.length > 0 ? docTypesInBatch.join(", ") : "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Model:</span>{" "}
-                    <span className="font-medium">{selectedBatch.model || "—"}</span>
-                  </div>
-                </div>
-              </div>
+              {/* Health Summary Banner */}
+              <HealthSummaryBanner batch={selectedBatch} />
 
               {/* Phase Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -165,6 +94,7 @@ export function ExtractionPage({
                   title="Ingestion"
                   icon={<DownloadIcon />}
                   color="blue"
+                  healthStatus={selectedBatch.phases.ingestion.failed > 0 ? "error" : "healthy"}
                   testId="phase-ingestion"
                   metrics={[
                     { label: "Discovered", value: selectedBatch.phases.ingestion.discovered },
@@ -188,6 +118,7 @@ export function ExtractionPage({
                   title="Classification"
                   icon={<TagIcon />}
                   color="purple"
+                  healthStatus={selectedBatch.phases.classification.low_confidence > 0 ? "warning" : "healthy"}
                   testId="phase-classification"
                   metrics={[
                     {
@@ -225,6 +156,13 @@ export function ExtractionPage({
                   title="Extraction"
                   icon={<ExtractIcon />}
                   color="green"
+                  healthStatus={
+                    selectedBatch.phases.extraction.failed > 0
+                      ? "error"
+                      : selectedBatch.phases.extraction.attempted !== selectedBatch.phases.extraction.succeeded
+                        ? "warning"
+                        : "healthy"
+                  }
                   testId="phase-extraction"
                   metrics={[
                     { label: "Attempted", value: selectedBatch.phases.extraction.attempted },
@@ -247,6 +185,13 @@ export function ExtractionPage({
                   title="Quality Gate"
                   icon={<ShieldIcon />}
                   color="amber"
+                  healthStatus={
+                    selectedBatch.phases.quality_gate.fail > 0
+                      ? "error"
+                      : selectedBatch.phases.quality_gate.warn > 0
+                        ? "warning"
+                        : "healthy"
+                  }
                   testId="phase-quality-gate"
                   metrics={[
                     {
@@ -268,10 +213,25 @@ export function ExtractionPage({
                 >
                   {overview && (
                     <div className="mt-2 pt-2 border-t">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Evidence rate</span>
-                        <span className="font-medium">{overview.evidence_rate}%</span>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Evidence rate</span>
+                        <span
+                          className={cn(
+                            "text-lg font-bold px-2 py-0.5 rounded",
+                            overview.evidence_rate === 0 && "text-destructive bg-destructive/10",
+                            overview.evidence_rate > 0 && overview.evidence_rate < 50 && "text-warning-foreground bg-warning/10",
+                            overview.evidence_rate >= 50 && overview.evidence_rate < 80 && "text-foreground",
+                            overview.evidence_rate >= 80 && "text-success bg-success/10"
+                          )}
+                        >
+                          {overview.evidence_rate}%
+                        </span>
                       </div>
+                      {overview.evidence_rate === 0 && (
+                        <div className="mt-2 p-2 rounded bg-muted/50 text-xs text-muted-foreground">
+                          <p>No documents labeled yet. Label documents to see accuracy metrics.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </PhaseCard>
@@ -291,6 +251,7 @@ export function ExtractionPage({
                       total={selectedBatch.docs_total}
                       percentage={selectedBatch.docs_total > 0 ? Math.round((overview?.docs_reviewed || 0) / selectedBatch.docs_total * 100) : 0}
                       color="green"
+                      emptyMessage="Review documents to add truth labels for accuracy metrics."
                     />
                     <ProgressBar
                       testId="extraction-coverage"
@@ -300,6 +261,7 @@ export function ExtractionPage({
                       total={selectedBatch.docs_total}
                       percentage={selectedBatch.docs_total > 0 ? Math.round((overview?.docs_with_extraction || 0) / selectedBatch.docs_total * 100) : 0}
                       color="blue"
+                      emptyMessage="Run extraction pipeline to process documents."
                     />
                   </div>
                 </div>
@@ -333,11 +295,30 @@ export function ExtractionPage({
                           </tr>
                         ) : (
                           Object.entries(selectedBatch.phases.classification.distribution)
-                            .sort((a, b) => b[1] - a[1])
+                            .sort((a, b) => {
+                              // Sort by "needs attention": lowest evidence_rate first, then lowest presence
+                              const metricsA = docTypes.find((dt) => dt.doc_type === a[0]);
+                              const metricsB = docTypes.find((dt) => dt.doc_type === b[0]);
+                              const evidenceA = metricsA?.evidence_rate_pct ?? 100;
+                              const evidenceB = metricsB?.evidence_rate_pct ?? 100;
+                              if (evidenceA !== evidenceB) return evidenceA - evidenceB;
+                              const presenceA = metricsA?.required_field_presence_pct ?? 100;
+                              const presenceB = metricsB?.required_field_presence_pct ?? 100;
+                              return presenceA - presenceB;
+                            })
                             .map(([docType, classifiedCount]) => {
                               const extractionMetrics = docTypes.find((dt) => dt.doc_type === docType);
+                              const evidenceRate = extractionMetrics?.evidence_rate_pct ?? null;
+                              const presenceRate = extractionMetrics?.required_field_presence_pct ?? null;
+                              const needsAttention = (evidenceRate !== null && evidenceRate < 50) || (presenceRate !== null && presenceRate < 50);
                               return (
-                                <tr key={docType} className="border-b last:border-0">
+                                <tr
+                                  key={docType}
+                                  className={cn(
+                                    "border-b last:border-0",
+                                    needsAttention && "bg-warning/5"
+                                  )}
+                                >
                                   <td className="py-2 text-foreground">
                                     {formatDocType(docType)}
                                   </td>
@@ -351,14 +332,14 @@ export function ExtractionPage({
                                     {extractionMetrics ? (
                                       <ScoreBadge value={extractionMetrics.required_field_presence_pct} />
                                     ) : (
-                                      <span className="text-muted-foreground/70">—</span>
+                                      <span className="text-xs text-muted-foreground/50">No data</span>
                                     )}
                                   </td>
                                   <td className="py-2 text-right">
                                     {extractionMetrics ? (
                                       <ScoreBadge value={extractionMetrics.evidence_rate_pct} />
                                     ) : (
-                                      <span className="text-muted-foreground/70">—</span>
+                                      <span className="text-xs text-muted-foreground/50">No data</span>
                                     )}
                                   </td>
                                 </tr>
@@ -386,10 +367,58 @@ function BatchStatusBadge({ status }: { status: "complete" | "partial" | "failed
   return <FailBadge />;
 }
 
+function HealthSummaryBanner({ batch }: { batch: DetailedRunInfo }) {
+  const { ingestion, classification, extraction, quality_gate } = batch.phases;
+
+  const items = [
+    {
+      label: "ingested",
+      value: ingestion.ingested,
+      total: ingestion.discovered,
+      ok: ingestion.failed === 0,
+    },
+    {
+      label: "classified",
+      value: classification.classified,
+      total: ingestion.ingested,
+      ok: classification.low_confidence === 0,
+    },
+    {
+      label: "extracted",
+      value: extraction.succeeded,
+      total: extraction.attempted,
+      ok: extraction.failed === 0,
+    },
+    {
+      label: "pass",
+      value: quality_gate.pass,
+      total: quality_gate.pass + quality_gate.warn + quality_gate.fail,
+      ok: quality_gate.fail === 0,
+    },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-2 mb-4 p-3 bg-muted/50 rounded-lg text-sm" data-testid="health-summary-banner">
+      {items.map((item, idx) => (
+        <div key={item.label} className="flex items-center">
+          {idx > 0 && <span className="text-muted-foreground/50 mx-2">|</span>}
+          <span className={cn("mr-1", item.ok ? "text-success" : "text-warning-foreground")}>
+            {item.ok ? "✓" : "⚠"}
+          </span>
+          <span className="text-muted-foreground">
+            {item.value}/{item.total} {item.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface PhaseCardProps {
   title: string;
   icon: React.ReactNode;
   color: "blue" | "purple" | "green" | "amber";
+  healthStatus?: "healthy" | "warning" | "error";
   metrics: Array<{
     label: string;
     value: number;
@@ -403,7 +432,7 @@ interface PhaseCardProps {
   testId?: string;
 }
 
-function PhaseCard({ title, icon, color, metrics, duration, children, testId }: PhaseCardProps) {
+function PhaseCard({ title, icon, color, healthStatus, metrics, duration, children, testId }: PhaseCardProps) {
   const colorClasses = {
     blue: "bg-info/10 text-info",
     purple: "bg-secondary/10 text-secondary",
@@ -411,8 +440,20 @@ function PhaseCard({ title, icon, color, metrics, duration, children, testId }: 
     amber: "bg-warning/10 text-warning-foreground",
   };
 
+  const healthBorderClasses = {
+    healthy: "border-t-4 border-t-success",
+    warning: "border-t-4 border-t-warning",
+    error: "border-t-4 border-t-destructive",
+  };
+
   return (
-    <div className="bg-card rounded-lg border p-4" data-testid={testId}>
+    <div
+      className={cn(
+        "bg-card rounded-lg border p-4 h-full",
+        healthStatus && healthBorderClasses[healthStatus]
+      )}
+      data-testid={testId}
+    >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div
@@ -424,6 +465,17 @@ function PhaseCard({ title, icon, color, metrics, duration, children, testId }: 
             {icon}
           </div>
           <h4 className="font-medium text-foreground">{title}</h4>
+          {healthStatus && (
+            <span
+              className={cn(
+                "w-2 h-2 rounded-full",
+                healthStatus === "healthy" && "bg-success",
+                healthStatus === "warning" && "bg-warning",
+                healthStatus === "error" && "bg-destructive"
+              )}
+              title={healthStatus === "healthy" ? "All good" : healthStatus === "warning" ? "Needs attention" : "Has failures"}
+            />
+          )}
         </div>
         {duration !== undefined && duration !== null && (
           <span className="text-xs text-muted-foreground/70">{Math.round(duration / 1000)}s</span>
@@ -434,7 +486,13 @@ function PhaseCard({ title, icon, color, metrics, duration, children, testId }: 
       </div>
       <div className="space-y-1">
         {metrics.map((m) => (
-          <div key={m.label} className="flex justify-between text-sm">
+          <div
+            key={m.label}
+            className={cn(
+              "flex justify-between text-sm px-1 -mx-1 rounded",
+              m.alert && m.value > 0 && "bg-destructive/5"
+            )}
+          >
             <span className={cn("text-muted-foreground", m.muted && "text-muted-foreground/70")}>
               {m.label}
             </span>
@@ -465,74 +523,70 @@ interface ProgressBarProps {
   percentage: number;
   color: "green" | "blue";
   testId?: string;
+  alertThreshold?: number;
+  emptyMessage?: string;
 }
 
-function ProgressBar({ label, description, value, total, percentage, color, testId }: ProgressBarProps) {
+function ProgressBar({ label, description, value, total, percentage, color, testId, alertThreshold = 25, emptyMessage }: ProgressBarProps) {
   const colorClasses = {
     green: "bg-success",
     blue: "bg-accent",
   };
 
+  const isLow = percentage < alertThreshold && percentage > 0;
+  const isEmpty = percentage === 0;
+
   return (
     <div data-testid={testId}>
       <div className="flex justify-between text-sm mb-1">
-        <div>
-          <span className="text-foreground font-medium">{label}</span>
-          {description && (
-            <span className="text-muted-foreground/70 text-xs block">{description}</span>
+        <div className="flex items-center gap-2">
+          <span className={cn("font-medium", isEmpty || isLow ? "text-destructive" : "text-foreground")}>
+            {label}
+          </span>
+          {isEmpty && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+              Needs Review
+            </span>
+          )}
+          {isLow && (
+            <WarningIcon className="w-4 h-4 text-warning" />
           )}
         </div>
-        <span className="text-muted-foreground" data-testid={testId ? `${testId}-value` : undefined}>
+        <span
+          className={cn(isEmpty || isLow ? "text-destructive" : "text-muted-foreground")}
+          data-testid={testId ? `${testId}-value` : undefined}
+        >
           {value} / {total} ({percentage}%)
         </span>
       </div>
+      {description && (
+        <span className="text-muted-foreground/70 text-xs block mb-1">{description}</span>
+      )}
       <div className="h-2 bg-muted rounded-full overflow-hidden">
         <div
-          className={cn("h-full rounded-full transition-all", colorClasses[color])}
+          className={cn(
+            "h-full rounded-full transition-all",
+            isEmpty || isLow ? "bg-destructive/50" : colorClasses[color]
+          )}
           style={{ width: `${Math.min(percentage, 100)}%` }}
         />
       </div>
+      {isEmpty && emptyMessage && (
+        <p className="mt-1 text-xs text-muted-foreground">{emptyMessage}</p>
+      )}
     </div>
   );
 }
 
+function WarningIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  );
+}
+
 // Icons
-function CopyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-      />
-    </svg>
-  );
-}
-
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M5 13l4 4L19 7"
-      />
-    </svg>
-  );
-}
-
 function DownloadIcon() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
