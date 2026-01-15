@@ -496,13 +496,6 @@ export function DocumentReview({
     return <span className={cn("text-xs font-medium", color)}>{pct}%</span>;
   };
 
-  // Count labeled fields
-  const labeledCount = fieldLabels.filter(
-    (l) => l.state === "LABELED" || l.state === "CONFIRMED"
-  ).length;
-  const unverifiableCount = fieldLabels.filter((l) => l.state === "UNVERIFIABLE").length;
-  const totalFields = fieldLabels.length;
-
   const selectedDoc = docs.find((d) => d.doc_id === selectedDocId);
 
   return (
@@ -660,14 +653,9 @@ export function DocumentReview({
             {/* Right: Fields Panel */}
             <div className="w-[420px] flex-shrink-0 flex flex-col bg-muted/50">
               {/* Header */}
-              <div className="px-4 py-3 border-b bg-card">
+              <div className="px-4 py-2.5 border-b bg-card">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-foreground">Field Extraction</h3>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {labeledCount} labeled, {unverifiableCount} unverifiable of {totalFields} fields
-                    </div>
-                  </div>
+                  <h3 className="font-medium text-foreground">Field Extraction</h3>
                   <div className="flex items-center gap-2">
                     {hasUnsavedChanges && (
                       <span className="text-xs text-amber-600">Unsaved</span>
