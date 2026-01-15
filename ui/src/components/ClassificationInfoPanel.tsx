@@ -163,71 +163,133 @@ export function ClassificationInfoPanel({
       </div>
 
       {/* Review Actions (sticky bottom) */}
-      <div className="border-t bg-card p-4 space-y-3 flex-shrink-0">
-        {/* Confirm/Change toggle */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => onReviewActionChange("confirm")}
-            className={cn(
-              "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              reviewAction === "confirm"
-                ? "bg-success text-white"
-                : "bg-muted text-foreground hover:bg-muted/80"
-            )}
-          >
-            Confirm
-          </button>
-          <button
-            onClick={() => onReviewActionChange("change")}
-            className={cn(
-              "flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              reviewAction === "change"
-                ? "bg-warning text-white"
-                : "bg-muted text-foreground hover:bg-muted/80"
-            )}
-          >
-            Change Type
-          </button>
+      <div className="border-t bg-gradient-to-b from-card to-muted/30 flex-shrink-0">
+        {/* Step 1: Classification Decision */}
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+              1
+            </span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Classification Decision
+            </span>
+          </div>
+
+          {/* Toggle buttons styled as segmented control */}
+          <div className="flex p-1 bg-muted rounded-lg">
+            <button
+              onClick={() => onReviewActionChange("confirm")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
+                reviewAction === "confirm"
+                  ? "bg-white dark:bg-card text-green-700 dark:text-green-400 shadow-sm ring-1 ring-green-200 dark:ring-green-800"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {reviewAction === "confirm" && (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              Confirm
+            </button>
+            <button
+              onClick={() => onReviewActionChange("change")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
+                reviewAction === "change"
+                  ? "bg-white dark:bg-card text-amber-700 dark:text-amber-400 shadow-sm ring-1 ring-amber-200 dark:ring-amber-800"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {reviewAction === "change" && (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+              )}
+              Override
+            </button>
+          </div>
+
+          {/* Doc type selector (when changing) */}
+          {reviewAction === "change" && (
+            <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                Select correct document type
+              </label>
+              <select
+                value={newDocType}
+                onChange={(e) => onNewDocTypeChange(e.target.value)}
+                className={cn(
+                  "w-full border-2 rounded-lg px-3 py-2 text-sm bg-background transition-colors",
+                  newDocType
+                    ? "border-amber-300 dark:border-amber-700"
+                    : "border-amber-200 dark:border-amber-800"
+                )}
+              >
+                <option value="">Select correct type...</option>
+                {DOC_TYPES.filter((t) => t !== detail.predicted_type).map((type) => (
+                  <option key={type} value={type}>
+                    {formatDocType(type)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Doc type selector (when changing) */}
-        {reviewAction === "change" && (
-          <select
-            value={newDocType}
-            onChange={(e) => onNewDocTypeChange(e.target.value)}
-            className="w-full border rounded-md px-2 py-1.5 text-sm bg-background"
+        {/* Divider */}
+        <div className="mx-4 border-t border-dashed" />
+
+        {/* Step 2: Notes & Save */}
+        <div className="px-4 pt-3 pb-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+              2
+            </span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Save Review
+            </span>
+          </div>
+
+          {/* Notes */}
+          <textarea
+            value={notes}
+            onChange={(e) => onNotesChange(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm bg-background placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-shadow"
+            rows={2}
+            placeholder="Add notes (optional)..."
+          />
+
+          {/* Save button - prominent and distinct */}
+          <button
+            onClick={onSave}
+            disabled={saving || !canSave}
+            className={cn(
+              "w-full mt-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200",
+              saving || !canSave
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+            )}
           >
-            <option value="">Select correct type...</option>
-            {DOC_TYPES.filter((t) => t !== detail.predicted_type).map((type) => (
-              <option key={type} value={type}>
-                {formatDocType(type)}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {/* Notes */}
-        <textarea
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          className="w-full border rounded-md px-2 py-1.5 text-sm bg-background"
-          rows={2}
-          placeholder="Notes (optional)..."
-        />
-
-        {/* Save button */}
-        <button
-          onClick={onSave}
-          disabled={saving || !canSave}
-          className={cn(
-            "w-full px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            saving || !canSave
-              ? "bg-muted text-muted-foreground cursor-not-allowed"
-              : "bg-primary text-white hover:bg-primary/90"
-          )}
-        >
-          {saving ? "Saving..." : "Save Review"}
-        </button>
+            {saving ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Saving...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                Save & Continue
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
