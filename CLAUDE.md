@@ -30,9 +30,10 @@ uvicorn context_builder.api.main:app --reload --port 8000
 # Frontend
 cd ui && npm run dev
 
-# Tests - IMPORTANT: Run targeted test files, not full suite
-python -m pytest tests/unit/test_storage.py -v --tb=short   # Specific file
-python -m pytest tests/unit/ -k "label" --tb=short          # By keyword
+# Tests
+python -m pytest tests/unit/ --no-cov -q                     # Full suite (~15s)
+python -m pytest tests/unit/test_storage.py -v --tb=short    # Specific file
+python -m pytest tests/unit/ -k "label" --tb=short           # By keyword
 cd ui && npx playwright test labeling                        # E2E by name
 
 # Pipeline (uses active workspace from .contextbuilder/workspaces.json)
@@ -45,11 +46,11 @@ python -m context_builder.cli extract --model gpt-4o
 - Do not start/stop dev servers automatically - ask user first
 
 ## Testing Best Practices
-- **Never run full test suite** (`tests/unit/`) - collection of 900+ tests is slow and causes background task pileup
-- **Always target specific files**: `python -m pytest tests/unit/test_storage.py -v`
+- **Full suite is fast**: `python -m pytest tests/unit/ --no-cov -q` runs 850+ tests in ~15 seconds
+- **Use `--no-cov`** to skip coverage collection (significantly faster)
 - **Use `-k` for keyword filtering**: `pytest -k "label" --tb=short`
-- **One test command at a time** - wait for completion before running another
 - **Use `--tb=short`** for concise error output
+- **Known issues**: 4 encryption tests require `pycryptodome` package (skip with `--ignore`)
 
 ## Context Management
 - **BACKLOG.md** - All tasks (todo/doing/done). Update before clearing context.

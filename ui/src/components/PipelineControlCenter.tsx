@@ -12,6 +12,7 @@ import {
   deletePipelineRun,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useBatch } from "../context/BatchContext";
 import type {
   PipelineClaimOption,
   PromptConfig,
@@ -533,7 +534,7 @@ function BatchesTab({
                     >
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{batch.friendly_name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{batch.prompt_config}</div>
+                        <div className="text-xs text-muted-foreground font-mono mt-0.5">{batch.batch_id}</div>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={batch.status} />
@@ -604,6 +605,12 @@ function BatchDetailsPanel({ batch, onDeleteBatch }: { batch: UIBatch; onDeleteB
 
   return (
     <div className="space-y-4">
+      {/* Batch ID */}
+      <div className="bg-muted/30 border rounded-lg px-4 py-2 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Batch ID:</span>
+        <code className="text-xs font-mono text-foreground">{batch.batch_id}</code>
+      </div>
+
       {/* Summary Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-card border rounded-lg p-3">
@@ -882,7 +889,7 @@ function ConfigTab({
 
 // Main Component
 export function PipelineControlCenter() {
-  const [activeTab, setActiveTab] = useState<TabId>("new-batch");
+  const [activeTab, setActiveTab] = useState<TabId>("batches");
   const [selectedClaims, setSelectedClaims] = useState<string[]>([]);
   const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
   const [promptConfig, setPromptConfig] = useState<string>("");
@@ -896,6 +903,9 @@ export function PipelineControlCenter() {
   // Permission check
   const { canEdit } = useAuth();
   const canExecutePipeline = canEdit("pipeline");
+
+  // Batch context - for syncing with Batches screen
+  const { refreshRuns: refreshBatchContext } = useBatch();
 
   // Data hooks
   const { claims, isLoading: claimsLoading, refetch: refetchClaims } = usePipelineClaims();
@@ -981,7 +991,8 @@ export function PipelineControlCenter() {
     if (!batchToDelete) return;
     try {
       await deletePipelineRun(batchToDelete);
-      await Promise.all([refetchBatches(), refetchAudit()]);
+      // Refresh both Pipeline Control Center and Batches screen
+      await Promise.all([refetchBatches(), refetchAudit(), refreshBatchContext()]);
       if (selectedBatchId === batchToDelete) {
         setSelectedBatchId(null);
       }
@@ -990,7 +1001,7 @@ export function PipelineControlCenter() {
     } finally {
       setBatchToDelete(null);
     }
-  }, [batchToDelete, refetchBatches, refetchAudit, selectedBatchId]);
+  }, [batchToDelete, refetchBatches, refetchAudit, refreshBatchContext, selectedBatchId]);
 
   const handleSetDefault = useCallback(async (configId: string) => {
     try {

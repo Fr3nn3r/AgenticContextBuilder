@@ -157,7 +157,6 @@ export type RunSummary = BatchSummary;
 
 export interface ClaimReviewPayload {
   claim_id: string;
-  folder_name: string;
   lob: string;
   doc_count: number;
   unlabeled_count: number;

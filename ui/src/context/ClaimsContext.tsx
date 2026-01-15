@@ -62,7 +62,7 @@ export function ClaimsProvider({ children }: ClaimsProviderProps) {
   const selectClaim = useCallback(async (claim: ClaimSummary) => {
     try {
       setSelectedClaim(claim);
-      const data = await listDocs(claim.folder_name, selectedRunId || undefined);
+      const data = await listDocs(claim.claim_id, selectedRunId || undefined);
       setDocs(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load docs');

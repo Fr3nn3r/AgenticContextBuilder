@@ -180,7 +180,7 @@ class WorkspaceService:
     def create_workspace(
         self,
         name: str,
-        path: str,
+        path: Optional[str] = None,
         description: Optional[str] = None,
     ) -> Optional[Workspace]:
         """
@@ -188,7 +188,8 @@ class WorkspaceService:
 
         Args:
             name: Human-readable workspace name.
-            path: Absolute path to workspace root directory.
+            path: Absolute path to workspace root directory. If None, auto-generates
+                  under project_root/workspaces/{workspace_id}/.
             description: Optional description.
 
         Returns:
@@ -196,12 +197,7 @@ class WorkspaceService:
         """
         registry = self._load_registry()
 
-        workspace_path = Path(path)
-        for ws in registry.workspaces:
-            if Path(ws.path).resolve() == workspace_path.resolve():
-                logger.warning(f"Workspace already exists at path: {path}")
-                return None
-
+        # Generate workspace_id first (needed for auto-generated path)
         workspace_id = self._slugify(name)
         existing_ids = {ws.workspace_id for ws in registry.workspaces}
         base_id = workspace_id
@@ -209,6 +205,19 @@ class WorkspaceService:
         while workspace_id in existing_ids:
             workspace_id = f"{base_id}-{counter}"
             counter += 1
+
+        # Auto-generate path if not provided
+        if path is None:
+            workspace_path = self.project_root / "workspaces" / workspace_id
+            logger.info(f"Auto-generating workspace path: {workspace_path}")
+        else:
+            workspace_path = Path(path)
+
+        # Check for duplicate paths
+        for ws in registry.workspaces:
+            if Path(ws.path).resolve() == workspace_path.resolve():
+                logger.warning(f"Workspace already exists at path: {workspace_path}")
+                return None
 
         self._initialize_workspace_folders(workspace_path)
 

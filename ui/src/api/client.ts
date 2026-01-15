@@ -806,7 +806,7 @@ export interface WorkspaceResponse {
 
 export interface CreateWorkspaceRequest {
   name: string;
-  path: string;
+  path?: string;  // Auto-generated server-side if not provided
   description?: string;
 }
 

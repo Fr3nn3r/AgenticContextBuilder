@@ -4,13 +4,14 @@ import {
   createWorkspace,
   activateWorkspace,
   deleteWorkspace,
+  rebuildIndex,
   type WorkspaceResponse,
   type CreateWorkspaceRequest,
+  type RebuildIndexResponse,
 } from '../api/client';
 
 interface CreateFormData {
   name: string;
-  path: string;
   description: string;
 }
 
@@ -23,7 +24,6 @@ export function WorkspaceManager() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState<CreateFormData>({
     name: '',
-    path: '',
     description: '',
   });
   const [formError, setFormError] = useState<string | null>(null);
@@ -32,6 +32,10 @@ export function WorkspaceManager() {
   // Activation confirmation
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Index rebuild state
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [rebuildResult, setRebuildResult] = useState<RebuildIndexResponse | null>(null);
 
   useEffect(() => {
     loadWorkspaces();
@@ -51,15 +55,15 @@ export function WorkspaceManager() {
   }
 
   function resetForm() {
-    setFormData({ name: '', path: '', description: '' });
+    setFormData({ name: '', description: '' });
     setFormError(null);
     setShowCreateForm(false);
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!formData.name || !formData.path) {
-      setFormError('Name and path are required');
+    if (!formData.name) {
+      setFormError('Name is required');
       return;
     }
 
@@ -68,7 +72,6 @@ export function WorkspaceManager() {
       setFormError(null);
       const request: CreateWorkspaceRequest = {
         name: formData.name,
-        path: formData.path,
         description: formData.description || undefined,
       };
       await createWorkspace(request);
@@ -108,6 +111,22 @@ export function WorkspaceManager() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete workspace');
       setDeletingId(null);
+    }
+  }
+
+  async function handleRebuildIndex() {
+    try {
+      setRebuildingIndex(true);
+      setRebuildResult(null);
+      setError(null);
+      const result = await rebuildIndex();
+      setRebuildResult(result);
+      // Clear success message after 5 seconds
+      setTimeout(() => setRebuildResult(null), 5000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rebuild index');
+    } finally {
+      setRebuildingIndex(false);
     }
   }
 
@@ -175,8 +194,21 @@ export function WorkspaceManager() {
                   </svg>
                 )}
               </button>
+              <button
+                onClick={handleRebuildIndex}
+                disabled={rebuildingIndex}
+                className="px-3 py-1 text-xs bg-primary/20 text-primary rounded-md hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Rebuild document, label, and run indexes"
+              >
+                {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
+              </button>
             </div>
           </div>
+          {rebuildResult && (
+            <div className="mt-3 pt-3 border-t border-green-500/20 text-xs text-green-600">
+              Index rebuilt: {rebuildResult.stats.doc_count} docs, {rebuildResult.stats.claim_count} claims, {rebuildResult.stats.run_count} runs
+            </div>
+          )}
         </div>
       )}
 
@@ -232,23 +264,6 @@ export function WorkspaceManager() {
                 placeholder="e.g., Integration Tests"
                 required
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                Path (absolute)
-              </label>
-              <input
-                type="text"
-                value={formData.path}
-                onChange={(e) => setFormData({ ...formData, path: e.target.value })}
-                className="w-full px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g., C:\temp\test-workspace or /tmp/test-workspace"
-                required
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Folders will be created automatically (claims/, runs/, logs/, etc.)
-              </p>
             </div>
 
             <div>
@@ -444,6 +459,9 @@ export function WorkspaceManager() {
         <ul className="text-xs text-muted-foreground space-y-1">
           <li>
             Workspaces allow you to switch between different storage locations at runtime.
+          </li>
+          <li>
+            Workspace paths are auto-generated under the <code className="font-mono">workspaces/</code> directory.
           </li>
           <li>
             Activating a workspace will clear all sessions and log out all users.

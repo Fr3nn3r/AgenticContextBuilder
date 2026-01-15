@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
+    "uvicorn>=0.27.0",  # Note: [standard] removed - watchfiles causes reload hangs on Windows
+    "websockets>=10.0",  # Required for WebSocket support (previously included in uvicorn[standard])
     "python-multipart>=0.0.6",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",

@@ -10,9 +10,10 @@ Includes compliance features:
 import json
 import logging
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .models import (
     ClaimRef,
@@ -640,3 +641,56 @@ class FileStorage:
                 return doc_folder
 
         return None
+
+    # -------------------------------------------------------------------------
+    # Delete Operations
+    # -------------------------------------------------------------------------
+
+    def delete_run(self, run_id: str) -> Tuple[bool, int]:
+        """Delete a pipeline run and all associated data.
+
+        Removes:
+        - Global run directory (output/runs/{run_id}/)
+        - Per-claim run directories (output/claims/{claim_id}/runs/{run_id}/)
+
+        Args:
+            run_id: The run ID to delete
+
+        Returns:
+            Tuple of (success: bool, claims_affected: int)
+        """
+        global_deleted = False
+        claims_affected = 0
+
+        # Delete global run directory
+        global_run_dir = self.runs_dir / run_id
+        if global_run_dir.exists():
+            try:
+                shutil.rmtree(global_run_dir)
+                global_deleted = True
+                logger.info(f"Deleted global run directory: {global_run_dir}")
+            except Exception as e:
+                logger.error(f"Failed to delete global run directory {global_run_dir}: {e}")
+                return (False, 0)
+
+        # Delete per-claim run directories
+        if self.claims_dir.exists():
+            for claim_folder in self.claims_dir.iterdir():
+                if not claim_folder.is_dir():
+                    continue
+                claim_run_dir = claim_folder / "runs" / run_id
+                if claim_run_dir.exists():
+                    try:
+                        shutil.rmtree(claim_run_dir)
+                        claims_affected += 1
+                        logger.debug(f"Deleted claim run directory: {claim_run_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete claim run dir {claim_run_dir}: {e}")
+
+        if claims_affected > 0:
+            logger.info(f"Deleted {claims_affected} per-claim run directories for {run_id}")
+
+        # Invalidate indexes so they reload on next access
+        self.invalidate_indexes()
+
+        return (global_deleted or claims_affected > 0, claims_affected)
