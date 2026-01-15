@@ -5,6 +5,9 @@ AES-256-GCM authenticated encryption. Each record is encrypted with a
 unique Data Encryption Key (DEK), which is then encrypted with the
 Key Encryption Key (KEK).
 
+Uses PyCryptodome for AES-GCM (self-contained, no OpenSSL dependency).
+This avoids issues with uvicorn --reload on Windows.
+
 Design:
 - Envelope encryption: DEK per record, KEK for DEK encryption
 - Hash chain: Computed over plaintext before encryption
@@ -12,23 +15,22 @@ Design:
 - Nonce: 12 bytes (96 bits) per encryption operation
 
 Wire format:
-    [encrypted_dek (44 bytes)] [dek_nonce (12 bytes)] [data_nonce (12 bytes)] [ciphertext]
+    [encrypted_dek (48 bytes)] [dek_nonce (12 bytes)] [data_nonce (12 bytes)] [ciphertext] [tag (16 bytes)]
 
 Where:
 - encrypted_dek: DEK encrypted with KEK (32 byte key + 16 byte auth tag)
 - dek_nonce: Nonce used for DEK encryption
 - data_nonce: Nonce used for data encryption
-- ciphertext: Data encrypted with DEK + auth tag
+- ciphertext: Data encrypted with DEK
+- tag: Authentication tag for data
 """
 
 import base64
-import os
 import secrets
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
+from Crypto.Cipher import AES
 
 # Constants
 KEK_SIZE = 32  # 256 bits
@@ -83,6 +85,7 @@ class EnvelopeEncryptor:
     """
 
     # Header sizes for parsing encrypted blob
+    # encrypted_dek (48) + dek_nonce (12) + data_nonce (12) = 72 bytes
     HEADER_SIZE = ENCRYPTED_DEK_SIZE + NONCE_SIZE + NONCE_SIZE  # 72 bytes
 
     def __init__(self, kek: Union[Path, bytes]):
@@ -103,9 +106,6 @@ class EnvelopeEncryptor:
                     f"KEK must be {KEK_SIZE} bytes, got {len(kek)} bytes"
                 )
             self._kek = kek
-
-        # Validate KEK works
-        self._kek_cipher = AESGCM(self._kek)
 
     def _load_kek(self, kek_path: Path) -> bytes:
         """Load KEK from file.
@@ -155,6 +155,21 @@ class EnvelopeEncryptor:
         except OSError as e:
             raise KeyLoadError(f"Failed to read KEK file: {e}")
 
+    def _encrypt_aes_gcm(self, key: bytes, nonce: bytes, plaintext: bytes) -> bytes:
+        """Encrypt using AES-256-GCM, returning ciphertext + tag concatenated."""
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+        return ciphertext + tag
+
+    def _decrypt_aes_gcm(self, key: bytes, nonce: bytes, ciphertext_with_tag: bytes) -> bytes:
+        """Decrypt AES-256-GCM, expecting ciphertext + tag concatenated."""
+        if len(ciphertext_with_tag) < AUTH_TAG_SIZE:
+            raise DecryptionError("Ciphertext too short")
+        ciphertext = ciphertext_with_tag[:-AUTH_TAG_SIZE]
+        tag = ciphertext_with_tag[-AUTH_TAG_SIZE:]
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        return cipher.decrypt_and_verify(ciphertext, tag)
+
     def encrypt(self, plaintext: bytes) -> bytes:
         """Encrypt plaintext using envelope encryption.
 
@@ -173,21 +188,20 @@ class EnvelopeEncryptor:
         """
         try:
             # Generate unique DEK for this record
-            dek = AESGCM.generate_key(bit_length=256)
-            dek_cipher = AESGCM(dek)
+            dek = secrets.token_bytes(DEK_SIZE)
 
             # Generate nonces
             dek_nonce = secrets.token_bytes(NONCE_SIZE)
             data_nonce = secrets.token_bytes(NONCE_SIZE)
 
             # Encrypt DEK with KEK
-            encrypted_dek = self._kek_cipher.encrypt(dek_nonce, dek, None)
+            encrypted_dek = self._encrypt_aes_gcm(self._kek, dek_nonce, dek)
 
             # Encrypt data with DEK
-            ciphertext = dek_cipher.encrypt(data_nonce, plaintext, None)
+            encrypted_data = self._encrypt_aes_gcm(dek, data_nonce, plaintext)
 
-            # Assemble envelope: encrypted_dek || dek_nonce || data_nonce || ciphertext
-            return encrypted_dek + dek_nonce + data_nonce + ciphertext
+            # Assemble envelope: encrypted_dek || dek_nonce || data_nonce || encrypted_data
+            return encrypted_dek + dek_nonce + data_nonce + encrypted_data
 
         except Exception as e:
             raise EncryptionError(f"Encryption failed: {e}")
@@ -204,10 +218,10 @@ class EnvelopeEncryptor:
         Raises:
             DecryptionError: If decryption fails (wrong key, tampered data, etc.)
         """
-        if len(blob) < self.HEADER_SIZE:
+        if len(blob) < self.HEADER_SIZE + AUTH_TAG_SIZE:
             raise DecryptionError(
                 f"Encrypted blob too small: {len(blob)} bytes, "
-                f"minimum {self.HEADER_SIZE} bytes required"
+                f"minimum {self.HEADER_SIZE + AUTH_TAG_SIZE} bytes required"
             )
 
         try:
@@ -222,17 +236,18 @@ class EnvelopeEncryptor:
             data_nonce = blob[offset : offset + NONCE_SIZE]
             offset += NONCE_SIZE
 
-            ciphertext = blob[offset:]
+            encrypted_data = blob[offset:]
 
             # Decrypt DEK with KEK
-            dek = self._kek_cipher.decrypt(dek_nonce, encrypted_dek, None)
+            dek = self._decrypt_aes_gcm(self._kek, dek_nonce, encrypted_dek)
 
             # Decrypt data with DEK
-            dek_cipher = AESGCM(dek)
-            plaintext = dek_cipher.decrypt(data_nonce, ciphertext, None)
+            plaintext = self._decrypt_aes_gcm(dek, data_nonce, encrypted_data)
 
             return plaintext
 
+        except DecryptionError:
+            raise
         except Exception as e:
             raise DecryptionError(f"Decryption failed: {e}")
 

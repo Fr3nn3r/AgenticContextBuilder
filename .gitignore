@@ -72,3 +72,9 @@ nul
 
 # Claude Code temp files (subagent cwd markers)
 tmpclaude-*-cwd
+
+workspaces/
+
+.contextbuilder/
+
+output_
