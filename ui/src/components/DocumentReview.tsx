@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   listClassificationDocs,
-  listDocs,
   getDoc,
   getDocSourceUrl,
   saveLabels,
@@ -50,9 +49,6 @@ export function DocumentReview({
   const [docs, setDocs] = useState<ClassificationDoc[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Track docs that have extraction (for filtering)
-  const [docsWithExtraction, setDocsWithExtraction] = useState<Set<string>>(new Set());
 
   // Filters
   const [docTypeFilter, setDocTypeFilter] = useState<DocTypeFilter>("all");
@@ -106,25 +102,10 @@ export function DocumentReview({
       // Get classification docs
       const classificationDocs = await listClassificationDocs(selectedBatchId);
 
-      // Get unique claim IDs to fetch extraction status
+      // Get unique claim IDs for URL param validation
       const claimIds = Array.from(new Set(classificationDocs.map((d) => d.claim_id)));
 
-      // Fetch doc summaries for all claims to get has_extraction status
-      const docSummariesByClaimPromises = claimIds.map((claimId) =>
-        listDocs(claimId, selectedBatchId).catch(() => [])
-      );
-      const docSummariesByClaim = await Promise.all(docSummariesByClaimPromises);
-
-      // Build set of doc IDs that have extraction
-      const extractedDocIds = new Set<string>();
-      docSummariesByClaim.flat().forEach((doc) => {
-        if (doc.has_extraction) {
-          extractedDocIds.add(doc.doc_id);
-        }
-      });
-
       setDocs(classificationDocs);
-      setDocsWithExtraction(extractedDocIds);
 
       // Check for URL params (from claims tab navigation)
       if (urlDocParam && classificationDocs.some(d => d.doc_id === urlDocParam)) {
@@ -423,11 +404,6 @@ export function DocumentReview({
   // Filter documents - memoized to prevent unnecessary re-renders
   const filteredDocs = useMemo(() => {
     return docs.filter((doc) => {
-      // Only include docs that have extraction
-      if (!docsWithExtraction.has(doc.doc_id)) {
-        return false;
-      }
-
       // Claim filter
       if (claimFilter !== "all" && doc.claim_id !== claimFilter) {
         return false;
@@ -460,7 +436,7 @@ export function DocumentReview({
 
       return true;
     });
-  }, [docs, docsWithExtraction, claimFilter, docTypeFilter, statusFilter, searchQuery]);
+  }, [docs, claimFilter, docTypeFilter, statusFilter, searchQuery]);
 
   // Auto-select first doc when filter changes or selection is not in filtered list
   useEffect(() => {

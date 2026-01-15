@@ -549,6 +549,14 @@ class ClassificationStage:
             raise ValueError("Missing text content for classification")
 
         if context.stage_config.run_classify:
+            # Set audit context for compliance logging (links decision to claim/doc/run)
+            if hasattr(context.classifier, 'set_audit_context'):
+                context.classifier.set_audit_context(
+                    claim_id=context.claim_id,
+                    doc_id=context.doc.doc_id,
+                    run_id=context.run_id,
+                )
+
             # Use page-based classification if pages data is available
             if context.pages_data and "pages" in context.pages_data:
                 pages = [p.get("text", "") for p in context.pages_data["pages"]]
