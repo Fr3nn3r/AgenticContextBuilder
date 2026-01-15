@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "openai>=1.108.1",
