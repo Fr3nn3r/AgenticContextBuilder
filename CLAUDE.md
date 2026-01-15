@@ -87,6 +87,42 @@ python -m context_builder.cli extract -o output/claims --model gpt-4o
 | `dev-restart.ps1` | Kill uvicorn + restart clean | Backend not responding, port conflicts |
 | `kill-uvicorn.ps1` | Kill uvicorn processes only | Quick cleanup without restart |
 | `test.ps1` | Run pytest with Windows flags | All test runs (avoids temp dir errors) |
+| `worktree-new.ps1` | Create isolated git worktree | Parallel feature development |
+| `worktree-remove.ps1` | Remove worktree + branch | Clean up after merge |
+| `worktree-list.ps1` | List all worktrees | See active parallel work |
+
+## Session Protocol
+
+**Tasks are persistent, context is ephemeral.** All important state lives in task files.
+
+### Starting a Session
+```
+> Read tasks/1_in-progress/ to see active work
+> Read tasks/0_todo/ to pick new work
+```
+
+### Before Clearing Context
+1. Update task file with progress and handoff notes
+2. Fill "Resume Instructions" section
+3. Commit task file changes
+
+### Multi-Window Coordination
+Use git worktrees for parallel feature development:
+```powershell
+./scripts/worktree-new.ps1 feature-name   # Creates sibling folder + branch
+./scripts/worktree-list.ps1               # See all active worktrees
+./scripts/worktree-remove.ps1 feature-name # Clean up after merge
+```
+
+### When to Clear vs Continue
+| Context Usage | Task Status | Action |
+|---------------|-------------|--------|
+| >70% | Any | Write handoff, clear |
+| >50% | Complete | Clear, start fresh |
+| <50% | In progress | Continue |
+| Any | Switching tasks | Clear |
+
+**Full protocol**: See `tasks/3_instructions/SESSION-PROTOCOL.md`
 
 ## Troubleshooting
 
@@ -119,6 +155,11 @@ See `tests/unit/test_azure_di_impl.py::TestEnvironmentVariableLoading` for regre
 - `plans/` - **Always** save implementation plans here when using plan mode. Use naming: `YYYYMMDD-Meaningful-Name.md` (e.g., `20260114-Auth-System-Refactor.md`)
 - `phases/` - write summary after each phase
 - `scratch/` - temp notes, ignore unless referenced
+- `tasks/` - Task tracking (persistent across sessions):
+  - `0_todo/` - Pending work
+  - `1_in-progress/` - Active tasks (one owner per task)
+  - `2_done/` - Completed work
+  - `3_instructions/` - Reusable guides (TASK-TEMPLATE.md, SESSION-PROTOCOL.md)
 
 ## Glossary
 
