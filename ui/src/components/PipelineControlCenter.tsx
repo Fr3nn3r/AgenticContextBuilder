@@ -413,6 +413,25 @@ function NewBatchTab({
   );
 }
 
+// Chevron Icon component
+function ChevronIcon({ expanded, className }: { expanded: boolean; className?: string }) {
+  return (
+    <svg
+      className={cn(
+        "w-4 h-4 transition-transform duration-200",
+        expanded && "rotate-90",
+        className
+      )}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 // Batches Tab
 function BatchesTab({
   batches,
@@ -498,12 +517,12 @@ function BatchesTab({
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-muted-foreground text-xs">
             <tr>
+              <th className="w-8 px-2"></th>
               <th className="text-left px-4 py-3 font-medium">Batch</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Scope</th>
               <th className="text-left px-4 py-3 font-medium">Started</th>
               <th className="text-left px-4 py-3 font-medium">Duration</th>
-              <th className="text-left px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -528,10 +547,16 @@ function BatchesTab({
                     <tr
                       onClick={() => onSelectBatch(isSelected ? null : batch.batch_id)}
                       className={cn(
-                        "border-t cursor-pointer transition-colors",
-                        isSelected ? "bg-accent/10" : "hover:bg-muted/30"
+                        "border-t cursor-pointer transition-colors group",
+                        isSelected ? "bg-accent/5" : "hover:bg-muted/30"
                       )}
                     >
+                      <td className="px-2 py-3">
+                        <ChevronIcon
+                          expanded={isSelected}
+                          className="text-muted-foreground group-hover:text-foreground"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{batch.friendly_name}</div>
                         <div className="text-xs text-muted-foreground font-mono mt-0.5">{batch.batch_id}</div>
@@ -539,48 +564,30 @@ function BatchesTab({
                       <td className="px-4 py-3">
                         <StatusBadge status={batch.status} />
                         {batch.errors.length > 0 && (
-                          <div className="text-xs text-destructive mt-1">
+                          <span className="text-xs text-destructive ml-2">
                             {batch.errors.length} error{batch.errors.length > 1 ? "s" : ""}
-                          </div>
+                          </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="text-sm text-foreground">
-                          {batch.claims_count} claim{batch.claims_count !== 1 ? "s" : ""}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {batch.docs_total} doc{batch.docs_total !== 1 ? "s" : ""}
-                          {isRunning && batch.docs_processed > 0 && (
-                            <span className="text-info ml-1">({batch.docs_processed} done)</span>
-                          )}
-                        </div>
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        {batch.claims_count} claim{batch.claims_count !== 1 ? "s" : ""}, {batch.docs_total} doc{batch.docs_total !== 1 ? "s" : ""}
+                        {isRunning && batch.docs_processed > 0 && (
+                          <span className="text-info text-xs ml-1">({batch.docs_processed} done)</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{batch.started_at}</td>
                       <td className="px-4 py-3 text-muted-foreground">{batch.duration || "—"}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button className="text-info hover:underline">Open</button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onDeleteBatch(batch.batch_id); }}
-                            className="text-destructive hover:underline"
-                          >
-                            Delete
-                          </button>
-                          {isRunning && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); onCancelBatch(batch.batch_id); }}
-                              className="text-warning-foreground hover:underline"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                     {isSelected && selectedBatch && (
-                      <tr className="border-t bg-muted/20">
-                        <td colSpan={6} className="px-4 py-4">
-                          <BatchDetailsPanel batch={selectedBatch} onDeleteBatch={onDeleteBatch} />
+                      <tr className="border-t">
+                        <td colSpan={6} className="p-0">
+                          <div className="bg-muted/40 border-l-4 border-primary/30 px-6 py-4">
+                            <BatchDetailsPanel
+                              batch={selectedBatch}
+                              onDeleteBatch={onDeleteBatch}
+                              onCancelBatch={onCancelBatch}
+                            />
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -596,82 +603,67 @@ function BatchesTab({
 }
 
 // Batch Details Panel
-function BatchDetailsPanel({ batch, onDeleteBatch }: { batch: UIBatch; onDeleteBatch: (batchId: string) => void }) {
+function BatchDetailsPanel({
+  batch,
+  onDeleteBatch,
+  onCancelBatch,
+}: {
+  batch: UIBatch;
+  onDeleteBatch: (batchId: string) => void;
+  onCancelBatch: (batchId: string) => void;
+}) {
   const [showAllClaims, setShowAllClaims] = useState(false);
   const isRunning = batch.status === "running" || batch.status === "queued";
-  const maxClaimsToShow = 5;
+  const maxClaimsToShow = 8;
   const hasMoreClaims = batch.claims.length > maxClaimsToShow;
   const displayedClaims = showAllClaims ? batch.claims : batch.claims.slice(0, maxClaimsToShow);
 
+  // Check if we have actual timing data (not just dashes)
+  const hasTimingData = batch.timings.ingest || batch.timings.classify || batch.timings.extract;
+  const hasReuseData = batch.reuse.ingestion > 0 || batch.reuse.classification > 0;
+
   return (
     <div className="space-y-4">
-      {/* Batch ID */}
-      <div className="bg-muted/30 border rounded-lg px-4 py-2 flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Batch ID:</span>
-        <code className="text-xs font-mono text-foreground">{batch.batch_id}</code>
-      </div>
-
-      {/* Summary Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-card border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground">Claims</div>
-          <div className="text-lg font-semibold text-foreground">{batch.claims_count}</div>
+      {/* Compact Stats Row - Model + Claims inline */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Model:</span>
+          <span className="text-sm font-medium text-foreground">{batch.prompt_config}</span>
         </div>
-        <div className="bg-card border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground">Documents</div>
-          <div className="text-lg font-semibold text-foreground">
-            {batch.docs_total}
-            {isRunning && batch.docs_processed > 0 && (
-              <span className="text-sm font-normal text-muted-foreground ml-1">
-                ({batch.docs_processed} done)
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Claims:</span>
+          <div className="flex flex-wrap items-center gap-1">
+            {displayedClaims.map((claim) => (
+              <span
+                key={claim}
+                className="px-2 py-0.5 bg-muted/80 text-xs text-foreground rounded font-mono"
+                title={claim}
+              >
+                {claim.length > 20 ? `${claim.slice(0, 20)}...` : claim}
               </span>
+            ))}
+            {hasMoreClaims && !showAllClaims && (
+              <button
+                onClick={() => setShowAllClaims(true)}
+                className="px-2 py-0.5 text-xs text-info hover:underline"
+              >
+                +{batch.claims.length - maxClaimsToShow} more
+              </button>
+            )}
+            {hasMoreClaims && showAllClaims && (
+              <button
+                onClick={() => setShowAllClaims(false)}
+                className="px-2 py-0.5 text-xs text-muted-foreground hover:underline"
+              >
+                Show less
+              </button>
             )}
           </div>
         </div>
-        <div className="bg-card border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground">Model</div>
-          <div className="text-sm font-medium text-foreground truncate">{batch.prompt_config}</div>
-        </div>
-        <div className="bg-card border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground">Duration</div>
-          <div className="text-lg font-semibold text-foreground">{batch.duration || "—"}</div>
-        </div>
       </div>
 
-      {/* Claims List */}
-      <div className="bg-card border rounded-lg p-4">
-        <h4 className="text-xs font-medium text-muted-foreground mb-2">Claims Processed</h4>
-        <div className="flex flex-wrap gap-1.5">
-          {displayedClaims.map((claim) => (
-            <span
-              key={claim}
-              className="px-2 py-1 bg-muted text-xs text-foreground rounded"
-              title={claim}
-            >
-              {claim.length > 30 ? `${claim.slice(0, 30)}...` : claim}
-            </span>
-          ))}
-          {hasMoreClaims && !showAllClaims && (
-            <button
-              onClick={() => setShowAllClaims(true)}
-              className="px-2 py-1 text-xs text-info hover:underline"
-            >
-              +{batch.claims.length - maxClaimsToShow} more
-            </button>
-          )}
-          {hasMoreClaims && showAllClaims && (
-            <button
-              onClick={() => setShowAllClaims(false)}
-              className="px-2 py-1 text-xs text-muted-foreground hover:underline"
-            >
-              Show less
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Stage Timings (only show for completed, or progress for running) */}
-      {isRunning ? (
+      {/* Progress bars for running batches */}
+      {isRunning && (
         <div className="bg-card border rounded-lg p-4">
           <h4 className="text-xs font-medium text-muted-foreground mb-3">Progress</h4>
           <div className="space-y-3">
@@ -691,34 +683,36 @@ function BatchDetailsPanel({ batch, onDeleteBatch }: { batch: UIBatch; onDeleteB
             })}
           </div>
         </div>
-      ) : (
-        <div className="bg-card border rounded-lg p-4">
-          <h4 className="text-xs font-medium text-muted-foreground mb-3">Stage Timings</h4>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            {(["ingest", "classify", "extract"] as const).map((stage) => {
-              const timing = batch.timings[stage];
-              const reuse = stage === "ingest" ? batch.reuse.ingestion : stage === "classify" ? batch.reuse.classification : 0;
-              return (
-                <div key={stage}>
-                  <div className="text-xs text-muted-foreground capitalize mb-1">{stage}</div>
-                  <div className="text-sm font-medium text-foreground">{timing || "—"}</div>
-                  {reuse > 0 && (
-                    <div className="text-xs text-info mt-0.5">{reuse} reused</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+      )}
+
+      {/* Stage Timings - only show if we have actual data */}
+      {!isRunning && (hasTimingData || hasReuseData) && (
+        <div className="flex items-center gap-6 text-sm">
+          <span className="text-xs text-muted-foreground">Stage timings:</span>
+          {(["ingest", "classify", "extract"] as const).map((stage) => {
+            const timing = batch.timings[stage];
+            const reuse = stage === "ingest" ? batch.reuse.ingestion : stage === "classify" ? batch.reuse.classification : 0;
+            if (!timing && reuse === 0) return null;
+            return (
+              <div key={stage} className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground capitalize">{stage}:</span>
+                {timing && <span className="text-xs font-medium text-foreground">{timing}</span>}
+                {reuse > 0 && (
+                  <span className="text-xs text-info">({reuse} reused)</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* Errors */}
       {batch.errors.length > 0 && (
-        <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4">
+        <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-3">
           <h4 className="text-xs font-medium text-destructive mb-2">
             Errors ({batch.errors.length})
           </h4>
-          <ul className="space-y-1.5 max-h-32 overflow-auto">
+          <ul className="space-y-1 max-h-24 overflow-auto">
             {batch.errors.map((err, idx) => (
               <li key={idx} className="text-xs text-destructive">
                 <span className="font-medium">{err.doc}</span>
@@ -732,24 +726,32 @@ function BatchDetailsPanel({ batch, onDeleteBatch }: { batch: UIBatch; onDeleteB
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2 pt-2 border-t">
-        <button className="px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded-lg hover:bg-primary/90">
+      {/* Actions - consolidated here only */}
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+        <button className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors">
           View Documents
         </button>
         {(batch.status === "failed" || batch.status === "partial") && (
-          <button className="px-3 py-1.5 bg-warning/10 text-warning-foreground text-xs rounded-lg hover:bg-warning/20">
+          <button className="px-3 py-1.5 bg-warning/10 text-warning-foreground text-xs font-medium rounded-lg hover:bg-warning/20 transition-colors">
             Retry Failed
           </button>
         )}
-        <button className="px-3 py-1.5 border text-xs rounded-lg text-muted-foreground hover:bg-muted/50">
+        {isRunning && (
+          <button
+            onClick={() => onCancelBatch(batch.batch_id)}
+            className="px-3 py-1.5 bg-warning/10 text-warning-foreground text-xs font-medium rounded-lg hover:bg-warning/20 transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+        <button className="px-3 py-1.5 border text-xs font-medium rounded-lg text-muted-foreground hover:bg-muted/50 transition-colors">
           Export Summary
         </button>
         <button
           onClick={() => onDeleteBatch(batch.batch_id)}
-          className="px-3 py-1.5 border text-xs rounded-lg text-destructive hover:bg-destructive/10"
+          className="px-3 py-1.5 border text-xs font-medium rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
         >
-          Delete Batch
+          Delete
         </button>
       </div>
     </div>

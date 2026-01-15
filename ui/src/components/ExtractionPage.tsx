@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "../lib/utils";
 import { formatDocType, formatRelativeTime, formatTimestamp } from "../lib/formatters";
 import {
@@ -32,12 +33,19 @@ export function ExtractionPage({
   docTypes,
   loading,
 }: ExtractionPageProps) {
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
     }
     return false;
   });
+
+  // Handle batch selection - update state AND navigate
+  const handleBatchSelect = (batchId: string) => {
+    onBatchChange(batchId);
+    navigate(`/batches/${batchId}`);
+  };
 
   const toggleSidebar = () => {
     const newValue = !sidebarCollapsed;
@@ -81,7 +89,7 @@ export function ExtractionPage({
               {sortedBatches.map((batch) => (
                 <button
                   key={batch.run_id}
-                  onClick={() => onBatchChange(batch.run_id)}
+                  onClick={() => handleBatchSelect(batch.run_id)}
                   className={cn(
                     "w-10 h-10 rounded flex items-center justify-center mb-1 transition-colors",
                     selectedBatchId === batch.run_id
@@ -108,7 +116,7 @@ export function ExtractionPage({
                 <button
                   key={batch.run_id}
                   data-testid={`batch-item-${batch.run_id}`}
-                  onClick={() => onBatchChange(batch.run_id)}
+                  onClick={() => handleBatchSelect(batch.run_id)}
                   className={cn(
                     "w-full text-left px-3 py-2 rounded-md mb-1 transition-colors",
                     selectedBatchId === batch.run_id
