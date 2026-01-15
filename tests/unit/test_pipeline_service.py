@@ -46,18 +46,24 @@ class TestGenerateRunId:
     """Tests for run ID generation."""
 
     def test_run_id_format(self, pipeline_service):
-        """Run IDs follow expected format."""
+        """Run IDs follow expected batch format: BATCH-YYYYMMDD-NNN."""
         run_id = pipeline_service._generate_run_id()
-        assert run_id.startswith("run_")
-        # Format: run_YYYYMMDD_HHMMSS_*
-        parts = run_id.split("_")
-        assert len(parts) >= 3
+        assert run_id.startswith("BATCH-")
+        # Format: BATCH-YYYYMMDD-NNN
+        parts = run_id.split("-")
+        assert len(parts) == 3
+        assert parts[0] == "BATCH"
+        assert len(parts[1]) == 8  # YYYYMMDD
+        assert len(parts[2]) == 3  # NNN (zero-padded sequence)
 
-    def test_run_id_contains_timestamp(self, pipeline_service):
-        """Run ID contains a timestamp component."""
-        run_id = pipeline_service._generate_run_id()
-        # Should have date and time components
-        assert len(run_id) > 15  # run_ + 8 digit date + _ + time
+    def test_run_id_sequential(self, pipeline_service):
+        """Run IDs increment sequentially within the same day."""
+        run_id1 = pipeline_service._generate_run_id()
+        run_id2 = pipeline_service._generate_run_id()
+        # Extract sequence numbers
+        seq1 = int(run_id1.split("-")[2])
+        seq2 = int(run_id2.split("-")[2])
+        assert seq2 == seq1 + 1
 
 
 class TestStartPipeline:

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -98,9 +97,14 @@ class PipelineService:
         self._lock = asyncio.Lock()
 
     def _generate_run_id(self) -> str:
-        """Generate a unique run ID."""
+        """Generate a unique batch ID using sequential numbering.
+
+        Format: BATCH-YYYYMMDD-NNN (e.g., BATCH-20260115-001)
+        """
         from context_builder.extraction.base import generate_run_id
-        return generate_run_id()
+        # Registry is at output_dir.parent/registry (sibling to claims/)
+        registry_dir = self.output_dir.parent / "registry"
+        return generate_run_id(registry_dir)
 
     async def start_pipeline(
         self,
@@ -592,7 +596,10 @@ class PipelineService:
         """
         Delete a pipeline run.
 
-        Removes from active tracking and deletes disk outputs.
+        Removes from active tracking and deletes disk outputs via FileStorage:
+        - Global run directory (output/runs/{run_id}/)
+        - Per-claim run directories (output/claims/{claim_id}/runs/{run_id}/)
+
         Only completed/failed/cancelled runs can be deleted.
 
         Args:
@@ -601,6 +608,8 @@ class PipelineService:
         Returns:
             True if deletion was successful
         """
+        from context_builder.storage.filesystem import FileStorage
+
         run = self.active_runs.get(run_id)
 
         # Check if it's an active run that shouldn't be deleted
@@ -612,24 +621,24 @@ class PipelineService:
             if run_id in self.cancel_events:
                 del self.cancel_events[run_id]
 
-        # Delete run directory from disk (works for both active and historical)
+        # Check if run exists before attempting delete
         run_dir = self.output_dir.parent / "runs" / run_id
         if not run_dir.exists() and run is None:
             # Neither in memory nor on disk
             return False
 
-        try:
-            if run_dir.exists():
-                shutil.rmtree(run_dir)
-                logger.info(f"Deleted run directory: {run_dir}")
-        except Exception as e:
-            logger.warning(f"Failed to delete run directory for {run_id}: {e}")
+        # Use FileStorage API to delete run data
+        storage = FileStorage(self.output_dir.parent)
+        success, claims_affected = storage.delete_run(run_id)
+
+        if not success:
+            logger.warning(f"Failed to delete run {run_id} via storage API")
             return False
 
         # Rebuild run index to remove stale entry
         self._rebuild_run_index()
 
-        logger.info(f"Deleted pipeline run: {run_id}")
+        logger.info(f"Deleted pipeline run: {run_id} ({claims_affected} claims affected)")
         return True
 
     def _rebuild_run_index(self) -> None:
@@ -725,30 +734,21 @@ class PipelineService:
         ws_paths: "WorkspaceRunPaths",
         summary_data: dict,
     ) -> None:
-        """Build indexes if missing, or append to existing run index.
+        """Rebuild all indexes after pipeline completion.
 
-        This ensures indexes are available for fast lookups after API-triggered runs.
+        This ensures indexes stay in sync with newly processed documents.
         Matches CLI behavior which auto-builds indexes after pipeline completion.
         """
-        # Registry is at workspace/registry/ (sibling to workspace/claims/)
-        registry_dir = self.output_dir.parent / "registry"
-        run_index_path = registry_dir / "run_index.jsonl"
-        doc_index_path = registry_dir / "doc_index.jsonl"
-
-        # If indexes don't exist, build them from scratch
-        if not doc_index_path.exists():
-            try:
-                from context_builder.storage.index_builder import build_all_indexes
-                logger.info("Building indexes for workspace...")
-                stats = build_all_indexes(self.output_dir.parent)
-                logger.info(f"Indexes built: {stats.get('doc_count', 0)} docs, {stats.get('run_count', 0)} runs")
-                return  # build_all_indexes already includes the current run
-            except Exception as e:
-                logger.warning(f"Index build failed (non-fatal): {e}")
-                return
-
-        # If indexes exist, just append the new run
-        self._append_to_run_index(run, ws_paths, summary_data)
+        try:
+            from context_builder.storage.index_builder import build_all_indexes
+            logger.info("Rebuilding indexes after pipeline completion...")
+            stats = build_all_indexes(self.output_dir.parent)
+            logger.info(
+                f"Indexes rebuilt: {stats.get('doc_count', 0)} docs, "
+                f"{stats.get('run_count', 0)} runs, {stats.get('label_count', 0)} labels"
+            )
+        except Exception as e:
+            logger.warning(f"Index rebuild failed (non-fatal): {e}")
 
     def _append_to_run_index(
         self,

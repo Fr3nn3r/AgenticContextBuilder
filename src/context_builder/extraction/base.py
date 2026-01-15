@@ -257,12 +257,26 @@ class ExtractorFactory:
         return doc_type in cls._registry
 
 
-def generate_run_id() -> str:
-    """Generate a unique run ID based on timestamp + git sha (filesystem-safe).
+def generate_run_id(registry_dir: Optional["Path"] = None) -> str:
+    """Generate a unique run/batch ID (filesystem-safe).
 
-    Format: run_YYYYMMDD_HHMMSS_<short_git_sha>
-    Example: run_20260106_143022_a1b2c3d
+    Args:
+        registry_dir: Optional path to registry directory for sequential batch IDs.
+            If provided, generates BATCH-YYYYMMDD-NNN format.
+            If None, falls back to legacy run_YYYYMMDD_HHMMSS_<sha> format.
+
+    Returns:
+        Batch ID (BATCH-20260115-001) or legacy run ID (run_20260106_143022_a1b2c3d)
     """
+    from pathlib import Path
+
+    if registry_dir is not None:
+        # Use sequential batch counter
+        from context_builder.storage.batch_counter import BatchCounter
+        counter = BatchCounter(Path(registry_dir))
+        return counter.next_batch_id()
+
+    # Legacy format for backwards compatibility
     import subprocess
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

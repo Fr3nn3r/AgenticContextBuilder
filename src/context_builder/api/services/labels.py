@@ -1,6 +1,7 @@
 """Label-focused API services.
 
 Includes compliance decision logging for human review and override decisions.
+Auto-updates label index when labels are saved.
 """
 
 import logging
@@ -13,6 +14,7 @@ from fastapi import HTTPException
 from context_builder.api.services.utils import extract_claim_number
 from context_builder.storage import StorageFacade
 from context_builder.storage.truth_store import TruthStore
+from context_builder.storage.index_builder import upsert_label_entry
 from context_builder.services.decision_ledger import DecisionLedger
 from context_builder.schemas.decision_record import (
     DecisionRecord,
@@ -27,14 +29,17 @@ class LabelsService:
     """Service layer for saving document labels.
 
     Includes compliance decision logging for human reviews and overrides.
+    Auto-updates label index when labels are saved.
     """
 
     def __init__(
         self,
         storage_factory: Callable[[], StorageFacade],
         ledger_dir: Optional[Path] = None,
+        registry_dir: Optional[Path] = None,
     ):
         self.storage_factory = storage_factory
+        self.registry_dir = registry_dir
         # Initialize decision ledger for compliance logging
         self.decision_ledger = DecisionLedger(ledger_dir or Path("output/logs"))
 
@@ -281,6 +286,9 @@ class LabelsService:
         except IOError as exc:
             raise HTTPException(status_code=500, detail=f"Failed to save label: {exc}")
 
+        # Auto-update label index
+        self._update_label_index(label_data)
+
         file_md5 = doc_bundle.metadata.get("file_md5")
         if not file_md5:
             logger.warning("Skipping truth write for %s: missing file_md5", doc_bundle.doc_id)
@@ -309,6 +317,46 @@ class LabelsService:
             TruthStore(output_root).save_truth_by_file_md5(file_md5, truth_payload)
         except IOError as exc:
             logger.warning("Failed to save canonical truth for %s: %s", doc_bundle.doc_id, exc)
+
+    def _update_label_index(self, label_data: Dict[str, Any]) -> None:
+        """Update the label index with the saved label data.
+
+        Args:
+            label_data: The label data that was saved.
+        """
+        if not self.registry_dir:
+            return
+
+        try:
+            # Count field states
+            field_labels = label_data.get("field_labels", [])
+            labeled_count = sum(
+                1 for fl in field_labels if fl.get("state") == "LABELED"
+            )
+            unverifiable_count = sum(
+                1 for fl in field_labels if fl.get("state") == "UNVERIFIABLE"
+            )
+            unlabeled_count = sum(
+                1 for fl in field_labels if fl.get("state") == "UNLABELED"
+            )
+
+            # Get updated_at from review metadata
+            review = label_data.get("review", {})
+            updated_at = review.get("reviewed_at")
+
+            label_entry = {
+                "doc_id": label_data.get("doc_id"),
+                "claim_id": label_data.get("claim_id"),
+                "has_label": True,
+                "labeled_count": labeled_count,
+                "unverifiable_count": unverifiable_count,
+                "unlabeled_count": unlabeled_count,
+                "updated_at": updated_at,
+            }
+
+            upsert_label_entry(self.registry_dir, label_entry)
+        except Exception as e:
+            logger.warning(f"Failed to update label index: {e}")
 
     @staticmethod
     def _resolve_output_root(doc_root: Path) -> Optional[Path]:

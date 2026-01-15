@@ -1,6 +1,7 @@
 """Index builder for creating JSONL registry indexes from filesystem.
 
 Scans output folders and builds indexes for fast lookups.
+Supports both full rebuilds and incremental updates.
 """
 
 import json
@@ -15,9 +16,165 @@ from .index_reader import (
     RUN_INDEX_FILE,
     REGISTRY_META_FILE,
     write_jsonl,
+    read_jsonl,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# -----------------------------------------------------------------------------
+# Incremental Index Update Functions
+# -----------------------------------------------------------------------------
+
+
+def append_doc_entry(registry_dir: Path, doc_entry: dict) -> bool:
+    """Append a single document entry to the doc index.
+
+    Args:
+        registry_dir: Path to registry directory.
+        doc_entry: Document entry dict matching doc_index schema.
+
+    Returns:
+        True if entry was appended successfully.
+    """
+    doc_index_path = registry_dir / DOC_INDEX_FILE
+    if not doc_index_path.exists():
+        logger.debug("Doc index does not exist, skipping append")
+        return False
+
+    try:
+        with open(doc_index_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(doc_entry, ensure_ascii=False, default=str) + "\n")
+        logger.debug(f"Appended doc {doc_entry.get('doc_id')} to index")
+        return True
+    except IOError as e:
+        logger.warning(f"Failed to append to doc index: {e}")
+        return False
+
+
+def append_run_entry(registry_dir: Path, run_entry: dict) -> bool:
+    """Append a single run entry to the run index.
+
+    Args:
+        registry_dir: Path to registry directory.
+        run_entry: Run entry dict matching run_index schema.
+
+    Returns:
+        True if entry was appended successfully.
+    """
+    run_index_path = registry_dir / RUN_INDEX_FILE
+    if not run_index_path.exists():
+        logger.debug("Run index does not exist, skipping append")
+        return False
+
+    try:
+        with open(run_index_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(run_entry, ensure_ascii=False, default=str) + "\n")
+        logger.debug(f"Appended run {run_entry.get('run_id')} to index")
+        return True
+    except IOError as e:
+        logger.warning(f"Failed to append to run index: {e}")
+        return False
+
+
+def upsert_label_entry(registry_dir: Path, label_entry: dict) -> bool:
+    """Update or insert a label entry in the label index.
+
+    If doc_id exists, updates the entry. Otherwise appends.
+
+    Args:
+        registry_dir: Path to registry directory.
+        label_entry: Label entry dict matching label_index schema.
+
+    Returns:
+        True if entry was upserted successfully.
+    """
+    label_index_path = registry_dir / LABEL_INDEX_FILE
+    if not label_index_path.exists():
+        # Create new file with single entry
+        try:
+            registry_dir.mkdir(parents=True, exist_ok=True)
+            with open(label_index_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(label_entry, ensure_ascii=False, default=str) + "\n")
+            logger.debug(f"Created label index with doc {label_entry.get('doc_id')}")
+            return True
+        except IOError as e:
+            logger.warning(f"Failed to create label index: {e}")
+            return False
+
+    try:
+        doc_id = label_entry.get("doc_id")
+        updated = False
+        new_records = []
+
+        # Read existing entries and update if found
+        for record in read_jsonl(label_index_path):
+            if record.get("doc_id") == doc_id:
+                new_records.append(label_entry)
+                updated = True
+            else:
+                new_records.append(record)
+
+        # If not found, append
+        if not updated:
+            new_records.append(label_entry)
+
+        # Write back
+        write_jsonl(label_index_path, new_records)
+        logger.debug(f"Upserted label for doc {doc_id}")
+        return True
+    except IOError as e:
+        logger.warning(f"Failed to upsert label index: {e}")
+        return False
+
+
+def update_registry_meta(registry_dir: Path) -> bool:
+    """Update registry metadata with current counts.
+
+    Args:
+        registry_dir: Path to registry directory.
+
+    Returns:
+        True if metadata was updated successfully.
+    """
+    meta_path = registry_dir / REGISTRY_META_FILE
+    doc_index_path = registry_dir / DOC_INDEX_FILE
+    label_index_path = registry_dir / LABEL_INDEX_FILE
+    run_index_path = registry_dir / RUN_INDEX_FILE
+
+    try:
+        # Count entries in each index
+        doc_count = sum(1 for _ in read_jsonl(doc_index_path))
+        label_count = sum(1 for _ in read_jsonl(label_index_path))
+        run_count = sum(1 for _ in read_jsonl(run_index_path))
+
+        # Count unique claims from doc index
+        claim_ids = set()
+        for record in read_jsonl(doc_index_path):
+            claim_ids.add(record.get("claim_id") or record.get("claim_folder"))
+
+        meta = {
+            "built_at": datetime.now().isoformat() + "Z",
+            "doc_count": doc_count,
+            "label_count": label_count,
+            "run_count": run_count,
+            "claim_count": len(claim_ids),
+        }
+
+        registry_dir.mkdir(parents=True, exist_ok=True)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+
+        logger.debug(f"Updated registry meta: {doc_count} docs, {run_count} runs")
+        return True
+    except IOError as e:
+        logger.warning(f"Failed to update registry meta: {e}")
+        return False
+
+
+# -----------------------------------------------------------------------------
+# Full Index Build Functions
+# -----------------------------------------------------------------------------
 
 
 def build_doc_index(claims_dir: Path) -> list[dict]:
@@ -189,7 +346,8 @@ def build_run_index(output_dir: Path) -> list[dict]:
     for run_folder in sorted(runs_dir.iterdir()):
         if not run_folder.is_dir():
             continue
-        if not run_folder.name.startswith("run_"):
+        # Support both legacy run_* and new BATCH-* formats
+        if not (run_folder.name.startswith("run_") or run_folder.name.startswith("BATCH-")):
             continue
 
         # Only index complete runs
