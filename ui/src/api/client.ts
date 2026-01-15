@@ -898,6 +898,13 @@ export async function verifyDecisionLedger(): Promise<VerificationResult> {
   return fetchJson<VerificationResult>(`${API_BASE}/compliance/ledger/verify`);
 }
 
+export async function resetDecisionLedger(): Promise<{ status: string; records_deleted: number }> {
+  return fetchJson<{ status: string; records_deleted: number }>(
+    `${API_BASE}/compliance/ledger/reset`,
+    { method: "DELETE" }
+  );
+}
+
 export async function listDecisions(
   params: DecisionQueryParams = {}
 ): Promise<DecisionRecord[]> {

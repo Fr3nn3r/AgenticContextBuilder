@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { verifyDecisionLedger, listDecisions, listVersionBundles } from "../../api/client";
+import { verifyDecisionLedger, listDecisions, listVersionBundles, resetDecisionLedger } from "../../api/client";
 import type { VerificationResult, DecisionRecord, VersionBundleSummary } from "../../types";
 
 export function ComplianceOverview() {
@@ -9,6 +9,8 @@ export function ComplianceOverview() {
   const [bundles, setBundles] = useState<VersionBundleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -30,6 +32,20 @@ export function ComplianceOverview() {
       setError(err instanceof Error ? err.message : "Failed to load compliance data");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResetLedger() {
+    try {
+      setResetting(true);
+      await resetDecisionLedger();
+      setShowResetConfirm(false);
+      // Reload data after reset
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset ledger");
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -85,12 +101,22 @@ export function ComplianceOverview() {
             </span>
             <span className="text-sm text-muted-foreground ml-2">records</span>
           </div>
-          <Link
-            to="/compliance/verification"
-            className="mt-3 text-sm text-primary hover:underline block"
-          >
-            View verification details →
-          </Link>
+          <div className="mt-3 flex items-center justify-between">
+            <Link
+              to="/compliance/verification"
+              className="text-sm text-primary hover:underline"
+            >
+              View details →
+            </Link>
+            {!verification?.valid && (
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="text-sm px-2 py-1 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded"
+              >
+                Reset Ledger
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Decision Records */}
@@ -205,6 +231,35 @@ export function ComplianceOverview() {
           </div>
         </div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-foreground mb-2">Reset Decision Ledger?</h3>
+            <p className="text-muted-foreground mb-4">
+              This will permanently delete all {verification?.total_records ?? 0} decision records
+              in the active workspace. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetLedger}
+                disabled={resetting}
+                className="px-4 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+              >
+                {resetting ? "Resetting..." : "Reset Ledger"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

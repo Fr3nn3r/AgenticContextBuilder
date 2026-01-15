@@ -328,8 +328,8 @@ def get_insights_service() -> InsightsService:
 
 
 def get_upload_service() -> UploadService:
-    """Get UploadService instance."""
-    return UploadService(STAGING_DIR, DATA_DIR)
+    """Get UploadService instance with compliance logging."""
+    return UploadService(STAGING_DIR, DATA_DIR, ledger_dir=_get_workspace_logs_dir())
 
 
 def get_truth_service() -> TruthService:
