@@ -1,0 +1,20 @@
+{
+  "valid": {
+    "valid": true,
+    "record_count": 6,
+    "break_at": null,
+    "reason": null
+  },
+  "invalid": {
+    "valid": false,
+    "record_count": 6,
+    "break_at": 3,
+    "reason": "Hash mismatch at record #3: expected sha256:e5f6g7h8i9j0, got sha256:tampered123"
+  },
+  "empty": {
+    "valid": true,
+    "record_count": 0,
+    "break_at": null,
+    "reason": null
+  }
+}

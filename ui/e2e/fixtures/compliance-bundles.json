@@ -1,0 +1,72 @@
+{
+  "list": [
+    {
+      "run_id": "run-2026-01-15-001",
+      "bundle_id": "bundle-abc123def456",
+      "created_at": "2026-01-15T10:00:00Z",
+      "git_commit": "fa2ce3b",
+      "git_dirty": false,
+      "model_name": "gpt-4o",
+      "extractor_version": "1.2.0"
+    },
+    {
+      "run_id": "run-2026-01-14-001",
+      "bundle_id": "bundle-def456ghi789",
+      "created_at": "2026-01-14T14:30:00Z",
+      "git_commit": "9cb7c8f",
+      "git_dirty": true,
+      "model_name": "gpt-4o-mini",
+      "extractor_version": "1.1.0"
+    },
+    {
+      "run_id": "run-2026-01-13-001",
+      "bundle_id": "bundle-ghi789jkl012",
+      "created_at": "2026-01-13T09:15:00Z",
+      "git_commit": "238e0d5",
+      "git_dirty": false,
+      "model_name": "gpt-4o",
+      "extractor_version": "1.0.0"
+    }
+  ],
+  "detail": {
+    "run-2026-01-15-001": {
+      "bundle_id": "bundle-abc123def456",
+      "run_id": "run-2026-01-15-001",
+      "created_at": "2026-01-15T10:00:00Z",
+      "git_commit": "fa2ce3b",
+      "git_dirty": false,
+      "model_name": "gpt-4o",
+      "model_version": "2024-08-06",
+      "extractor_version": "1.2.0",
+      "contextbuilder_version": "0.9.0",
+      "prompt_template_hash": "sha256:abc123def456789",
+      "extraction_spec_hash": "sha256:def456ghi789012"
+    },
+    "run-2026-01-14-001": {
+      "bundle_id": "bundle-def456ghi789",
+      "run_id": "run-2026-01-14-001",
+      "created_at": "2026-01-14T14:30:00Z",
+      "git_commit": "9cb7c8f",
+      "git_dirty": true,
+      "model_name": "gpt-4o-mini",
+      "model_version": "2024-07-18",
+      "extractor_version": "1.1.0",
+      "contextbuilder_version": "0.8.5",
+      "prompt_template_hash": "sha256:ghi789jkl012345",
+      "extraction_spec_hash": "sha256:jkl012mno345678"
+    },
+    "run-2026-01-13-001": {
+      "bundle_id": "bundle-ghi789jkl012",
+      "run_id": "run-2026-01-13-001",
+      "created_at": "2026-01-13T09:15:00Z",
+      "git_commit": "238e0d5",
+      "git_dirty": false,
+      "model_name": "gpt-4o",
+      "model_version": "2024-08-06",
+      "extractor_version": "1.0.0",
+      "contextbuilder_version": "0.8.0",
+      "prompt_template_hash": "sha256:mno345pqr678901",
+      "extraction_spec_hash": "sha256:pqr678stu901234"
+    }
+  }
+}

@@ -2447,7 +2447,7 @@ def list_decisions(
             try:
                 result.append({
                     "decision_id": r.decision_id,
-                    "decision_type": r.decision_type.value,
+                    "decision_type": r.decision_type.value if hasattr(r.decision_type, 'value') else r.decision_type,
                     "timestamp": r.created_at,
                     "claim_id": r.claim_id,
                     "doc_id": r.doc_id,
