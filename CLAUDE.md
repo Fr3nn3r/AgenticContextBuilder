@@ -60,8 +60,11 @@ Input → Pipeline (discovery→run→paths→text→state)
 ## Commands
 
 ```bash
-# Backend
-uvicorn api.main:app --reload --port 8000
+# Backend (use script to avoid port conflicts)
+.\scripts\dev-restart.ps1          # Kill stale processes + start fresh
+
+# Backend (manual)
+uvicorn context_builder.api.main:app --reload --port 8000
 
 # Frontend
 cd ui && npm run dev
@@ -70,12 +73,20 @@ cd ui && npm run dev
 python -m context_builder.cli acquire -p azure-di -o output/claims input/
 python -m context_builder.cli classify -o output/claims
 python -m context_builder.cli extract -o output/claims --model gpt-4o
+
+# Testing (use script for Windows compatibility)
+.\scripts\test.ps1                 # Run all tests
+.\scripts\test.ps1 tests/unit/     # Run specific tests
+.\scripts\test.ps1 -k "quality"    # Run tests matching pattern
 ```
 
-Windows note: if pytest temp dirs hit permission errors, run:
-```bash
-python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
-```
+## Helper Scripts (`scripts/`)
+
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| `dev-restart.ps1` | Kill uvicorn + restart clean | Backend not responding, port conflicts |
+| `kill-uvicorn.ps1` | Kill uvicorn processes only | Quick cleanup without restart |
+| `test.ps1` | Run pytest with Windows flags | All test runs (avoids temp dir errors) |
 
 ## Troubleshooting
 
@@ -84,6 +95,9 @@ python -m pytest -v -p no:tmpdir -o cache_dir=output/.pytest_cache
 **Env vars not loading / Code changes not taking effect:**
 Multiple uvicorn processes may be running. Auto-reload spawns new processes but old ones keep serving requests.
 
+**Quick fix:** Run `.\scripts\kill-uvicorn.ps1` then restart.
+
+**Manual diagnosis:**
 ```powershell
 # Check for multiple processes on port 8000
 Get-NetTCPConnection -LocalPort 8000 -State Listen | Select OwningProcess
