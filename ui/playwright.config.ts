@@ -1,24 +1,26 @@
 import { defineConfig, devices } from "@playwright/test";
+import { getTarget, getTargetName } from "./e2e/config/targets";
 
 /**
- * Playwright Configuration with Dual-Mode Support
+ * Playwright Configuration with Target-Based Modes
  *
- * Supports two test modes:
- * - Mock mode (default): Fast, isolated tests using route interception
- * - Integrated mode: Tests against real API backend
+ * Uses E2E_TARGET env var to select test environment:
  *
- * Usage:
- *   npm run test:e2e              # Mock mode (default)
- *   npm run test:e2e:integrated   # Integrated mode
+ *   npm run test:e2e           # mock mode (default) - fast, isolated
+ *   npm run test:e2e:local     # test against local servers
+ *   npm run test:e2e:remote    # test against remote dev/staging
  *
- * Environment variables for integrated mode:
- *   TEST_MODE=integrated
- *   TEST_BASE_URL=http://localhost:5173
- *   TEST_ADMIN_USER=admin
- *   TEST_ADMIN_PASSWORD=admin123
+ * See e2e/config/targets.ts for full configuration details.
  */
 
-const isIntegrated = process.env.TEST_MODE === "integrated";
+const target = getTarget();
+const isRealBackend = !target.useMocks;
+
+// Log target for debugging
+console.log(`\n🎯 E2E Target: ${target.name}`);
+console.log(`   Base URL: ${target.baseUrl}`);
+console.log(`   Mocks: ${target.useMocks ? "enabled" : "disabled"}`);
+console.log(`   Auto-start server: ${target.startServer}\n`);
 
 export default defineConfig({
   testDir: "./e2e/tests",
@@ -26,37 +28,35 @@ export default defineConfig({
   // Global teardown ensures clean shutdown after all tests
   globalTeardown: "./e2e/global-teardown.ts",
 
-  // In integrated mode, run sequentially to avoid race conditions
-  fullyParallel: !isIntegrated,
+  // In real backend mode, run sequentially to avoid race conditions
+  fullyParallel: !isRealBackend,
 
   forbidOnly: !!process.env.CI,
 
-  // More retries for integrated mode due to potential flakiness
-  retries: isIntegrated ? 1 : process.env.CI ? 2 : 0,
+  // More retries for real backend due to potential flakiness
+  retries: isRealBackend ? 1 : process.env.CI ? 2 : 0,
 
-  // Single worker for integrated mode to ensure consistent state
-  workers: isIntegrated ? 1 : process.env.CI ? 1 : undefined,
+  // Single worker for real backend to ensure consistent state
+  workers: isRealBackend ? 1 : process.env.CI ? 1 : undefined,
 
-  // Longer global timeout for integrated mode
-  timeout: isIntegrated ? 60000 : 30000,
+  // Longer global timeout for real backend
+  timeout: isRealBackend ? 60000 : 30000,
 
-  // Longer expect timeout for integrated mode (real API latency)
+  // Longer expect timeout for real backend (actual API latency)
   expect: {
-    timeout: isIntegrated ? 10000 : 5000,
+    timeout: isRealBackend ? 10000 : 5000,
   },
 
   reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
 
   use: {
-    baseURL: process.env.TEST_BASE_URL || "http://localhost:5173",
+    baseURL: target.baseUrl,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
 
-    // Longer action timeout for integrated mode
-    actionTimeout: isIntegrated ? 15000 : 5000,
-
-    // Longer navigation timeout for integrated mode
-    navigationTimeout: isIntegrated ? 30000 : 15000,
+    // Timeouts from target config
+    actionTimeout: target.timeout.action,
+    navigationTimeout: target.timeout.navigation,
   },
 
   projects: [
@@ -67,13 +67,12 @@ export default defineConfig({
   ],
 
   // Only start dev server in mock mode
-  // In integrated mode, assume servers are already running
-  webServer: isIntegrated
-    ? undefined
-    : {
+  webServer: target.startServer
+    ? {
         command: "npm run dev",
         url: "http://localhost:5173",
         reuseExistingServer: !process.env.CI,
         timeout: 120 * 1000,
-      },
+      }
+    : undefined,
 });

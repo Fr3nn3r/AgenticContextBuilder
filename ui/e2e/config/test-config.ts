@@ -1,20 +1,31 @@
 /**
- * Test Configuration Layer for Dual-Mode Testing
+ * Test Configuration - Unified API for E2E tests
  *
- * Supports two modes:
- * - "mock": Fast, deterministic tests using route interception (default)
- * - "integrated": Tests against real API with actual backend
+ * This module re-exports from targets.ts and provides helper functions
+ * for tests to access configuration in a consistent way.
  *
  * Usage:
- *   TEST_MODE=integrated npm run test:e2e
+ *   import { config, isMockMode } from '../config/test-config';
  */
 
+import { getTarget, isMockMode, isRealBackend, type TargetConfig } from "./targets";
+
+// Re-export for convenience
+export { isMockMode, isRealBackend, getTargetName } from "./targets";
+
+/**
+ * Legacy type alias - prefer using TargetConfig from targets.ts
+ * @deprecated Use TargetConfig from './targets' instead
+ */
 export type TestMode = "mock" | "integrated";
 
+/**
+ * Test configuration interface.
+ * Maps target config to the format expected by existing tests.
+ */
 export interface TestConfig {
   mode: TestMode;
   apiBaseUrl: string;
-  /** Credentials for different roles in integrated mode */
   auth: {
     adminUser: string;
     adminPassword: string;
@@ -25,23 +36,29 @@ export interface TestConfig {
     operatorUser: string;
     operatorPassword: string;
   };
-  /** Timeouts - longer for integrated mode due to real API latency */
   timeout: {
     navigation: number;
     apiResponse: number;
     action: number;
   };
-  /** Minimum expected data counts for integrated mode assertions */
   expectations: {
     minDecisionCount: number;
     minBundleCount: number;
   };
 }
 
-const mockConfig: TestConfig = {
-  mode: "mock",
-  apiBaseUrl: "http://localhost:5173",
-  auth: {
+/**
+ * Get test configuration based on current target.
+ * Maintains backward compatibility with existing test code.
+ */
+export function getTestConfig(): TestConfig {
+  const target = getTarget();
+
+  // Map target to legacy "mode" for backward compatibility
+  const mode: TestMode = target.useMocks ? "mock" : "integrated";
+
+  // Default credentials for mock mode
+  const mockCredentials = {
     adminUser: "admin",
     adminPassword: "password",
     auditorUser: "auditor",
@@ -50,57 +67,40 @@ const mockConfig: TestConfig = {
     reviewerPassword: "password",
     operatorUser: "operator",
     operatorPassword: "password",
-  },
-  timeout: {
-    navigation: 5000,
-    apiResponse: 2000,
-    action: 5000,
-  },
-  expectations: {
-    minDecisionCount: 1,
-    minBundleCount: 1,
-  },
-};
+  };
 
-const integratedConfig: TestConfig = {
-  mode: "integrated",
-  apiBaseUrl: process.env.TEST_BASE_URL || "http://localhost:5173",
-  auth: {
-    // Default credentials match backend's default users (see users.py)
-    adminUser: process.env.TEST_ADMIN_USER || "su",
-    adminPassword: process.env.TEST_ADMIN_PASSWORD || "su",
-    auditorUser: process.env.TEST_AUDITOR_USER || "tod",
-    auditorPassword: process.env.TEST_AUDITOR_PASSWORD || "su",
-    reviewerUser: process.env.TEST_REVIEWER_USER || "ted",
-    reviewerPassword: process.env.TEST_REVIEWER_PASSWORD || "su",
-    operatorUser: process.env.TEST_OPERATOR_USER || "seb",
-    operatorPassword: process.env.TEST_OPERATOR_PASSWORD || "su",
-  },
-  timeout: {
-    navigation: 15000,
-    apiResponse: 10000,
-    action: 15000,
-  },
-  expectations: {
-    minDecisionCount: 0, // May be 0 if no pipeline runs yet
-    minBundleCount: 0,
-  },
-};
+  // Real credentials from env or defaults for local/remote
+  const realCredentials = {
+    adminUser: process.env.E2E_ADMIN_USER || process.env.E2E_USER || "su",
+    adminPassword: process.env.E2E_ADMIN_PASS || process.env.E2E_PASS || "su",
+    auditorUser: process.env.E2E_AUDITOR_USER || "tod",
+    auditorPassword: process.env.E2E_AUDITOR_PASS || process.env.E2E_PASS || "su",
+    reviewerUser: process.env.E2E_REVIEWER_USER || "ted",
+    reviewerPassword: process.env.E2E_REVIEWER_PASS || process.env.E2E_PASS || "su",
+    operatorUser: process.env.E2E_OPERATOR_USER || "seb",
+    operatorPassword: process.env.E2E_OPERATOR_PASS || process.env.E2E_PASS || "su",
+  };
 
-export function getTestConfig(): TestConfig {
-  const mode = (process.env.TEST_MODE as TestMode) || "mock";
-  return mode === "integrated" ? integratedConfig : mockConfig;
+  return {
+    mode,
+    apiBaseUrl: target.baseUrl,
+    auth: target.useMocks ? mockCredentials : realCredentials,
+    timeout: target.timeout,
+    expectations: {
+      // In mock mode we control the data, in real mode it may vary
+      minDecisionCount: target.useMocks ? 1 : 0,
+      minBundleCount: target.useMocks ? 1 : 0,
+    },
+  };
 }
 
 /** Singleton config instance */
 export const config = getTestConfig();
 
-/** Helper to check current mode */
-export function isMockMode(): boolean {
-  return config.mode === "mock";
-}
-
-/** Helper to check current mode */
+/**
+ * Check if running in integrated mode (backward compatibility).
+ * @deprecated Use isRealBackend() from './targets' instead
+ */
 export function isIntegratedMode(): boolean {
-  return config.mode === "integrated";
+  return isRealBackend();
 }

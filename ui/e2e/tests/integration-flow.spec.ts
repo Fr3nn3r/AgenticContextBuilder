@@ -1,16 +1,36 @@
+/**
+ * Full Integration Flow E2E Test
+ *
+ * Tests the complete user journey: login -> upload -> pipeline -> review -> label
+ *
+ * This test only runs against real backends (local or remote).
+ * Use E2E_TARGET=local or E2E_TARGET=remote to enable.
+ *
+ * Usage:
+ *   # Against local servers (you start them first)
+ *   E2E_TARGET=local npm run test:e2e integration-flow
+ *
+ *   # Against remote dev server
+ *   E2E_TARGET=remote E2E_REMOTE_URL=https://dev.example.com E2E_USER=admin E2E_PASS=xxx npm run test:e2e integration-flow
+ */
+
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import * as path from "path";
 import * as fs from "fs";
 import { fileURLToPath } from "url";
+import { getTarget, isRealBackend } from "../config/targets";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const shouldRunLive = ["1", "true", "yes"].includes((process.env.E2E_LIVE || "").toLowerCase());
-const username = process.env.E2E_USERNAME || "";
-const password = process.env.E2E_PASSWORD || "";
-const workspaceName = process.env.E2E_WORKSPACE_NAME || "Integration Tests";
+// Get target configuration
+const target = getTarget();
+const shouldRun = isRealBackend();
+
+// Credentials from target config
+const credentials = target.credentials || { user: "", pass: "" };
+const workspaceName = target.workspaceName;
 
 const dataDir = path.resolve(__dirname, "..", "..", "..", "data", "05-FBR");
 const uploadFiles = [
@@ -31,8 +51,8 @@ function getUploadPaths(): string[] {
 
 async function login(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Username").fill(credentials.user);
+  await page.getByLabel("Password").fill(credentials.pass);
   await page.getByRole("button", { name: /sign in/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
@@ -170,11 +190,12 @@ async function labelFirstField(page: Page) {
   await expect(docList.getByText("Labeled")).toBeVisible({ timeout: 60000 });
 }
 
-test.describe("Live E2E flow", () => {
+test.describe("Full Integration Flow", () => {
   test.describe.configure({ mode: "serial" });
 
-  test.skip(!shouldRunLive, "Set E2E_LIVE=1 to run against the live backend.");
-  test.skip(!username || !password, "Set E2E_USERNAME and E2E_PASSWORD for login.");
+  // Skip if running in mock mode - this test requires a real backend
+  test.skip(!shouldRun, "Set E2E_TARGET=local or E2E_TARGET=remote to run against real backend.");
+  test.skip(!credentials.user || !credentials.pass, "Credentials required: set E2E_USER and E2E_PASS.");
 
   test("login, activate workspace, upload docs, run pipeline, label, verify screens", async ({ page }) => {
     test.setTimeout(20 * 60 * 1000);

@@ -1,13 +1,14 @@
 /**
- * Abstract Test Setup Layer for Dual-Mode Testing
+ * Test Setup Utilities for E2E Testing
  *
- * Provides a unified interface for test setup that works in both:
- * - Mock mode: Sets up route interception with fixture data
- * - Integrated mode: Performs real login via UI
+ * Provides a unified interface for test setup that works across all targets:
+ * - mock: Sets up route interception with fixture data
+ * - local/remote: Performs real login via UI
  */
 
 import { Page, expect } from "@playwright/test";
-import { config, isIntegratedMode, isMockMode } from "../config/test-config";
+import { getTarget, isMockMode, isRealBackend } from "../config/targets";
+import { config } from "../config/test-config";
 import {
   setupAuthenticatedMocks,
   setupComplianceMocks,
@@ -15,10 +16,18 @@ import {
   type ComplianceMockOptions,
 } from "./mock-api";
 
-export { isIntegratedMode, isMockMode } from "../config/test-config";
+// Re-export for convenience
+export { isMockMode, isRealBackend } from "../config/targets";
 
 /**
- * Unified test setup that works in both mock and integrated modes.
+ * @deprecated Use isRealBackend() instead
+ */
+export function isIntegratedMode(): boolean {
+  return isRealBackend();
+}
+
+/**
+ * Unified test setup that works across all targets.
  *
  * @param page - Playwright page object
  * @param role - User role to authenticate as
@@ -42,7 +51,7 @@ export async function setupTestEnvironment(
       });
     }
   } else {
-    // Integrated mode: perform real login
+    // Real backend (local or remote): perform actual login
     await performRealLogin(page, role);
   }
 }
@@ -65,10 +74,12 @@ export async function setupComplianceTestEnvironment(
 }
 
 /**
- * Perform actual login in integrated mode via the UI.
+ * Perform actual login via the UI.
+ * Used for local and remote targets.
  */
 async function performRealLogin(page: Page, role: Role): Promise<void> {
   const credentials = getCredentialsForRole(role);
+  const target = getTarget();
 
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
@@ -79,7 +90,7 @@ async function performRealLogin(page: Page, role: Role): Promise<void> {
 
   // Wait for redirect away from login page
   await expect(page).not.toHaveURL(/\/login/, {
-    timeout: config.timeout.navigation,
+    timeout: target.timeout.navigation,
   });
 
   // Wait for app to be ready
@@ -105,20 +116,30 @@ function getCredentialsForRole(role: Role): { username: string; password: string
 }
 
 /**
- * Skip test in integrated mode.
- * Use for tests that require controlled mock data (e.g., invalid hash chain, empty states).
+ * Skip test in real backend mode (local or remote).
+ * Use for tests that require controlled mock data.
  *
  * @example
  * test("shows chain break location for invalid chain", async ({ page }) => {
- *   skipInIntegratedMode(test);
- *   // ... test code
+ *   skipInRealBackendMode(test);
+ *   // ... test code that requires mock data
  * });
+ */
+export function skipInRealBackendMode(
+  testInstance: { skip: (condition: boolean, reason: string) => void },
+  reason = "This test only runs in mock mode (requires controlled data)"
+): void {
+  testInstance.skip(isRealBackend(), reason);
+}
+
+/**
+ * @deprecated Use skipInRealBackendMode() instead
  */
 export function skipInIntegratedMode(
   testInstance: { skip: (condition: boolean, reason: string) => void },
   reason = "This test only runs in mock mode (requires controlled data)"
 ): void {
-  testInstance.skip(isIntegratedMode(), reason);
+  skipInRealBackendMode(testInstance, reason);
 }
 
 /**
@@ -128,18 +149,18 @@ export function skipInIntegratedMode(
  * @example
  * test("validates real compliance data integrity", async ({ page }) => {
  *   skipInMockMode(test);
- *   // ... test code
+ *   // ... test code that requires real backend
  * });
  */
 export function skipInMockMode(
   testInstance: { skip: (condition: boolean, reason: string) => void },
-  reason = "This test only runs in integrated mode (requires real data)"
+  reason = "This test only runs against real backend (requires real data)"
 ): void {
   testInstance.skip(isMockMode(), reason);
 }
 
 /**
- * Get the appropriate timeout for the current test mode.
+ * Get the appropriate timeout for the current target.
  */
 export function getTimeout(type: "navigation" | "apiResponse" | "action"): number {
   return config.timeout[type];
