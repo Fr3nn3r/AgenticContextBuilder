@@ -81,7 +81,7 @@ export function ComplianceOverview() {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-bold text-foreground">
-              {verification?.record_count ?? 0}
+              {verification?.total_records ?? 0}
             </span>
             <span className="text-sm text-muted-foreground ml-2">records</span>
           </div>
@@ -98,7 +98,7 @@ export function ComplianceOverview() {
           <h3 className="text-sm font-medium text-muted-foreground">Decision Records</h3>
           <div className="mt-2">
             <span className="text-2xl font-bold text-foreground">
-              {verification?.record_count ?? 0}
+              {verification?.total_records ?? 0}
             </span>
             <span className="text-sm text-muted-foreground ml-2">total logged</span>
           </div>

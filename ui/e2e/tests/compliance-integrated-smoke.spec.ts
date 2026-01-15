@@ -156,5 +156,61 @@ test.describe("Compliance Integrated Smoke Tests", () => {
 
     expect(failures, `SMOKE TEST FAILURES:\n${failures.join("\n")}`).toHaveLength(0);
   });
+
+  test("data consistency - dashboard counts match API data", async ({ page }) => {
+    // This test catches field name mismatches between API and frontend
+    // (like when frontend expects 'record_count' but API returns 'total_records')
+
+    // Track API responses
+    let verifyResponse: { total_records?: number } | null = null;
+    let decisionsCount = 0;
+
+    page.on("response", async (response) => {
+      if (response.url().includes("/api/compliance/ledger/verify") && response.ok()) {
+        try {
+          verifyResponse = await response.json();
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      if (response.url().includes("/api/compliance/ledger/decisions") && response.ok()) {
+        try {
+          const data = await response.json();
+          decisionsCount = Array.isArray(data) ? data.length : 0;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    });
+
+    await page.goto("/compliance");
+    await page.waitForLoadState("networkidle");
+
+    // Get the displayed record count from the UI
+    const recordCountText = await page
+      .locator(".text-2xl.font-bold")
+      .first()
+      .textContent()
+      .catch(() => "0");
+    const displayedCount = parseInt(recordCountText || "0", 10);
+
+    // Verify consistency: displayed count should match API total_records
+    if (verifyResponse && verifyResponse.total_records !== undefined) {
+      expect(
+        displayedCount,
+        `Data inconsistency: UI shows ${displayedCount} records but API returned ${verifyResponse.total_records}. ` +
+          `This indicates a field name mismatch between API and frontend.`
+      ).toBe(verifyResponse.total_records);
+    }
+
+    // If we have decisions showing in Recent Decisions, verify count is not 0
+    // when we actually have records
+    if (decisionsCount > 0 && displayedCount === 0) {
+      throw new Error(
+        `Data inconsistency: Recent Decisions shows ${decisionsCount} entries but record count shows 0. ` +
+          `This indicates the frontend isn't correctly reading the API response.`
+      );
+    }
+  });
 });
 

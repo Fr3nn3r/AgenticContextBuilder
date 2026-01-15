@@ -210,7 +210,7 @@ test.describe("Compliance Overview", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ valid: true, record_count: 0 }),
+          body: JSON.stringify({ valid: true, total_records: 0, break_at_index: null, break_at_decision_id: null, error_type: null, error_details: null, verified_at: new Date().toISOString() }),
         });
       });
 

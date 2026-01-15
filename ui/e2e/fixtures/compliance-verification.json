@@ -1,20 +1,29 @@
 {
   "valid": {
     "valid": true,
-    "record_count": 6,
-    "break_at": null,
-    "reason": null
+    "total_records": 6,
+    "break_at_index": null,
+    "break_at_decision_id": null,
+    "error_type": null,
+    "error_details": null,
+    "verified_at": "2026-01-15T10:00:00.000Z"
   },
   "invalid": {
     "valid": false,
-    "record_count": 6,
-    "break_at": 3,
-    "reason": "Hash mismatch at record #3: expected sha256:e5f6g7h8i9j0, got sha256:tampered123"
+    "total_records": 6,
+    "break_at_index": 3,
+    "break_at_decision_id": "dec_abc123xyz",
+    "error_type": "hash_mismatch",
+    "error_details": "Hash mismatch at record #3: expected sha256:e5f6g7h8i9j0, got sha256:tampered123",
+    "verified_at": "2026-01-15T10:00:00.000Z"
   },
   "empty": {
     "valid": true,
-    "record_count": 0,
-    "break_at": null,
-    "reason": null
+    "total_records": 0,
+    "break_at_index": null,
+    "break_at_decision_id": null,
+    "error_type": null,
+    "error_details": null,
+    "verified_at": "2026-01-15T10:00:00.000Z"
   }
 }

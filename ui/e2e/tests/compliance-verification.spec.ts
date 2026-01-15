@@ -102,9 +102,10 @@ test.describe("Compliance Verification", () => {
       const verification = new ComplianceVerificationPage(page);
       await verification.goto();
 
-      // Look for break location section - use exact match for the dd element
+      // Look for break location section
       await expect(page.getByText("Chain Break Location")).toBeVisible();
-      await expect(page.getByText("Record #3", { exact: true })).toBeVisible();
+      // Break location shows record number and decision ID
+      await expect(page.getByText(/Record #3/)).toBeVisible();
     });
 
     test("displays error reason", async ({ page }) => {
@@ -180,7 +181,7 @@ test.describe("Compliance Verification", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ valid: true, record_count: verifyCount }),
+          body: JSON.stringify({ valid: true, total_records: verifyCount, break_at_index: null, break_at_decision_id: null, error_type: null, error_details: null, verified_at: new Date().toISOString() }),
         });
       });
 
@@ -212,7 +213,7 @@ test.describe("Compliance Verification", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ valid: true, record_count: 1 }),
+          body: JSON.stringify({ valid: true, total_records: 1, break_at_index: null, break_at_decision_id: null, error_type: null, error_details: null, verified_at: new Date().toISOString() }),
         });
       });
 
@@ -233,7 +234,7 @@ test.describe("Compliance Verification", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ valid: true, record_count: 1 }),
+          body: JSON.stringify({ valid: true, total_records: 1, break_at_index: null, break_at_decision_id: null, error_type: null, error_details: null, verified_at: new Date().toISOString() }),
         });
       });
 

@@ -7,7 +7,6 @@ export function ComplianceVerification() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
-  const [lastVerified, setLastVerified] = useState<Date | null>(null);
 
   useEffect(() => {
     runVerification();
@@ -19,7 +18,6 @@ export function ComplianceVerification() {
       setError(null);
       const data = await verifyDecisionLedger();
       setResult(data);
-      setLastVerified(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
     } finally {
@@ -83,7 +81,7 @@ export function ComplianceVerification() {
                 <p className="text-muted-foreground">
                   {result?.valid
                     ? "All decision records are intact and have not been tampered with."
-                    : result?.reason || "The hash chain has been compromised."}
+                    : result?.error_details || "The hash chain has been compromised."}
                 </p>
               )}
             </div>
@@ -99,24 +97,25 @@ export function ComplianceVerification() {
             <div className="bg-muted/30 rounded-lg p-4">
               <dt className="text-sm text-muted-foreground">Total Records</dt>
               <dd className="text-2xl font-bold text-foreground mt-1">
-                {loading ? "—" : result?.record_count ?? 0}
+                {loading ? "—" : result?.total_records ?? 0}
               </dd>
             </div>
             <div className="bg-muted/30 rounded-lg p-4">
               <dt className="text-sm text-muted-foreground">Last Verified</dt>
               <dd className="text-lg font-medium text-foreground mt-1">
-                {lastVerified ? lastVerified.toLocaleString() : "Never"}
+                {result?.verified_at ? new Date(result.verified_at).toLocaleString() : "Never"}
               </dd>
             </div>
-            {!result?.valid && result?.break_at != null && (
+            {!result?.valid && result?.break_at_index != null && (
               <div className="bg-red-500/10 rounded-lg p-4 md:col-span-2">
                 <dt className="text-sm text-red-500">Chain Break Location</dt>
                 <dd className="text-lg font-medium text-foreground mt-1">
-                  Record #{result.break_at}
+                  Record #{result.break_at_index}
+                  {result.break_at_decision_id && ` (${result.break_at_decision_id})`}
                 </dd>
-                {result.reason && (
+                {result.error_details && (
                   <dd className="text-sm text-muted-foreground mt-2">
-                    Reason: {result.reason}
+                    {result.error_type}: {result.error_details}
                   </dd>
                 )}
               </div>

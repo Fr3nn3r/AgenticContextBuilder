@@ -570,9 +570,12 @@ export interface DecisionRecord {
 
 export interface VerificationResult {
   valid: boolean;
-  record_count: number;
-  break_at: number | null;
-  reason: string | null;
+  total_records: number;
+  break_at_index: number | null;
+  break_at_decision_id: string | null;
+  error_type: string | null;
+  error_details: string | null;
+  verified_at: string;
 }
 
 export interface VersionBundle {
