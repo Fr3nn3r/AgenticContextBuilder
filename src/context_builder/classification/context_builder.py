@@ -9,7 +9,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -27,7 +27,17 @@ MAX_CUE_SNIPPETS = 8
 
 @dataclass
 class ClassificationContext:
-    """Result of building optimized classification context."""
+    """Result of building optimized classification context.
+
+    Attributes:
+        text: The optimized context text to send to the LLM.
+        tier: Strategy used ("full" or "optimized").
+        total_chars: Total characters in the original document.
+        pages_included: Number of pages included in context.
+        snippets_found: Number of cue snippets found and included.
+        cues_matched: List of cue phrases that were matched.
+        sources: Structured source information for audit logging.
+    """
 
     text: str
     tier: str  # "full" or "optimized"
@@ -35,6 +45,7 @@ class ClassificationContext:
     pages_included: int = 0
     snippets_found: int = 0
     cues_matched: List[str] = field(default_factory=list)
+    sources: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -241,15 +252,27 @@ def build_classification_context(
         )
 
     total_chars = sum(len(p) for p in pages)
+    sources: List[Dict[str, Any]] = []
 
     # Tier 1: Short documents - use full text
     if total_chars < short_doc_threshold:
         logger.debug(f"Short document ({total_chars} chars), using full text")
+        # Track all pages as sources
+        for i, page_text in enumerate(pages):
+            sources.append({
+                "source_type": "page",
+                "page_number": i + 1,
+                "char_start": 0,
+                "char_end": len(page_text),
+                "content_preview": page_text[:200] if page_text else "",
+                "selection_criteria": "full_document",
+            })
         return ClassificationContext(
             text="\n\n".join(pages),
             tier="full",
             total_chars=total_chars,
             pages_included=len(pages),
+            sources=sources,
         )
 
     # Tier 2: Longer documents - optimized context
@@ -269,10 +292,29 @@ def build_classification_context(
     context_parts.append("=== DOCUMENT START ===\n" + "\n\n".join(first_pages))
     pages_included += len(first_pages)
 
+    # Track first pages as sources
+    for i, page_text in enumerate(first_pages):
+        sources.append({
+            "source_type": "page",
+            "page_number": i + 1,
+            "char_start": 0,
+            "char_end": len(page_text),
+            "content_preview": page_text[:200] if page_text else "",
+            "selection_criteria": "document_start",
+        })
+
     # Last page (signatures, form footers) if more than 2 pages
     if len(pages) > 2:
         context_parts.append("=== FINAL PAGE ===\n" + pages[-1])
         pages_included += 1
+        sources.append({
+            "source_type": "page",
+            "page_number": len(pages),
+            "char_start": 0,
+            "char_end": len(pages[-1]),
+            "content_preview": pages[-1][:200] if pages[-1] else "",
+            "selection_criteria": "document_end",
+        })
 
     # Cue-based snippets from middle pages
     middle_pages = pages[2:-1] if len(pages) > 3 else []
@@ -286,6 +328,16 @@ def build_classification_context(
             for s in snippets:
                 snippet_texts.append(f"[Page {s.page_num}] {s.text}")
                 cues_matched.append(s.cue)
+                # Track cue snippets as sources
+                sources.append({
+                    "source_type": "cue_match",
+                    "page_number": s.page_num,
+                    "char_start": s.match_position,
+                    "char_end": s.match_position + len(s.text),
+                    "content_preview": s.text[:200] if s.text else "",
+                    "selection_criteria": f"cue_phrase:{s.cue}",
+                    "metadata": {"cue": s.cue},
+                })
 
             context_parts.append("=== KEY SNIPPETS ===\n" + "\n---\n".join(snippet_texts))
 
@@ -298,4 +350,5 @@ def build_classification_context(
         pages_included=pages_included,
         snippets_found=len(cues_matched),
         cues_matched=list(set(cues_matched)),  # Deduplicate
+        sources=sources,
     )

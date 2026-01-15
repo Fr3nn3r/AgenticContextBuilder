@@ -19,8 +19,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-# Import LLMCallRecord from its canonical location in schemas
-from context_builder.schemas.llm_call_record import LLMCallRecord
+# Import LLMCallRecord and InjectedContext from their canonical location in schemas
+from context_builder.schemas.llm_call_record import (
+    InjectedContext,
+    LLMCallRecord,
+)
 from context_builder.services.compliance.file import FileLLMCallStorage
 
 if TYPE_CHECKING:
@@ -176,6 +179,27 @@ class AuditedOpenAIClient:
         self._attempt_number: int = 1
         self._previous_call_id: Optional[str] = None
 
+        # Injected context for prompt provenance tracking
+        self._injected_context: Optional[InjectedContext] = None
+
+    def set_injected_context(
+        self,
+        context: Optional[InjectedContext] = None,
+    ) -> "AuditedOpenAIClient":
+        """Set injected context metadata for the next LLM call.
+
+        This method captures what context was injected into the prompt,
+        enabling auditors to see exactly what information the model received.
+
+        Args:
+            context: InjectedContext describing what was included in the prompt
+
+        Returns:
+            Self for chaining
+        """
+        self._injected_context = context
+        return self
+
     def set_context(
         self,
         claim_id: Optional[str] = None,
@@ -209,7 +233,7 @@ class AuditedOpenAIClient:
         return self
 
     def clear_context(self) -> "AuditedOpenAIClient":
-        """Clear all context."""
+        """Clear all context including injected context."""
         self._claim_id = None
         self._doc_id = None
         self._run_id = None
@@ -217,6 +241,7 @@ class AuditedOpenAIClient:
         self._call_purpose = None
         self._attempt_number = 1
         self._previous_call_id = None
+        self._injected_context = None
         return self
 
     def mark_retry(self, previous_call_id: str) -> "AuditedOpenAIClient":
@@ -276,7 +301,11 @@ class AuditedOpenAIClient:
             attempt_number=self._attempt_number,
             is_retry=self._previous_call_id is not None,
             previous_call_id=self._previous_call_id,
+            injected_context=self._injected_context,
         )
+
+        # Clear injected context after use (it's per-call)
+        self._injected_context = None
 
         try:
             # Make the actual API call

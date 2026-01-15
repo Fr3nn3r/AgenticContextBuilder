@@ -15,7 +15,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
-from context_builder.schemas.llm_call_record import LLMCallRecord
+from context_builder.schemas.llm_call_record import (
+    InjectedContext,
+    InjectedContextSource,
+    LLMCallRecord,
+)
 from context_builder.services.compliance.interfaces import (
     LLMCallReader,
     LLMCallSink,
@@ -23,6 +27,36 @@ from context_builder.services.compliance.interfaces import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _deserialize_llm_call_record(data: dict) -> LLMCallRecord:
+    """Deserialize a dictionary to LLMCallRecord, handling nested structures.
+
+    Args:
+        data: Dictionary from JSON deserialization.
+
+    Returns:
+        LLMCallRecord with properly deserialized nested InjectedContext.
+    """
+    # Handle nested injected_context
+    if "injected_context" in data and data["injected_context"] is not None:
+        ic_data = data["injected_context"]
+        # Deserialize nested sources
+        sources = []
+        for source_data in ic_data.get("sources", []):
+            sources.append(InjectedContextSource(**source_data))
+        # Create InjectedContext with deserialized sources
+        data["injected_context"] = InjectedContext(
+            context_tier=ic_data.get("context_tier", "full"),
+            total_source_chars=ic_data.get("total_source_chars", 0),
+            injected_chars=ic_data.get("injected_chars", 0),
+            sources=sources,
+            cues_matched=ic_data.get("cues_matched", []),
+            field_hints_used=ic_data.get("field_hints_used", []),
+            template_variables=ic_data.get("template_variables", {}),
+        )
+
+    return LLMCallRecord(**data)
 
 
 class FileLLMCallSink(LLMCallSink):
@@ -132,7 +166,7 @@ class FileLLMCallReader(LLMCallReader):
                     try:
                         data = json.loads(line)
                         if data.get("call_id") == call_id:
-                            return LLMCallRecord(**data)
+                            return _deserialize_llm_call_record(data)
                     except (json.JSONDecodeError, TypeError):
                         continue
         except IOError as e:
@@ -162,7 +196,7 @@ class FileLLMCallReader(LLMCallReader):
                     try:
                         data = json.loads(line)
                         if data.get("decision_id") == decision_id:
-                            results.append(LLMCallRecord(**data))
+                            results.append(_deserialize_llm_call_record(data))
                     except (json.JSONDecodeError, TypeError):
                         continue
         except IOError as e:

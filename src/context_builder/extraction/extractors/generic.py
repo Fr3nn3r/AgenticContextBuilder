@@ -37,6 +37,7 @@ from context_builder.schemas.extraction_result import (
     PageContent,
 )
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
+from context_builder.schemas.llm_call_record import InjectedContext, InjectedContextSource
 from context_builder.services.decision_ledger import DecisionLedger
 from context_builder.services.compliance import (
     DecisionStorage,
@@ -150,6 +151,51 @@ class GenericFieldExtractor(FieldExtractor):
 
         # Step 2: Build extraction context from candidates
         extraction_context = self._build_extraction_context(all_candidates, pages)
+
+        # Step 2.5: Build InjectedContext for audit logging
+        total_source_chars = sum(len(p.text) for p in pages)
+        sources = []
+        seen_snippets = set()
+
+        for field_name, candidates in all_candidates.items():
+            for candidate in candidates[:3]:  # Same limit as _build_extraction_context
+                key = (candidate.page, candidate.char_start)
+                if key not in seen_snippets:
+                    seen_snippets.add(key)
+                    sources.append(InjectedContextSource(
+                        source_type="candidate_span",
+                        page_number=candidate.page,
+                        char_start=candidate.char_start,
+                        char_end=candidate.char_end,
+                        content_preview=candidate.text[:200] if candidate.text else "",
+                        selection_criteria=f"field_candidate:{field_name}",
+                        metadata={"field": field_name},
+                    ))
+
+        # If no candidates, add first page preview (same as _build_extraction_context)
+        if not sources and pages:
+            first_page = pages[0]
+            sources.append(InjectedContextSource(
+                source_type="page",
+                page_number=1,
+                char_start=0,
+                char_end=min(2000, len(first_page.text)),
+                content_preview=first_page.text[:200] if first_page.text else "",
+                selection_criteria="fallback_first_page",
+            ))
+
+        injected = InjectedContext(
+            context_tier="extraction_candidates",
+            total_source_chars=total_source_chars,
+            injected_chars=len(extraction_context),
+            sources=sources,
+            field_hints_used=list(self.spec.field_rules.keys()) if self.spec.field_rules else [],
+            template_variables={
+                "doc_type": self.spec.doc_type,
+                "fields_count": str(len(self.spec.all_fields)),
+            },
+        )
+        self.audited_client.set_injected_context(injected)
 
         # Step 3: Call LLM for structured extraction
         raw_extractions = self._llm_extract(extraction_context)

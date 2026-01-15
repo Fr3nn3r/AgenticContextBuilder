@@ -27,6 +27,9 @@ from context_builder.services.compliance.crypto import (
     CryptoError,
     EnvelopeEncryptor,
 )
+from context_builder.services.compliance.file.llm_storage import (
+    _deserialize_llm_call_record,
+)
 from context_builder.services.compliance.interfaces import (
     LLMCallReader,
     LLMCallSink,
@@ -165,7 +168,7 @@ class EncryptedLLMCallReader(LLMCallReader):
                         continue
                     data = self._decrypt_line(line)
                     if data and data.get("call_id") == call_id:
-                        return LLMCallRecord(**data)
+                        return _deserialize_llm_call_record(data)
         except IOError as e:
             logger.error(f"Failed to read encrypted LLM storage: {e}")
 
@@ -193,7 +196,7 @@ class EncryptedLLMCallReader(LLMCallReader):
                     data = self._decrypt_line(line)
                     if data and data.get("decision_id") == decision_id:
                         try:
-                            results.append(LLMCallRecord(**data))
+                            results.append(_deserialize_llm_call_record(data))
                         except TypeError:
                             continue
         except IOError as e:

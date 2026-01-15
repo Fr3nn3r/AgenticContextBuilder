@@ -26,6 +26,7 @@ from context_builder.classification.context_builder import (
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_classification import DocumentClassification
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
+from context_builder.schemas.llm_call_record import InjectedContext, InjectedContextSource
 from context_builder.services.decision_ledger import DecisionLedger
 from context_builder.services.compliance import (
     DecisionStorage,
@@ -468,6 +469,17 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             f"snippets={ctx.snippets_found}"
         )
 
+        # Build InjectedContext for audit logging
+        injected = InjectedContext(
+            context_tier=ctx.tier,
+            total_source_chars=ctx.total_chars,
+            injected_chars=len(ctx.text),
+            sources=[InjectedContextSource(**s) for s in ctx.sources],
+            cues_matched=ctx.cues_matched,
+            template_variables={"filename": filename},
+        )
+        self.audited_client.set_injected_context(injected)
+
         # First classification attempt with optimized context
         result = self.classify(ctx.text, filename)
         result["context_tier"] = ctx.tier
@@ -486,8 +498,30 @@ class OpenAIDocumentClassifier(DocumentClassifier):
                 f"retrying with full text"
             )
 
-            # Retry with full document text
+            # Build full retry context sources
+            retry_sources = []
+            for i, page_text in enumerate(pages):
+                retry_sources.append({
+                    "source_type": "page",
+                    "page_number": i + 1,
+                    "char_start": 0,
+                    "char_end": len(page_text),
+                    "content_preview": page_text[:200] if page_text else "",
+                    "selection_criteria": "full_retry",
+                })
+
+            # Set new InjectedContext for retry
             full_text = "\n\n".join(pages)
+            retry_injected = InjectedContext(
+                context_tier="full_retry",
+                total_source_chars=ctx.total_chars,
+                injected_chars=len(full_text),
+                sources=[InjectedContextSource(**s) for s in retry_sources],
+                cues_matched=[],
+                template_variables={"filename": filename, "retry_reason": "low_confidence"},
+            )
+            self.audited_client.set_injected_context(retry_injected)
+
             result = self.classify(full_text, filename)
             result["context_tier"] = "full_retry"
             result["retried"] = True
