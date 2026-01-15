@@ -30,6 +30,15 @@ _Currently active work. Add handoff notes inline._
 
 ## Done (Recent)
 
+- [x] **App.tsx refactoring - extract contexts** (2026-01-15)
+  - Phase 1: FilterContext - filter state (searchQuery, lobFilter, etc.)
+  - Phase 2: BatchContext - batch/run state, dashboard data, API loading
+  - Phase 3: ClaimsContext - claims, docs, filtering logic
+  - Phase 4: AppRoutes - extracted route definitions
+  - Phase 5: ClaimsTable - 17 props → 1 prop via context hooks
+  - App.tsx: 583 → 127 lines (78% reduction)
+  - New files: `context/FilterContext.tsx`, `BatchContext.tsx`, `ClaimsContext.tsx`, `AppRoutes.tsx`
+
 - [x] **Compliance UI suite** (2026-01-14)
   - Dashboard: `ui/src/pages/compliance/Overview.tsx`
   - Ledger explorer: `Ledger.tsx` with filters (type, claim, doc)
