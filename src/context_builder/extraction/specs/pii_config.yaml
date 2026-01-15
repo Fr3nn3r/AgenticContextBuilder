@@ -1,0 +1,217 @@
+# PII Configuration for Compliance Vault
+#
+# This config defines which extracted fields contain PII and how to handle them.
+# Fields matching these patterns will be:
+#   1. Stored in the encrypted PII vault (not in decision ledger)
+#   2. Replaced with a PIIReference in logs and exports
+#   3. Subject to right-to-erasure (crypto deletion)
+#
+# Schema version for tracking config changes
+schema_version: "1.0"
+
+# =============================================================================
+# PII Categories
+# =============================================================================
+# Each category defines:
+#   - field_patterns: regex patterns to match field names (case-insensitive)
+#   - vault: whether to store in PII vault (true/false)
+#   - redaction_strategy: how to display in non-privileged views
+#       - "reference" -> show "[PII:ref_id]"
+#       - "mask" -> show "****" or partial mask
+#       - "hash" -> show SHA256 hash (for matching without revealing)
+
+categories:
+  # ---------------------------------------------------------------------------
+  # GOVERNMENT IDENTIFIERS - Always vault
+  # ---------------------------------------------------------------------------
+  government_id:
+    description: "Government-issued identification numbers"
+    vault: true
+    redaction_strategy: "reference"
+    field_patterns:
+      - "^id_number$"
+      - "^ssn$"
+      - "^social_security"
+      - "^passport"
+      - "^driver_?license"
+      - "^national_id"
+      - "^tax_id"
+      - "^curp$"                    # Mexican ID
+      - "^rfc$"                     # Mexican tax ID
+      - "^ine$"                     # Mexican voter ID
+
+  # ---------------------------------------------------------------------------
+  # VEHICLE IDENTIFIERS - Vault (can identify owner)
+  # ---------------------------------------------------------------------------
+  vehicle_id:
+    description: "Vehicle identification that can be linked to owner"
+    vault: true
+    redaction_strategy: "mask"      # Show last 4 chars: "****ABC1"
+    field_patterns:
+      - "^vin$"
+      - "^vehicle_vin$"
+      - "^plate"
+      - "^vehicle_plate"
+      - "^license_plate"
+      - "^registration_number$"
+
+  # ---------------------------------------------------------------------------
+  # FINANCIAL - Always vault
+  # ---------------------------------------------------------------------------
+  financial:
+    description: "Financial account numbers and payment information"
+    vault: true
+    redaction_strategy: "mask"      # Show last 4: "****1234"
+    field_patterns:
+      - "^account_?number"
+      - "^bank_account"
+      - "^credit_card"
+      - "^card_number"
+      - "^routing_number"
+      - "^iban$"
+      - "^swift$"
+      - "^clabe$"                   # Mexican bank account
+
+  # ---------------------------------------------------------------------------
+  # MEDICAL - Always vault (HIPAA, GDPR special category)
+  # ---------------------------------------------------------------------------
+  medical:
+    description: "Protected health information"
+    vault: true
+    redaction_strategy: "reference"
+    field_patterns:
+      - "^diagnosis"
+      - "^treatment"
+      - "^medication"
+      - "^medical_condition"
+      - "^health_"
+      - "^patient_id"
+      - "^medical_record"
+      - "^prescription"
+      - "^disability"
+      - "^injury_description"
+
+  # ---------------------------------------------------------------------------
+  # NAMES - Vault (user requested)
+  # ---------------------------------------------------------------------------
+  names:
+    description: "Personal names that identify individuals"
+    vault: true
+    redaction_strategy: "reference"
+    field_patterns:
+      - "^full_name$"
+      - "^first_name$"
+      - "^last_name$"
+      - "^given_name$"
+      - "^surname$"
+      - "^middle_name$"
+      - "_name$"                    # Matches: owner_name, claimant_name, insured_name, vendor_name
+      - "^nombre$"
+      - "^apellido"
+      - "^beneficiary$"
+      - "^policyholder$"
+
+  # ---------------------------------------------------------------------------
+  # CONTACT - Vault (user requested)
+  # ---------------------------------------------------------------------------
+  contact:
+    description: "Contact information that can identify or locate individuals"
+    vault: true
+    redaction_strategy: "mask"
+    field_patterns:
+      # Phone
+      - "phone"
+      - "telefono"
+      - "mobile"
+      - "cell"
+      - "fax"
+      # Email
+      - "email"
+      - "correo"
+      # Address
+      - "^address$"
+      - "^street"
+      - "^city$"
+      - "^state$"
+      - "^zip"
+      - "^postal"
+      - "^country$"
+      - "^location$"
+      - "^event_location$"
+      - "^residence"
+      - "^domicilio"
+      - "^direccion"
+
+  # ---------------------------------------------------------------------------
+  # DATES - Vault only DOB (PII when combined with name)
+  # ---------------------------------------------------------------------------
+  sensitive_dates:
+    description: "Dates that are PII (date of birth)"
+    vault: true
+    redaction_strategy: "mask"      # Show year only: "****-**-** (1985)"
+    field_patterns:
+      - "^date_of_birth$"
+      - "^dob$"
+      - "^birth_?date$"
+      - "^fecha_?nacimiento"
+
+# =============================================================================
+# Non-PII Fields (explicit exclusions)
+# =============================================================================
+# These fields match PII patterns but should NOT be vaulted
+# (e.g., "vendor_name" for business entities, not individuals)
+
+exclusions:
+  # Business names are not PII (legal entities, not natural persons)
+  - pattern: "^vendor_name$"
+    reason: "Business entity, not personal name"
+    vault: false
+
+  # Event/incident dates are not sensitive
+  - pattern: "^event_date$"
+    reason: "Incident date, not personal date"
+    vault: false
+
+  - pattern: "^incident_date$"
+    reason: "Incident date, not personal date"
+    vault: false
+
+  # Destinations (travel) are borderline - exclude for now
+  - pattern: "^destination$"
+    reason: "Travel destination, not residence"
+    vault: false
+
+# =============================================================================
+# Doc-Type Overrides (optional)
+# =============================================================================
+# Override vault behavior for specific doc types if needed
+
+doc_type_overrides:
+  # Example: For invoices, vendor_name is always a business (never vault)
+  invoice:
+    vendor_name:
+      vault: false
+      reason: "Business entity on invoice"
+
+  # Example: For vehicle_registration, owner_name is always PII
+  vehicle_registration:
+    owner_name:
+      vault: true
+      reason: "Vehicle owner is individual"
+
+# =============================================================================
+# Runtime Settings
+# =============================================================================
+
+settings:
+  # Default behavior for fields not matching any pattern
+  default_vault: false
+
+  # Log when a field is vaulted (for debugging)
+  log_vault_operations: true
+
+  # Require explicit match (no fuzzy matching)
+  strict_matching: true
+
+  # Case-insensitive pattern matching
+  case_insensitive: true
