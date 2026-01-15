@@ -36,7 +36,7 @@ test.describe("New Claim Upload", () => {
   test("uploads documents and starts pipeline", async ({ page }) => {
     await page.goto("/claims/new");
 
-    await expect(page.getByRole("heading", { name: "New Claim" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("heading", { name: "New Claim" })).toBeVisible();
 
     const fileInput = page.locator('input[type="file"]').first();
     await fileInput.setInputFiles({

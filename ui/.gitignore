@@ -14,3 +14,8 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Playwright
+test-screenshots/
+playwright-report/
+test-results/
