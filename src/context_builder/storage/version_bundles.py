@@ -21,6 +21,33 @@ from context_builder.schemas.decision_record import VersionBundle
 logger = logging.getLogger(__name__)
 
 
+def _get_contextbuilder_version() -> str:
+    """Read version from pyproject.toml.
+
+    Returns:
+        Version string from pyproject.toml, or 'unknown' if not found.
+    """
+    # Resolve path from this module's location
+    module_dir = Path(__file__).resolve().parent.parent  # context_builder/
+    project_root = module_dir.parent.parent  # project root
+
+    pyproject_path = project_root / "pyproject.toml"
+    if not pyproject_path.exists():
+        return "unknown"
+
+    try:
+        content = pyproject_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            if line.startswith("version"):
+                # Parse: version = "0.1.0"
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    return parts[1].strip().strip('"').strip("'")
+    except Exception:
+        logger.debug("Failed to read version from pyproject.toml")
+    return "unknown"
+
+
 class VersionBundleStore:
     """Storage for version bundle snapshots.
 
@@ -31,8 +58,6 @@ class VersionBundleStore:
     - Extraction specifications (hashed)
     - Model configuration
     """
-
-    CONTEXTBUILDER_VERSION = "1.0.0"
 
     def __init__(self, storage_dir: Path):
         """Initialize the version bundle store.
@@ -207,7 +232,7 @@ class VersionBundleStore:
             created_at=created_at,
             git_commit=git_info.get("git_commit"),
             git_dirty=git_info.get("git_dirty"),
-            contextbuilder_version=self.CONTEXTBUILDER_VERSION,
+            contextbuilder_version=_get_contextbuilder_version(),
             extractor_version=extractor_version,
             model_name=model_name,
             model_version=model_version,

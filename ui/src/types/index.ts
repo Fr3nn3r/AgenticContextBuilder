@@ -2,7 +2,6 @@
 
 export interface ClaimSummary {
   claim_id: string;
-  folder_name: string;
   doc_count: number;
   doc_types: string[];
   extracted_count: number;
@@ -634,4 +633,14 @@ export interface LabelHistory {
   doc_id: string;
   version_count: number;
   versions: LabelHistoryVersion[];
+}
+
+// =============================================================================
+// APPLICATION VERSION
+// =============================================================================
+
+export interface VersionInfo {
+  version: string;
+  git_commit: string | null;
+  display: string;
 }

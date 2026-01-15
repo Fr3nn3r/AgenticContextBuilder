@@ -1,7 +1,9 @@
+import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSpacemanTheme } from "@space-man/react-theme-animation";
 import { cn } from "../lib/utils";
 import { useAuth } from "../context/AuthContext";
+import { getAppVersion } from "../api/client";
 
 type View = "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "compliance" | "admin";
 
@@ -39,6 +41,14 @@ export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
   const { theme: darkMode, switchThemeFromElement, setColorTheme, colorTheme } = useSpacemanTheme();
   const { user, logout } = useAuth();
+  const [versionDisplay, setVersionDisplay] = useState("ContextBuilder");
+
+  // Fetch version on mount
+  useEffect(() => {
+    getAppVersion()
+      .then((info) => setVersionDisplay(`ContextBuilder ${info.display}`))
+      .catch(() => setVersionDisplay("ContextBuilder"));
+  }, []);
 
   // Use colorTheme from hook, fallback to northern-lights
   const currentColorTheme = colorTheme || 'northern-lights';
@@ -186,7 +196,7 @@ export function Sidebar({ currentView }: SidebarProps) {
         </div>
 
         <div className="text-xs text-muted-foreground pt-1">
-          ContextBuilder v1.0
+          {versionDisplay}
         </div>
       </div>
     </div>

@@ -36,6 +36,7 @@ else:
     print(f"[startup] WARNING: .env not found at {_env_path}")
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -121,6 +122,59 @@ STAGING_DIR: Path = _PROJECT_ROOT / "output" / ".pending"
 _RENDER_WORKSPACE = _os.getenv("RENDER_WORKSPACE_PATH")
 
 
+# =============================================================================
+# VERSION INFO
+# =============================================================================
+
+
+def _get_app_version() -> str:
+    """Read version from pyproject.toml."""
+    pyproject_path = _PROJECT_ROOT / "pyproject.toml"
+    if not pyproject_path.exists():
+        return "unknown"
+
+    try:
+        content = pyproject_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            if line.startswith("version"):
+                # Parse: version = "0.1.0"
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    return parts[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _get_git_commit_short() -> Optional[str]:
+    """Get short git commit hash (7 chars)."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=str(_PROJECT_ROOT),
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+# Cache version info at startup
+_APP_VERSION = _get_app_version()
+_GIT_COMMIT = _get_git_commit_short()
+
+
+class VersionInfo(BaseModel):
+    """Application version information."""
+    version: str
+    git_commit: Optional[str] = None
+    display: str  # Formatted for UI display
+
+
 def _load_active_workspace_on_startup() -> None:
     """Load the active workspace from registry and set DATA_DIR/STAGING_DIR."""
     global DATA_DIR, STAGING_DIR
@@ -197,6 +251,21 @@ def _get_workspace_config_dir() -> Path:
     return config_dir
 
 
+def _get_workspace_registry_dir() -> Path:
+    """Get workspace-scoped registry directory.
+
+    Used for indexes and batch counters:
+    - doc_index.jsonl
+    - run_index.jsonl
+    - label_index.jsonl
+    - batch_counter.json
+    """
+    # DATA_DIR is {workspace}/claims, so parent is workspace root
+    registry_dir = DATA_DIR.parent / "registry"
+    registry_dir.mkdir(parents=True, exist_ok=True)
+    return registry_dir
+
+
 def _get_workspace_logs_dir() -> Path:
     """Get workspace-scoped logs directory.
 
@@ -243,8 +312,12 @@ def get_documents_service() -> DocumentsService:
 
 
 def get_labels_service() -> LabelsService:
-    """Get LabelsService instance with workspace-scoped compliance logging."""
-    return LabelsService(get_storage, ledger_dir=_get_workspace_logs_dir())
+    """Get LabelsService instance with workspace-scoped compliance logging and index updates."""
+    return LabelsService(
+        get_storage,
+        ledger_dir=_get_workspace_logs_dir(),
+        registry_dir=_get_workspace_registry_dir(),
+    )
 
 
 def get_insights_service() -> InsightsService:
@@ -623,6 +696,23 @@ def health_check():
     return {"status": "healthy", "data_dir": str(DATA_DIR)}
 
 
+@app.get("/api/version", response_model=VersionInfo)
+def get_version():
+    """Get application version info.
+
+    Returns version from pyproject.toml and git commit hash.
+    """
+    display = f"v{_APP_VERSION}"
+    if _GIT_COMMIT:
+        display = f"v{_APP_VERSION} ({_GIT_COMMIT})"
+
+    return VersionInfo(
+        version=_APP_VERSION,
+        git_commit=_GIT_COMMIT,
+        display=display,
+    )
+
+
 # =============================================================================
 # AUTHENTICATION ENDPOINTS
 # =============================================================================
@@ -996,6 +1086,44 @@ def delete_workspace(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     return {"status": "deleted", "workspace_id": workspace_id}
+
+
+@app.post("/api/admin/index/rebuild")
+def rebuild_index(current_user: CurrentUser = Depends(require_admin)):
+    """
+    Rebuild all indexes for the active workspace.
+
+    Scans claims, labels, and runs directories to regenerate:
+    - doc_index.jsonl
+    - label_index.jsonl
+    - run_index.jsonl
+    - registry_meta.json
+
+    Requires admin role.
+    """
+    from context_builder.storage.index_builder import build_all_indexes
+
+    workspace_service = get_workspace_service()
+    workspace = workspace_service.get_active_workspace()
+
+    if not workspace:
+        raise HTTPException(status_code=404, detail="No active workspace")
+
+    output_dir = Path(workspace.path)
+    if not output_dir.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workspace path does not exist: {output_dir}",
+        )
+
+    # Build all indexes
+    stats = build_all_indexes(output_dir)
+
+    return {
+        "status": "success",
+        "workspace_id": workspace.workspace_id,
+        "stats": stats,
+    }
 
 
 # =============================================================================

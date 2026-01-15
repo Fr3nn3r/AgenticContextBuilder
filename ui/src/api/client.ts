@@ -853,6 +853,24 @@ export async function deleteWorkspace(
   );
 }
 
+export interface RebuildIndexResponse {
+  status: string;
+  workspace_id: string;
+  stats: {
+    built_at: string;
+    doc_count: number;
+    label_count: number;
+    run_count: number;
+    claim_count: number;
+  };
+}
+
+export async function rebuildIndex(): Promise<RebuildIndexResponse> {
+  return fetchJson<RebuildIndexResponse>(`${API_BASE}/admin/index/rebuild`, {
+    method: "POST",
+  });
+}
+
 // =============================================================================
 // COMPLIANCE API
 // =============================================================================
@@ -926,4 +944,14 @@ export async function getLabelHistory(docId: string): Promise<LabelHistory> {
   return fetchJson<LabelHistory>(
     `${API_BASE}/compliance/label-history/${encodeURIComponent(docId)}`
   );
+}
+
+// =============================================================================
+// VERSION API
+// =============================================================================
+
+import type { VersionInfo } from "../types";
+
+export async function getAppVersion(): Promise<VersionInfo> {
+  return fetchJson<VersionInfo>(`${API_BASE}/version`);
 }
