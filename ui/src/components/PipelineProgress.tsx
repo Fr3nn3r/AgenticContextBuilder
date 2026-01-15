@@ -150,7 +150,7 @@ export function PipelineProgress({
       </div>
 
       {/* Document List */}
-      <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+      <div className="divide-y divide-border">
         {docList.map((doc) => (
           <DocumentProgressRow key={doc.doc_id} doc={doc} />
         ))}
