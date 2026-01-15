@@ -399,22 +399,27 @@ class PipelineService:
         discovered_docs: List,
         progress_callback: Optional[ProgressCallback],
     ) -> None:
-        """Update doc IDs after discovery and notify of phase start."""
+        """Update doc IDs after discovery.
+
+        Note: Documents stay at PENDING phase until they actually start processing.
+        The phase_callback from process_claim() will update them to INGESTING
+        when each document begins its pipeline execution.
+        """
         run = self.active_runs.get(run_id)
         if not run:
             return
 
         # Map discovered docs by filename to update our tracking
+        # Keep phase as PENDING - will be updated via phase_callback when processing starts
         for discovered in discovered_docs:
             for key, doc in list(run.docs.items()):
                 if doc.claim_id == claim_id and doc.filename == discovered.original_filename:
                     # Update doc_id to match discovered
                     doc.doc_id = discovered.doc_id
-                    # Mark as ingesting (first phase)
-                    doc.phase = DocPhase.INGESTING
+                    # Broadcast the doc_id update so frontend can track correctly
                     if progress_callback:
                         await self._async_callback(
-                            progress_callback, run_id, doc.doc_id, DocPhase.INGESTING, None
+                            progress_callback, run_id, doc.doc_id, DocPhase.PENDING, None
                         )
                     break
 

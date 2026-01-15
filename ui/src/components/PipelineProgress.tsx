@@ -67,6 +67,13 @@ export function PipelineProgress({
         <div className="flex items-center gap-3">
           <StatusBadge status={status} />
           <span className="text-sm text-muted-foreground font-mono">Batch: {batchId}</span>
+          {/* Connection status indicators */}
+          {_isConnected && isRunning && !isConnecting && !isReconnecting && (
+            <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded flex items-center gap-1">
+              <LiveDotIcon className="w-2 h-2" />
+              Connected
+            </span>
+          )}
           {isConnecting && isRunning && (
             <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded flex items-center gap-1">
               <SpinnerIcon className="w-3 h-3 animate-spin" />
@@ -391,5 +398,14 @@ function XIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
     </svg>
+  );
+}
+
+function LiveDotIcon({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative flex", className)}>
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+      <span className="relative inline-flex rounded-full h-full w-full bg-green-500" />
+    </span>
   );
 }
