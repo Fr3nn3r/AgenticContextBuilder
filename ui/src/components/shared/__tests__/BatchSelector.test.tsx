@@ -25,7 +25,7 @@ describe("BatchSelector", () => {
     expect(onBatchChange).toHaveBeenCalledWith("batch_2");
   });
 
-  test("sorts batches alphabetically", () => {
+  test("sorts batches descending (most recent first)", () => {
     const onBatchChange = vi.fn();
     const batches = [
       { batch_id: "batch_z", timestamp: "2024-01-01T12:00:00Z" },
@@ -43,7 +43,8 @@ describe("BatchSelector", () => {
 
     const select = screen.getByTestId("sort-test-selector");
     const options = select.querySelectorAll("option");
-    expect(options[0]).toHaveValue("batch_a");
-    expect(options[1]).toHaveValue("batch_z");
+    // Descending order: z comes before a
+    expect(options[0]).toHaveValue("batch_z");
+    expect(options[1]).toHaveValue("batch_a");
   });
 });

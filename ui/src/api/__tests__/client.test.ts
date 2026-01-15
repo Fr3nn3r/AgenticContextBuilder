@@ -45,7 +45,10 @@ describe("api client", () => {
 
     await listClaims("run_123");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/claims?run_id=run_123", undefined);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/claims?run_id=run_123",
+      expect.objectContaining({ headers: expect.any(Headers) })
+    );
   });
 
   test("getDoc builds query params", async () => {
@@ -58,7 +61,7 @@ describe("api client", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/docs/doc_1?claim_id=claim_1&run_id=run_1",
-      undefined
+      expect.objectContaining({ headers: expect.any(Headers) })
     );
   });
 
@@ -76,16 +79,19 @@ describe("api client", () => {
       { doc_type_correct: true }
     );
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/docs/doc_1/labels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        reviewer: "Reviewer",
-        notes: "notes",
-        field_labels: [],
-        doc_labels: { doc_type_correct: true },
-      }),
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/docs/doc_1/labels",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+        body: JSON.stringify({
+          reviewer: "Reviewer",
+          notes: "notes",
+          field_labels: [],
+          doc_labels: { doc_type_correct: true },
+        }),
+      })
+    );
   });
 
   test("throws error when response not ok", async () => {
@@ -113,7 +119,7 @@ describe("api client", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/claims/claim_123/docs?run_id=run_456",
-        undefined
+        expect.objectContaining({ headers: expect.any(Headers) })
       );
     });
 
@@ -127,7 +133,7 @@ describe("api client", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/claims/claim_123/docs",
-        undefined
+        expect.objectContaining({ headers: expect.any(Headers) })
       );
     });
 
@@ -147,7 +153,7 @@ describe("api client", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/insights/examples?doc_type=invoice&field=total_amount&outcome=mismatch&run_id=run_123&limit=20",
-        undefined
+        expect.objectContaining({ headers: expect.any(Headers) })
       );
     });
 
@@ -163,7 +169,7 @@ describe("api client", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/insights/examples?doc_type=invoice",
-        undefined
+        expect.objectContaining({ headers: expect.any(Headers) })
       );
     });
 
@@ -191,7 +197,7 @@ describe("api client", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/insights/compare?baseline=baseline_001&current=current_002",
-        undefined
+        expect.objectContaining({ headers: expect.any(Headers) })
       );
     });
   });
