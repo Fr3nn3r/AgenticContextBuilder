@@ -2,8 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
 import {
-  MetricCard,
-  MetricCardRow,
   ScoreBadge,
   StatusBadge,
   PendingBadge,
@@ -17,7 +15,6 @@ import { ClassificationInfoPanel } from "./ClassificationInfoPanel";
 import type {
   ClassificationDoc,
   ClassificationDetail,
-  ClassificationStats,
   DocPayload,
   DocTypeCatalogEntry,
 } from "../types";
@@ -25,7 +22,6 @@ import {
   listClassificationDocs,
   getClassificationDetail,
   saveClassificationLabel,
-  getClassificationStats,
   getDocTypeCatalog,
   getDoc,
   getDocSourceUrl,
@@ -63,11 +59,11 @@ export function ClassificationReview({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Stats
-  const [stats, setStats] = useState<ClassificationStats | null>(null);
-
-  // Filter
+  // Filters
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reviewed">("all");
+  const [claimFilter, setClaimFilter] = useState<"all" | string>("all");
+  const [docTypeFilter, setDocTypeFilter] = useState<"all" | string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Doc type catalog
   const [docTypeCatalog, setDocTypeCatalog] = useState<DocTypeCatalogEntry[]>([]);
@@ -140,7 +136,6 @@ export function ClassificationReview({
       setDetail(null);
       setDocPayload(null);
       loadDocs(selectedBatchId);
-      loadStats(selectedBatchId);
     }
   }, [selectedBatchId, loadDocs]);
 
@@ -155,15 +150,6 @@ export function ClassificationReview({
     }
   }, [selectedDocId, selectedBatchId, loadDetail, docs]);
 
-  async function loadStats(runId: string) {
-    try {
-      const data = await getClassificationStats(runId);
-      setStats(data);
-    } catch (err) {
-      console.error("Failed to load stats:", err);
-    }
-  }
-
   async function handleSave() {
     if (!detail || !selectedBatchId) return;
 
@@ -176,11 +162,8 @@ export function ClassificationReview({
         notes: notes || undefined,
       });
 
-      // Refresh docs and stats
-      await Promise.all([
-        loadDocs(selectedBatchId),
-        loadStats(selectedBatchId),
-      ]);
+      // Refresh docs
+      await loadDocs(selectedBatchId);
 
       // Move to next pending doc
       const nextPending = docs.find(
@@ -196,14 +179,44 @@ export function ClassificationReview({
     }
   }
 
+  // Get unique claims and doc types for filters
+  const claims = useMemo(() => Array.from(new Set(docs.map((d) => d.claim_id))).sort(), [docs]);
+  const docTypes = useMemo(() => Array.from(new Set(docs.map((d) => d.predicted_type))).sort(), [docs]);
+
   // Filter docs - memoized to prevent unnecessary re-renders
   const filteredDocs = useMemo(() => {
-    return docs.filter((d) => {
-      if (statusFilter === "pending") return d.review_status === "pending";
-      if (statusFilter === "reviewed") return d.review_status !== "pending";
+    return docs.filter((doc) => {
+      // Claim filter
+      if (claimFilter !== "all" && doc.claim_id !== claimFilter) {
+        return false;
+      }
+
+      // Doc type filter
+      if (docTypeFilter !== "all" && doc.predicted_type !== docTypeFilter) {
+        return false;
+      }
+
+      // Status filter
+      if (statusFilter === "pending" && doc.review_status !== "pending") {
+        return false;
+      }
+      if (statusFilter === "reviewed" && doc.review_status === "pending") {
+        return false;
+      }
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          doc.filename.toLowerCase().includes(query) ||
+          doc.doc_id.toLowerCase().includes(query) ||
+          doc.claim_id.toLowerCase().includes(query)
+        );
+      }
+
       return true;
     });
-  }, [docs, statusFilter]);
+  }, [docs, claimFilter, docTypeFilter, statusFilter, searchQuery]);
 
   // Auto-select first doc when filter changes or selection is not in filtered list
   useEffect(() => {
@@ -233,49 +246,75 @@ export function ClassificationReview({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header with filters and KPIs */}
-      <div className="bg-card border-b px-6 py-4 flex-shrink-0">
-        <div className="flex items-center justify-end mb-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Show:</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "all" | "pending" | "reviewed")}
-              className="border rounded-md px-3 py-1.5 text-sm bg-background"
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="reviewed">Reviewed</option>
-            </select>
-          </div>
+      {/* Toolbar */}
+      <div className="bg-card border-b px-4 py-3 flex items-center gap-4 flex-wrap">
+        {/* Search */}
+        <div className="relative w-64 flex-shrink-0">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search filename, doc ID, or claim..."
+            className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <svg
+            className="absolute left-2.5 top-2 w-4 h-4 text-muted-foreground/70"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
         </div>
 
-        {/* KPI Cards */}
-        {stats && (
-          <MetricCardRow columns={4}>
-            <MetricCard
-              label="Documents"
-              value={stats.docs_total}
-              subtext={`${stats.docs_reviewed} reviewed`}
-            />
-            <MetricCard
-              label="Reviewed"
-              value={`${stats.docs_total > 0 ? Math.round((stats.docs_reviewed / stats.docs_total) * 100) : 0}%`}
-              subtext={`${stats.docs_reviewed} of ${stats.docs_total}`}
-            />
-            <MetricCard
-              label="Overrides"
-              value={stats.overrides_count}
-              subtext={stats.docs_reviewed > 0 ? `${Math.round((stats.overrides_count / stats.docs_reviewed) * 100)}% of reviewed` : ""}
-              variant={stats.overrides_count > 0 ? "warning" : "default"}
-            />
-            <MetricCard
-              label="Avg Confidence"
-              value={`${Math.round(stats.avg_confidence * 100)}%`}
-              subtext="classification confidence"
-            />
-          </MetricCardRow>
-        )}
+        {/* Claim Filter */}
+        <select
+          value={claimFilter}
+          onChange={(e) => setClaimFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Claims</option>
+          {claims.map((claim) => (
+            <option key={claim} value={claim}>
+              {claim}
+            </option>
+          ))}
+        </select>
+
+        {/* Doc Type Filter */}
+        <select
+          value={docTypeFilter}
+          onChange={(e) => setDocTypeFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Types</option>
+          {docTypes.map((type) => (
+            <option key={type} value={type}>
+              {formatDocType(type)}
+            </option>
+          ))}
+        </select>
+
+        {/* Status Filter */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "all" | "pending" | "reviewed")}
+          className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="reviewed">Reviewed</option>
+        </select>
+
+        {/* Count */}
+        <div className="text-sm text-muted-foreground">
+          {filteredDocs.length} of {docs.length} documents
+        </div>
       </div>
 
       {/* Main content: 3-column layout */}
