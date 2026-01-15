@@ -331,15 +331,15 @@ class TestDecisionRecordFactoryClassification:
         assert record.rationale.summary == "High confidence invoice detection"
         assert record.rationale.confidence == 0.85
 
-    def test_includes_llm_call_id(self, factory):
-        """Includes LLM call ID when provided."""
+    def test_includes_llm_call_ids(self, factory):
+        """Includes LLM call IDs when provided."""
         record = factory.create_classification_decision(
             doc_type="invoice",
             confidence=0.95,
             summary="Test",
-            llm_call_id="llm_abc123",
+            llm_call_ids=["llm_abc123"],
         )
-        assert record.rationale.llm_call_id == "llm_abc123"
+        assert record.rationale.llm_call_ids == ["llm_abc123"]
 
     def test_includes_context_ids(self, factory):
         """Includes context IDs when provided."""

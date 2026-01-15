@@ -14,11 +14,74 @@ _Currently active work. Add handoff notes inline._
 
 ## Todo
 
+### Batches Overview UI Improvements - High Priority
+
+> Improve visibility and layout of the batches overview screen (`ExtractionPage.tsx`)
+
+- [ ] **1. Remove redundant batch header card**
+  - Delete the "Batch Context Header" card (lines 102-159 in ExtractionPage.tsx)
+  - Info already exists in top BatchContextBar
+  - Frees vertical space for more important content
+  - Files: `ui/src/components/ExtractionPage.tsx`
+
+- [ ] **2. Make Batch History sidebar collapsible**
+  - Add collapse/expand toggle button to sidebar header
+  - Persist collapsed state in localStorage
+  - When collapsed, show only icons or mini indicators
+  - Consider: remove sidebar entirely if batch selector dropdown suffices
+  - Files: `ui/src/components/ExtractionPage.tsx`
+
+- [ ] **3. Add health indicators to phase cards**
+  - Add colored top border based on phase health (green/amber/red)
+  - Highlight "Failed" rows with background color when > 0
+  - Make all cards same height (scrollable distribution in Classification)
+  - Add mini health icon in card header
+  - Files: `ui/src/components/ExtractionPage.tsx` (PhaseCard component)
+
+- [ ] **4. Emphasize Quality Gate evidence rate**
+  - Make evidence rate more prominent (larger font, gauge, or badge)
+  - Color code: red when 0%, amber when <50%, green when >80%
+  - Consider dedicated "Health Score" summary component
+  - Files: `ui/src/components/ExtractionPage.tsx`
+
+- [ ] **5. Improve Coverage section visual communication**
+  - Add icon/badge when coverage is 0% ("Needs Review")
+  - Add call-to-action link: "0 docs reviewed - Start labeling →"
+  - Color text red when coverage below threshold (e.g., <25%)
+  - Files: `ui/src/components/ExtractionPage.tsx` (ProgressBar component)
+
+- [ ] **6. Enhance Doc Type Scoreboard scanability**
+  - Replace "—" with "No data" or informative tooltip
+  - Add color coding to Presence/Evidence columns (green >80%, amber 50-80%, red <50%)
+  - Sort by "needs attention" (lowest scores first) by default
+  - Files: `ui/src/components/ExtractionPage.tsx`
+
+- [ ] **7. Add summary health banner at top**
+  - New component showing at-a-glance batch health
+  - Format: `✓ 4/4 ingested | ✓ 4/4 classified | ⚠ 3/4 extracted | ✓ 4 pass`
+  - Or single "Batch Health: 85%" score
+  - Place above phase cards
+  - Files: `ui/src/components/ExtractionPage.tsx`, new `BatchHealthBanner.tsx`
+
+- [ ] **8. Add counts to tab navigation**
+  - Update BatchSubNav tabs to show counts: Documents (4), Claims (1), etc.
+  - Pass counts from parent via props or context
+  - Files: `ui/src/components/shared/BatchSubNav.tsx`, `ui/src/components/BatchWorkspace.tsx`
+
+- [ ] **9. Add empty state guidance**
+  - When evidence rate is 0%, show: "No documents labeled yet. Label documents to see accuracy metrics."
+  - Contextual help for other zero-value states
+  - Files: `ui/src/components/ExtractionPage.tsx`
+
+- [ ] **10. Show relative time**
+  - Change absolute timestamps to relative: "2 hours ago"
+  - Show absolute time on hover (tooltip)
+  - Create reusable `RelativeTime` component
+  - Files: new `ui/src/components/shared/RelativeTime.tsx`, update `ExtractionPage.tsx`
+
 ### Compliance - High Priority
 
-- [ ] **LLM call linking**
-  - Update AuditedOpenAIClient to retain call_id
-  - Record `llm_call_ids` list in DecisionRationale
+(empty)
 
 ### Infrastructure
 
@@ -29,6 +92,12 @@ _Currently active work. Add handoff notes inline._
 ---
 
 ## Done (Recent)
+
+- [x] **LLM call linking for compliance** (2026-01-15)
+  - Added `get_call_id()` to AuditedOpenAIClient (retains call_id after success)
+  - Changed `DecisionRationale.llm_call_id` → `llm_call_ids: List[str]`
+  - Updated factories, classifier, and extractor to use new field
+  - Files: `llm_audit.py`, `decision_record.py`, `factories.py`, `openai_classifier.py`, `generic.py`
 
 - [x] **App.tsx refactoring - extract contexts** (2026-01-15)
   - Phase 1: FilterContext - filter state (searchQuery, lobFilter, etc.)

@@ -136,7 +136,7 @@ class DecisionRecordFactory:
         doc_id: Optional[str] = None,
         run_id: Optional[str] = None,
         version_bundle_id: Optional[str] = None,
-        llm_call_id: Optional[str] = None,
+        llm_call_ids: Optional[List[str]] = None,
         language: Optional[str] = None,
         evidence_citations: Optional[List[EvidenceCitation]] = None,
         rule_traces: Optional[List[RuleTrace]] = None,
@@ -153,7 +153,7 @@ class DecisionRecordFactory:
             doc_id: Associated document identifier.
             run_id: Pipeline run identifier.
             version_bundle_id: Reference to version bundle snapshot.
-            llm_call_id: ID of the LLM call that produced this decision.
+            llm_call_ids: IDs of the LLM calls that produced this decision.
             language: Detected document language.
             evidence_citations: Source citations supporting the classification.
             rule_traces: Rules applied during classification.
@@ -168,7 +168,7 @@ class DecisionRecordFactory:
             confidence=confidence,
             rule_traces=rule_traces or [],
             evidence_citations=evidence_citations or [],
-            llm_call_id=llm_call_id,
+            llm_call_ids=llm_call_ids or [],
         )
 
         outcome = DecisionOutcome(
@@ -200,7 +200,7 @@ class DecisionRecordFactory:
         doc_id: Optional[str] = None,
         run_id: Optional[str] = None,
         version_bundle_id: Optional[str] = None,
-        llm_call_id: Optional[str] = None,
+        llm_call_ids: Optional[List[str]] = None,
         evidence_citations: Optional[List[EvidenceCitation]] = None,
         rule_traces: Optional[List[RuleTrace]] = None,
         actor_id: Optional[str] = None,
@@ -218,7 +218,7 @@ class DecisionRecordFactory:
             doc_id: Associated document identifier.
             run_id: Pipeline run identifier.
             version_bundle_id: Reference to version bundle snapshot.
-            llm_call_id: ID of the LLM call that produced this decision.
+            llm_call_ids: IDs of the LLM calls that produced this decision.
             evidence_citations: Source citations for extracted values.
             rule_traces: Rules applied during extraction.
             actor_id: Identifier for the actor (e.g., extractor name).
@@ -232,7 +232,7 @@ class DecisionRecordFactory:
             confidence=confidence,
             rule_traces=rule_traces or [],
             evidence_citations=evidence_citations or [],
-            llm_call_id=llm_call_id,
+            llm_call_ids=llm_call_ids or [],
         )
 
         outcome = DecisionOutcome(

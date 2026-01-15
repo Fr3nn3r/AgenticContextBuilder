@@ -234,10 +234,11 @@ class GenericFieldExtractor(FieldExtractor):
             missing_fields = [f.name for f in fields if f.status == "missing"]
             avg_confidence = sum(f.confidence for f in fields if f.confidence) / len(fields) if fields else 0.0
 
+            call_id = self.audited_client.get_call_id()
             rationale = DecisionRationale(
                 summary=f"Extracted {len(present_fields)} fields, {len(missing_fields)} missing",
                 confidence=avg_confidence,
-                llm_call_id=self.audited_client.get_last_call_id(),
+                llm_call_ids=[call_id] if call_id else [],
                 notes=f"Quality gate: {result.quality_gate.status}",
             )
 

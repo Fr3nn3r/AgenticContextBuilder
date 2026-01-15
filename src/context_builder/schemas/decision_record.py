@@ -79,7 +79,7 @@ class DecisionRationale(BaseModel):
     evidence_citations: List[EvidenceCitation] = Field(
         default_factory=list, description="Source citations"
     )
-    llm_call_id: Optional[str] = Field(None, description="ID of LLM call that produced this decision")
+    llm_call_ids: List[str] = Field(default_factory=list, description="IDs of LLM calls that produced this decision")
     notes: Optional[str] = Field(None, description="Additional notes or context")
 
 

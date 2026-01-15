@@ -400,10 +400,11 @@ class OpenAIDocumentClassifier(DocumentClassifier):
             summary = result.get("summary", "")
             confidence = result.get("confidence", 0.0)
 
+            call_id = self.audited_client.get_call_id()
             rationale = DecisionRationale(
                 summary=f"Classified as {result.get('document_type', 'unknown')}: {summary}",
                 confidence=confidence,
-                llm_call_id=self.audited_client.get_last_call_id(),
+                llm_call_ids=[call_id] if call_id else [],
                 notes=f"Signals: {', '.join(signals)}" if signals else None,
             )
 

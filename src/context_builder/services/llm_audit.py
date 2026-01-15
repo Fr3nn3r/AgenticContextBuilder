@@ -195,6 +195,9 @@ class AuditedOpenAIClient:
         self._attempt_number: int = 1
         self._previous_call_id: Optional[str] = None
 
+        # Last call ID (accessible after both success and failure)
+        self._last_call_id: Optional[str] = None
+
         # Injected context for prompt provenance tracking
         self._injected_context: Optional[InjectedContext] = None
 
@@ -352,6 +355,9 @@ class AuditedOpenAIClient:
             # Log the successful call
             self._sink.log_call(record)
 
+            # Store call_id for retrieval
+            self._last_call_id = call_id
+
             # Reset retry state
             self._previous_call_id = None
             self._attempt_number = 1
@@ -370,7 +376,8 @@ class AuditedOpenAIClient:
             # Log the failed call
             self._sink.log_call(record)
 
-            # Store call_id for retry tracking
+            # Store call_id for retrieval and retry tracking
+            self._last_call_id = call_id
             self._previous_call_id = call_id
 
             raise
@@ -378,6 +385,14 @@ class AuditedOpenAIClient:
     def get_last_call_id(self) -> Optional[str]:
         """Get the ID of the last call made (for retry linking)."""
         return self._previous_call_id
+
+    def get_call_id(self) -> Optional[str]:
+        """Get the ID of the most recent call (success or failure).
+
+        Unlike get_last_call_id() which is for retry tracking,
+        this method returns the call_id regardless of success/failure.
+        """
+        return self._last_call_id
 
 
 def create_audited_client(
