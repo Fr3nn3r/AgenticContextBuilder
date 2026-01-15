@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import type { PageContent, AzureDIOutput, BoundingBox } from "../types";
+import type { PageContent, AzureDIOutputExtended, SmartBoundingBox } from "../types";
 import { PageViewer } from "./PageViewer";
 import { PDFViewer, PDFViewerHandle } from "./PDFViewer";
 import { ImageViewer } from "./ImageViewer";
 import { cn } from "../lib/utils";
 import { getAzureDI } from "../api/client";
-import { computeBoundingBoxes } from "../lib/bboxUtils";
+import { computeSmartBoundingBoxes } from "../lib/bboxUtils";
 
 type ViewerTab = "text" | "pdf" | "image";
 
@@ -54,9 +54,9 @@ export function DocumentViewer({
   const pdfViewerRef = useRef<PDFViewerHandle>(null);
 
   // Azure DI state for bbox highlighting
-  const [azureDI, setAzureDI] = useState<AzureDIOutput | null>(null);
+  const [azureDI, setAzureDI] = useState<AzureDIOutputExtended | null>(null);
   const [azureDILoading, setAzureDILoading] = useState(false);
-  const [highlightBboxes, setHighlightBboxes] = useState<BoundingBox[]>([]);
+  const [highlightBboxes, setHighlightBboxes] = useState<SmartBoundingBox[]>([]);
 
   // Update default tab when document changes - prefer visual content
   useEffect(() => {
@@ -86,6 +86,7 @@ export function DocumentViewer({
   }, [highlightPage, claimId, docId, azureDI, azureDILoading]);
 
   // Compute bounding boxes when Azure DI or highlight changes
+  // Uses smart highlighting: table cells > lines > merged words > individual words
   useEffect(() => {
     if (!azureDI || highlightPage === undefined) {
       setHighlightBboxes([]);
@@ -93,7 +94,7 @@ export function DocumentViewer({
     }
 
     if (highlightCharStart !== undefined && highlightCharEnd !== undefined) {
-      const bboxes = computeBoundingBoxes(
+      const bboxes = computeSmartBoundingBoxes(
         azureDI,
         highlightPage,
         highlightCharStart,

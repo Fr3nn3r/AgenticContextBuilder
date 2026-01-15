@@ -1,15 +1,33 @@
 /**
  * BboxOverlay - Canvas overlay for rendering Azure DI bounding boxes on PDF.
+ * Supports SmartBoundingBox with source-based styling for table cells.
  */
 
 import { useEffect, useRef } from "react";
-import type { BoundingBox } from "../types";
+import type { BoundingBox, SmartBoundingBox, HighlightSource } from "../types";
 import { transformPolygonToPixels } from "../lib/bboxUtils";
 
+// Style configuration by highlight source type
+const HIGHLIGHT_STYLES: Record<HighlightSource, { fill: string; stroke: string }> = {
+  word: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
+  line: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
+  merged: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
+  cell: { fill: "rgba(167, 243, 208, 0.4)", stroke: "rgba(16, 185, 129, 0.8)" },  // Green for table cells
+};
+
+const DEFAULT_STYLE = HIGHLIGHT_STYLES.word;
+
 interface BboxOverlayProps {
-  bboxes: BoundingBox[];
+  bboxes: (BoundingBox | SmartBoundingBox)[];
   canvasWidth: number;
   canvasHeight: number;
+}
+
+/**
+ * Check if a bounding box is a SmartBoundingBox with source property.
+ */
+function isSmartBbox(bbox: BoundingBox | SmartBoundingBox): bbox is SmartBoundingBox {
+  return "source" in bbox;
 }
 
 export function BboxOverlay({ bboxes, canvasWidth, canvasHeight }: BboxOverlayProps) {
@@ -35,13 +53,18 @@ export function BboxOverlay({ bboxes, canvasWidth, canvasHeight }: BboxOverlayPr
 
     if (bboxes.length === 0) return;
 
-    // Draw highlight boxes
-    ctx.fillStyle = "rgba(250, 204, 21, 0.5)"; // Yellow with moderate transparency
-    ctx.strokeStyle = "rgba(250, 150, 0, 1)"; // Orange stroke for visibility
     ctx.lineWidth = 2;
 
     for (const bbox of bboxes) {
       if (!bbox.polygon || bbox.polygon.length !== 8) continue;
+
+      // Get style based on source type (or default for legacy BoundingBox)
+      const style = isSmartBbox(bbox)
+        ? HIGHLIGHT_STYLES[bbox.source] || DEFAULT_STYLE
+        : DEFAULT_STYLE;
+
+      ctx.fillStyle = style.fill;
+      ctx.strokeStyle = style.stroke;
 
       const pixelPolygon = transformPolygonToPixels(
         bbox.polygon,

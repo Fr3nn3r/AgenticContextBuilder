@@ -167,6 +167,71 @@ export function getDocSourceUrl(docId: string, claimId: string): string {
   return `${API_BASE}/docs/${docId}/source?claim_id=${claimId}`;
 }
 
+// Document run history
+export interface DocRunInfo {
+  run_id: string;
+  timestamp: string | null;
+  model: string;
+  status: "complete" | "partial" | "failed";
+  extraction: {
+    field_count: number;
+    gate_status: "pass" | "warn" | "fail" | null;
+  } | null;
+}
+
+export async function getDocRuns(docId: string, claimId: string): Promise<DocRunInfo[]> {
+  return fetchJson<DocRunInfo[]>(
+    `${API_BASE}/docs/${docId}/runs?claim_id=${encodeURIComponent(claimId)}`
+  );
+}
+
+// All documents list (batch-independent)
+
+export interface DocumentListItem {
+  doc_id: string;
+  claim_id: string;
+  filename: string;
+  doc_type: string;
+  language: string;
+  has_truth: boolean;
+  last_reviewed: string | null;
+  reviewer: string | null;
+  quality_status: "pass" | "warn" | "fail" | null;
+}
+
+export interface DocumentListResponse {
+  documents: DocumentListItem[];
+  total: number;
+}
+
+export interface DocumentListParams {
+  claim_id?: string;
+  doc_type?: string;
+  has_truth?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function listAllDocuments(
+  params: DocumentListParams = {}
+): Promise<DocumentListResponse> {
+  const query = new URLSearchParams();
+  if (params.claim_id) query.set("claim_id", params.claim_id);
+  if (params.doc_type) query.set("doc_type", params.doc_type);
+  if (params.has_truth !== undefined) query.set("has_truth", String(params.has_truth));
+  if (params.search) query.set("search", params.search);
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+
+  const queryString = query.toString();
+  const url = queryString
+    ? `${API_BASE}/documents?${queryString}`
+    : `${API_BASE}/documents`;
+
+  return fetchJson<DocumentListResponse>(url);
+}
+
 // Insights API
 
 export interface InsightsOverview {
@@ -420,19 +485,19 @@ export async function clearBaseline(): Promise<{ status: string }> {
 
 // Azure DI API for bounding box highlighting
 
-import type { AzureDIOutput } from "../types";
+import type { AzureDIOutputExtended } from "../types";
 
 // Cache for Azure DI data to avoid repeated fetches
-const azureDICache = new Map<string, AzureDIOutput | null>();
+const azureDICache = new Map<string, AzureDIOutputExtended | null>();
 
-export async function getAzureDI(docId: string, claimId: string): Promise<AzureDIOutput | null> {
+export async function getAzureDI(docId: string, claimId: string): Promise<AzureDIOutputExtended | null> {
   const cacheKey = `${claimId}/${docId}`;
   if (azureDICache.has(cacheKey)) {
     return azureDICache.get(cacheKey) || null;
   }
 
   try {
-    const data = await fetchJson<AzureDIOutput>(
+    const data = await fetchJson<AzureDIOutputExtended>(
       `${API_BASE}/docs/${docId}/azure-di?claim_id=${claimId}`
     );
     azureDICache.set(cacheKey, data);

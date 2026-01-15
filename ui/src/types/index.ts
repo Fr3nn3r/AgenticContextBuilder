@@ -292,6 +292,95 @@ export interface BoundingBox {
 }
 
 // =============================================================================
+// SMART HIGHLIGHTING TYPES (Extended Azure DI)
+// =============================================================================
+
+/** A text span in the document content */
+export interface AzureDISpan {
+  offset: number;
+  length: number;
+}
+
+/** A line detected by Azure DI with polygon bounds */
+export interface AzureDILine {
+  content: string;
+  polygon: number[];  // 8-element array in inches
+  spans: AzureDISpan[];
+}
+
+/** A bounding region with page number and polygon */
+export interface AzureDIBoundingRegion {
+  pageNumber: number;
+  polygon: number[];  // 8-element array in inches
+}
+
+/** A paragraph detected by Azure DI */
+export interface AzureDIParagraph {
+  content: string;
+  spans: AzureDISpan[];
+  boundingRegions: AzureDIBoundingRegion[];
+}
+
+/** A table cell detected by Azure DI */
+export interface AzureDITableCell {
+  rowIndex: number;
+  columnIndex: number;
+  rowSpan?: number;
+  columnSpan?: number;
+  content: string;
+  boundingRegions: AzureDIBoundingRegion[];
+  spans: AzureDISpan[];
+  kind?: "columnHeader" | "rowHeader" | "stubHead" | "description";
+}
+
+/** A table detected by Azure DI */
+export interface AzureDITable {
+  rowCount: number;
+  columnCount: number;
+  cells: AzureDITableCell[];
+  boundingRegions?: AzureDIBoundingRegion[];
+  spans?: AzureDISpan[];
+}
+
+/** Extended page with lines array */
+export interface AzureDIPageExtended extends AzureDIPage {
+  lines?: AzureDILine[];
+}
+
+/** Extended Azure DI output with full structure */
+export interface AzureDIOutputExtended {
+  raw_azure_di_output: {
+    pages: AzureDIPageExtended[];
+    content: string;
+    paragraphs?: AzureDIParagraph[];
+    tables?: AzureDITable[];
+  };
+}
+
+/** Highlight source type for visual distinction */
+export type HighlightSource = "word" | "line" | "cell" | "merged";
+
+/** Extended bounding box with source metadata */
+export interface SmartBoundingBox extends BoundingBox {
+  source: HighlightSource;
+  confidence?: number;
+  cellRef?: {
+    tableIndex: number;
+    rowIndex: number;
+    columnIndex: number;
+  };
+}
+
+/** Options for smart highlight computation */
+export interface SmartHighlightOptions {
+  lineCoverageThreshold?: number;  // default: 0.80
+  wordGapThreshold?: number;       // default: 0.3 inches
+  lineYThreshold?: number;         // default: 0.05 inches
+  enableTableDetection?: boolean;  // default: true
+  enableLinePreference?: boolean;  // default: true
+}
+
+// =============================================================================
 // CLASSIFICATION REVIEW TYPES
 // =============================================================================
 
