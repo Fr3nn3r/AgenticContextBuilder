@@ -25,11 +25,14 @@ class TestDocTypeCorrectFiltering:
         run_dir = runs_dir / "run_001"
         extraction_dir = run_dir / "extraction"
         logs_dir = run_dir / "logs"
+        # Labels now stored in registry/labels/
+        registry_labels_dir = tmp_path / "registry" / "labels"
 
         # Create directories
         docs_dir.mkdir(parents=True)
         extraction_dir.mkdir(parents=True)
         logs_dir.mkdir(parents=True)
+        registry_labels_dir.mkdir(parents=True)
 
         return {
             "claim_dir": claim_dir,
@@ -37,19 +40,21 @@ class TestDocTypeCorrectFiltering:
             "runs_dir": runs_dir,
             "run_dir": run_dir,
             "extraction_dir": extraction_dir,
+            "registry_labels_dir": registry_labels_dir,
         }
 
     def _create_doc_with_label(
         self,
         docs_dir: Path,
+        registry_labels_dir: Path,
         doc_id: str,
         doc_type_correct: bool,
         field_judgement: str = "correct",
     ):
         """Helper to create a doc folder with extraction and label."""
+        # Create doc folder
         doc_dir = docs_dir / doc_id
-        labels_dir = doc_dir / "labels"
-        labels_dir.mkdir(parents=True)
+        doc_dir.mkdir(parents=True, exist_ok=True)
 
         label = {
             "schema_version": "label_v1",
@@ -69,7 +74,8 @@ class TestDocTypeCorrectFiltering:
             },
         }
 
-        (labels_dir / "latest.json").write_text(json.dumps(label))
+        # Labels now stored in registry/labels/{doc_id}.json
+        (registry_labels_dir / f"{doc_id}.json").write_text(json.dumps(label))
 
     def _create_extraction(
         self,
@@ -122,19 +128,20 @@ class TestDocTypeCorrectFiltering:
         """Test that docs with doc_type_correct=False are excluded from metrics."""
         docs_dir = claim_with_labels["docs_dir"]
         extraction_dir = claim_with_labels["extraction_dir"]
+        registry_labels_dir = claim_with_labels["registry_labels_dir"]
 
         # Create doc1: doc_type_correct=True, should be included
-        self._create_doc_with_label(docs_dir, "doc1", doc_type_correct=True)
+        self._create_doc_with_label(docs_dir, registry_labels_dir, "doc1", doc_type_correct=True)
         self._create_extraction(extraction_dir, "doc1")
 
         # Create doc2: doc_type_correct=False, should be excluded
-        self._create_doc_with_label(docs_dir, "doc2", doc_type_correct=False)
+        self._create_doc_with_label(docs_dir, registry_labels_dir, "doc2", doc_type_correct=False)
         self._create_extraction(extraction_dir, "doc2")
 
         # Compute field metrics
         field_metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids={"doc1", "doc2"},
         )
 
@@ -147,18 +154,19 @@ class TestDocTypeCorrectFiltering:
         """Test that docs with doc_type_correct=True are included."""
         docs_dir = claim_with_labels["docs_dir"]
         extraction_dir = claim_with_labels["extraction_dir"]
+        registry_labels_dir = claim_with_labels["registry_labels_dir"]
 
         # Create two docs both with correct type
-        self._create_doc_with_label(docs_dir, "doc1", doc_type_correct=True)
+        self._create_doc_with_label(docs_dir, registry_labels_dir, "doc1", doc_type_correct=True)
         self._create_extraction(extraction_dir, "doc1")
 
-        self._create_doc_with_label(docs_dir, "doc2", doc_type_correct=True)
+        self._create_doc_with_label(docs_dir, registry_labels_dir, "doc2", doc_type_correct=True)
         self._create_extraction(extraction_dir, "doc2")
 
         # Compute field metrics
         field_metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids={"doc1", "doc2"},
         )
 
@@ -170,9 +178,10 @@ class TestDocTypeCorrectFiltering:
         """Test that docs without labels are skipped but not counted as wrong type."""
         docs_dir = claim_with_labels["docs_dir"]
         extraction_dir = claim_with_labels["extraction_dir"]
+        registry_labels_dir = claim_with_labels["registry_labels_dir"]
 
         # Create doc with label
-        self._create_doc_with_label(docs_dir, "doc1", doc_type_correct=True)
+        self._create_doc_with_label(docs_dir, registry_labels_dir, "doc1", doc_type_correct=True)
         self._create_extraction(extraction_dir, "doc1")
 
         # Create doc without label (just doc folder, no labels)
@@ -182,7 +191,7 @@ class TestDocTypeCorrectFiltering:
         # Compute field metrics
         field_metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids={"doc1", "doc2"},
         )
 
@@ -203,24 +212,27 @@ class TestAccuracyComputation:
         run_dir = claim_dir / "runs" / "run_001"
         extraction_dir = run_dir / "extraction"
         logs_dir = run_dir / "logs"
+        # Labels now stored in registry/labels/
+        registry_labels_dir = tmp_path / "registry" / "labels"
 
         docs_dir.mkdir(parents=True)
         extraction_dir.mkdir(parents=True)
         logs_dir.mkdir(parents=True)
+        registry_labels_dir.mkdir(parents=True)
 
         return {
             "claim_dir": claim_dir,
             "docs_dir": docs_dir,
             "extraction_dir": extraction_dir,
+            "registry_labels_dir": registry_labels_dir,
         }
 
     def _create_doc_with_judgement(
-        self, docs_dir, extraction_dir, doc_id, judgement
+        self, docs_dir, registry_labels_dir, extraction_dir, doc_id, judgement
     ):
         """Create a doc with specific field judgement."""
-        # Create label
-        labels_dir = docs_dir / doc_id / "labels"
-        labels_dir.mkdir(parents=True)
+        # Create doc folder
+        (docs_dir / doc_id).mkdir(parents=True, exist_ok=True)
 
         label = {
             "schema_version": "label_v1",
@@ -239,7 +251,8 @@ class TestAccuracyComputation:
                 "needs_vision": False,
             },
         }
-        (labels_dir / "latest.json").write_text(json.dumps(label))
+        # Labels now stored in registry/labels/{doc_id}.json
+        (registry_labels_dir / f"{doc_id}.json").write_text(json.dumps(label))
 
         # Create extraction
         extraction = {
@@ -271,14 +284,15 @@ class TestAccuracyComputation:
         """Test 100% accuracy when all fields are correct."""
         docs_dir = claim_setup["docs_dir"]
         extraction_dir = claim_setup["extraction_dir"]
+        registry_labels_dir = claim_setup["registry_labels_dir"]
 
         # All docs have correct fields
-        self._create_doc_with_judgement(docs_dir, extraction_dir, "doc1", "correct")
-        self._create_doc_with_judgement(docs_dir, extraction_dir, "doc2", "correct")
+        self._create_doc_with_judgement(docs_dir, registry_labels_dir, extraction_dir, "doc1", "correct")
+        self._create_doc_with_judgement(docs_dir, registry_labels_dir, extraction_dir, "doc2", "correct")
 
         metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids={"doc1", "doc2"},
         )
 
@@ -288,14 +302,15 @@ class TestAccuracyComputation:
         """Test 50% accuracy when half fields are incorrect."""
         docs_dir = claim_setup["docs_dir"]
         extraction_dir = claim_setup["extraction_dir"]
+        registry_labels_dir = claim_setup["registry_labels_dir"]
 
         # One correct, one incorrect
-        self._create_doc_with_judgement(docs_dir, extraction_dir, "doc1", "correct")
-        self._create_doc_with_judgement(docs_dir, extraction_dir, "doc2", "incorrect")
+        self._create_doc_with_judgement(docs_dir, registry_labels_dir, extraction_dir, "doc1", "correct")
+        self._create_doc_with_judgement(docs_dir, registry_labels_dir, extraction_dir, "doc2", "incorrect")
 
         metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids={"doc1", "doc2"},
         )
 
@@ -308,13 +323,13 @@ class TestEmptyMetrics:
     def test_empty_doc_ids(self, tmp_path):
         """Test metrics with no doc_ids."""
         extraction_dir = tmp_path / "extraction"
-        docs_dir = tmp_path / "docs"
+        registry_labels_dir = tmp_path / "registry" / "labels"
         extraction_dir.mkdir()
-        docs_dir.mkdir()
+        registry_labels_dir.mkdir(parents=True)
 
         metrics = _compute_field_metrics(
             extraction_dir=extraction_dir,
-            docs_dir=docs_dir,
+            registry_labels_dir=registry_labels_dir,
             doc_ids=set(),  # Empty
         )
 
@@ -329,24 +344,28 @@ class TestComputeRunMetrics:
 
     def test_coverage_metrics(self, tmp_path):
         """Test that coverage metrics are computed correctly."""
-        claim_dir = tmp_path / "test_claim"
+        # Set up proper workspace structure:
+        # tmp_path/claims/test_claim/docs/ and tmp_path/registry/labels/
+        workspace_dir = tmp_path
+        claim_dir = workspace_dir / "claims" / "test_claim"
         docs_dir = claim_dir / "docs"
         run_dir = claim_dir / "runs" / "run_001"
         extraction_dir = run_dir / "extraction"
         logs_dir = run_dir / "logs"
+        # Labels now stored in registry/labels/
+        registry_labels_dir = workspace_dir / "registry" / "labels"
 
         docs_dir.mkdir(parents=True)
         extraction_dir.mkdir(parents=True)
         logs_dir.mkdir(parents=True)
+        registry_labels_dir.mkdir(parents=True)
 
         # Create 3 docs total, 2 with labels, 1 in run extraction
         for doc_id in ["doc1", "doc2", "doc3"]:
             (docs_dir / doc_id).mkdir()
 
-        # Create labels for doc1 and doc2
+        # Create labels for doc1 and doc2 in registry/labels/
         for doc_id in ["doc1", "doc2"]:
-            labels_dir = docs_dir / doc_id / "labels"
-            labels_dir.mkdir()
             label = {
                 "schema_version": "label_v1",
                 "doc_id": doc_id,
@@ -355,7 +374,7 @@ class TestComputeRunMetrics:
                 "field_labels": [],
                 "doc_labels": {"doc_type_correct": True, "text_readable": "good", "needs_vision": False},
             }
-            (labels_dir / "latest.json").write_text(json.dumps(label))
+            (registry_labels_dir / f"{doc_id}.json").write_text(json.dumps(label))
 
         # Create extraction for doc1 only
         extraction = {
@@ -368,8 +387,8 @@ class TestComputeRunMetrics:
         }
         (extraction_dir / "doc1.json").write_text(json.dumps(extraction))
 
-        # Create RunPaths
-        claim_paths = get_claim_paths(tmp_path, "test_claim")
+        # Create RunPaths - use claims dir as base
+        claim_paths = get_claim_paths(workspace_dir / "claims", "test_claim")
         run_paths = get_run_paths(claim_paths, "run_001")
 
         # Compute metrics

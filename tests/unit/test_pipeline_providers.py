@@ -64,7 +64,7 @@ class FakeExtractorFactory:
     def is_supported(self, doc_type):
         return self.supported
 
-    def create(self, doc_type):
+    def create(self, doc_type, audit_storage_dir=None):
         self.called += 1
         return FakeExtractor()
 

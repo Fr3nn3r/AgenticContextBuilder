@@ -246,7 +246,8 @@ class TestLabelHistory:
         """Test that saving a label creates a history file."""
         storage.save_label("DOC-001", {"doc_id": "DOC-001", "data": "test"})
 
-        history_path = temp_dir / "claims" / "CLM-001" / "docs" / "DOC-001" / "labels" / "history.jsonl"
+        # Labels are now stored in registry/labels/{doc_id}_history.jsonl
+        history_path = temp_dir / "registry" / "labels" / "DOC-001_history.jsonl"
         assert history_path.exists()
 
     def test_save_appends_to_history(self, storage):
@@ -392,7 +393,8 @@ class TestVersionBundleStore:
         )
 
         assert bundle.extractor_version == "v1.0.0"
-        assert bundle.contextbuilder_version == "1.0.0"
+        # contextbuilder_version comes from pyproject.toml
+        assert bundle.contextbuilder_version == "0.1.0"
 
     def test_nonexistent_bundle_returns_none(self, bundle_store):
         """Test that getting nonexistent bundle returns None."""
