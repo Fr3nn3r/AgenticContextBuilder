@@ -72,7 +72,7 @@ class DocumentsService:
                             confidence = sum(field.get("confidence", 0) for field in fields) / len(fields)
 
             # Use storage layer to check for labels (reads from registry/labels/)
-            has_labels = storage.file_storage.get_label(doc_id) is not None
+            has_labels = storage.label_store.get_label(doc_id) is not None
 
             docs.append(DocSummary(
                 doc_id=doc_id,

@@ -1385,7 +1385,7 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
             review_status = "pending"
             doc_type_truth = None
 
-            label_data = storage.file_storage.get_label(doc_id)
+            label_data = storage.label_store.get_label(doc_id)
             if label_data:
                 doc_labels = label_data.get("doc_labels", {})
                 doc_type_correct = doc_labels.get("doc_type_correct", True)

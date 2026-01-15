@@ -112,7 +112,7 @@ class ClaimsService:
             for doc_folder in docs_dir.iterdir():
                 if doc_folder.is_dir():
                     doc_id = doc_folder.name
-                    if storage.file_storage.get_label(doc_id) is not None:
+                    if storage.label_store.get_label(doc_id) is not None:
                         labeled_count += 1
 
             avg_risk = total_risk_score // max(extracted_count, 1)
@@ -304,7 +304,7 @@ class ClaimsService:
                             gate_counts["fail"] += 1
 
             # Use storage layer to check for labels (reads from registry/labels/)
-            has_labels = storage.file_storage.get_label(doc_id) is not None
+            has_labels = storage.label_store.get_label(doc_id) is not None
 
             if not has_labels:
                 unlabeled_count += 1
