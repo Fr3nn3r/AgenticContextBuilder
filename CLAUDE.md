@@ -5,6 +5,22 @@ Insurance claims document processing: Ingest → Classify → Extract → Qualit
 ## Stack
 Python 3.9+ / FastAPI / Pydantic | React 18 / TypeScript / Tailwind | File-based JSON
 
+## Workspaces
+
+Data is stored in **workspaces** (isolated storage locations). The active workspace determines where the backend reads/writes.
+
+```
+.contextbuilder/workspaces.json     # Registry: lists workspaces, tracks active
+workspaces/{workspace_id}/          # Each workspace contains:
+  ├── claims/{claim_id}/docs/       # Documents and extractions
+  ├── runs/                         # Pipeline run logs
+  ├── logs/                         # Compliance logs (decisions, LLM calls)
+  ├── registry/                     # Truth store, indexes
+  └── config/                       # Prompt configs
+```
+
+**Switch workspace**: Admin UI → Workspaces, or `POST /api/workspaces/{id}/activate`
+
 ## Commands
 ```bash
 # Backend
@@ -18,8 +34,8 @@ cd ui && npm run dev
 .\scripts\test.ps1                           # All tests (Windows-safe)
 cd ui && npx playwright test                 # E2E tests
 
-# Pipeline
-python -m context_builder.cli extract -o output/claims --model gpt-4o
+# Pipeline (uses active workspace from .contextbuilder/workspaces.json)
+python -m context_builder.cli extract --model gpt-4o
 ```
 
 ## Conventions
@@ -36,4 +52,4 @@ python -m context_builder.cli extract -o output/claims --model gpt-4o
 - Backend: `src/context_builder/` (pipeline/, classification/, extraction/, api/)
 - Frontend: `ui/src/` (App.tsx, components/, pages/)
 - Specs: `extraction/specs/doc_type_catalog.yaml` (doc types SSOT)
-- Output: `output/claims/{claim_id}/docs/` and `runs/`
+- Workspace service: `api/services/workspace.py`

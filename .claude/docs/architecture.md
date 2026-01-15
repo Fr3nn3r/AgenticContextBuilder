@@ -13,12 +13,23 @@ Extraction (OpenAI → fields with provenance)
     ↓
 Quality Gate (pass/warn/fail)
     ↓
-Output: output/claims/{claim_id}/
-    ├── docs/{doc_id}/
+Active Workspace (workspaces/{workspace_id}/)
+    ├── claims/{claim_id}/docs/{doc_id}/
     │   ├── extraction.json
     │   └── labels/
-    └── runs/{run_id}/
+    ├── runs/{run_id}/
+    ├── logs/ (decisions.jsonl, llm_calls.jsonl)
+    └── registry/ (truth store, indexes)
 ```
+
+## Workspaces
+
+Workspaces are isolated storage locations (like separate databases).
+
+- **Registry**: `.contextbuilder/workspaces.json` tracks all workspaces
+- **Active workspace**: Determines where backend reads/writes
+- **Switch**: Admin UI or `POST /api/workspaces/{id}/activate`
+- **Service**: `src/context_builder/api/services/workspace.py`
 
 ## Key Components
 
