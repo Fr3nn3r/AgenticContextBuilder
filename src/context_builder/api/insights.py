@@ -26,10 +26,13 @@ logger = logging.getLogger(__name__)
 
 # Supported doc types for insights (must match extraction/specs/*.yaml)
 SUPPORTED_DOC_TYPES = [
+    "customer_comm",
+    "damage_evidence",
     "fnol_form",
     "id_document",
     "insurance_policy",
     "invoice",
+    "medical_report",
     "police_report",
     "vehicle_registration",
 ]

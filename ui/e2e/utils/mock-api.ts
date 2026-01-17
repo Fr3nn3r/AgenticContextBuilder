@@ -245,6 +245,55 @@ export async function setupApiMocks(page: Page) {
     }
   });
 
+  // Mock GET /api/documents (for DocumentsListPage)
+  await page.route(/\/api\/documents(\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") {
+      // Return documents with has_truth field for the documents list page
+      const documents = [
+        {
+          doc_id: "doc_001",
+          claim_id: "CLM-2024-001",
+          filename: "loss_notice.pdf",
+          doc_type: "loss_notice",
+          language: "en",
+          has_truth: false,
+          last_reviewed: null,
+          reviewer: null,
+          quality_status: "pass",
+        },
+        {
+          doc_id: "doc_002",
+          claim_id: "CLM-2024-001",
+          filename: "police_report.pdf",
+          doc_type: "police_report",
+          language: "en",
+          has_truth: true,
+          last_reviewed: "2024-01-15T10:00:00Z",
+          reviewer: "admin",
+          quality_status: "warn",
+        },
+        {
+          doc_id: "doc_003",
+          claim_id: "CLM-2024-001",
+          filename: "insurance_policy.pdf",
+          doc_type: "insurance_policy",
+          language: "en",
+          has_truth: false,
+          last_reviewed: null,
+          reviewer: null,
+          quality_status: "fail",
+        },
+      ];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ documents, total: documents.length }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
   // Mock GET /api/templates
   await page.route("**/api/templates", async (route) => {
     await route.fulfill({

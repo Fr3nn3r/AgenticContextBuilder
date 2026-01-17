@@ -198,6 +198,21 @@ export function DocumentReview({
         setFieldLabels(payload.labels.field_labels);
         setDocLabels(payload.labels.doc_labels);
         setNotes(payload.labels.review.notes);
+
+        // Update doc status in list if it has labeled fields
+        // This ensures the list shows "Labeled" even if backend returned "pending"
+        const hasLabeledFields = payload.labels.field_labels.some(
+          (l: FieldLabel) => l.state === "LABELED" || l.state === "CONFIRMED"
+        );
+        if (hasLabeledFields) {
+          setDocs((prev) =>
+            prev.map((d) =>
+              d.doc_id === selectedDocId && d.review_status === "pending"
+                ? { ...d, review_status: "confirmed" as const }
+                : d
+            )
+          );
+        }
       } else if (payload.extraction) {
         // Initialize field labels from extraction fields with UNLABELED state
         setFieldLabels(
@@ -307,22 +322,11 @@ export function DocumentReview({
     setHighlightValue(extractedValue);
   }
 
-  // Save labels and auto-advance to next unlabeled doc
+  // Save labels (stays on current document)
   async function handleSave() {
     if (!docPayload || !classificationDetail) return;
 
     const currentDocId = docPayload.doc_id;
-
-    // Find next pending doc BEFORE saving (current doc will become labeled)
-    const currentIndex = filteredDocs.findIndex((d) => d.doc_id === currentDocId);
-
-    // Look for next pending doc after current position (exclude current)
-    let nextDoc = filteredDocs.slice(currentIndex + 1).find((d) => d.review_status === "pending");
-
-    // If none found after, look from beginning (exclude current)
-    if (!nextDoc) {
-      nextDoc = filteredDocs.find((d) => d.doc_id !== currentDocId && d.review_status === "pending");
-    }
 
     try {
       setSaving(true);
@@ -353,10 +357,7 @@ export function DocumentReview({
         )
       );
 
-      // Auto-advance to next unlabeled doc
-      if (nextDoc) {
-        setSelectedDocId(nextDoc.doc_id);
-      }
+      // Stay on current document - user can manually select next doc when ready
     } catch (err) {
       console.error("Failed to save labels:", err);
     } finally {

@@ -15,7 +15,8 @@ export class SidebarPage {
   constructor(page: Page) {
     this.page = page;
     this.sidebar = page.getByTestId("sidebar");
-    this.logo = page.getByText("ContextBuilder", { exact: true });
+    // Use first() to get the main logo, not the version display at bottom
+    this.logo = page.getByText("ContextBuilder", { exact: true }).first();
     this.batchesLink = page.getByTestId("nav-batches");
     this.allClaimsLink = page.getByTestId("nav-all-claims");
     this.templatesLink = page.getByTestId("nav-templates");

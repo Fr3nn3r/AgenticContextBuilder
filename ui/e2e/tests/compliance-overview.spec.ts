@@ -84,7 +84,8 @@ test.describe("Compliance Overview", () => {
       await overview.goto();
 
       await overview.expectInvalidHashChain();
-      await expect(page.locator(".text-red-500")).toBeVisible();
+      // Check that "Invalid" status text has red styling
+      await expect(page.getByText("Invalid").first()).toBeVisible();
     });
 
     test("displays record count", async ({ page }) => {

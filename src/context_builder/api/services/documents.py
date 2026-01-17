@@ -114,10 +114,16 @@ class DocumentsService:
                             pages_data = json.load(f)
                             pages = pages_data.get("pages", [])
 
-                    # Load extraction
+                    # Load extraction - auto-detect latest run if not specified
                     extraction = None
-                    if run_id:
-                        extraction = storage.run_store.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
+                    effective_run_id = run_id
+                    if not effective_run_id:
+                        # Find latest run that has extraction for this document
+                        latest_run = self._find_latest_run_with_extraction(claim_dir, doc_id)
+                        if latest_run:
+                            effective_run_id = latest_run
+                    if effective_run_id:
+                        extraction = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=resolved_claim_id)
 
                     # Load labels
                     labels = storage.label_store.get_label(doc_id)
@@ -161,9 +167,18 @@ class DocumentsService:
         doc_text = storage.doc_store.get_doc_text(doc_id)
         pages = doc_text.pages if doc_text else []
 
+        # Load extraction - auto-detect latest run if not specified
         extraction = None
-        if run_id:
-            extraction = storage.run_store.get_extraction(run_id, doc_id, claim_id=resolved_claim_id)
+        effective_run_id = run_id
+        if not effective_run_id:
+            # Find latest run that has extraction for this document
+            claim_dir = self._find_claim_dir(resolved_claim_id)
+            if claim_dir:
+                latest_run = self._find_latest_run_with_extraction(claim_dir, doc_id)
+                if latest_run:
+                    effective_run_id = latest_run
+        if effective_run_id:
+            extraction = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=resolved_claim_id)
 
         labels = storage.label_store.get_label(doc_id)
 
@@ -416,4 +431,32 @@ class DocumentsService:
                 continue
             if d.name == claim_id or extract_claim_number(d.name) == claim_id:
                 return d
+        return None
+
+    def _find_latest_run_with_extraction(self, claim_dir: Path, doc_id: str) -> Optional[str]:
+        """Find the latest run that has extraction data for a specific document.
+
+        Args:
+            claim_dir: Path to the claim directory
+            doc_id: Document ID to find extraction for
+
+        Returns:
+            Run ID of the latest run with extraction, or None if not found
+        """
+        runs_dir = claim_dir / "runs"
+        if not runs_dir.exists():
+            return None
+
+        # Sort run directories in reverse order (latest first)
+        run_dirs = sorted(
+            [d for d in runs_dir.iterdir() if d.is_dir() and (d.name.startswith("run_") or d.name.startswith("BATCH-"))],
+            key=lambda d: d.name,
+            reverse=True,
+        )
+
+        for run_dir in run_dirs:
+            extraction_path = run_dir / "extraction" / f"{doc_id}.json"
+            if extraction_path.exists():
+                return run_dir.name
+
         return None

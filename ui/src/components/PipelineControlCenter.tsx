@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "../lib/utils";
 import {
   usePipelineClaims,
@@ -439,6 +440,8 @@ function BatchesTab({
   selectedBatchId,
   onCancelBatch,
   onDeleteBatch,
+  onViewDocuments,
+  onExportSummary,
   isLoading,
 }: {
   batches: UIBatch[];
@@ -446,6 +449,8 @@ function BatchesTab({
   selectedBatchId: string | null;
   onCancelBatch: (batchId: string) => void;
   onDeleteBatch: (batchId: string) => void;
+  onViewDocuments: (batchId: string) => void;
+  onExportSummary: (batch: UIBatch) => void;
   isLoading: boolean;
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -586,6 +591,8 @@ function BatchesTab({
                               batch={selectedBatch}
                               onDeleteBatch={onDeleteBatch}
                               onCancelBatch={onCancelBatch}
+                              onViewDocuments={onViewDocuments}
+                              onExportSummary={onExportSummary}
                             />
                           </div>
                         </td>
@@ -607,10 +614,14 @@ function BatchDetailsPanel({
   batch,
   onDeleteBatch,
   onCancelBatch,
+  onViewDocuments,
+  onExportSummary,
 }: {
   batch: UIBatch;
   onDeleteBatch: (batchId: string) => void;
   onCancelBatch: (batchId: string) => void;
+  onViewDocuments: (batchId: string) => void;
+  onExportSummary: (batch: UIBatch) => void;
 }) {
   const [showAllClaims, setShowAllClaims] = useState(false);
   const isRunning = batch.status === "running" || batch.status === "queued";
@@ -728,7 +739,10 @@ function BatchDetailsPanel({
 
       {/* Actions - consolidated here only */}
       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
-        <button className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors">
+        <button
+          onClick={() => onViewDocuments(batch.batch_id)}
+          className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors"
+        >
           View Documents
         </button>
         {(batch.status === "failed" || batch.status === "partial") && (
@@ -744,7 +758,10 @@ function BatchDetailsPanel({
             Cancel
           </button>
         )}
-        <button className="px-3 py-1.5 border text-xs font-medium rounded-lg text-muted-foreground hover:bg-muted/50 transition-colors">
+        <button
+          onClick={() => onExportSummary(batch)}
+          className="px-3 py-1.5 border text-xs font-medium rounded-lg text-muted-foreground hover:bg-muted/50 transition-colors"
+        >
           Export Summary
         </button>
         <button
@@ -774,6 +791,23 @@ function ConfigTab({
   onRefreshAudit: () => void;
   onSetDefault: (id: string) => void;
 }) {
+  const [auditFilter, setAuditFilter] = useState<"all" | "runs" | "configs">("all");
+
+  // Filter audit entries based on selection
+  const filteredAuditEntries = useMemo(() => {
+    if (auditFilter === "all") return auditEntries;
+    return auditEntries.filter((entry) => {
+      const action = entry.action?.toLowerCase() || "";
+      if (auditFilter === "runs") {
+        return action.includes("run") || action.includes("batch") || action.includes("pipeline");
+      }
+      if (auditFilter === "configs") {
+        return action.includes("config") || action.includes("prompt");
+      }
+      return true;
+    });
+  }, [auditEntries, auditFilter]);
+
   // Format audit timestamp for display
   const formatAuditTime = (isoTime: string): string => {
     try {
@@ -855,10 +889,14 @@ function ConfigTab({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-foreground">Audit Log</h3>
           <div className="flex gap-2">
-            <select className="px-2 py-1 text-xs border rounded-lg bg-background">
-              <option>All actions</option>
-              <option>Runs</option>
-              <option>Configs</option>
+            <select
+              value={auditFilter}
+              onChange={(e) => setAuditFilter(e.target.value as "all" | "runs" | "configs")}
+              className="px-2 py-1 text-xs border rounded-lg bg-background"
+            >
+              <option value="all">All actions</option>
+              <option value="runs">Runs</option>
+              <option value="configs">Configs</option>
             </select>
             <button
               onClick={onRefreshAudit}
@@ -868,11 +906,11 @@ function ConfigTab({
             </button>
           </div>
         </div>
-        {auditEntries.length === 0 ? (
+        {filteredAuditEntries.length === 0 ? (
           <div className="text-sm text-muted-foreground text-center py-4">No audit entries</div>
         ) : (
           <div className="space-y-2">
-            {auditEntries.map((entry, idx) => (
+            {filteredAuditEntries.map((entry, idx) => (
               <div key={idx} className="text-xs text-muted-foreground flex gap-2">
                 <span className="text-muted-foreground/70 w-28 flex-shrink-0">
                   {formatAuditTime(entry.timestamp)}
@@ -891,6 +929,7 @@ function ConfigTab({
 
 // Main Component
 export function PipelineControlCenter() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>("batches");
   const [selectedClaims, setSelectedClaims] = useState<string[]>([]);
   const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
@@ -1014,6 +1053,43 @@ export function PipelineControlCenter() {
     }
   }, [setDefaultConfig, refetchAudit]);
 
+  const handleViewDocuments = useCallback((batchId: string) => {
+    navigate(`/batches?run_id=${encodeURIComponent(batchId)}`);
+  }, [navigate]);
+
+  const handleExportSummary = useCallback((batch: UIBatch) => {
+    // Create export data
+    const exportData = {
+      batch_id: batch.batch_id,
+      friendly_name: batch.friendly_name,
+      status: batch.status,
+      prompt_config: batch.prompt_config,
+      claims_count: batch.claims_count,
+      docs_total: batch.docs_total,
+      docs_processed: batch.docs_processed,
+      started_at: batch.started_at,
+      completed_at: batch.completed_at,
+      duration: batch.duration,
+      claims: batch.claims,
+      timings: batch.timings,
+      reuse: batch.reuse,
+      cost_estimate: batch.cost_estimate,
+      errors: batch.errors,
+      exported_at: new Date().toISOString(),
+    };
+
+    // Create download
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${batch.friendly_name || batch.batch_id}-summary.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
   function toggleClaim(claimId: string) {
     setSelectedClaims((prev) =>
       prev.includes(claimId) ? prev.filter((id) => id !== claimId) : [...prev, claimId]
@@ -1096,6 +1172,8 @@ export function PipelineControlCenter() {
             selectedBatchId={selectedBatchId}
             onCancelBatch={handleCancelBatch}
             onDeleteBatch={handleDeleteBatch}
+            onViewDocuments={handleViewDocuments}
+            onExportSummary={handleExportSummary}
             isLoading={batchesLoading}
           />
         )}

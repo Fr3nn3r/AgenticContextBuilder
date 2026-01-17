@@ -36,9 +36,9 @@ test.describe("Document Labeling Flow", () => {
     const lossNoticeRow = docList.locator(".p-3").filter({ hasText: "loss_notice.pdf" });
     await expect(lossNoticeRow).toContainText("Labeled");
 
-    // Auto-advance should select the next pending document
-    // The selected doc item has border-l-2 and border-accent classes
+    // DocumentReview intentionally stays on current document after save
+    // (user manually selects next doc when ready - see handleSave comment)
     const selectedRow = docList.locator(".border-l-2.border-accent");
-    await expect(selectedRow).toContainText("insurance_policy.pdf");
+    await expect(selectedRow).toContainText("loss_notice.pdf");
   });
 });
