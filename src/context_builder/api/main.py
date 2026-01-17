@@ -329,8 +329,12 @@ def get_insights_service() -> InsightsService:
 
 
 def get_evolution_service() -> EvolutionService:
-    """Get EvolutionService instance."""
-    return EvolutionService(DATA_DIR)
+    """Get EvolutionService instance.
+
+    Note: DATA_DIR is {workspace}/claims, but version_bundles are stored
+    at {workspace}/version_bundles, so we pass the workspace root.
+    """
+    return EvolutionService(DATA_DIR.parent)
 
 
 def get_upload_service() -> UploadService:
