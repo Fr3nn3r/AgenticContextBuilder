@@ -70,9 +70,6 @@ _All P0 bugs fixed! See Done section._
   - Replace fun names (wise fox, quick lion, crisp bear) with professional naming
   - Current names don't feel enterprise-grade
 
-- [ ] **BUG-05: Filter shows wrong claim**
-  - Filter shows "All Claims" when specific claim is selected from batch
-  - Should display the actual claim number
 
 - [ ] **BUG-07: Missing extraction = yellow instead of red**
   - When extraction returns nothing but ground truth exists, show as incorrect (red)
@@ -251,6 +248,13 @@ _All P0 bugs fixed! See Done section._
 ## Done (Recent)
 
 _Cleared 2026-01-17. See git history for details._
+
+### 2026-01-17 - P1 Bug Fixes
+
+- [x] **BUG-05: Filter shows wrong claim** (Fixed)
+  - Filter showed "All Claims" when specific claim was selected from batch
+  - Fix: DocumentReview now reads `selectedClaim` from ClaimsContext
+  - Modified: `ui/src/components/DocumentReview.tsx` - imports useClaims, checks selectedClaim when no URL param
 
 ### 2026-01-17 - P0 Bug Fixes ✅ VERIFIED
 

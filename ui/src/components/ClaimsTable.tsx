@@ -254,6 +254,7 @@ export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
             {sortedClaims.map((claim) => (
               <Fragment key={claim.claim_id}>
                 <tr
+                  data-testid={`claim-row-${claim.claim_id}`}
                   onClick={() => handleClaimClick(claim)}
                   className={cn(
                     "border-b cursor-pointer hover:bg-muted/50 transition-colors",

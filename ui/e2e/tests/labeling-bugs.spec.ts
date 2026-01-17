@@ -609,3 +609,49 @@ test.describe("Integration: Label persistence across batch views", () => {
     // regardless of which batch is selected
   });
 });
+
+test.describe("BUG-05: Claim filter shows wrong claim after tab navigation", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAuthenticatedMocks(page, "admin");
+  });
+
+  test("claim filter shows selected claim when navigating from Claims to Documents tab", async ({ page }) => {
+    // Step 1: Go to Claims tab
+    await page.goto("/batches/run_001/claims");
+    await page.waitForLoadState("domcontentloaded");
+
+    // Wait for claims table to load
+    const claimRow = page.getByTestId("claim-row-CLM-2024-001");
+    await expect(claimRow).toBeVisible({ timeout: 10000 });
+
+    // Step 2: Click on the claim to select it (this sets selectedClaim in ClaimsContext)
+    await claimRow.click();
+
+    // Verify the claim is expanded (confirms click worked)
+    await expect(page.getByText("Document Pack")).toBeVisible();
+
+    // Step 3: Navigate to Documents tab
+    await page.getByTestId("batch-tab-documents").click();
+    await expect(page).toHaveURL(/\/batches\/run_001\/documents/);
+
+    // Wait for documents page to load
+    const claimFilter = page.getByTestId("claim-filter");
+    await expect(claimFilter).toBeVisible({ timeout: 10000 });
+
+    // Step 4: Verify the claim filter shows the selected claim (not "All Claims")
+    // BUG-05 FIX: The claim filter should show "CLM-2024-001" because we selected it
+    await expect(claimFilter).toHaveValue("CLM-2024-001");
+  });
+
+  test("claim filter defaults to 'all' when no claim was selected", async ({ page }) => {
+    // Navigate directly to Documents tab without selecting a claim first
+    await page.goto("/batches/run_001/documents");
+    await page.waitForLoadState("domcontentloaded");
+
+    const claimFilter = page.getByTestId("claim-filter");
+    await expect(claimFilter).toBeVisible({ timeout: 10000 });
+
+    // Should default to "all" when no claim was previously selected
+    await expect(claimFilter).toHaveValue("all");
+  });
+});

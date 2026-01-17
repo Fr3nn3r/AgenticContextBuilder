@@ -8,6 +8,7 @@ import {
   saveClassificationLabel,
   type ClaimRunInfo,
 } from "../api/client";
+import { useClaims } from "../context/ClaimsContext";
 import type {
   ClassificationDoc,
   ClassificationDetail,
@@ -39,6 +40,9 @@ export function DocumentReview({
   // Batch context now handled by BatchWorkspace
   void _batches;
   void _onBatchChange;
+
+  // Get selected claim from claims context (for cross-tab navigation)
+  const { selectedClaim } = useClaims();
 
   // URL params for claim filter and doc selection (from claims tab navigation)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -120,7 +124,12 @@ export function DocumentReview({
       } else if (classificationDocs.length > 0) {
         // Auto-select first document when run changes (default behavior)
         setSelectedDocId(classificationDocs[0].doc_id);
-        setClaimFilter("all");
+        // Use selected claim from context if available (cross-tab navigation)
+        if (selectedClaim && claimIds.includes(selectedClaim.claim_id)) {
+          setClaimFilter(selectedClaim.claim_id);
+        } else {
+          setClaimFilter("all");
+        }
       } else {
         setSelectedDocId(null);
         setClaimFilter("all");
@@ -133,7 +142,7 @@ export function DocumentReview({
     } finally {
       setLoading(false);
     }
-  }, [selectedBatchId, urlDocParam, urlClaimParam, setSearchParams]);
+  }, [selectedBatchId, urlDocParam, urlClaimParam, setSearchParams, selectedClaim]);
 
   useEffect(() => {
     loadDocs();
@@ -529,6 +538,7 @@ export function DocumentReview({
 
         {/* Claim Filter */}
         <select
+          data-testid="claim-filter"
           value={claimFilter}
           onChange={(e) => setClaimFilter(e.target.value)}
           className="px-3 py-1.5 text-sm border rounded-md bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
