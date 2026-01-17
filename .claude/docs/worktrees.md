@@ -214,6 +214,80 @@ If you discover you're in the wrong worktree:
 3. Ask the user which worktree you should be using
 4. The user will redirect you to the correct directory
 
+## Port Assignments (MANDATORY)
+
+Each worktree has **dedicated ports** to prevent conflicts and ensure you're testing your own code:
+
+| Worktree | Backend Port | Frontend Port | Frontend API Target |
+|----------|--------------|---------------|---------------------|
+| Main (AgenticContextBuilder) | 8000 | 5173 | http://localhost:8000 |
+| wt1 | 8001 | 5174 | http://localhost:8001 |
+| wt2 | 8002 | 5175 | http://localhost:8002 |
+| wt3 | 8003 | 5176 | http://localhost:8003 |
+
+### Starting Dev Servers in Your Worktree
+
+**CRITICAL**: Always use YOUR assigned ports. Never use another worktree's ports.
+
+#### Automated Startup (Recommended)
+
+Each worktree has a startup script that handles port configuration automatically:
+
+```powershell
+# Start both backend and frontend
+.\scripts\start-dev.ps1
+
+# Start only backend
+.\scripts\start-dev.ps1 -BackendOnly
+
+# Start only frontend
+.\scripts\start-dev.ps1 -FrontendOnly
+
+# Stop all dev servers for this worktree
+.\scripts\start-dev.ps1 -Stop
+```
+
+The script:
+- Auto-detects which worktree you're in
+- Uses the correct ports from the table above
+- Opens separate terminal windows for each server
+- Checks if servers are already running
+
+#### Configuration Files
+
+Each worktree has a `ui/.env` file with its port settings:
+```
+# Example: ui/.env for wt1
+VITE_PORT=5174
+VITE_API_PORT=8001
+```
+
+The `vite.config.ts` automatically reads from this `.env` file.
+
+#### Manual Startup (if needed)
+
+```powershell
+# Backend (from repo root)
+python -m uvicorn context_builder.api.main:app --reload --port <backend-port>
+
+# Frontend (from ui folder) - reads ports from .env
+cd ui
+npm run dev
+```
+
+### Verification Checklist Before Testing
+
+1. ✅ Confirm your worktree: `pwd`
+2. ✅ Check your assigned ports in the table above
+3. ✅ Verify backend is running on YOUR port: `curl http://localhost:800X/health`
+4. ✅ Verify frontend is pointing to YOUR backend (check browser dev tools Network tab)
+
+### Why This Matters
+
+- Testing on the wrong server = testing wrong code = false results
+- Each worktree is a separate codebase - ports must match
+- Never assume - always verify before testing
+
 ## Frontend Development Notes
 
 Each worktree needs its own `node_modules` for the UI:
@@ -221,20 +295,9 @@ Each worktree needs its own `node_modules` for the UI:
 ```bash
 cd ui
 npm install
-npm run dev
 ```
 
-**Port conflicts**: If another agent is running the dev server, use a different port:
-
-```bash
-npm run dev -- --port 3001  # or 3002, 3003
-```
-
-Backend can similarly use different ports:
-
-```bash
-uvicorn context_builder.api.main:app --reload --port 8001
-```
+Then start with your assigned ports (see Port Assignments above).
 
 ## Summary
 
