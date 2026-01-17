@@ -6,7 +6,6 @@ import {
   UnverifiableBadge,
   CorrectBadge,
   IncorrectBadge,
-  MissingBadge,
 } from "./shared";
 
 interface FieldsTableProps {
@@ -52,9 +51,10 @@ const unverifiableReasonLabels: Record<UnverifiableReason, string> = {
 };
 
 // Compare extracted value to truth value (normalized comparison)
-function compareValues(extracted: string | null, truth: string | null | undefined): "correct" | "incorrect" | "missing" | "unlabeled" {
+function compareValues(extracted: string | null, truth: string | null | undefined): "correct" | "incorrect" | "unlabeled" {
   if (truth === null || truth === undefined) return "unlabeled";
-  if (extracted === null || extracted === "") return "missing";
+  // If extraction is empty but ground truth exists, that's incorrect (not just "missing")
+  if (extracted === null || extracted === "") return "incorrect";
 
   const normExtracted = (extracted || "").trim().toLowerCase();
   const normTruth = (truth || "").trim().toLowerCase();
@@ -196,8 +196,6 @@ export function FieldsTable({
             ? "border-l-success"
             : isLabeled && comparisonResult === "incorrect"
             ? "border-l-destructive"
-            : isLabeled && comparisonResult === "missing"
-            ? "border-l-warning"
             : "border-l-warning/70";
 
           const rowBg = isUnlabeled ? "bg-amber-50/40" : "";
@@ -309,7 +307,6 @@ export function FieldsTable({
                             <code className="text-sm text-success">{label?.truth_value || "(empty)"}</code>
                             {comparisonResult === "correct" && <CorrectBadge />}
                             {comparisonResult === "incorrect" && <IncorrectBadge />}
-                            {comparisonResult === "missing" && <MissingBadge />}
                             {!readOnly && (
                               <button
                                 onClick={(e) => {

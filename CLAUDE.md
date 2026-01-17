@@ -25,21 +25,24 @@ workspaces/{workspace_id}/          # Each workspace contains:
 
 This repo uses **git worktrees** to enable multiple agents to work in parallel on different features.
 
-```
-C:\Users\fbrun\Documents\GitHub\
-├── AgenticContextBuilder/       # PRIMARY - main branch
-├── AgenticContextBuilder-wt1/   # Worktree slot 1
-├── AgenticContextBuilder-wt2/   # Worktree slot 2
-└── AgenticContextBuilder-wt3/   # Worktree slot 3
-```
+| Worktree | Branch | Backend Port | Frontend Port |
+|----------|--------|--------------|---------------|
+| AgenticContextBuilder/ | main | 8000 | 5173 |
+| AgenticContextBuilder-wt1/ | worktree/slot-1 | 8001 | 5174 |
+| AgenticContextBuilder-wt2/ | worktree/slot-2 | 8002 | 5175 |
+| AgenticContextBuilder-wt3/ | worktree/slot-3 | 8003 | 5176 |
+
+**CRITICAL: Always use YOUR worktree's assigned ports when running dev servers.**
 
 **Agent checklist at session start:**
 1. Verify your working directory: `pwd && git branch --show-current`
 2. Check for uncommitted changes: `git status`
 3. Sync with main if needed: `git fetch origin && git rebase origin/main`
+4. Use YOUR assigned ports when starting dev servers (see table above)
 
 **Key rules:**
 - Always confirm you're in the correct worktree before making changes
+- Always use YOUR worktree's assigned ports - never use another worktree's ports
 - Do NOT merge to main without user approval
 - Do NOT switch worktrees without user permission
 - Commit frequently with descriptive messages
