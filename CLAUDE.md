@@ -21,6 +21,31 @@ workspaces/{workspace_id}/          # Each workspace contains:
 
 **Switch workspace**: Admin UI → Workspaces, or `POST /api/workspaces/{id}/activate`
 
+## Git Worktrees (Multi-Agent Development)
+
+This repo uses **git worktrees** to enable multiple agents to work in parallel on different features.
+
+```
+C:\Users\fbrun\Documents\GitHub\
+├── AgenticContextBuilder/       # PRIMARY - main branch
+├── AgenticContextBuilder-wt1/   # Worktree slot 1
+├── AgenticContextBuilder-wt2/   # Worktree slot 2
+└── AgenticContextBuilder-wt3/   # Worktree slot 3
+```
+
+**Agent checklist at session start:**
+1. Verify your working directory: `pwd && git branch --show-current`
+2. Check for uncommitted changes: `git status`
+3. Sync with main if needed: `git fetch origin && git rebase origin/main`
+
+**Key rules:**
+- Always confirm you're in the correct worktree before making changes
+- Do NOT merge to main without user approval
+- Do NOT switch worktrees without user permission
+- Commit frequently with descriptive messages
+
+**Full documentation:** `.claude/docs/worktrees.md`
+
 ## Commands
 ```bash
 # Backend
@@ -87,7 +112,11 @@ Use these prefixes to indicate the type of change:
 
 ## Context Management
 - **BACKLOG.md** - All tasks (todo/doing/done). Update before clearing context.
-- **.claude/docs/** - Reference docs (architecture, compliance, testing). Read when needed.
+- **.claude/docs/** - Reference docs:
+  - `architecture.md` - System design and component overview
+  - `compliance.md` - Audit logging and regulatory requirements
+  - `testing.md` - Test patterns and best practices
+  - `worktrees.md` - Multi-agent parallel development setup
 - Before `/clear`: Add handoff notes to BACKLOG.md under your task
 
 ## Key Paths
