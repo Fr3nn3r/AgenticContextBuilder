@@ -103,3 +103,21 @@ class RegistryMeta:
     label_count: int = 0
     run_count: int = 0
     claim_count: int = 0
+
+
+@dataclass
+class SourceFileRef:
+    """Reference to a source file in a document."""
+
+    filename: str
+    file_type: Literal["pdf", "image", "text"]
+    path: str  # Relative path from doc root
+
+
+@dataclass
+class ExtractionRef:
+    """Reference to an extraction result in a run."""
+
+    doc_id: str
+    claim_id: str
+    run_id: str

@@ -499,32 +499,20 @@ class PipelineService:
         return list(runs_by_id.values())
 
     def _load_run_from_disk(self, run_id: str) -> Optional[PipelineRun]:
-        """Load a completed run from disk."""
-        import json
+        """Load a completed run from disk using storage layer."""
+        from context_builder.storage import FileStorage
 
-        run_dir = self.output_dir.parent / "runs" / run_id
-        if not run_dir.exists():
-            return None
+        # Use storage layer to read run data
+        storage = FileStorage(output_root=self.output_dir.parent)
 
-        manifest_path = run_dir / "manifest.json"
-        summary_path = run_dir / "summary.json"
+        manifest = storage.get_run_manifest(run_id) or {}
+        summary = storage.get_run_summary(run_id) or {}
 
-        manifest = {}
-        summary = {}
-
-        if manifest_path.exists():
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        if summary_path.exists():
-            try:
-                with open(summary_path, "r", encoding="utf-8") as f:
-                    summary = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+        # If both are empty, run doesn't exist
+        if not manifest and not summary:
+            run_dir = self.output_dir.parent / "runs" / run_id
+            if not run_dir.exists():
+                return None
 
         # Build claim_ids from manifest
         claim_ids = []
@@ -695,11 +683,11 @@ class PipelineService:
         summary.json, and .complete marker so FileStorage.list_runs() can find it.
         Also appends to the run index if it exists for immediate visibility.
         """
-        from context_builder.pipeline.paths import create_workspace_run_structure
+        from context_builder.storage import FileStorage
 
         try:
-            # Create global run directory structure
-            ws_paths = create_workspace_run_structure(self.output_dir, run.run_id)
+            # Use storage layer to persist run data
+            storage = FileStorage(output_root=self.output_dir.parent)
 
             # Build claims array with per-claim details
             claims_by_id: Dict[str, Dict[str, Any]] = {}
@@ -717,7 +705,7 @@ class PipelineService:
                     if claims_by_id[doc.claim_id]["status"] == "success":
                         claims_by_id[doc.claim_id]["status"] = "partial"
 
-            # Write manifest.json (matching CLI format)
+            # Build manifest (matching CLI format)
             manifest = {
                 "run_id": run.run_id,
                 "started_at": run.started_at,
@@ -726,10 +714,10 @@ class PipelineService:
                 "claims_count": len(run.claim_ids),
                 "claims": list(claims_by_id.values()),
             }
-            with open(ws_paths.manifest_json, "w", encoding="utf-8") as f:
-                json.dump(manifest, f, indent=2)
+            # Save manifest using storage layer
+            storage.save_run_manifest(run.run_id, manifest)
 
-            # Write summary.json (matching CLI format)
+            # Build summary (matching CLI format)
             run_summary = run.summary or {}
             summary_data = {
                 "run_id": run.run_id,
@@ -741,16 +729,17 @@ class PipelineService:
                 "docs_success": run_summary.get("success", 0),
                 "completed_at": run.completed_at,
             }
-            with open(ws_paths.summary_json, "w", encoding="utf-8") as f:
-                json.dump(summary_data, f, indent=2)
+            # Save summary using storage layer
+            storage.save_run_summary(run.run_id, summary_data)
 
-            # Write .complete marker
-            ws_paths.complete_marker.touch()
+            # Mark run as complete using storage layer
+            storage.mark_run_complete(run.run_id)
 
-            logger.info(f"Persisted run {run.run_id} to {ws_paths.run_root}")
+            run_root = self.output_dir.parent / "runs" / run.run_id
+            logger.info(f"Persisted run {run.run_id} to {run_root}")
 
             # Build or update indexes for fast lookups
-            self._update_indexes(run, ws_paths, summary_data)
+            self._update_indexes(run, run_root, summary_data)
 
         except Exception as e:
             logger.error(f"Failed to persist run {run.run_id}: {e}")
@@ -758,7 +747,7 @@ class PipelineService:
     def _update_indexes(
         self,
         run: PipelineRun,
-        ws_paths: "WorkspaceRunPaths",
+        run_root: Path,
         summary_data: dict,
     ) -> None:
         """Rebuild all indexes after pipeline completion.
@@ -780,7 +769,7 @@ class PipelineService:
     def _append_to_run_index(
         self,
         run: PipelineRun,
-        ws_paths: "WorkspaceRunPaths",
+        run_root: Path,
         summary_data: dict,
     ) -> None:
         """Append run to the existing run index file.
@@ -804,7 +793,7 @@ class PipelineService:
                 "ended_at": run.completed_at,
                 "claims_count": len(run.claim_ids),
                 "docs_count": summary_data.get("total", len(run.docs)),
-                "run_root": str(ws_paths.run_root.relative_to(self.output_dir.parent.parent)),
+                "run_root": str(run_root.relative_to(self.output_dir.parent.parent)),
             }
 
             # Append to JSONL file

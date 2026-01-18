@@ -46,6 +46,19 @@ def get_latest_run_dir_for_claim(claim_dir: Path) -> Optional[Path]:
     return run_dirs[0] if run_dirs else None
 
 
+def get_latest_run_id_for_claim(claim_dir: Path) -> Optional[str]:
+    """Get the most recent run ID for a claim.
+
+    Args:
+        claim_dir: Path to the claim directory.
+
+    Returns:
+        Run ID string if found, None otherwise.
+    """
+    run_dir = get_latest_run_dir_for_claim(claim_dir)
+    return run_dir.name if run_dir else None
+
+
 def get_run_dir_by_id(claim_dir: Path, run_id: str) -> Optional[Path]:
     """Get a specific run directory by ID for a claim."""
     runs_dir = claim_dir / "runs"
