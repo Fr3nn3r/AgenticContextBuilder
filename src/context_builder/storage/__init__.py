@@ -31,7 +31,7 @@ Usage:
         meta = storage.get_index_meta()
 """
 
-from .protocol import Storage, DocStore, RunStore, LabelStore
+from .protocol import Storage, DocStore, RunStore, LabelStore, PendingStore
 from .filesystem import FileStorage
 from .facade import StorageFacade
 from .models import (
@@ -43,6 +43,8 @@ from .models import (
     RunBundle,
     LabelSummary,
     RegistryMeta,
+    SourceFileRef,
+    ExtractionRef,
 )
 from .index_reader import IndexReader
 from .index_builder import build_all_indexes
@@ -61,6 +63,7 @@ __all__ = [
     "DocStore",
     "RunStore",
     "LabelStore",
+    "PendingStore",
     # Implementation
     "FileStorage",
     "StorageFacade",
@@ -73,6 +76,8 @@ __all__ = [
     "RunBundle",
     "LabelSummary",
     "RegistryMeta",
+    "SourceFileRef",
+    "ExtractionRef",
     # Index utilities
     "IndexReader",
     "build_all_indexes",

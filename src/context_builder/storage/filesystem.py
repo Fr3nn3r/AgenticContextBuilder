@@ -23,6 +23,8 @@ from .models import (
     RunRef,
     RunBundle,
     LabelSummary,
+    SourceFileRef,
+    ExtractionRef,
 )
 from .index_reader import IndexReader
 
@@ -320,6 +322,134 @@ class FileStorage:
         doc = self.get_doc(doc_id)
         return doc.claim_id if doc else None
 
+    def get_doc_metadata(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get document metadata (doc.json) by doc_id.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup when doc_id
+                      exists in multiple claims.
+
+        Returns:
+            Document metadata dict (doc.json content), or None if not found.
+        """
+        # If claim_id provided, look directly in that claim
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                doc_json = claim_folder / "docs" / doc_id / "meta" / "doc.json"
+                if doc_json.exists():
+                    try:
+                        with open(doc_json, "r", encoding="utf-8") as f:
+                            return json.load(f)
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+        # Fallback to general lookup
+        doc_folder = self._find_doc_folder(doc_id)
+        if not doc_folder:
+            return None
+
+        doc_json = doc_folder / "meta" / "doc.json"
+        if not doc_json.exists():
+            return None
+
+        try:
+            with open(doc_json, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def get_source_files(self, doc_id: str, claim_id: Optional[str] = None) -> List[SourceFileRef]:
+        """List source files for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
+
+        Returns:
+            List of SourceFileRef objects for files in the source/ directory.
+        """
+        # Find doc folder
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                doc_folder = claim_folder / "docs" / doc_id
+                if not doc_folder.exists():
+                    doc_folder = None
+            else:
+                doc_folder = None
+        else:
+            doc_folder = self._find_doc_folder(doc_id)
+
+        if not doc_folder:
+            return []
+
+        source_dir = doc_folder / "source"
+        if not source_dir.exists():
+            return []
+
+        results = []
+        ext_to_type = {
+            ".pdf": "pdf",
+            ".txt": "text",
+            ".jpg": "image",
+            ".jpeg": "image",
+            ".png": "image",
+            ".gif": "image",
+            ".tif": "image",
+            ".tiff": "image",
+            ".bmp": "image",
+            ".webp": "image",
+        }
+
+        for source_file in source_dir.iterdir():
+            if source_file.is_file():
+                ext = source_file.suffix.lower()
+                file_type = ext_to_type.get(ext, "text")
+                results.append(SourceFileRef(
+                    filename=source_file.name,
+                    file_type=file_type,
+                    path=str(source_file.relative_to(doc_folder)),
+                ))
+
+        return results
+
+    def get_doc_azure_di(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get Azure Document Intelligence data for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
+
+        Returns:
+            Azure DI data dict, or None if not available.
+        """
+        # Find doc folder
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                doc_folder = claim_folder / "docs" / doc_id
+                if not doc_folder.exists():
+                    doc_folder = None
+            else:
+                doc_folder = None
+        else:
+            doc_folder = self._find_doc_folder(doc_id)
+
+        if not doc_folder:
+            return None
+
+        azure_di_path = doc_folder / "text" / "raw" / "azure_di.json"
+        if not azure_di_path.exists():
+            return None
+
+        try:
+            with open(azure_di_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
     # -------------------------------------------------------------------------
     # Run-Scoped Access
     # -------------------------------------------------------------------------
@@ -402,6 +532,243 @@ class FileStorage:
                             pass
 
         return None
+
+    def get_run_manifest(self, run_id: str) -> Optional[dict]:
+        """Get run manifest.json content.
+
+        Args:
+            run_id: Run identifier.
+
+        Returns:
+            Manifest dict, or None if not found.
+        """
+        manifest_path = self.runs_dir / run_id / "manifest.json"
+        if not manifest_path.exists():
+            return None
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def get_run_summary(self, run_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get run summary.json content.
+
+        Args:
+            run_id: Run identifier.
+            claim_id: Optional claim_id for claim-scoped summary (logs/summary.json).
+
+        Returns:
+            Summary dict, or None if not found.
+        """
+        # If claim_id provided, look for claim-scoped summary
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                summary_path = claim_folder / "runs" / run_id / "logs" / "summary.json"
+                if summary_path.exists():
+                    try:
+                        with open(summary_path, "r", encoding="utf-8") as f:
+                            return json.load(f)
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+        # Global run summary
+        summary_path = self.runs_dir / run_id / "summary.json"
+        if not summary_path.exists():
+            return None
+
+        try:
+            with open(summary_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def list_extractions(self, run_id: str, claim_id: Optional[str] = None) -> List[ExtractionRef]:
+        """List all extractions in a run.
+
+        Args:
+            run_id: Run identifier.
+            claim_id: Optional claim_id to filter by claim.
+
+        Returns:
+            List of ExtractionRef objects.
+        """
+        results = []
+
+        if claim_id:
+            # Only look in specified claim
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                extraction_dir = claim_folder / "runs" / run_id / "extraction"
+                if extraction_dir.exists():
+                    for ext_file in extraction_dir.glob("*.json"):
+                        doc_id = ext_file.stem
+                        results.append(ExtractionRef(
+                            doc_id=doc_id,
+                            claim_id=claim_id,
+                            run_id=run_id,
+                        ))
+        else:
+            # Look across all claims
+            if self.claims_dir.exists():
+                for claim_folder in self.claims_dir.iterdir():
+                    if not claim_folder.is_dir():
+                        continue
+                    extraction_dir = claim_folder / "runs" / run_id / "extraction"
+                    if extraction_dir.exists():
+                        # Determine claim_id from folder
+                        current_claim_id = claim_folder.name
+                        for ext_file in extraction_dir.glob("*.json"):
+                            doc_id = ext_file.stem
+                            results.append(ExtractionRef(
+                                doc_id=doc_id,
+                                claim_id=current_claim_id,
+                                run_id=run_id,
+                            ))
+
+        return results
+
+    def save_run_manifest(self, run_id: str, manifest: dict) -> None:
+        """Save run manifest (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            manifest: Manifest data to save.
+
+        Raises:
+            IOError: If write fails.
+        """
+        run_dir = self.runs_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest_path = run_dir / "manifest.json"
+        tmp_path = manifest_path.with_suffix(".json.tmp")
+
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False, default=str)
+            tmp_path.replace(manifest_path)
+        except IOError as e:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise IOError(f"Failed to save manifest: {e}")
+
+    def save_run_summary(self, run_id: str, summary: dict, claim_id: Optional[str] = None) -> None:
+        """Save run summary (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            summary: Summary data to save.
+            claim_id: Optional claim_id for claim-scoped summary.
+
+        Raises:
+            IOError: If write fails.
+        """
+        if claim_id:
+            # Claim-scoped summary goes to claim/runs/{run_id}/logs/summary.json
+            claim_folder = self._find_claim_folder(claim_id)
+            if not claim_folder:
+                raise IOError(f"Claim not found: {claim_id}")
+            logs_dir = claim_folder / "runs" / run_id / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            summary_path = logs_dir / "summary.json"
+        else:
+            # Global summary goes to runs/{run_id}/summary.json
+            run_dir = self.runs_dir / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
+            summary_path = run_dir / "summary.json"
+
+        tmp_path = summary_path.with_suffix(".json.tmp")
+
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2, ensure_ascii=False, default=str)
+            tmp_path.replace(summary_path)
+        except IOError as e:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise IOError(f"Failed to save summary: {e}")
+
+    def save_extraction(self, run_id: str, doc_id: str, claim_id: str, data: dict) -> None:
+        """Save extraction result for a document (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            doc_id: Document identifier.
+            claim_id: Claim identifier.
+            data: Extraction data to save.
+
+        Raises:
+            IOError: If write fails.
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            raise IOError(f"Claim not found: {claim_id}")
+
+        extraction_dir = claim_folder / "runs" / run_id / "extraction"
+        extraction_dir.mkdir(parents=True, exist_ok=True)
+
+        extraction_path = extraction_dir / f"{doc_id}.json"
+        tmp_path = extraction_path.with_suffix(".json.tmp")
+
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+            tmp_path.replace(extraction_path)
+        except IOError as e:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise IOError(f"Failed to save extraction: {e}")
+
+    def mark_run_complete(self, run_id: str) -> None:
+        """Mark a run as complete (create .complete marker).
+
+        Args:
+            run_id: Run identifier.
+
+        Raises:
+            IOError: If write fails.
+        """
+        run_dir = self.runs_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        complete_marker = run_dir / ".complete"
+        try:
+            complete_marker.touch()
+        except IOError as e:
+            raise IOError(f"Failed to mark run complete: {e}")
+
+    def list_runs_for_doc(self, doc_id: str, claim_id: str) -> List[str]:
+        """List all run IDs that have extraction for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Claim identifier.
+
+        Returns:
+            List of run IDs (most recent first).
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            return []
+
+        runs_dir = claim_folder / "runs"
+        if not runs_dir.exists():
+            return []
+
+        run_ids = []
+        for run_dir in sorted(runs_dir.iterdir(), reverse=True):
+            if not run_dir.is_dir():
+                continue
+            if not (run_dir.name.startswith("run_") or run_dir.name.startswith("BATCH-")):
+                continue
+            extraction_path = run_dir / "extraction" / f"{doc_id}.json"
+            if extraction_path.exists():
+                run_ids.append(run_dir.name)
+
+        return run_ids
 
     # -------------------------------------------------------------------------
     # Labels (Document-Scoped, Run-Independent)
@@ -544,6 +911,32 @@ class FileStorage:
             unlabeled_count=unlabeled_count,
             updated_at=review.get("reviewed_at"),
         )
+
+    def count_labels_for_claim(self, claim_id: str) -> int:
+        """Count the number of labeled documents in a claim.
+
+        Args:
+            claim_id: Claim identifier.
+
+        Returns:
+            Number of documents with labels in the claim.
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            return 0
+
+        docs_dir = claim_folder / "docs"
+        if not docs_dir.exists():
+            return 0
+
+        count = 0
+        for doc_folder in docs_dir.iterdir():
+            if doc_folder.is_dir():
+                doc_id = doc_folder.name
+                if self.get_label(doc_id) is not None:
+                    count += 1
+
+        return count
 
     # -------------------------------------------------------------------------
     # Index Operations
