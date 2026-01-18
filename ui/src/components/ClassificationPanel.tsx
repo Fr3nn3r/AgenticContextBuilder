@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { cn } from "../lib/utils";
 import { formatDocType } from "../lib/formatters";
+import { HelpIcon } from "./shared";
 
 // Document type options from the catalog
 const DOC_TYPES = [
@@ -103,12 +104,13 @@ export function ClassificationPanel({
             {formatDocType(displayType)}
           </span>
           <span className={cn(
-            "text-sm font-medium",
+            "text-sm font-medium flex items-center gap-1",
             confidencePercent >= 90 ? "text-green-600 dark:text-green-400" :
             confidencePercent >= 70 ? "text-amber-600 dark:text-amber-400" :
             "text-red-600 dark:text-red-400"
           )}>
             {confidencePercent}%
+            <HelpIcon term="classificationConfidence" />
           </span>
           {isConfirmed && !isOverridden && (
             <span className="text-green-600 dark:text-green-400 text-sm">✓</span>

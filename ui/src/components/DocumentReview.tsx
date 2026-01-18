@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   listClassificationDocs,
@@ -21,6 +21,7 @@ import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
 import { ClassificationPanel } from "./ClassificationPanel";
 import { cn } from "../lib/utils";
+import { ExtractorBadge } from "./shared";
 
 interface DocumentReviewProps {
   batches: ClaimRunInfo[];
@@ -92,16 +93,34 @@ export function DocumentReview({
   const [classificationOverridden, setClassificationOverridden] = useState(false);
   const [classificationOverriddenType, setClassificationOverriddenType] = useState<string | null>(null);
 
+  // Refs for preventing race conditions and flickering
+  const docsRef = useRef<ClassificationDoc[]>([]); // Access docs without triggering re-renders
+  const loadRequestIdRef = useRef(0); // Track current load request to ignore stale responses
+  const lastValidPayloadRef = useRef<{ docId: string; payload: DocPayload } | null>(null);
+
+  // Keep docsRef in sync with docs state
+  docsRef.current = docs;
+
+  // Update lastValidPayloadRef when we have a valid matching payload (in useEffect, not during render)
+  useEffect(() => {
+    if (docPayload && selectedDocId && docPayload.doc_id === selectedDocId) {
+      lastValidPayloadRef.current = { docId: selectedDocId, payload: docPayload };
+    }
+  }, [docPayload, selectedDocId]);
+
   // Load documents when run changes
   const loadDocs = useCallback(async () => {
     if (!selectedBatchId) {
       setDocs([]);
+      lastValidPayloadRef.current = null; // Clear cached payload when no batch
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
+      // Clear cached payload when switching batches to prevent showing stale content
+      lastValidPayloadRef.current = null;
 
       // Get classification docs
       const classificationDocs = await listClassificationDocs(selectedBatchId);
@@ -149,36 +168,58 @@ export function DocumentReview({
   }, [loadDocs]);
 
   // Load document detail when selection changes
-  const loadDetail = useCallback(async () => {
+  // Using refs to avoid dependency on `docs` which would cause re-triggers
+  useEffect(() => {
+    // Early exit if no selection
     if (!selectedDocId || !selectedBatchId) {
       setDocPayload(null);
       setFieldLabels([]);
+      setDetailLoading(false);
       return;
     }
 
-    // Find the selected doc to get claim_id
-    const selectedDoc = docs.find((d) => d.doc_id === selectedDocId);
-    if (!selectedDoc) return;
+    // Find the selected doc using ref to avoid dependency issues
+    const selectedDoc = docsRef.current.find((d) => d.doc_id === selectedDocId);
+    if (!selectedDoc) {
+      // Doc not found yet - might still be loading docs list
+      return;
+    }
 
-    try {
-      setDetailLoading(true);
-      const payload = await getDoc(
-        selectedDocId,
-        selectedDoc.claim_id,
-        selectedBatchId
-      );
-      setDocPayload(payload);
+    // Capture values for the closure to ensure type safety
+    const docId = selectedDocId;
+    const batchId = selectedBatchId;
+    const doc = selectedDoc;
 
-      // Build classification detail from available data
-      // The selectedDoc already has predicted_type, confidence, signals from listClassificationDocs
-      if (selectedDoc) {
+    // Increment request ID to track this specific request
+    const currentRequestId = ++loadRequestIdRef.current;
+
+    async function loadDetail() {
+      try {
+        setDetailLoading(true);
+
+        const payload = await getDoc(
+          docId,
+          doc.claim_id,
+          batchId
+        );
+
+        // CRITICAL: Check if this request is still current
+        // If user clicked another doc while loading, ignore this response
+        if (loadRequestIdRef.current !== currentRequestId) {
+          return; // Stale request - discard
+        }
+
+        // All state updates are for the current request
+        setDocPayload(payload);
+
+        // Build classification detail from available data
         setClassificationDetail({
-          doc_id: selectedDoc.doc_id,
-          claim_id: selectedDoc.claim_id,
-          filename: selectedDoc.filename,
-          predicted_type: selectedDoc.predicted_type,
-          confidence: selectedDoc.confidence,
-          signals: selectedDoc.signals || [],
+          doc_id: doc.doc_id,
+          claim_id: doc.claim_id,
+          filename: doc.filename,
+          predicted_type: doc.predicted_type,
+          confidence: doc.confidence,
+          signals: doc.signals || [],
           summary: "",
           key_hints: null,
           language: "unknown",
@@ -188,72 +229,77 @@ export function DocumentReview({
           existing_label: payload.labels?.doc_labels
             ? {
                 doc_type_correct: payload.labels.doc_labels.doc_type_correct ?? true,
-                doc_type_truth: selectedDoc.doc_type_truth || null,
+                doc_type_truth: doc.doc_type_truth || null,
                 notes: payload.labels.review?.notes || "",
               }
             : null,
         });
 
         // Initialize classification label state from existing labels
-        const hasOverride = selectedDoc.doc_type_truth !== null && selectedDoc.doc_type_truth !== selectedDoc.predicted_type;
+        const hasOverride = doc.doc_type_truth !== null && doc.doc_type_truth !== doc.predicted_type;
         const isConfirmed = payload.labels?.doc_labels?.doc_type_correct === true;
         setClassificationConfirmed(isConfirmed || hasOverride);
         setClassificationOverridden(hasOverride);
-        setClassificationOverriddenType(hasOverride ? selectedDoc.doc_type_truth : null);
-      }
+        setClassificationOverriddenType(hasOverride ? doc.doc_type_truth : null);
 
-      // Initialize labels from existing or create new from extraction
-      if (payload.labels && payload.labels.field_labels.length > 0) {
-        setFieldLabels(payload.labels.field_labels);
-        setDocLabels(payload.labels.doc_labels);
-        setNotes(payload.labels.review.notes);
+        // Initialize labels from existing or create new from extraction
+        if (payload.labels && payload.labels.field_labels.length > 0) {
+          setFieldLabels(payload.labels.field_labels);
+          setDocLabels(payload.labels.doc_labels);
+          setNotes(payload.labels.review.notes);
 
-        // Update doc status in list if it has labeled fields
-        // This ensures the list shows "Labeled" even if backend returned "pending"
-        const hasLabeledFields = payload.labels.field_labels.some(
-          (l: FieldLabel) => l.state === "LABELED" || l.state === "CONFIRMED"
-        );
-        if (hasLabeledFields) {
-          setDocs((prev) =>
-            prev.map((d) =>
-              d.doc_id === selectedDocId && d.review_status === "pending"
-                ? { ...d, review_status: "confirmed" as const }
-                : d
-            )
+          // Update doc status in list if it has labeled fields
+          const hasLabeledFields = payload.labels.field_labels.some(
+            (l: FieldLabel) => l.state === "LABELED" || l.state === "CONFIRMED"
           );
+          if (hasLabeledFields) {
+            setDocs((prev) =>
+              prev.map((d) =>
+                d.doc_id === docId && d.review_status === "pending"
+                  ? { ...d, review_status: "confirmed" as const }
+                  : d
+              )
+            );
+          }
+        } else if (payload.extraction) {
+          setFieldLabels(
+            payload.extraction.fields.map((f) => ({
+              field_name: f.name,
+              state: "UNLABELED" as const,
+              notes: "",
+            }))
+          );
+          setDocLabels(payload.labels?.doc_labels || { doc_type_correct: true });
+          setNotes(payload.labels?.review?.notes || "");
+        } else {
+          setFieldLabels([]);
+          setDocLabels({ doc_type_correct: true });
+          setNotes("");
         }
-      } else if (payload.extraction) {
-        // Initialize field labels from extraction fields with UNLABELED state
-        setFieldLabels(
-          payload.extraction.fields.map((f) => ({
-            field_name: f.name,
-            state: "UNLABELED" as const,
-            notes: "",
-          }))
-        );
-        // Preserve doc_labels if they exist (for classification), otherwise default
-        setDocLabels(payload.labels?.doc_labels || { doc_type_correct: true });
-        setNotes(payload.labels?.review?.notes || "");
-      } else {
-        setFieldLabels([]);
-        setDocLabels({ doc_type_correct: true });
-        setNotes("");
-      }
 
-      setHasUnsavedChanges(false);
-      // Clear highlights when switching documents
-      setHighlightQuote(undefined);
-      setHighlightPage(undefined);
-      setHighlightCharStart(undefined);
-      setHighlightCharEnd(undefined);
-      setHighlightValue(undefined);
-    } catch (err) {
-      console.error("Failed to load document detail:", err);
-      setDocPayload(null);
-    } finally {
-      setDetailLoading(false);
+        setHasUnsavedChanges(false);
+        // Clear highlights when switching documents
+        setHighlightQuote(undefined);
+        setHighlightPage(undefined);
+        setHighlightCharStart(undefined);
+        setHighlightCharEnd(undefined);
+        setHighlightValue(undefined);
+      } catch (err) {
+        // Only update error state if this is still the current request
+        if (loadRequestIdRef.current === currentRequestId) {
+          console.error("Failed to load document detail:", err);
+          setDocPayload(null);
+        }
+      } finally {
+        // Only clear loading if this is still the current request
+        if (loadRequestIdRef.current === currentRequestId) {
+          setDetailLoading(false);
+        }
+      }
     }
-  }, [selectedDocId, selectedBatchId, docs]);
+
+    loadDetail();
+  }, [selectedDocId, selectedBatchId]); // Only depend on IDs, not on docs
 
   // Handle document selection with change tracking
   const handleSelectDoc = (docId: string) => {
@@ -266,10 +312,6 @@ export function DocumentReview({
       setSelectedDocId(docId);
     }
   };
-
-  useEffect(() => {
-    loadDetail();
-  }, [loadDetail]); // Include loadDetail to trigger when docs are loaded
 
   // Field labeling handlers
   function handleConfirmField(fieldName: string, truthValue: string) {
@@ -375,8 +417,10 @@ export function DocumentReview({
   }
 
   function handleCopyDocId() {
-    if (docPayload?.doc_id) {
-      navigator.clipboard.writeText(docPayload.doc_id);
+    // Use displayPayload to copy what's actually shown to the user
+    const payload = displayPayload || docPayload;
+    if (payload?.doc_id) {
+      navigator.clipboard.writeText(payload.doc_id);
       setCopiedDocId(true);
       setTimeout(() => setCopiedDocId(false), 2000);
     }
@@ -507,6 +551,21 @@ export function DocumentReview({
   };
 
   const selectedDoc = docs.find((d) => d.doc_id === selectedDocId);
+
+  // Determine which payload to display:
+  // 1. If current docPayload matches selectedDocId, use it (freshest data)
+  // 2. Otherwise, use the last valid payload to prevent flicker during transitions
+  // 3. Only show loading state if we have no valid payload at all
+  const isPayloadCurrent = docPayload && selectedDocId && docPayload.doc_id === selectedDocId;
+  const displayPayload = isPayloadCurrent
+    ? docPayload
+    : lastValidPayloadRef.current?.payload || null;
+
+  // Show loading indicator only when we have no content to display
+  const showLoadingState = detailLoading && !displayPayload;
+
+  // Check if we're showing stale content during transition (for subtle loading indicator)
+  const isTransitioning = !!(detailLoading && displayPayload && !isPayloadCurrent);
 
   return (
     <div className="h-full flex flex-col">
@@ -642,22 +701,24 @@ export function DocumentReview({
         </div>
 
         {/* Document Viewer + Fields Panel */}
-        {selectedDoc && docPayload ? (
-          <div className="flex-1 flex min-h-0">
+        {selectedDoc && displayPayload ? (
+          <div className={cn("flex-1 flex min-h-0", isTransitioning && "opacity-75 pointer-events-none")}>
             {/* Center: Document Viewer */}
             <div className="flex-1 border-r bg-card">
               <DocumentViewer
-                pages={docPayload.pages}
-                sourceUrl={getDocSourceUrl(docPayload.doc_id, docPayload.claim_id)}
-                hasPdf={docPayload.has_pdf}
-                hasImage={docPayload.has_image}
-                claimId={docPayload.claim_id}
-                docId={docPayload.doc_id}
-                highlightQuote={highlightQuote}
-                highlightPage={highlightPage}
-                highlightCharStart={highlightCharStart}
-                highlightCharEnd={highlightCharEnd}
-                highlightValue={highlightValue}
+                key={displayPayload.doc_id}
+                pages={displayPayload.pages}
+                sourceUrl={getDocSourceUrl(displayPayload.doc_id, displayPayload.claim_id)}
+                hasPdf={displayPayload.has_pdf}
+                hasImage={displayPayload.has_image}
+                extraction={displayPayload.extraction}
+                claimId={displayPayload.claim_id}
+                docId={displayPayload.doc_id}
+                highlightQuote={isPayloadCurrent ? highlightQuote : undefined}
+                highlightPage={isPayloadCurrent ? highlightPage : undefined}
+                highlightCharStart={isPayloadCurrent ? highlightCharStart : undefined}
+                highlightCharEnd={isPayloadCurrent ? highlightCharEnd : undefined}
+                highlightValue={isPayloadCurrent ? highlightValue : undefined}
               />
             </div>
 
@@ -666,17 +727,23 @@ export function DocumentReview({
               {/* Header */}
               <div className="px-4 py-2.5 border-b bg-card">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-foreground">Field Extraction</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium text-foreground">Field Extraction</h3>
+                    <ExtractorBadge hasPdf={displayPayload.has_pdf} hasImage={displayPayload.has_image} />
+                    {isTransitioning && (
+                      <span className="text-xs text-muted-foreground animate-pulse">Loading...</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     {hasUnsavedChanges && (
                       <span className="text-xs text-amber-600">Unsaved</span>
                     )}
                     <button
                       onClick={handleSave}
-                      disabled={saving || !hasUnsavedChanges}
+                      disabled={saving || !hasUnsavedChanges || isTransitioning}
                       className={cn(
                         "px-3 py-1.5 text-sm rounded-md font-medium transition-colors",
-                        saving || !hasUnsavedChanges
+                        saving || !hasUnsavedChanges || isTransitioning
                           ? "bg-muted text-muted-foreground cursor-not-allowed"
                           : "bg-primary text-white hover:bg-primary/90"
                       )}
@@ -688,7 +755,7 @@ export function DocumentReview({
               </div>
 
               {/* Classification Panel */}
-              {docPayload.extraction && classificationDetail && (
+              {displayPayload.extraction && classificationDetail && (
                 <ClassificationPanel
                   predictedType={classificationDetail.predicted_type}
                   confidence={classificationDetail.confidence}
@@ -703,18 +770,18 @@ export function DocumentReview({
 
               {/* Fields Table */}
               <div className="flex-1 overflow-auto">
-                {docPayload.extraction ? (
+                {displayPayload.extraction ? (
                   <FieldsTable
-                    fields={docPayload.extraction.fields}
+                    fields={displayPayload.extraction.fields}
                     labels={fieldLabels}
                     onConfirm={handleConfirmField}
                     onUnverifiable={handleUnverifiableField}
                     onEditTruth={handleEditTruth}
                     onQuoteClick={handleQuoteClick}
-                    docType={docPayload.doc_type}
+                    docType={displayPayload.doc_type}
                     showOptionalFields={showOptionalFields}
                     onToggleOptionalFields={() => setShowOptionalFields(!showOptionalFields)}
-                    readOnly={classificationOverridden}
+                    readOnly={classificationOverridden || isTransitioning}
                   />
                 ) : (
                   <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
@@ -734,9 +801,10 @@ export function DocumentReview({
                     setNotes(e.target.value);
                     setHasUnsavedChanges(true);
                   }}
+                  disabled={isTransitioning}
                   placeholder="Optional notes about this document..."
                   rows={2}
-                  className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
                 />
               </div>
 
@@ -744,7 +812,7 @@ export function DocumentReview({
               <div className="px-4 py-2 border-t bg-muted/50 flex items-center gap-4 text-xs">
                 <div className="flex items-center gap-1">
                   <span className="text-muted-foreground">Doc ID:</span>
-                  <code className="text-foreground font-mono">{docPayload.doc_id.slice(0, 12)}...</code>
+                  <code className="text-foreground font-mono">{displayPayload.doc_id.slice(0, 12)}...</code>
                   <button
                     onClick={handleCopyDocId}
                     className="p-1 text-muted-foreground/70 hover:text-muted-foreground"
@@ -783,7 +851,7 @@ export function DocumentReview({
               </div>
             </div>
           </div>
-        ) : detailLoading ? (
+        ) : showLoadingState ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             Loading document...
           </div>

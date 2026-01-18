@@ -2256,25 +2256,11 @@ def get_pipeline_status(run_id: str):
 
 
 def _generate_friendly_name(run_id: str) -> str:
-    """Generate a human-friendly name from run_id using adjective-animal pattern."""
-    import hashlib
+    """Return the batch ID as the friendly name (enterprise format).
 
-    adjectives = [
-        "swift", "bold", "calm", "crisp", "amber", "quiet", "brave", "fresh",
-        "clear", "warm", "cool", "bright", "quick", "keen", "wise", "fair",
-    ]
-    animals = [
-        "falcon", "tiger", "eagle", "panda", "raven", "wolf", "hawk", "bear",
-        "lion", "fox", "deer", "owl", "crane", "dove", "heron", "lynx",
-    ]
-
-    # Use hash of run_id for consistent name generation
-    h = hashlib.md5(run_id.encode()).hexdigest()
-    adj_idx = int(h[:4], 16) % len(adjectives)
-    animal_idx = int(h[4:8], 16) % len(animals)
-    num = int(h[8:10], 16) % 100
-
-    return f"{adjectives[adj_idx]}-{animals[animal_idx]}-{num}"
+    The batch ID format BATCH-YYYYMMDD-NNN is already professional and sortable.
+    """
+    return run_id
 
 
 def _format_duration(ms: int) -> str:

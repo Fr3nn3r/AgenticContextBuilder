@@ -158,9 +158,6 @@ export function ExtractionPage({
             </div>
           ) : (
             <>
-              {/* Health Summary Banner */}
-              <HealthSummaryBanner batch={selectedBatch} />
-
               {/* Phase Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {/* Ingestion Card */}
@@ -449,53 +446,6 @@ function BatchStatusBadge({ status }: { status: "complete" | "partial" | "failed
   if (status === "complete") return <CompleteBadge />;
   if (status === "partial") return <PartialBadge />;
   return <FailBadge />;
-}
-
-function HealthSummaryBanner({ batch }: { batch: DetailedRunInfo }) {
-  const { ingestion, classification, extraction, quality_gate } = batch.phases;
-
-  const items = [
-    {
-      label: "ingested",
-      value: ingestion.ingested,
-      total: ingestion.discovered,
-      ok: ingestion.failed === 0,
-    },
-    {
-      label: "classified",
-      value: classification.classified,
-      total: ingestion.ingested,
-      ok: classification.low_confidence === 0,
-    },
-    {
-      label: "extracted",
-      value: extraction.succeeded,
-      total: extraction.attempted,
-      ok: extraction.failed === 0,
-    },
-    {
-      label: "pass",
-      value: quality_gate.pass,
-      total: quality_gate.pass + quality_gate.warn + quality_gate.fail,
-      ok: quality_gate.fail === 0,
-    },
-  ];
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-2 mb-4 p-3 bg-muted/50 rounded-lg text-sm" data-testid="health-summary-banner">
-      {items.map((item, idx) => (
-        <div key={item.label} className="flex items-center">
-          {idx > 0 && <span className="text-muted-foreground/50 mx-2">|</span>}
-          <span className={cn("mr-1", item.ok ? "text-success" : "text-warning-foreground")}>
-            {item.ok ? "✓" : "⚠"}
-          </span>
-          <span className="text-muted-foreground">
-            {item.value}/{item.total} {item.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 interface PhaseCardProps {

@@ -71,3 +71,6 @@ export { HeaderUserMenu } from "./HeaderUserMenu";
 
 // Help tooltips
 export { HelpTerm, HelpIcon, HelpTooltipProvider } from "./HelpTerm";
+
+// Extractor badge
+export { ExtractorBadge } from "./ExtractorBadge";

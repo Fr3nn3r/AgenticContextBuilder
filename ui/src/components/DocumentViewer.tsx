@@ -3,11 +3,12 @@ import type { PageContent, AzureDIOutputExtended, SmartBoundingBox } from "../ty
 import { PageViewer } from "./PageViewer";
 import { PDFViewer, PDFViewerHandle } from "./PDFViewer";
 import { ImageViewer } from "./ImageViewer";
+import { JsonViewer } from "./JsonViewer";
 import { cn } from "../lib/utils";
 import { getAzureDI } from "../api/client";
 import { computeSmartBoundingBoxes } from "../lib/bboxUtils";
 
-type ViewerTab = "text" | "pdf" | "image";
+type ViewerTab = "text" | "pdf" | "image" | "json";
 
 interface DocumentViewerProps {
   pages: PageContent[];
@@ -32,7 +33,7 @@ export function DocumentViewer({
   sourceUrl,
   hasPdf = false,
   hasImage = false,
-  extraction: _extraction,
+  extraction,
   highlightQuote,
   highlightPage,
   highlightCharStart,
@@ -41,7 +42,6 @@ export function DocumentViewer({
   claimId,
   docId,
 }: DocumentViewerProps) {
-  void _extraction; // Kept for backwards compatibility
 
   // Determine default tab: prefer visual content (PDF > Image > Text)
   function getDefaultTab(): ViewerTab {
@@ -145,6 +145,9 @@ export function DocumentViewer({
   if (hasImage && sourceUrl) {
     availableTabs.push({ id: "image", label: "Image" });
   }
+  if (extraction) {
+    availableTabs.push({ id: "json", label: "JSON" });
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -190,6 +193,10 @@ export function DocumentViewer({
 
         {activeTab === "image" && sourceUrl && (
           <ImageViewer url={sourceUrl} alt="Document" />
+        )}
+
+        {activeTab === "json" && extraction && (
+          <JsonViewer data={extraction} />
         )}
       </div>
     </div>

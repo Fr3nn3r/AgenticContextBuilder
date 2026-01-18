@@ -2,6 +2,8 @@ import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { formatTimestamp, formatRelativeTime } from "../../lib/formatters";
 import type { DetailedRunInfo } from "../../api/client";
+import { ThemePopover } from "./ThemePopover";
+import { HeaderUserMenu } from "./HeaderUserMenu";
 
 interface BatchContextBarProps {
   batches: DetailedRunInfo[];
@@ -70,10 +72,6 @@ export function BatchContextBar({
         {selectedBatch && (
           <div className="flex items-center gap-4 text-sm text-muted-foreground border-l border-border pl-4">
             <span className="flex items-center gap-1">
-              <ModelIcon className="w-4 h-4" />
-              {selectedBatch.model}
-            </span>
-            <span className="flex items-center gap-1">
               <DocsIcon className="w-4 h-4" />
               {selectedBatch.docs_total} docs
             </span>
@@ -125,6 +123,12 @@ export function BatchContextBar({
             </>
           )}
         </button>
+
+        {/* Divider and header controls */}
+        <div className="border-l border-border pl-3 flex items-center gap-2">
+          <ThemePopover />
+          <HeaderUserMenu />
+        </div>
       </div>
     </div>
   );
@@ -154,19 +158,6 @@ function BatchIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-      />
-    </svg>
-  );
-}
-
-function ModelIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
       />
     </svg>
   );

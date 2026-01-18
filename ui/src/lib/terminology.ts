@@ -78,6 +78,18 @@ export const terminology: Record<string, TermDefinition> = {
       "Score (0-100%) indicating extraction certainty. Green: 90%+, Amber: 70-89%, Red: below 70%.",
     category: "quality",
   },
+  classificationConfidence: {
+    term: "Classification Confidence",
+    definition:
+      "How certain the model is about the document type. Green (90%+): high, Amber (70-89%): moderate, Red (<70%): low.",
+    category: "quality",
+  },
+  extractionConfidence: {
+    term: "Extraction Confidence",
+    definition:
+      "How certain the model is about this extracted field value. Higher values indicate more reliable extraction.",
+    category: "quality",
+  },
   labelCoverage: {
     term: "Label Coverage",
     definition:
