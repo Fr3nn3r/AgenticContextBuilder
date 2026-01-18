@@ -1,0 +1,225 @@
+doc_type: medical_report
+version: v1
+
+required_fields:
+  - patient_name
+  - report_date
+
+optional_fields:
+  - medical_record_number
+  - physician_name
+  - hospital_name
+  - diagnosis
+  - diagnosis_code
+  - treatment
+  - prescription
+  - prognosis
+  - follow_up_date
+  - date_of_birth
+  - admission_date
+  - discharge_date
+  - procedure_performed
+  - referring_physician
+  - insurance_info
+
+field_rules:
+  patient_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "patient"
+      - "patient name"
+      - "nombre del paciente"
+      - "paciente"
+      - "name"
+      - "nombre"
+
+  report_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "date"
+      - "report date"
+      - "fecha"
+      - "fecha del informe"
+      - "examination date"
+      - "fecha de examen"
+
+  medical_record_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "MRN"
+      - "medical record"
+      - "record number"
+      - "expediente"
+      - "numero de expediente"
+      - "historia clinica"
+      - "HC"
+
+  physician_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "doctor"
+      - "physician"
+      - "Dr."
+      - "medico"
+      - "médico"
+      - "attending"
+      - "tratante"
+      - "firma"
+
+  hospital_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "hospital"
+      - "clinic"
+      - "medical center"
+      - "clinica"
+      - "clínica"
+      - "centro medico"
+      - "institution"
+
+  diagnosis:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "diagnosis"
+      - "diagnostico"
+      - "diagnóstico"
+      - "impression"
+      - "finding"
+      - "condition"
+      - "hallazgo"
+
+  diagnosis_code:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "ICD"
+      - "ICD-10"
+      - "CIE"
+      - "CIE-10"
+      - "diagnosis code"
+      - "codigo"
+
+  treatment:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "treatment"
+      - "tratamiento"
+      - "therapy"
+      - "terapia"
+      - "plan"
+      - "management"
+      - "manejo"
+
+  prescription:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "prescription"
+      - "medication"
+      - "medicine"
+      - "receta"
+      - "medicamento"
+      - "Rx"
+      - "drug"
+
+  prognosis:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "prognosis"
+      - "pronostico"
+      - "pronóstico"
+      - "outcome"
+      - "recovery"
+      - "recuperacion"
+
+  follow_up_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "follow up"
+      - "follow-up"
+      - "next appointment"
+      - "return"
+      - "proxima cita"
+      - "seguimiento"
+      - "control"
+
+  date_of_birth:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "date of birth"
+      - "DOB"
+      - "birth date"
+      - "fecha de nacimiento"
+      - "nacimiento"
+
+  admission_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "admission"
+      - "admitted"
+      - "ingreso"
+      - "fecha de ingreso"
+      - "hospitalization"
+
+  discharge_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "discharge"
+      - "discharged"
+      - "alta"
+      - "fecha de alta"
+      - "egreso"
+
+  procedure_performed:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "procedure"
+      - "surgery"
+      - "operation"
+      - "procedimiento"
+      - "cirugia"
+      - "cirugía"
+      - "intervencion"
+
+  referring_physician:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "referring"
+      - "referred by"
+      - "referido por"
+      - "referente"
+      - "ordenado por"
+
+  insurance_info:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "insurance"
+      - "seguro"
+      - "aseguradora"
+      - "policy"
+      - "poliza"
+      - "coverage"
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.6
+  warn_if:
+    - evidence_rate < 0.6
+  fail_if:
+    - required_present_ratio < 1.0

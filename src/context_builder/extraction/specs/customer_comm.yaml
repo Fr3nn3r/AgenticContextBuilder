@@ -1,0 +1,185 @@
+doc_type: customer_comm
+version: v1
+
+required_fields:
+  - communication_date
+
+optional_fields:
+  - sender_name
+  - sender_email
+  - sender_phone
+  - recipient_name
+  - recipient_email
+  - subject
+  - communication_type
+  - reference_number
+  - claim_number
+  - policy_number
+  - request_type
+  - response_deadline
+  - attachments_mentioned
+
+field_rules:
+  communication_date:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "date"
+      - "sent"
+      - "received"
+      - "fecha"
+      - "dated"
+
+  sender_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "from"
+      - "sender"
+      - "de"
+      - "remitente"
+      - "name"
+      - "signed"
+      - "firma"
+
+  sender_email:
+    normalize: email_normalize
+    validate: is_email
+    hints:
+      - "email"
+      - "e-mail"
+      - "from"
+      - "correo"
+      - "correo electronico"
+
+  sender_phone:
+    normalize: phone_normalize
+    validate: is_phone
+    hints:
+      - "phone"
+      - "tel"
+      - "telephone"
+      - "mobile"
+      - "celular"
+      - "telefono"
+
+  recipient_name:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "to"
+      - "recipient"
+      - "dear"
+      - "para"
+      - "destinatario"
+      - "estimado"
+      - "attention"
+      - "attn"
+
+  recipient_email:
+    normalize: email_normalize
+    validate: is_email
+    hints:
+      - "to"
+      - "recipient email"
+      - "para"
+      - "correo"
+
+  subject:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "subject"
+      - "re"
+      - "asunto"
+      - "ref"
+      - "regarding"
+      - "matter"
+
+  communication_type:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "email"
+      - "letter"
+      - "carta"
+      - "correo"
+      - "fax"
+      - "memo"
+      - "notice"
+      - "notificacion"
+
+  reference_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "reference"
+      - "ref"
+      - "referencia"
+      - "number"
+      - "no."
+      - "numero"
+
+  claim_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "claim"
+      - "claim number"
+      - "siniestro"
+      - "numero de reclamo"
+      - "reclamo"
+
+  policy_number:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "policy"
+      - "policy number"
+      - "poliza"
+      - "póliza"
+      - "numero de poliza"
+
+  request_type:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "request"
+      - "solicitud"
+      - "inquiry"
+      - "complaint"
+      - "queja"
+      - "consulta"
+      - "reclamacion"
+
+  response_deadline:
+    normalize: date_to_iso
+    validate: is_date
+    hints:
+      - "deadline"
+      - "respond by"
+      - "due date"
+      - "fecha limite"
+      - "plazo"
+      - "before"
+
+  attachments_mentioned:
+    normalize: uppercase_trim
+    validate: non_empty
+    hints:
+      - "attached"
+      - "attachment"
+      - "enclosed"
+      - "adjunto"
+      - "anexo"
+      - "see attached"
+      - "please find"
+
+quality_gate:
+  pass_if:
+    - required_present_ratio >= 1.0
+    - evidence_rate >= 0.5
+  warn_if:
+    - evidence_rate < 0.5
+  fail_if:
+    - required_present_ratio < 1.0
