@@ -41,40 +41,6 @@ _All P0 bugs fixed! See Done section._
   - Add filter functionality for batches list on left panel
   - Currently will be difficult to scale with many batches
 
-- [ ] **FEAT-29: Confidence tooltips**
-  - Add hints explaining confidence percentages
-  - Currently unclear if it's classification or extraction confidence
-
-- [ ] **FEAT-30: Show extractor type**
-  - Display which extractor ran (Azure vs OpenAI Vision) on document screen
-  - Currently can't tell who was responsible for extraction
-
-- [ ] **FEAT-31: JSON tab for small outputs**
-  - Formatted JSON view for vision/classification output
-  - Only for small outputs (not full text documents - crashes Playwright)
-  - Color-formatted like Python console package
-
-- [ ] **FEAT-32: Remove GPT-4 label**
-  - Remove model label from batches header
-  - Each stage could use different models - label is misleading
-
-- [ ] **FEAT-33: Consistent header**
-  - Add sign out menu and theme toggle to batches screen
-  - Currently missing on batches but present on other screens
-
-- [ ] **FEAT-34: Remove redundant status line**
-  - Remove "4x4 ingested, 4x4 classified" line above cards
-  - Redundant with card content
-
-- [ ] **FEAT-36: Enterprise batch names**
-  - Replace fun names (wise fox, quick lion, crisp bear) with professional naming
-  - Current names don't feel enterprise-grade
-
-
-- [ ] **BUG-07: Missing extraction = yellow instead of red**
-  - When extraction returns nothing but ground truth exists, show as incorrect (red)
-  - Currently shows yellow warning - should be red "incorrect"
-
 ### P2 - Pipeline Screen Improvements
 
 - [ ] **FEAT-17: Three-level config display**
@@ -248,6 +214,18 @@ _All P0 bugs fixed! See Done section._
 ## Done (Recent)
 
 _Cleared 2026-01-17. See git history for details._
+
+### 2026-01-18 - P1 UI Polish
+
+- [x] **FEAT-29: Confidence tooltips** - Added HelpIcon with classification confidence explanation
+- [x] **FEAT-30: Show extractor type** - ExtractorBadge component shows Azure DI/Vision/Text
+- [x] **FEAT-31: JSON tab for small outputs** - Added JsonViewer with syntax highlighting (prism-react-renderer)
+- [x] **FEAT-32: Remove GPT-4 label** - Removed model label from BatchContextBar
+- [x] **FEAT-33: Consistent header** - Added theme/user menu controls to BatchContextBar
+- [x] **FEAT-34: Remove redundant status line** - Removed HealthSummaryBanner from ExtractionPage
+- [x] **FEAT-36: Enterprise batch names** - Uses run_id directly instead of fun names
+- [x] **BUG-07: Missing extraction = red** - Empty extraction with ground truth shows Incorrect (red)
+- [x] **HelpTerm tooltips** - Added terminology.ts with 45+ term definitions
 
 ### 2026-01-17 - P1 Bug Fixes
 
