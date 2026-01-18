@@ -209,6 +209,119 @@ _All P0 bugs fixed! See Done section._
   - See: `plans/20260114-Fix-Hardcoded-Paths.md`
   - Labels path fixed (2026-01-15), check for others
 
+### Code Review - Backend (2026-01-18)
+
+#### Critical Security
+
+- [ ] **SEC-01: Upgrade password hashing to bcrypt**
+  - Current: SHA-256 with fixed salt (users.py:66-74)
+  - Fix: Use bcrypt/argon2 with per-user random salts
+  - Effort: Low
+
+- [ ] **SEC-02: Remove/randomize default credentials**
+  - Current: Default users with password "su" (users.py:81-103)
+  - Fix: Generate random passwords or require setup wizard
+  - Effort: Low
+
+- [ ] **SEC-03: Encrypt or hash session tokens**
+  - Current: Plaintext tokens in sessions.json (auth.py:64-76)
+  - Fix: Store hashed tokens or use encrypted storage
+  - Effort: Medium
+
+#### Medium Security
+
+- [ ] **SEC-04: Add login rate limiting**
+  - Current: No protection against brute force (main.py:798-815)
+  - Fix: Add rate limiting middleware or account lockout
+  - Effort: Low
+
+- [ ] **SEC-05: Validate file magic bytes on upload**
+  - Current: Relies on Content-Type header (upload.py:164-170)
+  - Fix: Use python-magic to check actual file type
+  - Effort: Low
+
+#### Code Quality
+
+- [ ] **REFACTOR-01: Split main.py into route modules**
+  - Current: 1000+ lines with all endpoints
+  - Fix: Create routes/claims.py, routes/auth.py, etc.
+  - Effort: Medium
+
+- [ ] **REFACTOR-02: Add stricter typing for DI**
+  - Current: Some `Any` types for injected deps (run.py:958)
+  - Fix: Define Protocols for classifier, extractor, etc.
+  - Effort: Medium
+
+#### Performance
+
+- [ ] **PERF-01: Auto-rebuild stale indexes**
+  - Current: Manual index rebuild required
+  - Fix: Auto-rebuild on startup or first query if stale
+  - Effort: Medium
+
+- [ ] **PERF-02: Async file I/O for hot paths**
+  - Current: Sync file reads in auth.py, users.py
+  - Fix: Use aiofiles or thread pool
+  - Effort: Medium
+
+### Code Review - Frontend (2026-01-18)
+
+#### Critical
+
+- [ ] **FE-SEC-01: Add Error Boundaries**
+  - Current: No error boundaries - uncaught errors crash app
+  - Fix: Add ErrorBoundary at App level and major pages
+  - Effort: Low
+
+- [ ] **FE-SEC-02: Consider sessionStorage for tokens**
+  - Current: localStorage persists indefinitely (AuthContext.tsx:127)
+  - Fix: Use sessionStorage or add client-side expiry check
+  - Effort: Low
+
+#### Medium
+
+- [ ] **FE-SEC-03: Remove or secure switchUser**
+  - Current: Allows role change without re-auth (AuthContext.tsx:154-157)
+  - Fix: Remove feature or require re-authentication
+  - Effort: Low
+
+- [ ] **FE-PERF-01: Add WebSocket reconnect backoff**
+  - Current: Fixed 3s reconnect loop (usePipelineWebSocket.ts:171)
+  - Fix: Exponential backoff with max retries
+  - Effort: Low
+
+- [ ] **FE-PERF-02: Add request debouncing**
+  - Current: No debounce on run selection changes
+  - Fix: Debounce user-triggered API calls
+  - Effort: Low
+
+#### Code Quality
+
+- [ ] **FE-REFACTOR-01: Split large components**
+  - PipelineControlCenter.tsx (46KB), DocumentReview.tsx (34KB)
+  - Extract table rows, form sections, custom hooks
+  - Effort: Medium
+
+- [ ] **FE-REFACTOR-02: Centralize API types**
+  - Current: Types duplicated in client.ts and types/index.ts
+  - Fix: Move all types to types/index.ts
+  - Effort: Low
+
+#### Accessibility
+
+- [ ] **FE-A11Y-01: Add ARIA labels to icon buttons**
+  - Current: Icon-only buttons lack accessible names
+  - Fix: Add aria-label or sr-only spans
+  - Effort: Low
+
+- [ ] **FE-A11Y-02: Add skip links**
+  - Current: No "skip to main content" for keyboard users
+  - Effort: Low
+
+- [ ] **FE-A11Y-03: Audit color contrast**
+  - Current: Some badge colors may not meet WCAG AA
+  - Effort: Medium
+
 ---
 
 ## Done (Recent)
