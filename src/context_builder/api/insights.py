@@ -1072,7 +1072,7 @@ def list_detailed_runs(
 
         # Get RunBundle for manifest and summary
         run_bundle = storage.get_run(run_id)
-        claim_run_paths = []
+        claim_folders = []  # List of claim folder names for per-claim summary lookup
 
         if run_bundle:
             # Extract data from manifest
@@ -1080,18 +1080,20 @@ def list_detailed_runs(
                 manifest = run_bundle.manifest
                 run_info["model"] = manifest.get("model", "")
                 run_info["claims_count"] = manifest.get("claims_count", 0)
-                # Get list of claim run paths for aggregation
+                # Get list of claim folders from manifest for per-claim aggregation
                 for claim in manifest.get("claims", []):
-                    path_str = claim.get("claim_run_path", "")
-                    if path_str:
-                        claim_path = Path(path_str)
-                        # If path is not absolute, it's relative to project root
-                        if not claim_path.is_absolute():
-                            # Check if path already exists relative to cwd
-                            if not claim_path.exists():
-                                # Try relative to data_dir.parent.parent (project root)
-                                claim_path = data_dir.parent.parent / claim_path
-                        claim_run_paths.append(claim_path)
+                    # Extract claim folder from claim_id or claim_run_path
+                    claim_id = claim.get("claim_id", "")
+                    if claim_id:
+                        claim_folders.append(claim_id)
+                    elif claim.get("claim_run_path"):
+                        # Parse claim folder from path like "output/claims/{claim_folder}/runs/{run_id}"
+                        path_parts = Path(claim.get("claim_run_path")).parts
+                        # Find "claims" in path and get the next part
+                        for i, part in enumerate(path_parts):
+                            if part == "claims" and i + 1 < len(path_parts):
+                                claim_folders.append(path_parts[i + 1])
+                                break
 
             # Extract data from summary
             if run_bundle.summary:
@@ -1109,20 +1111,52 @@ def list_detailed_runs(
                 else:
                     run_info["status"] = "complete"
 
-        # Aggregate per-claim summaries for phase metrics
+                # Check if global summary has pre-aggregated phases data
+                if "phases" in summary:
+                    global_phases = summary["phases"]
+
+                    # Ingestion
+                    ing = global_phases.get("ingestion", {})
+                    run_info["phases"]["ingestion"]["discovered"] = ing.get("discovered", 0)
+                    run_info["phases"]["ingestion"]["ingested"] = ing.get("ingested", 0)
+                    run_info["phases"]["ingestion"]["skipped"] = ing.get("skipped", 0)
+                    run_info["phases"]["ingestion"]["failed"] = ing.get("failed", 0)
+
+                    # Classification
+                    clf = global_phases.get("classification", {})
+                    run_info["phases"]["classification"]["classified"] = clf.get("classified", 0)
+                    run_info["phases"]["classification"]["low_confidence"] = clf.get("low_confidence", 0)
+                    run_info["phases"]["classification"]["distribution"] = clf.get("distribution", {})
+
+                    # Extraction
+                    ext = global_phases.get("extraction", {})
+                    run_info["phases"]["extraction"]["attempted"] = ext.get("attempted", 0)
+                    run_info["phases"]["extraction"]["succeeded"] = ext.get("succeeded", 0)
+                    run_info["phases"]["extraction"]["failed"] = ext.get("failed", 0)
+
+                    # Quality gate
+                    qg = global_phases.get("quality_gate", {})
+                    run_info["phases"]["quality_gate"]["pass"] = qg.get("pass", 0)
+                    run_info["phases"]["quality_gate"]["warn"] = qg.get("warn", 0)
+                    run_info["phases"]["quality_gate"]["fail"] = qg.get("fail", 0)
+
+                    # Skip per-claim aggregation since we have global phases
+                    detailed_runs.append(run_info)
+                    continue
+
+        # Aggregate per-claim summaries for phase metrics using storage layer
         total_time_ms = 0
         ingestion_duration = 0
         classification_duration = 0
         extraction_duration = 0
 
-        for claim_run_path in claim_run_paths:
-            claim_summary_path = claim_run_path / "logs" / "summary.json"
-            if not claim_summary_path.exists():
+        for claim_folder in claim_folders:
+            # Use storage layer to get per-claim summary
+            claim_summary = storage.get_run_summary(run_id, claim_id=claim_folder)
+            if not claim_summary:
                 continue
 
             try:
-                with open(claim_summary_path, "r", encoding="utf-8") as f:
-                    claim_summary = json.load(f)
 
                 # Check if native phases data is available (new format)
                 if "phases" in claim_summary:
@@ -1193,24 +1227,19 @@ def list_detailed_runs(
                             elif qg_status == "fail":
                                 run_info["phases"]["quality_gate"]["fail"] += 1
                         else:
-                            # Fallback: read from extraction result file
-                            extraction_path = doc.get("output_paths", {}).get("extraction")
-                            if extraction_path:
-                                ext_full_path = claim_run_path / extraction_path
-                                if ext_full_path.exists():
-                                    try:
-                                        with open(ext_full_path, "r", encoding="utf-8") as ef:
-                                            ext_result = json.load(ef)
-                                            qg = ext_result.get("quality_gate", {})
-                                            gate_status = qg.get("status", "").lower()
-                                            if gate_status == "pass":
-                                                run_info["phases"]["quality_gate"]["pass"] += 1
-                                            elif gate_status == "warn":
-                                                run_info["phases"]["quality_gate"]["warn"] += 1
-                                            elif gate_status == "fail":
-                                                run_info["phases"]["quality_gate"]["fail"] += 1
-                                    except (json.JSONDecodeError, IOError):
-                                        pass
+                            # Fallback: read from extraction using storage layer
+                            doc_id = doc.get("doc_id", "")
+                            if doc_id:
+                                ext_result = storage.get_extraction(run_id, doc_id, claim_folder)
+                                if ext_result:
+                                    qg = ext_result.get("quality_gate", {})
+                                    gate_status = qg.get("status", "").lower()
+                                    if gate_status == "pass":
+                                        run_info["phases"]["quality_gate"]["pass"] += 1
+                                    elif gate_status == "warn":
+                                        run_info["phases"]["quality_gate"]["warn"] += 1
+                                    elif gate_status == "fail":
+                                        run_info["phases"]["quality_gate"]["fail"] += 1
 
                         # Aggregate per-doc timings if available
                         timings = doc.get("timings", {})
@@ -1225,7 +1254,8 @@ def list_detailed_runs(
                 if claim_summary.get("processing_time_seconds"):
                     total_time_ms += int(claim_summary["processing_time_seconds"] * 1000)
 
-            except (json.JSONDecodeError, IOError):
+            except Exception:
+                # Catch any errors during per-claim summary processing
                 continue
 
         # Set phase durations
@@ -1239,6 +1269,34 @@ def list_detailed_runs(
         # Set total duration
         if total_time_ms > 0:
             run_info["duration_seconds"] = round(total_time_ms / 1000, 1)
+
+        # FALLBACK: If no per-claim data was found but we have global summary,
+        # use global summary to populate basic phase metrics.
+        # This handles legacy runs where claims have been deleted/moved.
+        phases_all_zero = (
+            run_info["phases"]["ingestion"]["discovered"] == 0
+            and run_info["phases"]["extraction"]["attempted"] == 0
+        )
+        has_docs = run_info["docs_total"] > 0
+
+        if phases_all_zero and has_docs:
+            # Use global summary data as fallback
+            docs_total = run_info["docs_total"]
+            docs_success = run_info["docs_success"]
+            docs_failed = run_info["docs_failed"]
+
+            # Ingestion: assume all docs were discovered and ingested
+            run_info["phases"]["ingestion"]["discovered"] = docs_total
+            run_info["phases"]["ingestion"]["ingested"] = docs_success
+            run_info["phases"]["ingestion"]["failed"] = docs_failed
+
+            # Classification: assume all ingested docs were classified
+            run_info["phases"]["classification"]["classified"] = docs_success
+
+            # Extraction: use docs_total/docs_success
+            run_info["phases"]["extraction"]["attempted"] = docs_total
+            run_info["phases"]["extraction"]["succeeded"] = docs_success
+            run_info["phases"]["extraction"]["failed"] = docs_failed
 
         detailed_runs.append(run_info)
 

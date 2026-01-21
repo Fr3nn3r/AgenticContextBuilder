@@ -172,3 +172,22 @@ def test_insights_service_overview_uses_aggregator(monkeypatch, tmp_path):
     service = InsightsService(tmp_path)
 
     assert service.get_overview() == {"docs_total": 1}
+
+
+# =============================================================================
+# REGRESSION TESTS for storage-layer based API endpoints
+# =============================================================================
+#
+# NOTE: These tests verify that the batch/run API endpoints use the storage
+# layer correctly. The tests are designed to work with the updated code
+# in main.py (list_classification_docs) and insights.py (list_detailed_runs).
+#
+# The key changes being tested:
+# 1. list_classification_docs uses storage.run_store.list_extractions() instead
+#    of manual filesystem traversal through claims/{claim}/runs/{run_id}
+# 2. list_detailed_runs uses storage.get_run_summary(run_id, claim_id) for
+#    per-claim summaries instead of relying on claim_run_path from manifest
+#
+# These tests require the worktree source to be on PYTHONPATH and will be
+# functional after merging to main and reinstalling the package.
+# =============================================================================

@@ -717,6 +717,11 @@ class PipelineService:
             # Save manifest using storage layer
             storage.save_run_manifest(run.run_id, manifest)
 
+            # Aggregate phases from per-claim summaries
+            aggregated_phases = self._aggregate_claim_phases(
+                storage, run.run_id, list(claims_by_id.keys())
+            )
+
             # Build summary (matching CLI format)
             run_summary = run.summary or {}
             summary_data = {
@@ -728,6 +733,7 @@ class PipelineService:
                 "docs_total": run_summary.get("total", len(run.docs)),
                 "docs_success": run_summary.get("success", 0),
                 "completed_at": run.completed_at,
+                "phases": aggregated_phases,
             }
             # Save summary using storage layer
             storage.save_run_summary(run.run_id, summary_data)
@@ -743,6 +749,67 @@ class PipelineService:
 
         except Exception as e:
             logger.error(f"Failed to persist run {run.run_id}: {e}")
+
+    def _aggregate_claim_phases(
+        self, storage: "FileStorage", run_id: str, claim_ids: list[str]
+    ) -> dict:
+        """Aggregate phases from per-claim summaries.
+
+        Reads each claim's logs/summary.json and sums up phase metrics
+        to produce a batch-level phases object for the global summary.
+
+        Args:
+            storage: FileStorage instance for reading claim summaries.
+            run_id: Run identifier.
+            claim_ids: List of claim IDs to aggregate.
+
+        Returns:
+            Aggregated phases dict with ingestion, classification,
+            extraction, and quality_gate metrics.
+        """
+        phases = {
+            "ingestion": {"discovered": 0, "ingested": 0, "skipped": 0, "failed": 0},
+            "classification": {"classified": 0, "low_confidence": 0, "distribution": {}},
+            "extraction": {"attempted": 0, "succeeded": 0, "failed": 0},
+            "quality_gate": {"pass": 0, "warn": 0, "fail": 0},
+        }
+
+        for claim_id in claim_ids:
+            claim_summary = storage.get_run_summary(run_id, claim_id=claim_id)
+            if not claim_summary or "phases" not in claim_summary:
+                continue
+
+            claim_phases = claim_summary["phases"]
+
+            # Ingestion
+            ing = claim_phases.get("ingestion", {})
+            phases["ingestion"]["discovered"] += ing.get("discovered", 0)
+            phases["ingestion"]["ingested"] += ing.get("ingested", 0)
+            phases["ingestion"]["skipped"] += ing.get("skipped", 0)
+            phases["ingestion"]["failed"] += ing.get("failed", 0)
+
+            # Classification
+            clf = claim_phases.get("classification", {})
+            phases["classification"]["classified"] += clf.get("classified", 0)
+            phases["classification"]["low_confidence"] += clf.get("low_confidence", 0)
+            for doc_type, count in clf.get("distribution", {}).items():
+                phases["classification"]["distribution"][doc_type] = (
+                    phases["classification"]["distribution"].get(doc_type, 0) + count
+                )
+
+            # Extraction
+            ext = claim_phases.get("extraction", {})
+            phases["extraction"]["attempted"] += ext.get("attempted", 0)
+            phases["extraction"]["succeeded"] += ext.get("succeeded", 0)
+            phases["extraction"]["failed"] += ext.get("failed", 0)
+
+            # Quality gate
+            qg = claim_phases.get("quality_gate", {})
+            phases["quality_gate"]["pass"] += qg.get("pass", 0)
+            phases["quality_gate"]["warn"] += qg.get("warn", 0)
+            phases["quality_gate"]["fail"] += qg.get("fail", 0)
+
+        return phases
 
     def _update_indexes(
         self,

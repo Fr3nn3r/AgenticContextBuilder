@@ -41,7 +41,7 @@ class ClaimsService:
             folder_name = claim_ref.claim_folder
 
             # Get documents for this claim using storage layer
-            doc_refs = storage.doc_store.list_docs(claim_id)
+            doc_refs = storage.doc_store.list_docs(folder_name)
             if not doc_refs:
                 continue
 
@@ -176,7 +176,7 @@ class ClaimsService:
 
         for claim_ref in storage.doc_store.list_claims():
             total_claims += 1
-            doc_refs = storage.doc_store.list_docs(claim_ref.claim_id)
+            doc_refs = storage.doc_store.list_docs(claim_ref.claim_folder)
             total_docs += len(doc_refs)
 
             # Get latest run for this claim
