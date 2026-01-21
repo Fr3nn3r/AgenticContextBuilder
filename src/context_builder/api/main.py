@@ -1545,76 +1545,61 @@ def list_classification_docs(run_id: str = Query(..., description="Run ID to get
     """
     storage = get_storage()
 
-    # Build list of docs from all claims
+    # Build list of docs using storage layer
     docs = []
 
-    for claim_dir in DATA_DIR.iterdir():
-        if not claim_dir.is_dir() or claim_dir.name.startswith("."):
+    # Use storage layer to list extractions for this run
+    extraction_refs = storage.run_store.list_extractions(run_id)
+
+    for ext_ref in extraction_refs:
+        doc_id = ext_ref.doc_id
+        claim_folder = ext_ref.claim_id
+
+        # Get doc metadata using storage layer
+        meta = storage.doc_store.get_doc_metadata(doc_id, claim_id=claim_folder)
+        if not meta:
             continue
 
-        docs_dir = claim_dir / "docs"
-        run_dir = claim_dir / "runs" / run_id
-
-        if not docs_dir.exists() or not run_dir.exists():
+        # Get extraction using storage layer
+        extraction = storage.run_store.get_extraction(run_id, doc_id, claim_id=claim_folder)
+        if not extraction:
             continue
 
-        extraction_dir = run_dir / "extraction"
-        if not extraction_dir.exists():
-            continue
+        doc_info = extraction.get("doc", {})
+        predicted_type = doc_info.get("doc_type", meta.get("doc_type", "unknown"))
+        confidence = doc_info.get("doc_type_confidence", meta.get("doc_type_confidence", 0.0))
+        signals = []  # Extraction files don't have classification signals
 
-        claim_id = extract_claim_number(claim_dir.name)
+        # Check for existing label (from registry/labels/)
+        review_status = "pending"
+        doc_type_truth = None
 
-        for doc_folder in docs_dir.iterdir():
-            if not doc_folder.is_dir():
-                continue
+        label_data = storage.label_store.get_label(doc_id)
+        if label_data:
+            doc_labels = label_data.get("doc_labels", {})
+            doc_type_correct = doc_labels.get("doc_type_correct", True)
+            doc_type_truth = doc_labels.get("doc_type_truth")
 
-            doc_id = doc_folder.name
-            meta_path = doc_folder / "meta" / "doc.json"
-            extraction_path = extraction_dir / f"{doc_id}.json"
+            if doc_type_correct and doc_type_truth is None:
+                review_status = "confirmed"
+            elif not doc_type_correct and doc_type_truth:
+                review_status = "overridden"
+            elif doc_type_correct:
+                review_status = "confirmed"
 
-            if not meta_path.exists() or not extraction_path.exists():
-                continue
+        # Extract claim number for display
+        claim_id = extract_claim_number(claim_folder)
 
-            # Load metadata
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-
-            # Load extraction result (contains doc type and confidence)
-            with open(extraction_path, "r", encoding="utf-8") as f:
-                extraction = json.load(f)
-
-            doc_info = extraction.get("doc", {})
-            predicted_type = doc_info.get("doc_type", meta.get("doc_type", "unknown"))
-            confidence = doc_info.get("doc_type_confidence", meta.get("doc_type_confidence", 0.0))
-            signals = []  # Extraction files don't have classification signals
-
-            # Check for existing label (from registry/labels/)
-            review_status = "pending"
-            doc_type_truth = None
-
-            label_data = storage.label_store.get_label(doc_id)
-            if label_data:
-                doc_labels = label_data.get("doc_labels", {})
-                doc_type_correct = doc_labels.get("doc_type_correct", True)
-                doc_type_truth = doc_labels.get("doc_type_truth")
-
-                if doc_type_correct and doc_type_truth is None:
-                    review_status = "confirmed"
-                elif not doc_type_correct and doc_type_truth:
-                    review_status = "overridden"
-                elif doc_type_correct:
-                    review_status = "confirmed"
-
-            docs.append({
-                "doc_id": doc_id,
-                "claim_id": claim_id,
-                "filename": meta.get("original_filename", "Unknown"),
-                "predicted_type": predicted_type,
-                "confidence": round(confidence, 2) if confidence else 0.0,
-                "signals": signals[:5] if signals else [],  # Limit to 5
-                "review_status": review_status,
-                "doc_type_truth": doc_type_truth,
-            })
+        docs.append({
+            "doc_id": doc_id,
+            "claim_id": claim_id,
+            "filename": meta.get("original_filename", "Unknown"),
+            "predicted_type": predicted_type,
+            "confidence": round(confidence, 2) if confidence else 0.0,
+            "signals": signals[:5] if signals else [],  # Limit to 5
+            "review_status": review_status,
+            "doc_type_truth": doc_type_truth,
+        })
 
     # Sort by confidence ascending (lowest confidence first for review priority)
     docs.sort(key=lambda d: (d["review_status"] != "pending", d["confidence"]))

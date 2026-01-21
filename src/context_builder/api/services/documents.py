@@ -1,6 +1,5 @@
 """Document-focused API services."""
 
-import json
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -9,8 +8,7 @@ from fastapi import HTTPException
 from context_builder.api.models import DocPayload, DocSummary
 from context_builder.api.services.utils import (
     extract_claim_number,
-    get_latest_run_dir_for_claim,
-    get_run_dir_by_id,
+    get_latest_run_id_for_claim,
 )
 from context_builder.storage import StorageFacade
 
@@ -24,54 +22,54 @@ class DocumentsService:
 
     def list_docs(self, claim_id: str, run_id: Optional[str] = None) -> List[DocSummary]:
         storage = self.storage_factory()
-        claim_dir = self._find_claim_dir(claim_id)
-        if not claim_dir or not claim_dir.exists():
+
+        # Find the claim folder
+        claim_refs = storage.doc_store.list_claims()
+        folder_name = None
+        for ref in claim_refs:
+            if ref.claim_folder == claim_id or extract_claim_number(ref.claim_folder) == claim_id:
+                folder_name = ref.claim_folder
+                break
+
+        if not folder_name:
             raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
 
-        docs_dir = claim_dir / "docs"
-        if not docs_dir.exists():
+        # Get documents using storage layer
+        doc_refs = storage.doc_store.list_docs(folder_name)
+        if not doc_refs:
             raise HTTPException(status_code=404, detail="No documents found")
 
-        run_dir = (
-            get_run_dir_by_id(claim_dir, run_id)
-            if run_id
-            else get_latest_run_dir_for_claim(claim_dir)
-        )
-        extraction_dir = run_dir / "extraction" if run_dir else None
+        # Determine which run to use
+        effective_run_id = run_id
+        if not effective_run_id:
+            effective_run_id = get_latest_run_id_for_claim(self.data_dir / folder_name)
 
         docs = []
-        for doc_folder in docs_dir.iterdir():
-            if not doc_folder.is_dir():
+        for doc_ref in doc_refs:
+            doc_id = doc_ref.doc_id
+
+            # Get metadata using storage layer
+            meta = storage.doc_store.get_doc_metadata(doc_id, claim_id=folder_name)
+            if not meta:
                 continue
-
-            doc_id = doc_folder.name
-            meta_path = doc_folder / "meta" / "doc.json"
-
-            if not meta_path.exists():
-                continue
-
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
 
             has_extraction = False
             quality_status = None
             confidence = 0.0
             missing_required_fields: List[str] = []
 
-            if extraction_dir:
-                extraction_path = extraction_dir / f"{doc_id}.json"
-                has_extraction = extraction_path.exists()
-                if has_extraction:
-                    with open(extraction_path, "r", encoding="utf-8") as f:
-                        ext_data = json.load(f)
-                        quality_gate = ext_data.get("quality_gate", {})
-                        quality_status = quality_gate.get("status")
-                        missing_required_fields = quality_gate.get("missing_required_fields", [])
-                        fields = ext_data.get("fields", [])
-                        if fields:
-                            confidence = sum(field.get("confidence", 0) for field in fields) / len(fields)
+            if effective_run_id:
+                ext_data = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=folder_name)
+                if ext_data:
+                    has_extraction = True
+                    quality_gate = ext_data.get("quality_gate", {})
+                    quality_status = quality_gate.get("status")
+                    missing_required_fields = quality_gate.get("missing_required_fields", [])
+                    fields = ext_data.get("fields", [])
+                    if fields:
+                        confidence = sum(field.get("confidence", 0) for field in fields) / len(fields)
 
-            # Use storage layer to check for labels (reads from registry/labels/)
+            # Use storage layer to check for labels
             has_labels = storage.label_store.get_label(doc_id) is not None
 
             docs.append(DocSummary(
@@ -91,111 +89,69 @@ class DocumentsService:
     def get_doc(self, doc_id: str, run_id: Optional[str] = None, claim_id: Optional[str] = None) -> DocPayload:
         storage = self.storage_factory()
 
-        # If claim_id is provided, look up document directly in that claim
-        # This avoids the issue of duplicate doc_ids across claims (same file MD5)
+        # Resolve claim_id and folder_name
+        resolved_claim_id = claim_id
+        folder_name = None
+
         if claim_id:
-            claim_dir = self._find_claim_dir(claim_id)
-            if claim_dir:
-                doc_folder = claim_dir / "docs" / doc_id
-                meta_path = doc_folder / "meta" / "doc.json"
-                if meta_path.exists():
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    filename = meta.get("original_filename", "Unknown")
-                    doc_type = meta.get("doc_type", "unknown")
-                    language = meta.get("language", "es")
+            # Find the folder for this claim_id
+            for ref in storage.doc_store.list_claims():
+                if ref.claim_folder == claim_id or extract_claim_number(ref.claim_folder) == claim_id:
+                    folder_name = ref.claim_folder
                     resolved_claim_id = claim_id
+                    break
 
-                    # Load text
-                    pages_json = doc_folder / "text" / "pages.json"
-                    pages = []
-                    if pages_json.exists():
-                        with open(pages_json, "r", encoding="utf-8") as f:
-                            pages_data = json.load(f)
-                            pages = pages_data.get("pages", [])
+        # Try to get document metadata directly
+        if folder_name:
+            meta = storage.doc_store.get_doc_metadata(doc_id, claim_id=folder_name)
+        else:
+            # Fallback: find which claim this doc belongs to
+            doc_bundle = storage.doc_store.get_doc(doc_id)
+            if doc_bundle:
+                folder_name = doc_bundle.claim_folder
+                resolved_claim_id = doc_bundle.claim_id or extract_claim_number(folder_name)
+                meta = doc_bundle.metadata
+            else:
+                meta = None
 
-                    # Load extraction - auto-detect latest run if not specified
-                    extraction = None
-                    effective_run_id = run_id
-                    if not effective_run_id:
-                        # Find latest run that has extraction for this document
-                        latest_run = self._find_latest_run_with_extraction(claim_dir, doc_id)
-                        if latest_run:
-                            effective_run_id = latest_run
-                    if effective_run_id:
-                        extraction = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=resolved_claim_id)
-
-                    # Load labels
-                    labels = storage.label_store.get_label(doc_id)
-
-                    # Check source files
-                    has_pdf = False
-                    has_image = False
-                    source_dir = doc_folder / "source"
-                    if source_dir.exists():
-                        for source_file in source_dir.iterdir():
-                            ext = source_file.suffix.lower()
-                            if ext == ".pdf":
-                                has_pdf = True
-                            elif ext in {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".bmp", ".webp"}:
-                                has_image = True
-
-                    return DocPayload(
-                        doc_id=doc_id,
-                        claim_id=resolved_claim_id,
-                        filename=filename,
-                        doc_type=doc_type,
-                        language=language,
-                        pages=pages,
-                        extraction=extraction,
-                        labels=labels,
-                        has_pdf=has_pdf,
-                        has_image=has_image,
-                    )
-
-        # Fallback to storage lookup (may find wrong doc if duplicates exist)
-        doc_bundle = storage.doc_store.get_doc(doc_id)
-        if not doc_bundle:
+        if not meta:
             raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-        meta = doc_bundle.metadata
         filename = meta.get("original_filename", "Unknown")
         doc_type = meta.get("doc_type", "unknown")
         language = meta.get("language", "es")
-        resolved_claim_id = doc_bundle.claim_id or extract_claim_number(doc_bundle.claim_folder)
 
+        # Load text using storage layer
         doc_text = storage.doc_store.get_doc_text(doc_id)
         pages = doc_text.pages if doc_text else []
 
         # Load extraction - auto-detect latest run if not specified
         extraction = None
         effective_run_id = run_id
-        if not effective_run_id:
+        if not effective_run_id and folder_name:
             # Find latest run that has extraction for this document
-            claim_dir = self._find_claim_dir(resolved_claim_id)
-            if claim_dir:
-                latest_run = self._find_latest_run_with_extraction(claim_dir, doc_id)
-                if latest_run:
-                    effective_run_id = latest_run
+            run_ids = storage.run_store.list_runs_for_doc(doc_id, folder_name)
+            if run_ids:
+                effective_run_id = run_ids[0]  # Most recent
         if effective_run_id:
-            extraction = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=resolved_claim_id)
+            extraction = storage.run_store.get_extraction(effective_run_id, doc_id, claim_id=folder_name)
 
+        # Load labels using storage layer
         labels = storage.label_store.get_label(doc_id)
 
+        # Check source files using storage layer
         has_pdf = False
         has_image = False
-        source_dir = doc_bundle.doc_root / "source"
-        if source_dir.exists():
-            for source_file in source_dir.iterdir():
-                ext = source_file.suffix.lower()
-                if ext == ".pdf":
-                    has_pdf = True
-                elif ext in {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".bmp", ".webp"}:
-                    has_image = True
+        source_files = storage.doc_store.get_source_files(doc_id, claim_id=folder_name)
+        for sf in source_files:
+            if sf.file_type == "pdf":
+                has_pdf = True
+            elif sf.file_type == "image":
+                has_image = True
 
         return DocPayload(
             doc_id=doc_id,
-            claim_id=resolved_claim_id,
+            claim_id=resolved_claim_id or "",
             filename=filename,
             doc_type=doc_type,
             language=language,
@@ -233,16 +189,17 @@ class DocumentsService:
 
     def get_doc_azure_di(self, doc_id: str) -> dict:
         storage = self.storage_factory()
-        doc_bundle = storage.doc_store.get_doc(doc_id)
-        if not doc_bundle:
-            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
 
-        azure_di_path = doc_bundle.doc_root / "text" / "raw" / "azure_di.json"
-        if not azure_di_path.exists():
+        # Use storage layer to get Azure DI data
+        azure_di_data = storage.doc_store.get_doc_azure_di(doc_id)
+        if azure_di_data is None:
+            # Check if doc exists first
+            doc_bundle = storage.doc_store.get_doc(doc_id)
+            if not doc_bundle:
+                raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
             raise HTTPException(status_code=404, detail="Azure DI data not available")
 
-        with open(azure_di_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return azure_di_data
 
     def get_doc_runs(self, doc_id: str, claim_id: str) -> List[dict]:
         """
@@ -250,58 +207,46 @@ class DocumentsService:
 
         Returns list of runs with extraction summary for each.
         """
-        claim_dir = self._find_claim_dir(claim_id)
-        if not claim_dir:
+        storage = self.storage_factory()
+
+        # Find the folder for this claim_id
+        folder_name = None
+        for ref in storage.doc_store.list_claims():
+            if ref.claim_folder == claim_id or extract_claim_number(ref.claim_folder) == claim_id:
+                folder_name = ref.claim_folder
+                break
+
+        if not folder_name:
             return []
 
-        runs_dir = claim_dir / "runs"
-        if not runs_dir.exists():
-            return []
+        # Get all runs that have extraction for this doc
+        run_ids = storage.run_store.list_runs_for_doc(doc_id, folder_name)
 
         result = []
-        for run_dir in sorted(runs_dir.iterdir(), reverse=True):
-            if not run_dir.is_dir():
-                continue
-            if not (run_dir.name.startswith("run_") or run_dir.name.startswith("BATCH-")):
-                continue
-
-            # Check if this run has extraction for this document
-            extraction_path = run_dir / "extraction" / f"{doc_id}.json"
-            if not extraction_path.exists():
-                continue
-
-            # Load run metadata
+        for r_id in run_ids:
             run_info: dict = {
-                "run_id": run_dir.name,
+                "run_id": r_id,
                 "timestamp": None,
                 "model": "unknown",
                 "status": "complete",
                 "extraction": None,
             }
 
-            # Try to get timestamp and model from manifest
-            manifest_path = run_dir / "manifest.json"
-            if manifest_path.exists():
-                try:
-                    with open(manifest_path, "r", encoding="utf-8") as f:
-                        manifest = json.load(f)
-                        run_info["timestamp"] = manifest.get("started_at") or manifest.get("completed_at")
-                        run_info["model"] = manifest.get("model", "unknown")
-                except Exception:
-                    pass
+            # Get manifest for timestamp and model
+            manifest = storage.run_store.get_run_manifest(r_id)
+            if manifest:
+                run_info["timestamp"] = manifest.get("started_at") or manifest.get("completed_at")
+                run_info["model"] = manifest.get("model", "unknown")
 
             # Load extraction summary
-            try:
-                with open(extraction_path, "r", encoding="utf-8") as f:
-                    ext_data = json.load(f)
-                    quality_gate = ext_data.get("quality_gate", {})
-                    fields = ext_data.get("fields", [])
-                    run_info["extraction"] = {
-                        "field_count": len(fields),
-                        "gate_status": quality_gate.get("status"),
-                    }
-            except Exception:
-                pass
+            ext_data = storage.run_store.get_extraction(r_id, doc_id, claim_id=folder_name)
+            if ext_data:
+                quality_gate = ext_data.get("quality_gate", {})
+                fields = ext_data.get("fields", [])
+                run_info["extraction"] = {
+                    "field_count": len(fields),
+                    "gate_status": quality_gate.get("status"),
+                }
 
             result.append(run_info)
 
@@ -324,40 +269,28 @@ class DocumentsService:
         storage = self.storage_factory()
         all_docs: List[dict] = []
 
-        if not self.data_dir.exists():
-            return [], 0
-
-        # Iterate through all claims
-        for claim_dir in self.data_dir.iterdir():
-            if not claim_dir.is_dir():
-                continue
-
-            current_claim_id = extract_claim_number(claim_dir.name)
+        # Iterate through all claims using storage layer
+        for claim_ref in storage.doc_store.list_claims():
+            current_claim_id = claim_ref.claim_id
+            folder_name = claim_ref.claim_folder
 
             # Filter by claim_id if specified
-            if claim_id and current_claim_id != claim_id and claim_dir.name != claim_id:
+            if claim_id and current_claim_id != claim_id and folder_name != claim_id:
                 continue
 
-            docs_dir = claim_dir / "docs"
-            if not docs_dir.exists():
-                continue
+            # Get documents for this claim
+            doc_refs = storage.doc_store.list_docs(folder_name)
 
             # Get latest run for quality status
-            run_dir = get_latest_run_dir_for_claim(claim_dir)
-            extraction_dir = run_dir / "extraction" if run_dir else None
+            run_id = get_latest_run_id_for_claim(self.data_dir / folder_name)
 
-            for doc_folder in docs_dir.iterdir():
-                if not doc_folder.is_dir():
+            for doc_ref in doc_refs:
+                d_id = doc_ref.doc_id
+
+                # Get metadata using storage layer
+                meta = storage.doc_store.get_doc_metadata(d_id, claim_id=folder_name)
+                if not meta:
                     continue
-
-                doc_id = doc_folder.name
-                meta_path = doc_folder / "meta" / "doc.json"
-
-                if not meta_path.exists():
-                    continue
-
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
 
                 filename = meta.get("original_filename", "Unknown")
                 current_doc_type = meta.get("doc_type", "unknown")
@@ -367,8 +300,8 @@ class DocumentsService:
                 if doc_type and current_doc_type != doc_type:
                     continue
 
-                # Check for labels (truth)
-                label_data = storage.label_store.get_label(doc_id)
+                # Check for labels (truth) using storage layer
+                label_data = storage.label_store.get_label(d_id)
                 doc_has_truth = label_data is not None
 
                 # Filter by has_truth
@@ -378,21 +311,16 @@ class DocumentsService:
                 # Filter by search term (filename or doc_id)
                 if search:
                     search_lower = search.lower()
-                    if search_lower not in filename.lower() and search_lower not in doc_id.lower():
+                    if search_lower not in filename.lower() and search_lower not in d_id.lower():
                         continue
 
-                # Get quality status from latest extraction
+                # Get quality status from latest extraction using storage layer
                 quality_status = None
-                if extraction_dir:
-                    extraction_path = extraction_dir / f"{doc_id}.json"
-                    if extraction_path.exists():
-                        try:
-                            with open(extraction_path, "r", encoding="utf-8") as f:
-                                ext_data = json.load(f)
-                                quality_gate = ext_data.get("quality_gate", {})
-                                quality_status = quality_gate.get("status")
-                        except Exception:
-                            pass
+                if run_id:
+                    ext_data = storage.run_store.get_extraction(run_id, d_id, claim_id=folder_name)
+                    if ext_data:
+                        quality_gate = ext_data.get("quality_gate", {})
+                        quality_status = quality_gate.get("status")
 
                 # Get reviewer info from labels
                 last_reviewed = None
@@ -402,7 +330,7 @@ class DocumentsService:
                     reviewer = label_data.get("reviewer")
 
                 all_docs.append({
-                    "doc_id": doc_id,
+                    "doc_id": d_id,
                     "claim_id": current_claim_id,
                     "filename": filename,
                     "doc_type": current_doc_type,
@@ -422,41 +350,3 @@ class DocumentsService:
         paginated = all_docs[offset:offset + limit]
 
         return paginated, total
-
-    def _find_claim_dir(self, claim_id: str) -> Optional[Path]:
-        if not self.data_dir.exists():
-            return None
-        for d in self.data_dir.iterdir():
-            if not d.is_dir():
-                continue
-            if d.name == claim_id or extract_claim_number(d.name) == claim_id:
-                return d
-        return None
-
-    def _find_latest_run_with_extraction(self, claim_dir: Path, doc_id: str) -> Optional[str]:
-        """Find the latest run that has extraction data for a specific document.
-
-        Args:
-            claim_dir: Path to the claim directory
-            doc_id: Document ID to find extraction for
-
-        Returns:
-            Run ID of the latest run with extraction, or None if not found
-        """
-        runs_dir = claim_dir / "runs"
-        if not runs_dir.exists():
-            return None
-
-        # Sort run directories in reverse order (latest first)
-        run_dirs = sorted(
-            [d for d in runs_dir.iterdir() if d.is_dir() and (d.name.startswith("run_") or d.name.startswith("BATCH-"))],
-            key=lambda d: d.name,
-            reverse=True,
-        )
-
-        for run_dir in run_dirs:
-            extraction_path = run_dir / "extraction" / f"{doc_id}.json"
-            if extraction_path.exists():
-                return run_dir.name
-
-        return None

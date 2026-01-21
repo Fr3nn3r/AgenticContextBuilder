@@ -16,6 +16,8 @@ from .models import (
     RunRef,
     RunBundle,
     LabelSummary,
+    SourceFileRef,
+    ExtractionRef,
 )
 
 
@@ -222,6 +224,43 @@ class DocStore(Protocol):
     def find_doc_claim(self, doc_id: str) -> Optional[str]:
         ...
 
+    def get_doc_metadata(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get document metadata (doc.json) by doc_id.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup when doc_id
+                      exists in multiple claims.
+
+        Returns:
+            Document metadata dict (doc.json content), or None if not found.
+        """
+        ...
+
+    def get_source_files(self, doc_id: str, claim_id: Optional[str] = None) -> list[SourceFileRef]:
+        """List source files for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
+
+        Returns:
+            List of SourceFileRef objects for files in the source/ directory.
+        """
+        ...
+
+    def get_doc_azure_di(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get Azure Document Intelligence data for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
+
+        Returns:
+            Azure DI data dict, or None if not available.
+        """
+        ...
+
 
 @runtime_checkable
 class RunStore(Protocol):
@@ -238,6 +277,103 @@ class RunStore(Protocol):
     ) -> Optional[dict]:
         ...
 
+    def get_run_manifest(self, run_id: str) -> Optional[dict]:
+        """Get run manifest.json content.
+
+        Args:
+            run_id: Run identifier.
+
+        Returns:
+            Manifest dict, or None if not found.
+        """
+        ...
+
+    def get_run_summary(self, run_id: str, claim_id: Optional[str] = None) -> Optional[dict]:
+        """Get run summary.json content.
+
+        Args:
+            run_id: Run identifier.
+            claim_id: Optional claim_id for claim-scoped summary (logs/summary.json).
+
+        Returns:
+            Summary dict, or None if not found.
+        """
+        ...
+
+    def list_extractions(self, run_id: str, claim_id: Optional[str] = None) -> list[ExtractionRef]:
+        """List all extractions in a run.
+
+        Args:
+            run_id: Run identifier.
+            claim_id: Optional claim_id to filter by claim.
+
+        Returns:
+            List of ExtractionRef objects.
+        """
+        ...
+
+    def save_run_manifest(self, run_id: str, manifest: dict) -> None:
+        """Save run manifest (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            manifest: Manifest data to save.
+
+        Raises:
+            IOError: If write fails.
+        """
+        ...
+
+    def save_run_summary(self, run_id: str, summary: dict, claim_id: Optional[str] = None) -> None:
+        """Save run summary (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            summary: Summary data to save.
+            claim_id: Optional claim_id for claim-scoped summary.
+
+        Raises:
+            IOError: If write fails.
+        """
+        ...
+
+    def save_extraction(self, run_id: str, doc_id: str, claim_id: str, data: dict) -> None:
+        """Save extraction result for a document (atomic write).
+
+        Args:
+            run_id: Run identifier.
+            doc_id: Document identifier.
+            claim_id: Claim identifier.
+            data: Extraction data to save.
+
+        Raises:
+            IOError: If write fails.
+        """
+        ...
+
+    def mark_run_complete(self, run_id: str) -> None:
+        """Mark a run as complete (create .complete marker).
+
+        Args:
+            run_id: Run identifier.
+
+        Raises:
+            IOError: If write fails.
+        """
+        ...
+
+    def list_runs_for_doc(self, doc_id: str, claim_id: str) -> list[str]:
+        """List all run IDs that have extraction for a document.
+
+        Args:
+            doc_id: Document identifier.
+            claim_id: Claim identifier.
+
+        Returns:
+            List of run IDs (most recent first).
+        """
+        ...
+
 
 @runtime_checkable
 class LabelStore(Protocol):
@@ -250,4 +386,87 @@ class LabelStore(Protocol):
         ...
 
     def get_label_summary(self, doc_id: str) -> Optional[LabelSummary]:
+        ...
+
+    def get_label_history(self, doc_id: str) -> list[dict]:
+        """Get all historical versions of labels for a document.
+
+        Args:
+            doc_id: Document identifier.
+
+        Returns:
+            List of label versions, oldest to newest.
+        """
+        ...
+
+    def count_labels_for_claim(self, claim_id: str) -> int:
+        """Count the number of labeled documents in a claim.
+
+        Args:
+            claim_id: Claim identifier.
+
+        Returns:
+            Number of documents with labels in the claim.
+        """
+        ...
+
+
+@runtime_checkable
+class PendingStore(Protocol):
+    """Interface for pending/staging claim storage.
+
+    Note: This is for the ephemeral staging area, not the main workspace data.
+    The staging area holds uploads before they enter the pipeline.
+    """
+
+    def get_pending_manifest(self, claim_id: str) -> Optional[dict]:
+        """Get pending claim manifest.
+
+        Args:
+            claim_id: Pending claim identifier.
+
+        Returns:
+            Manifest dict, or None if not found.
+        """
+        ...
+
+    def save_pending_manifest(self, claim_id: str, data: dict) -> None:
+        """Save pending claim manifest.
+
+        Args:
+            claim_id: Pending claim identifier.
+            data: Manifest data to save.
+        """
+        ...
+
+    def list_pending_claims(self) -> list[str]:
+        """List all pending claim IDs.
+
+        Returns:
+            List of claim IDs in staging.
+        """
+        ...
+
+    def save_pending_document(
+        self, claim_id: str, doc_id: str, filename: str, content: bytes
+    ) -> None:
+        """Save a document to pending storage.
+
+        Args:
+            claim_id: Pending claim identifier.
+            doc_id: Document identifier.
+            filename: Original filename.
+            content: File content.
+        """
+        ...
+
+    def delete_pending_claim(self, claim_id: str) -> bool:
+        """Delete a pending claim and all its documents.
+
+        Args:
+            claim_id: Pending claim identifier.
+
+        Returns:
+            True if deletion was successful.
+        """
         ...
