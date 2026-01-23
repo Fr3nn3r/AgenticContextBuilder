@@ -240,7 +240,6 @@ def _write_manifest(
     claim_id: str,
     command: str,
     doc_count: int,
-    model: str,
     stage_config: Optional[StageConfig] = None,
     writer: Optional[ResultWriter] = None,
     version_bundle_id: Optional[str] = None,
@@ -263,7 +262,6 @@ def _write_manifest(
             "contextbuilder_version": "1.0.0",
             "extractor_version": "v1.0.0",
             "templates_hash": _compute_templates_hash(),
-            "model_name": model,
         },
         "input": {
             "claim_id": claim_id,
@@ -959,7 +957,6 @@ def process_claim(
     run_id: Optional[str] = None,
     force: bool = False,
     command: str = "",
-    model: str = "gpt-4o",
     compute_metrics: bool = True,
     stage_config: Optional[StageConfig] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
@@ -977,7 +974,6 @@ def process_claim(
         run_id: Run identifier (generated if None)
         force: If True, reprocess even if already done
         command: CLI command string for manifest
-        model: Model name for manifest
         compute_metrics: If True, compute metrics.json at end
         stage_config: Configuration for which stages to run (default: all)
         progress_callback: Optional callback(idx, total, filename) for progress reporting
@@ -1028,7 +1024,6 @@ def process_claim(
         version_bundle_store = get_version_bundle_store(workspace_root)
         version_bundle = version_bundle_store.create_version_bundle(
             run_id=run_id,
-            model_name=model,
             extractor_version="v1.0.0",
         )
         logger.info(f"Created version bundle {version_bundle.bundle_id} for run {run_id}")
@@ -1040,7 +1035,6 @@ def process_claim(
             claim_id=claim.claim_id,
             command=command,
             doc_count=len(claim.documents),
-            model=model,
             stage_config=stage_config,
             writer=writer,
             version_bundle_id=version_bundle.bundle_id,

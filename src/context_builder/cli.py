@@ -370,7 +370,6 @@ Output Structure:
 
 Examples:
   %(prog)s claims_folder/ -o output/claims    # Process all claims
-  %(prog)s claims_folder/ -o output/claims --model gpt-4o
   %(prog)s claims_folder/ -o output/claims --dry-run   # Preview only
   %(prog)s claims_folder/ -o output/claims --force     # Overwrite existing run
         """,
@@ -392,15 +391,6 @@ Examples:
         metavar="DIR",
         default=None,
         help="Output directory for structured results (default: active workspace or output/claims)",
-    )
-
-    # Model configuration for pipeline
-    pipeline_model_group = pipeline_parser.add_argument_group("Model Configuration")
-    pipeline_model_group.add_argument(
-        "--model",
-        metavar="MODEL",
-        default="gpt-4o",
-        help="LLM model for classification and extraction (default: gpt-4o)",
     )
 
     # Run control options for pipeline
@@ -983,7 +973,6 @@ def main():
                         print(f"  Claim: {claim.claim_id} ({len(claim.documents)} docs)")
                         print()
                 print(f"Output directory: {output_dir}")
-                print(f"Model: {args.model}")
                 if args.run_id:
                     print(f"Run ID: {args.run_id}")
                 sys.exit(0)
@@ -1093,7 +1082,6 @@ def main():
                         run_id=run_id,  # Use consistent run_id for all claims
                         force=args.force,
                         command=command_str,
-                        model=args.model,
                         compute_metrics=not args.no_metrics,
                         stage_config=stage_config,
                         progress_callback=progress_callback,
@@ -1131,7 +1119,6 @@ def main():
                     "started_at": datetime.now().isoformat() + "Z",
                     "ended_at": datetime.now().isoformat() + "Z",
                     "command": command_str,
-                    "model": args.model,
                     "claims_count": len(claims),
                     "claims": [
                         {
