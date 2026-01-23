@@ -1,16 +1,19 @@
 import json
 
 from context_builder.api.services import ClaimsService, DocumentsService, InsightsService, LabelsService
-from context_builder.storage.models import DocBundle, DocText, RunRef
+from context_builder.storage.models import DocBundle, DocText, RunRef, SourceFileRef
 
 
 class FakeStorage:
-    def __init__(self, runs=None, doc_bundle=None, doc_text=None, extraction=None, label=None):
+    def __init__(self, runs=None, doc_bundle=None, doc_text=None, extraction=None, label=None, run_summary=None, run_manifest=None, source_files=None):
         self._runs = runs or []
         self._doc_bundle = doc_bundle
         self._doc_text = doc_text
         self._extraction = extraction
         self._label = label
+        self._run_summary = run_summary
+        self._run_manifest = run_manifest
+        self._source_files = source_files or []
         self.saved_label = None
         self.doc_store = self
         self.run_store = self
@@ -41,26 +44,27 @@ class FakeStorage:
     def save_label(self, doc_id, label_data):
         self.saved_label = label_data
 
+    def get_run_summary(self, run_id, claim_id=None):
+        return self._run_summary
+
+    def get_run_manifest(self, run_id):
+        return self._run_manifest
+
+    def get_source_files(self, doc_id, claim_id=None):
+        return self._source_files
+
 
 def test_claims_service_list_runs_reads_global_metadata(tmp_path):
     claims_dir = tmp_path / "claims"
     claims_dir.mkdir()
-    runs_dir = tmp_path / "runs"
-    runs_dir.mkdir()
 
     run_id = "run_2026_01_01"
-    run_dir = runs_dir / run_id
-    run_dir.mkdir()
-    (run_dir / "summary.json").write_text(
-        json.dumps({"completed_at": "2026-01-01T01:02:03Z"}),
-        encoding="utf-8",
-    )
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"model": "gpt-4o", "claims_count": 2}),
-        encoding="utf-8",
-    )
 
-    fake_storage = FakeStorage(runs=[RunRef(run_id=run_id, status="complete")])
+    fake_storage = FakeStorage(
+        runs=[RunRef(run_id=run_id, status="complete")],
+        run_summary={"completed_at": "2026-01-01T01:02:03Z"},
+        run_manifest={"model": "gpt-4o", "claims_count": 2},
+    )
     service = ClaimsService(claims_dir, storage_factory=lambda: fake_storage)
 
     runs = service.list_runs()
@@ -100,6 +104,7 @@ def test_documents_service_get_doc_uses_storage(tmp_path):
         doc_text=doc_text,
         extraction={"fields": []},
         label={"doc_labels": {}},
+        source_files=[SourceFileRef(filename="sample.pdf", file_type="pdf", path="source/sample.pdf")],
     )
     service = DocumentsService(tmp_path / "claims", storage_factory=lambda: fake_storage)
 

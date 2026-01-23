@@ -440,7 +440,7 @@ class TestAppendToRunIndex:
         )
 
         ws_paths = create_workspace_run_structure(pipeline_service.output_dir, run.run_id)
-        pipeline_service._append_to_run_index(run, ws_paths, run.summary)
+        pipeline_service._append_to_run_index(run, ws_paths.run_root, run.summary)
 
         # Read back and verify both records exist
         with open(run_index_path) as f:
@@ -468,7 +468,7 @@ class TestAppendToRunIndex:
         ws_paths = create_workspace_run_structure(pipeline_service.output_dir, run.run_id)
 
         # Should not raise, just skip
-        pipeline_service._append_to_run_index(run, ws_paths, run.summary)
+        pipeline_service._append_to_run_index(run, ws_paths.run_root, run.summary)
 
         # Verify no index was created
         run_index_path = tmp_path / "registry" / "run_index.jsonl"
@@ -495,7 +495,7 @@ class TestAppendToRunIndex:
         )
 
         ws_paths = create_workspace_run_structure(pipeline_service.output_dir, run.run_id)
-        pipeline_service._append_to_run_index(run, ws_paths, run.summary)
+        pipeline_service._append_to_run_index(run, ws_paths.run_root, run.summary)
 
         with open(run_index_path) as f:
             record = json.loads(f.read().strip())
