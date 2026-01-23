@@ -1,9 +1,17 @@
 """Load and parse DocType specification YAML files."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any
 import yaml
+
+from context_builder.storage.workspace_paths import get_workspace_config_dir
+
+logger = logging.getLogger(__name__)
+
+# Repo default specs directory
+SPECS_DIR = Path(__file__).parent / "specs"
 
 
 @dataclass
@@ -57,6 +65,50 @@ class DocTypeSpec:
         return field_name in self.required_fields
 
 
+def _resolve_spec_path(doc_type: str, version: str = None) -> Optional[Path]:
+    """Resolve spec file path with workspace override support.
+
+    Checks workspace config first, then falls back to repo default.
+
+    Args:
+        doc_type: Document type name (e.g., 'fnol_form')
+        version: Spec version (optional, for legacy format)
+
+    Returns:
+        Path to the spec file, or None if not found
+    """
+    # Check workspace config first
+    workspace_config = get_workspace_config_dir()
+    workspace_specs = workspace_config / "extraction_specs"
+
+    # Try workspace new format: {doc_type}.yaml
+    workspace_spec = workspace_specs / f"{doc_type}.yaml"
+    if workspace_spec.exists():
+        logger.debug(f"Using workspace spec override: {workspace_spec}")
+        return workspace_spec
+
+    # Try workspace legacy format: {doc_type}_{version}.yaml
+    ver = version or "v0"
+    workspace_legacy = workspace_specs / f"{doc_type}_{ver}.yaml"
+    if workspace_legacy.exists():
+        logger.debug(f"Using workspace spec override (legacy): {workspace_legacy}")
+        return workspace_legacy
+
+    # Fall back to repo default - new format
+    repo_spec = SPECS_DIR / f"{doc_type}.yaml"
+    if repo_spec.exists():
+        logger.debug(f"Using repo default spec: {repo_spec}")
+        return repo_spec
+
+    # Fall back to repo default - legacy format
+    repo_legacy = SPECS_DIR / f"{doc_type}_{ver}.yaml"
+    if repo_legacy.exists():
+        logger.debug(f"Using repo default spec (legacy): {repo_legacy}")
+        return repo_legacy
+
+    return None
+
+
 def load_spec(doc_type: str, version: str = None) -> DocTypeSpec:
     """
     Load a DocTypeSpec from YAML file.
@@ -64,6 +116,8 @@ def load_spec(doc_type: str, version: str = None) -> DocTypeSpec:
     Supports two naming conventions:
     1. New format: {doc_type}.yaml (version in metadata)
     2. Legacy format: {doc_type}_{version}.yaml
+
+    Checks workspace config first, then falls back to repo default.
 
     Args:
         doc_type: Document type name (e.g., 'fnol_form')
@@ -76,17 +130,13 @@ def load_spec(doc_type: str, version: str = None) -> DocTypeSpec:
         FileNotFoundError: If spec file doesn't exist
         ValueError: If spec file is invalid
     """
-    specs_dir = Path(__file__).parent / "specs"
+    spec_file = _resolve_spec_path(doc_type, version)
 
-    # Try new format first: {doc_type}.yaml
-    spec_file = specs_dir / f"{doc_type}.yaml"
-    if not spec_file.exists():
-        # Fall back to legacy format: {doc_type}_{version}.yaml
-        version = version or "v0"
-        spec_file = specs_dir / f"{doc_type}_{version}.yaml"
-
-    if not spec_file.exists():
-        raise FileNotFoundError(f"Spec file not found for doc_type: {doc_type}")
+    if spec_file is None:
+        raise FileNotFoundError(
+            f"Spec file not found for doc_type: {doc_type}. "
+            f"Checked workspace config and repo default at: {SPECS_DIR}"
+        )
 
     with open(spec_file, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
@@ -125,19 +175,17 @@ def _parse_spec(data: Dict[str, Any]) -> DocTypeSpec:
     )
 
 
-def list_available_specs() -> List[str]:
-    """List all available doc type specs."""
-    specs_dir = Path(__file__).parent / "specs"
-    if not specs_dir.exists():
-        return []
-
+def _collect_specs_from_dir(specs_dir: Path) -> set:
+    """Collect spec names from a directory."""
     specs = set()
+    if not specs_dir.exists():
+        return specs
 
     # New format: {doc_type}.yaml (exclude special files like doc_type_catalog.yaml)
     for spec_file in specs_dir.glob("*.yaml"):
         name = spec_file.stem
-        # Skip catalog and other non-spec files
-        if name in ("doc_type_catalog",) or "_v" in name:
+        # Skip catalog, pii_config, and other non-spec files
+        if name in ("doc_type_catalog", "pii_config") or "_v" in name:
             continue
         # Verify it's a valid spec by checking for doc_type key
         try:
@@ -154,6 +202,25 @@ def list_available_specs() -> List[str]:
         if "_v" in name:
             doc_type = name.rsplit("_v", 1)[0]
             specs.add(doc_type)
+
+    return specs
+
+
+def list_available_specs() -> List[str]:
+    """List all available doc type specs.
+
+    Returns union of workspace config and repo default specs.
+    Workspace overrides take precedence when loading.
+    """
+    specs = set()
+
+    # Collect from repo default
+    specs.update(_collect_specs_from_dir(SPECS_DIR))
+
+    # Collect from workspace config (adds any additional specs)
+    workspace_config = get_workspace_config_dir()
+    workspace_specs = workspace_config / "extraction_specs"
+    specs.update(_collect_specs_from_dir(workspace_specs))
 
     return sorted(specs)
 

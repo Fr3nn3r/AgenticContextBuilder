@@ -165,6 +165,30 @@ def get_workspace_registry_dir() -> Path:
     return fallback
 
 
+def get_workspace_config_dir() -> Path:
+    """Get the config directory for the active workspace.
+
+    Used for tenant-specific configuration overrides (prompts, extraction specs).
+
+    Returns:
+        Path to workspace config directory. Creates it if needed.
+        Falls back to output/config if no workspace is active.
+    """
+    workspace_path = get_active_workspace_path()
+
+    if workspace_path is not None:
+        config_dir = workspace_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir
+
+    # Fallback to output/config relative to project root
+    project_root = _find_project_root()
+    fallback = project_root / "output" / "config"
+    fallback.mkdir(parents=True, exist_ok=True)
+    logger.debug(f"Using fallback config directory: {fallback}")
+    return fallback
+
+
 def reset_workspace_cache() -> None:
     """Reset the cached project root.
 

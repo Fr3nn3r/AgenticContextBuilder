@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -39,6 +40,7 @@ from context_builder.schemas.extraction_result import (
 )
 from context_builder.schemas.run_errors import DocStatus, PipelineStage, RunErrorCode, TextSource
 from context_builder.storage.version_bundles import VersionBundleStore, get_version_bundle_store
+from context_builder.storage.workspace_paths import get_workspace_config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +224,75 @@ def _compute_templates_hash() -> str:
         return "hash_error"
 
 
+def _compute_workspace_config_hash() -> Optional[str]:
+    """Compute SHA-256 hash of workspace config directory.
+
+    Returns:
+        Hex-encoded hash of all config files, or None if config dir doesn't exist.
+    """
+    try:
+        config_dir = get_workspace_config_dir()
+        if not config_dir.exists():
+            return None
+
+        hasher = hashlib.sha256()
+        files_found = False
+
+        # Hash all files in config directory recursively
+        for file_path in sorted(config_dir.rglob("*")):
+            if file_path.is_file():
+                files_found = True
+                # Include relative path in hash for structure awareness
+                rel_path = file_path.relative_to(config_dir)
+                hasher.update(str(rel_path).encode("utf-8"))
+                hasher.update(file_path.read_bytes())
+
+        return hasher.hexdigest() if files_found else None
+    except Exception as e:
+        logger.warning(f"Failed to compute workspace config hash: {e}")
+        return None
+
+
+def _snapshot_workspace_config(run_paths: RunPaths) -> Optional[Path]:
+    """Snapshot workspace config directory to run's config_snapshot folder.
+
+    Args:
+        run_paths: Run-scoped output paths
+
+    Returns:
+        Path to the snapshot directory, or None if no config to snapshot.
+    """
+    try:
+        config_dir = get_workspace_config_dir()
+        if not config_dir.exists():
+            logger.debug("No workspace config directory to snapshot")
+            return None
+
+        # Check if there are any files to snapshot
+        files = list(config_dir.rglob("*"))
+        if not any(f.is_file() for f in files):
+            logger.debug("Workspace config directory is empty, skipping snapshot")
+            return None
+
+        # Create snapshot directory under the run
+        snapshot_dir = run_paths.run_root / "config_snapshot"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy entire config directory structure
+        for file_path in files:
+            if file_path.is_file():
+                rel_path = file_path.relative_to(config_dir)
+                dest_path = snapshot_dir / rel_path
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file_path, dest_path)
+
+        logger.debug(f"Snapshotted workspace config to {snapshot_dir}")
+        return snapshot_dir
+    except Exception as e:
+        logger.warning(f"Failed to snapshot workspace config: {e}")
+        return None
+
+
 def _setup_run_logging(run_paths: RunPaths, run_id: str) -> logging.Handler:
     """Set up file logging for this run."""
     run_paths.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -249,6 +320,9 @@ def _write_manifest(
     if stage_config is None:
         stage_config = StageConfig()
 
+    # Compute workspace config hash for compliance traceability
+    workspace_config_hash = _compute_workspace_config_hash()
+
     manifest = {
         "run_id": run_id,
         "started_at": datetime.utcnow().isoformat() + "Z",
@@ -273,8 +347,13 @@ def _write_manifest(
         "run_kind": stage_config.run_kind,
         "stages_executed": [s.value for s in stage_config.stages],
         "version_bundle_id": version_bundle_id,
+        "workspace_config_hash": workspace_config_hash,
     }
     _write_json_atomic(run_paths.manifest_json, manifest, writer=writer)
+
+    # Snapshot workspace config for full reproducibility
+    _snapshot_workspace_config(run_paths)
+
     return manifest
 
 

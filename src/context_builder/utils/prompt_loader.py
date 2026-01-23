@@ -2,15 +2,42 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import frontmatter
 from jinja2 import Template
 
+from context_builder.storage.workspace_paths import get_workspace_config_dir
+
 logger = logging.getLogger(__name__)
 
-# Point to prompts directory relative to this file
+# Point to prompts directory relative to this file (repo default)
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def _resolve_prompt_path(prompt_name: str) -> Path:
+    """Resolve prompt file path with workspace override support.
+
+    Checks workspace config first, then falls back to repo default.
+
+    Args:
+        prompt_name: Name of the prompt file (without .md extension)
+
+    Returns:
+        Path to the prompt file (may not exist - caller should check)
+    """
+    # Check workspace config first
+    workspace_config = get_workspace_config_dir()
+    workspace_prompt = workspace_config / "prompts" / f"{prompt_name}.md"
+
+    if workspace_prompt.exists():
+        logger.debug(f"Using workspace prompt override: {workspace_prompt}")
+        return workspace_prompt
+
+    # Fall back to repo default
+    repo_prompt = PROMPTS_DIR / f"{prompt_name}.md"
+    logger.debug(f"Using repo default prompt: {repo_prompt}")
+    return repo_prompt
 
 
 def load_prompt(prompt_name: str, **kwargs) -> Dict[str, Any]:
@@ -38,12 +65,12 @@ def load_prompt(prompt_name: str, **kwargs) -> Dict[str, Any]:
         >>> config = prompt_data["config"]
         >>> messages = prompt_data["messages"]
     """
-    prompt_path = PROMPTS_DIR / f"{prompt_name}.md"
+    prompt_path = _resolve_prompt_path(prompt_name)
 
     if not prompt_path.exists():
         raise FileNotFoundError(
             f"Prompt file not found: {prompt_path}. "
-            f"Expected location: {PROMPTS_DIR}"
+            f"Checked workspace config and repo default at: {PROMPTS_DIR}"
         )
 
     logger.debug(f"Loading prompt from: {prompt_path}")
