@@ -175,3 +175,19 @@ doc_types:
       - "evidencia de daño"
       - "daños del vehículo"
       - "daños a la propiedad"
+
+  - doc_type: nsa_guarantee
+    description: "NSA Guarantee vehicle warranty insurance policy (Switzerland)"
+    cues:
+      - "NSA Garantie"
+      - "NSA GARANTIE"
+      - "NSA Services SA"
+      - "Spezifische Bedingungen der NSA Garantie"
+      - "Special terms of NSA Garantie"
+      - "ERV"
+      - "Europäische Reiseversicherung"
+      - "European Travel Insurance"
+      - "Abgedeckte Komponenten"
+      - "Covered components"
+      - "Garantiepolice"
+      - "Warranty policy"
