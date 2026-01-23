@@ -23,9 +23,11 @@ from context_builder.classification.openai_classifier import (
 )
 from context_builder.config.tenant import (
     TenantConfig,
+    IngestionRouteRule,
     load_tenant_config,
     get_tenant_config,
     reset_tenant_config_cache,
+    VALID_INGESTION_PROVIDERS,
 )
 
 
@@ -570,3 +572,197 @@ class TestWorkspaceConfigSnapshot:
 
             result = _snapshot_workspace_config(run_paths)
             assert result is None
+
+
+class TestIngestionRouteRule:
+    """Tests for IngestionRouteRule model and validation."""
+
+    def test_valid_route_rule(self):
+        """Test creating a valid ingestion route rule."""
+        rule = IngestionRouteRule(
+            pattern=r"^SCAN_.*\.pdf$",
+            provider="tesseract",
+            description="Legacy scanned PDFs",
+        )
+        assert rule.pattern == r"^SCAN_.*\.pdf$"
+        assert rule.provider == "tesseract"
+        assert rule.description == "Legacy scanned PDFs"
+
+    def test_route_rule_without_description(self):
+        """Test route rule with optional description omitted."""
+        rule = IngestionRouteRule(
+            pattern=r".*\.tiff?$",
+            provider="azure-di",
+        )
+        assert rule.description is None
+
+    def test_route_rule_invalid_provider(self):
+        """Test that invalid provider name raises error."""
+        with pytest.raises(ValueError, match="Unknown provider"):
+            IngestionRouteRule(
+                pattern=r".*\.pdf$",
+                provider="invalid-provider",
+            )
+
+    def test_route_rule_invalid_regex(self):
+        """Test that invalid regex pattern raises error."""
+        with pytest.raises(ValueError, match="Invalid regex pattern"):
+            IngestionRouteRule(
+                pattern=r"[invalid(regex",
+                provider="tesseract",
+            )
+
+    def test_route_rule_empty_pattern(self):
+        """Test that empty pattern raises error."""
+        with pytest.raises(ValueError):
+            IngestionRouteRule(
+                pattern="",
+                provider="tesseract",
+            )
+
+    def test_all_valid_providers(self):
+        """Test that all documented providers are valid."""
+        for provider in ["azure-di", "openai", "tesseract"]:
+            rule = IngestionRouteRule(pattern=r".*", provider=provider)
+            assert rule.provider == provider
+
+    def test_valid_providers_constant(self):
+        """Test that VALID_INGESTION_PROVIDERS matches expected providers."""
+        expected = {"azure-di", "openai", "tesseract"}
+        assert VALID_INGESTION_PROVIDERS == expected
+
+
+class TestIngestionRouting:
+    """Tests for tenant config ingestion routing."""
+
+    def setup_method(self):
+        """Reset tenant config cache before each test."""
+        reset_tenant_config_cache()
+
+    def test_get_provider_for_filename_first_match_wins(self):
+        """Test that first matching rule is used."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[
+                IngestionRouteRule(pattern=r"^SCAN_.*", provider="tesseract"),
+                IngestionRouteRule(pattern=r".*\.pdf$", provider="azure-di"),
+            ],
+        )
+        # SCAN_report.pdf matches both patterns, but first rule wins
+        assert config.get_provider_for_filename("SCAN_report.pdf") == "tesseract"
+        # regular.pdf only matches second pattern
+        assert config.get_provider_for_filename("regular.pdf") == "azure-di"
+
+    def test_get_provider_for_filename_no_match_returns_none(self):
+        """Test that no match returns None for default routing."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[
+                IngestionRouteRule(pattern=r"^SCAN_.*", provider="tesseract"),
+            ],
+        )
+        # This filename doesn't match any pattern
+        assert config.get_provider_for_filename("regular_doc.pdf") is None
+
+    def test_get_provider_for_filename_empty_routes(self):
+        """Test that empty routes list returns None."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[],
+        )
+        assert config.get_provider_for_filename("anything.pdf") is None
+
+    def test_get_provider_for_filename_case_sensitive(self):
+        """Test that regex matching is case-sensitive by default."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[
+                IngestionRouteRule(pattern=r"^SCAN_.*", provider="tesseract"),
+            ],
+        )
+        assert config.get_provider_for_filename("SCAN_doc.pdf") == "tesseract"
+        assert config.get_provider_for_filename("scan_doc.pdf") is None
+
+    def test_get_provider_for_filename_case_insensitive_pattern(self):
+        """Test case-insensitive matching via regex flag."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[
+                IngestionRouteRule(pattern=r"(?i)^scan_.*", provider="tesseract"),
+            ],
+        )
+        assert config.get_provider_for_filename("SCAN_doc.pdf") == "tesseract"
+        assert config.get_provider_for_filename("scan_doc.pdf") == "tesseract"
+        assert config.get_provider_for_filename("Scan_doc.pdf") == "tesseract"
+
+    def test_get_provider_for_filename_extension_patterns(self):
+        """Test routing based on file extensions."""
+        config = TenantConfig(
+            tenant_id="test",
+            ingestion_routes=[
+                IngestionRouteRule(pattern=r".*\.tiff?$", provider="tesseract"),
+                IngestionRouteRule(pattern=r".*\.png$", provider="openai"),
+            ],
+        )
+        assert config.get_provider_for_filename("scan.tif") == "tesseract"
+        assert config.get_provider_for_filename("scan.tiff") == "tesseract"
+        assert config.get_provider_for_filename("photo.png") == "openai"
+        assert config.get_provider_for_filename("doc.pdf") is None
+
+    def test_load_tenant_config_with_ingestion_routes(self, tmp_path):
+        """Test loading tenant config with ingestion routes from YAML."""
+        config_file = tmp_path / "tenant.yaml"
+        config_file.write_text("""
+tenant_id: acme-insurance
+tenant_name: ACME Insurance Corp
+ingestion_routes:
+  - pattern: "^SCAN_.*\\\\.pdf$"
+    provider: tesseract
+    description: Legacy scanned PDFs use local OCR
+  - pattern: ".*\\\\.tiff?$"
+    provider: tesseract
+    description: All TIFF files use Tesseract
+  - pattern: "^MEDICAL_.*"
+    provider: azure-di
+    description: Medical documents need high-quality OCR
+""")
+
+        config = load_tenant_config(config_file)
+
+        assert config is not None
+        assert len(config.ingestion_routes) == 3
+        assert config.ingestion_routes[0].provider == "tesseract"
+        assert config.ingestion_routes[1].pattern == r".*\.tiff?$"
+        assert config.ingestion_routes[2].description == "Medical documents need high-quality OCR"
+
+        # Test routing
+        assert config.get_provider_for_filename("SCAN_claim.pdf") == "tesseract"
+        assert config.get_provider_for_filename("archive.tiff") == "tesseract"
+        assert config.get_provider_for_filename("MEDICAL_report.pdf") == "azure-di"
+        assert config.get_provider_for_filename("regular.pdf") is None
+
+    def test_load_tenant_config_invalid_provider_in_yaml(self, tmp_path):
+        """Test that invalid provider in YAML raises error."""
+        config_file = tmp_path / "tenant.yaml"
+        config_file.write_text("""
+tenant_id: test
+ingestion_routes:
+  - pattern: ".*"
+    provider: invalid-provider
+""")
+
+        with pytest.raises(ValueError, match="Unknown provider"):
+            load_tenant_config(config_file)
+
+    def test_load_tenant_config_invalid_regex_in_yaml(self, tmp_path):
+        """Test that invalid regex in YAML raises error."""
+        config_file = tmp_path / "tenant.yaml"
+        config_file.write_text("""
+tenant_id: test
+ingestion_routes:
+  - pattern: "[invalid(regex"
+    provider: tesseract
+""")
+
+        with pytest.raises(ValueError, match="Invalid regex pattern"):
+            load_tenant_config(config_file)

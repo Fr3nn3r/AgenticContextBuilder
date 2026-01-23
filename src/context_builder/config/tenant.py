@@ -8,6 +8,7 @@ Currently used for validation only; runtime hooks may be added in future phases.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,53 @@ from pydantic import BaseModel, Field, field_validator
 from context_builder.storage.workspace_paths import get_workspace_config_dir
 
 logger = logging.getLogger(__name__)
+
+# Valid ingestion provider names
+VALID_INGESTION_PROVIDERS = {"azure-di", "openai", "tesseract"}
+
+
+class IngestionRouteRule(BaseModel):
+    """Rule for routing documents to specific ingestion providers based on filename.
+
+    Attributes:
+        pattern: Regex pattern to match against the filename (not full path).
+        provider: Ingestion provider name (azure-di, openai, tesseract).
+        description: Optional human-readable description of the rule.
+    """
+
+    pattern: str = Field(
+        ...,
+        description="Regex pattern to match against filename",
+        min_length=1,
+    )
+    provider: str = Field(
+        ...,
+        description="Ingestion provider name (azure-di, openai, tesseract)",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Human-readable description of the rule",
+    )
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        """Validate that provider is a known ingestion provider."""
+        if v not in VALID_INGESTION_PROVIDERS:
+            raise ValueError(
+                f"Unknown provider '{v}'. Valid providers: {sorted(VALID_INGESTION_PROVIDERS)}"
+            )
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, v: str) -> str:
+        """Validate that pattern is a valid regex."""
+        try:
+            re.compile(v)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern '{v}': {e}")
+        return v
 
 
 class TenantConfig(BaseModel):
@@ -53,6 +101,10 @@ class TenantConfig(BaseModel):
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional tenant metadata for audit/tracking",
+    )
+    ingestion_routes: List[IngestionRouteRule] = Field(
+        default_factory=list,
+        description="Ordered list of regex rules for routing files to ingestion providers",
     )
 
     @field_validator("tenant_id")
@@ -92,6 +144,27 @@ class TenantConfig(BaseModel):
         if not self.allowed_ingestion_providers:
             return True
         return provider in self.allowed_ingestion_providers
+
+    def get_provider_for_filename(self, filename: str) -> Optional[str]:
+        """Get the ingestion provider for a filename based on routing rules.
+
+        Evaluates ingestion_routes in order and returns the provider for
+        the first matching pattern. Returns None if no pattern matches,
+        indicating default extension-based routing should be used.
+
+        Args:
+            filename: The filename (not full path) to match against patterns.
+
+        Returns:
+            Provider name if a pattern matches, None otherwise.
+        """
+        for rule in self.ingestion_routes:
+            if re.match(rule.pattern, filename):
+                logger.debug(
+                    f"Filename '{filename}' matched pattern '{rule.pattern}' -> {rule.provider}"
+                )
+                return rule.provider
+        return None
 
 
 def load_tenant_config(config_path: Optional[Path] = None) -> Optional[TenantConfig]:

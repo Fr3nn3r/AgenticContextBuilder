@@ -371,9 +371,16 @@ def _ingest_document(
     """
     Ingest a PDF or image document to extract text.
 
+    Provider selection follows this priority:
+    1. Tenant config ingestion_routes: If a regex pattern matches the filename,
+       use the specified provider.
+    2. Default extension-based routing: PDF → Azure DI, images → OpenAI Vision.
+
     Args:
         doc: Document to ingest
         doc_paths: Paths for output files
+        writer: ResultWriter instance
+        ingestion_factory: Optional factory for creating ingestion instances
 
     Returns:
         Extracted text content
@@ -381,14 +388,74 @@ def _ingest_document(
     Raises:
         Exception: If ingestion fails
     """
+    from context_builder.config.tenant import get_tenant_config
+
+    # Check tenant config for provider routing
+    tenant_config = get_tenant_config()
+    provider_name = None
+    if tenant_config:
+        provider_name = tenant_config.get_provider_for_filename(doc.original_filename)
+
+    # Get the factory
+    factory = ingestion_factory or IngestionFactory
+    if factory is None:
+        from context_builder.ingestion import IngestionFactory as DefaultIngestionFactory
+        factory = DefaultIngestionFactory
+
+    # If tenant config specifies a provider, use it regardless of file type
+    if provider_name:
+        logger.info(
+            f"Using tenant-configured provider '{provider_name}' for: {doc.original_filename}"
+        )
+        return _ingest_with_provider(
+            doc, doc_paths, writer, factory, provider_name
+        )
+
+    # Fall back to extension-based routing
     if doc.source_type == "pdf":
         # Use Azure DI for PDFs
         logger.info(f"Ingesting PDF with Azure DI: {doc.original_filename}")
-        factory = ingestion_factory or IngestionFactory
-        if factory is None:
-            from context_builder.ingestion import IngestionFactory as DefaultIngestionFactory
-            factory = DefaultIngestionFactory
-        ingestion = factory.create("azure-di")
+        return _ingest_with_provider(
+            doc, doc_paths, writer, factory, "azure-di"
+        )
+
+    elif doc.source_type == "image":
+        # Use OpenAI Vision for images
+        logger.info(f"Ingesting image with OpenAI Vision: {doc.original_filename}")
+        return _ingest_with_provider(
+            doc, doc_paths, writer, factory, "openai"
+        )
+
+    else:
+        raise ValueError(f"Unknown source type: {doc.source_type}")
+
+
+def _ingest_with_provider(
+    doc: DiscoveredDocument,
+    doc_paths: DocPaths,
+    writer: ResultWriter,
+    factory: Any,
+    provider_name: str,
+) -> str:
+    """
+    Ingest a document using a specific provider.
+
+    Args:
+        doc: Document to ingest
+        doc_paths: Paths for output files
+        writer: ResultWriter instance
+        factory: IngestionFactory to use
+        provider_name: Name of the provider (azure-di, openai, tesseract)
+
+    Returns:
+        Extracted text content
+
+    Raises:
+        ValueError: If provider returns no content
+    """
+    ingestion = factory.create(provider_name)
+
+    if provider_name == "azure-di":
         ingestion.save_markdown = False  # We'll save ourselves
         result = ingestion.process(doc.source_path, envelope=True)
         data = result.get("data", {})
@@ -406,14 +473,7 @@ def _ingest_document(
 
         return text_content
 
-    elif doc.source_type == "image":
-        # Use OpenAI Vision for images
-        logger.info(f"Ingesting image with OpenAI Vision: {doc.original_filename}")
-        factory = ingestion_factory or IngestionFactory
-        if factory is None:
-            from context_builder.ingestion import IngestionFactory as DefaultIngestionFactory
-            factory = DefaultIngestionFactory
-        ingestion = factory.create("openai")
+    elif provider_name == "openai":
         result = ingestion.process(doc.source_path, envelope=True)
         data = result.get("data", {})
 
@@ -446,8 +506,35 @@ def _ingest_document(
 
         return text_content
 
+    elif provider_name == "tesseract":
+        result = ingestion.process(doc.source_path, envelope=True)
+        data = result.get("data", {})
+
+        # Extract text from tesseract result
+        pages = data.get("pages", [])
+        if not pages:
+            raise ValueError("Tesseract returned no pages")
+
+        # Combine text from all pages
+        text_parts = []
+        for page in pages:
+            text_content = page.get("text", "") or page.get("text_content", "")
+            if text_content:
+                text_parts.append(text_content)
+
+        text_content = "\n\n".join(text_parts)
+
+        if not text_content:
+            raise ValueError("Tesseract returned no content")
+
+        # Save raw tesseract output for debugging
+        raw_path = doc_paths.text_raw_dir / "tesseract.json"
+        writer.write_json(raw_path, data)
+
+        return text_content
+
     else:
-        raise ValueError(f"Unknown source type: {doc.source_type}")
+        raise ValueError(f"Unknown provider: {provider_name}")
 
 
 def _load_existing_ingestion(
