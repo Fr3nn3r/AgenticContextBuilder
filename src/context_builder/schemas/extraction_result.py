@@ -97,6 +97,10 @@ class DocumentMetadata(BaseModel):
     )
     language: str = Field(..., description="Document language code (es, en)")
     page_count: int = Field(..., ge=1, description="Number of pages")
+    source_file_path: Optional[str] = Field(
+        default=None,
+        description="Path to original source file (PDF/image) for vision-based extraction"
+    )
 
 
 class PageContent(BaseModel):

@@ -5,13 +5,17 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from context_builder.schemas.claim_facts import (
     AggregatedFact,
+    AggregatedLineItem,
+    AggregatedServiceEntry,
     ClaimFacts,
     FactProvenance,
+    LineItemProvenance,
     SourceDocument,
+    StructuredClaimData,
 )
 from context_builder.storage.filesystem import FileStorage
 
@@ -142,6 +146,7 @@ class AggregationService:
         """Build candidate list from all extractions.
 
         Groups candidates by field name. Only includes fields with status="present".
+        Also attaches structured_data to candidates when available.
 
         Args:
             extractions: List of (doc_id, doc_type, filename, extraction_data) tuples.
@@ -154,6 +159,8 @@ class AggregationService:
 
         for doc_id, doc_type, filename, extraction in extractions:
             fields = extraction.get("fields", [])
+            # Get structured_data from extraction (contains full component lists, etc.)
+            structured_data = extraction.get("structured_data", {}) or {}
 
             for field in fields:
                 # Only consider present fields
@@ -172,6 +179,10 @@ class AggregationService:
                 provenance_list = field.get("provenance", [])
                 provenance = provenance_list[0] if provenance_list else {}
 
+                # Check if this field has corresponding structured data
+                # (e.g., covered_components, excluded_components, coverage_scale)
+                structured_value = structured_data.get(name)
+
                 candidate = {
                     "name": name,
                     "value": value,
@@ -185,6 +196,7 @@ class AggregationService:
                     "text_quote": provenance.get("text_quote"),
                     "char_start": provenance.get("char_start"),
                     "char_end": provenance.get("char_end"),
+                    "structured_value": structured_value,
                 }
 
                 candidates[name].append(candidate)
@@ -214,6 +226,9 @@ class AggregationService:
             )
             primary = sorted_candidates[0]
 
+            # Get structured_value if available (for complex fields like covered_components)
+            structured_value = primary.get("structured_value")
+
             fact = AggregatedFact(
                 name=field_name,
                 value=primary["value"],
@@ -228,10 +243,87 @@ class AggregationService:
                     char_start=primary.get("char_start"),
                     char_end=primary.get("char_end"),
                 ),
+                structured_value=structured_value,
             )
             facts.append(fact)
 
         return facts
+
+    def collect_structured_data(
+        self, extractions: List[Tuple[str, str, str, dict]], run_id: str
+    ) -> Optional[StructuredClaimData]:
+        """Collect line items and service entries from extractions.
+
+        Args:
+            extractions: List of (doc_id, doc_type, filename, extraction_data) tuples.
+            run_id: Run ID for provenance.
+
+        Returns:
+            StructuredClaimData with line items and/or service entries, or None if none found.
+        """
+        all_line_items = []
+        all_service_entries = []
+
+        for doc_id, doc_type, filename, extraction in extractions:
+            structured = extraction.get("structured_data")
+            if not structured:
+                continue
+
+            provenance = LineItemProvenance(
+                doc_id=doc_id,
+                doc_type=doc_type,
+                filename=filename,
+                run_id=run_id,
+            )
+
+            # Collect line items from cost estimates
+            if doc_type == "cost_estimate":
+                line_items = structured.get("line_items", [])
+                for item in line_items:
+                    all_line_items.append(
+                        AggregatedLineItem(
+                            item_code=item.get("item_code"),
+                            description=item.get("description", ""),
+                            quantity=item.get("quantity"),
+                            unit=item.get("unit"),
+                            unit_price=item.get("unit_price"),
+                            total_price=item.get("total_price"),
+                            item_type=item.get("item_type"),
+                            page_number=item.get("page_number"),
+                            source=provenance,
+                        )
+                    )
+
+            # Collect service entries from service history
+            if doc_type == "service_history":
+                service_entries = structured.get("service_entries", [])
+                for entry in service_entries:
+                    all_service_entries.append(
+                        AggregatedServiceEntry(
+                            service_type=entry.get("service_type"),
+                            service_date=entry.get("service_date"),
+                            mileage_km=entry.get("mileage_km"),
+                            order_number=entry.get("order_number"),
+                            work_performed=entry.get("work_performed"),
+                            additional_work=entry.get("additional_work"),
+                            service_provider_name=entry.get("service_provider_name"),
+                            service_provider_address=entry.get("service_provider_address"),
+                            is_authorized_partner=entry.get("is_authorized_partner"),
+                            source=provenance,
+                        )
+                    )
+
+        if all_line_items or all_service_entries:
+            if all_line_items:
+                logger.info(f"Collected {len(all_line_items)} line items from cost estimates")
+            if all_service_entries:
+                logger.info(f"Collected {len(all_service_entries)} service entries from service history")
+            return StructuredClaimData(
+                line_items=all_line_items if all_line_items else None,
+                service_entries=all_service_entries if all_service_entries else None,
+            )
+
+        return None
 
     def aggregate_claim_facts(
         self, claim_id: str, run_id: Optional[str] = None
@@ -275,6 +367,9 @@ class AggregationService:
         facts = self.select_primary(candidates)
         logger.info(f"Selected {len(facts)} aggregated facts")
 
+        # Collect structured data (line items from cost estimates)
+        structured_data = self.collect_structured_data(extractions, run_id)
+
         # Build source documents list
         sources = [
             SourceDocument(doc_id=doc_id, filename=filename, doc_type=doc_type)
@@ -288,6 +383,7 @@ class AggregationService:
             run_policy="latest_complete" if run_id else "specified",
             facts=facts,
             sources=sources,
+            structured_data=structured_data,
         )
 
     def write_claim_facts(self, claim_id: str, facts: ClaimFacts) -> Path:

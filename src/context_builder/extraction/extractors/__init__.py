@@ -11,8 +11,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Import to trigger auto-registration of generic extractor for all doc types
+# Import to trigger auto-registration of extractors
 from context_builder.extraction.extractors.generic import GenericFieldExtractor
+from context_builder.extraction.extractors.vehicle_registration import VehicleRegistrationExtractor
 
 from context_builder.extraction.base import ExtractorFactory
 
@@ -84,4 +85,4 @@ def _load_workspace_extractors():
 _load_workspace_extractors()
 
 
-__all__ = ["GenericFieldExtractor"]
+__all__ = ["GenericFieldExtractor", "VehicleRegistrationExtractor"]

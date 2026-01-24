@@ -860,6 +860,17 @@ class ExtractionStage:
         if should_extract:
             if context.pages_data is None:
                 raise ValueError("Missing pages data for extraction")
+
+            # Compute source file path for vision-based extractors
+            source_file_path = None
+            if context.doc.source_type in ("pdf", "image") and context.doc_paths:
+                # Find the original file in source_dir (copied during ingestion)
+                for ext in [".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".gif", ".bmp", ".webp"]:
+                    candidate = context.doc_paths.source_dir / f"original{ext}"
+                    if candidate.exists():
+                        source_file_path = str(candidate)
+                        break
+
             context.extraction_path, context.quality_gate_status = _run_extraction(
                 doc_id=context.doc.doc_id,
                 file_md5=context.doc.file_md5,
@@ -876,6 +887,7 @@ class ExtractionStage:
                 version_bundle_id=context.version_bundle_id,
                 audit_storage_dir=context.audit_storage_dir,
                 pii_vault=context.pii_vault,
+                source_file_path=source_file_path,
             )
             logger.info(f"Extracted {doc_type}: {context.doc.original_filename}")
         elif not context.stage_config.run_extract:
@@ -1018,6 +1030,7 @@ def _run_extraction(
     version_bundle_id: Optional[str] = None,
     audit_storage_dir: Optional[Path] = None,
     pii_vault: Optional[Any] = None,
+    source_file_path: Optional[str] = None,
 ) -> tuple[Path, Optional[str]]:
     """Run field extraction for supported doc types.
 
@@ -1037,6 +1050,7 @@ def _run_extraction(
         version_bundle_id: Optional version bundle ID.
         audit_storage_dir: Optional directory for audit logs.
         pii_vault: Optional PII vault for tokenizing PII in extraction results.
+        source_file_path: Optional path to original source file (PDF/image) for vision-based extraction.
 
     Returns:
         Tuple of (extraction_path, quality_gate_status)
@@ -1056,6 +1070,7 @@ def _run_extraction(
         doc_type_confidence=doc_type_confidence,
         language=language,
         page_count=len(pages),
+        source_file_path=source_file_path,
     )
 
     run_meta = ExtractionRunMetadata(
