@@ -297,3 +297,109 @@ class TestQualityGateValidation:
         """Test invalid status is rejected."""
         with pytest.raises(ValidationError):
             QualityGate(status="invalid")
+
+
+class TestStructuredData:
+    """Tests for structured_data field in ExtractionResult."""
+
+    def test_structured_data_with_line_items(self):
+        """Test that structured_data can hold line_items as native JSON array."""
+        line_items = [
+            {"item_code": "001", "description": "Part A", "quantity": 2, "total_price": 100.0},
+            {"item_code": "002", "description": "Part B", "quantity": 1, "total_price": 50.0},
+        ]
+
+        result = ExtractionResult(
+            schema_version="extraction_result_v1",
+            run=ExtractionRunMetadata(
+                run_id="run_20240101",
+                extractor_version="1.0",
+                model="gpt-4o",
+                prompt_version="v1",
+            ),
+            doc=DocumentMetadata(
+                doc_id="doc1",
+                claim_id="claim1",
+                doc_type="cost_estimate",
+                doc_type_confidence=0.9,
+                language="de",
+                page_count=1,
+            ),
+            pages=[PageContent(page=1, text="Hello", text_md5="abc")],
+            fields=[
+                ExtractedField(
+                    name="line_items",
+                    value="2 items: 0 labor, 2 parts, 0 fees",
+                    normalized_value="2 items: 0 labor, 2 parts, 0 fees",
+                    confidence=0.9,
+                    status="present",
+                )
+            ],
+            quality_gate=QualityGate(status="pass"),
+            structured_data={"line_items": line_items},
+        )
+
+        # Verify structured_data is preserved as native Python objects
+        assert result.structured_data is not None
+        assert "line_items" in result.structured_data
+        assert len(result.structured_data["line_items"]) == 2
+        assert result.structured_data["line_items"][0]["item_code"] == "001"
+        assert result.structured_data["line_items"][1]["total_price"] == 50.0
+
+    def test_structured_data_serialization(self):
+        """Test that structured_data serializes to native JSON array, not JSON string."""
+        line_items = [
+            {"item_code": "001", "description": "Test", "total_price": 100.0},
+        ]
+
+        result = ExtractionResult(
+            schema_version="extraction_result_v1",
+            run=ExtractionRunMetadata(
+                run_id="run_20240101",
+                extractor_version="1.0",
+                model="gpt-4o",
+                prompt_version="v1",
+            ),
+            doc=DocumentMetadata(
+                doc_id="doc1",
+                claim_id="claim1",
+                doc_type="cost_estimate",
+                doc_type_confidence=0.9,
+                language="de",
+                page_count=1,
+            ),
+            pages=[],
+            fields=[],
+            quality_gate=QualityGate(status="pass"),
+            structured_data={"line_items": line_items},
+        )
+
+        # Serialize and verify it's a native array, not a string
+        data = result.model_dump()
+        assert isinstance(data["structured_data"]["line_items"], list)
+        assert not isinstance(data["structured_data"]["line_items"], str)
+
+    def test_structured_data_optional(self):
+        """Test that structured_data is optional and defaults to None."""
+        result = ExtractionResult(
+            schema_version="extraction_result_v1",
+            run=ExtractionRunMetadata(
+                run_id="run_20240101",
+                extractor_version="1.0",
+                model="gpt-4o",
+                prompt_version="v1",
+            ),
+            doc=DocumentMetadata(
+                doc_id="doc1",
+                claim_id="claim1",
+                doc_type="loss_notice",
+                doc_type_confidence=0.9,
+                language="es",
+                page_count=1,
+            ),
+            pages=[],
+            fields=[],
+            quality_gate=QualityGate(status="pass"),
+        )
+
+        assert result.structured_data is None

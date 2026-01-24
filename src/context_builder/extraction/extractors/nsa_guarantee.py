@@ -20,6 +20,7 @@ from context_builder.extraction.base import (
 from context_builder.extraction.spec_loader import DocTypeSpec
 from context_builder.extraction.page_parser import find_text_position
 from context_builder.extraction.normalizers import get_normalizer, get_validator
+from context_builder.extraction.evidence_resolver import resolve_evidence_offsets
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.extraction_result import (
     ExtractionResult,
@@ -193,7 +194,7 @@ class NsaGuaranteeExtractor(FieldExtractor):
         metadata_fields = self._extract_metadata(metadata_pages, pages)
 
         # Stage 2: Extract components from pages 2-3
-        component_fields = self._extract_components(component_pages)
+        component_fields, component_structured_data = self._extract_components(component_pages)
 
         # Merge results
         all_fields = metadata_fields + component_fields
@@ -207,6 +208,9 @@ class NsaGuaranteeExtractor(FieldExtractor):
         # Build quality gate
         quality_gate = self._build_quality_gate(all_fields)
 
+        # Build structured_data from components (covered_components, excluded_components, coverage_scale)
+        structured_data = component_structured_data if component_structured_data else None
+
         # Build result
         result = ExtractionResult(
             schema_version="extraction_result_v1",
@@ -215,7 +219,11 @@ class NsaGuaranteeExtractor(FieldExtractor):
             pages=pages,
             fields=all_fields,
             quality_gate=quality_gate,
+            structured_data=structured_data,
         )
+
+        # Resolve evidence offsets
+        result = resolve_evidence_offsets(result)
 
         # Log extraction decision
         self._log_extraction_decision(result)
@@ -238,8 +246,11 @@ class NsaGuaranteeExtractor(FieldExtractor):
         Returns:
             List of extracted metadata fields
         """
+        claim_id = self._audit_context.get("claim_id", "unknown")
+        doc_id = self._audit_context.get("doc_id", "unknown")
+
         if not metadata_pages:
-            logger.warning("No metadata pages found for NSA Guarantee extraction")
+            logger.warning(f"No metadata pages found | claim={claim_id} doc={doc_id}")
             return []
 
         # Build context from page 1
@@ -287,6 +298,16 @@ class NsaGuaranteeExtractor(FieldExtractor):
         )
         messages = prompt_data["messages"]
 
+        # Log pre-call info for debugging
+        prompt_chars = sum(len(m.get("content", "")) for m in messages)
+        logger.info(
+            f"Metadata extraction starting | claim={claim_id} doc={doc_id} | "
+            f"context_chars={len(context)} prompt_chars={prompt_chars} "
+            f"max_tokens={self.max_tokens_metadata}"
+        )
+
+        response = None
+        content = None
         try:
             response = self.audited_client.chat_completions_create(
                 model=self.model,
@@ -297,10 +318,50 @@ class NsaGuaranteeExtractor(FieldExtractor):
             )
 
             content = response.choices[0].message.content
+
+            # Log token usage for successful calls
+            if response.usage:
+                logger.info(
+                    f"Metadata extraction complete | claim={claim_id} doc={doc_id} | "
+                    f"prompt_tokens={response.usage.prompt_tokens} "
+                    f"completion_tokens={response.usage.completion_tokens} "
+                    f"total_tokens={response.usage.total_tokens} "
+                    f"finish_reason={response.choices[0].finish_reason}"
+                )
+
             raw_extractions = json.loads(content)
 
+        except json.JSONDecodeError as e:
+            # Log detailed context for JSON parse failures
+            call_id = self.audited_client.get_call_id()
+            # Get token info from response if available
+            token_info = ""
+            if response and response.usage:
+                token_info = (
+                    f"prompt_tokens={response.usage.prompt_tokens} "
+                    f"completion_tokens={response.usage.completion_tokens} "
+                    f"finish_reason={response.choices[0].finish_reason} "
+                )
+            # Show snippet around the error position
+            error_pos = e.pos if hasattr(e, 'pos') else 0
+            snippet_start = max(0, error_pos - 100)
+            snippet_end = min(len(content) if content else 0, error_pos + 100)
+            snippet = content[snippet_start:snippet_end] if content else ""
+            logger.error(
+                f"Metadata extraction JSON parse failed | "
+                f"claim={claim_id} doc={doc_id} call_id={call_id} | "
+                f"{token_info}"
+                f"error: {e.msg} at line {e.lineno} col {e.colno} (char {e.pos}) | "
+                f"snippet: ...{snippet!r}..."
+            )
+            raw_extractions = {"fields": [], "error": str(e)}
+
         except Exception as e:
-            logger.error(f"Metadata extraction failed: {e}")
+            call_id = self.audited_client.get_call_id()
+            logger.error(
+                f"Metadata extraction failed | claim={claim_id} doc={doc_id} call_id={call_id} | "
+                f"{type(e).__name__}: {e}"
+            )
             raw_extractions = {"fields": [], "error": str(e)}
 
         # Build ExtractedField objects
@@ -313,7 +374,7 @@ class NsaGuaranteeExtractor(FieldExtractor):
     def _extract_components(
         self,
         component_pages: List[PageContent],
-    ) -> List[ExtractedField]:
+    ) -> tuple[List[ExtractedField], Dict[str, Any]]:
         """
         Extract component lists from pages 2-3.
         Returns structured data for covered/excluded components.
@@ -322,11 +383,15 @@ class NsaGuaranteeExtractor(FieldExtractor):
             component_pages: Pages containing component lists (pages 2-3)
 
         Returns:
-            List of extracted component fields
+            Tuple of (fields, structured_data) where structured_data contains
+            the raw component data for storage in result.structured_data
         """
+        claim_id = self._audit_context.get("claim_id", "unknown")
+        doc_id = self._audit_context.get("doc_id", "unknown")
+
         if not component_pages:
-            logger.warning("No component pages found for NSA Guarantee extraction")
-            return []
+            logger.warning(f"No component pages found | claim={claim_id} doc={doc_id}")
+            return [], {}
 
         # Build context from pages 2-3
         context = "\n\n".join([
@@ -367,6 +432,16 @@ class NsaGuaranteeExtractor(FieldExtractor):
         )
         messages = prompt_data["messages"]
 
+        # Log pre-call info for debugging
+        prompt_chars = sum(len(m.get("content", "")) for m in messages)
+        logger.info(
+            f"Component extraction starting | claim={claim_id} doc={doc_id} | "
+            f"pages={[p.page for p in component_pages]} context_chars={len(context)} "
+            f"prompt_chars={prompt_chars} max_tokens={self.max_tokens_components}"
+        )
+
+        response = None
+        content = None
         try:
             response = self.audited_client.chat_completions_create(
                 model=self.model,
@@ -377,22 +452,64 @@ class NsaGuaranteeExtractor(FieldExtractor):
             )
 
             content = response.choices[0].message.content
+
+            # Log token usage for successful calls
+            if response.usage:
+                logger.info(
+                    f"Component extraction complete | claim={claim_id} doc={doc_id} | "
+                    f"prompt_tokens={response.usage.prompt_tokens} "
+                    f"completion_tokens={response.usage.completion_tokens} "
+                    f"total_tokens={response.usage.total_tokens} "
+                    f"finish_reason={response.choices[0].finish_reason}"
+                )
+
             component_data = json.loads(content)
 
+        except json.JSONDecodeError as e:
+            # Log detailed context for JSON parse failures
+            call_id = self.audited_client.get_call_id()
+            # Get token info from response if available
+            token_info = ""
+            if response and response.usage:
+                token_info = (
+                    f"prompt_tokens={response.usage.prompt_tokens} "
+                    f"completion_tokens={response.usage.completion_tokens} "
+                    f"finish_reason={response.choices[0].finish_reason} "
+                )
+            # Show snippet around the error position
+            error_pos = e.pos if hasattr(e, 'pos') else 0
+            snippet_start = max(0, error_pos - 100)
+            snippet_end = min(len(content) if content else 0, error_pos + 100)
+            snippet = content[snippet_start:snippet_end] if content else ""
+            logger.error(
+                f"Component extraction JSON parse failed | "
+                f"claim={claim_id} doc={doc_id} call_id={call_id} | "
+                f"{token_info}"
+                f"error: {e.msg} at line {e.lineno} col {e.colno} (char {e.pos}) | "
+                f"snippet: ...{snippet!r}..."
+            )
+            component_data = {"covered": {}, "excluded": {}, "coverage_scale": []}
+
         except Exception as e:
-            logger.error(f"Component extraction failed: {e}")
+            call_id = self.audited_client.get_call_id()
+            logger.error(
+                f"Component extraction failed | claim={claim_id} doc={doc_id} call_id={call_id} | "
+                f"{type(e).__name__}: {e}"
+            )
             component_data = {"covered": {}, "excluded": {}, "coverage_scale": []}
 
         # Build ExtractedField objects for component data
-        # Note: normalized_value must be a string, so we serialize dicts/lists to JSON
+        # value and normalized_value = human-readable summary
+        # Actual structured data returned separately for result.structured_data
         fields = []
 
         # Covered components
         covered = component_data.get("covered", {})
+        covered_summary = self._summarize_components(covered) if covered else None
         fields.append(ExtractedField(
             name="covered_components",
-            value=None,
-            normalized_value=json.dumps(covered) if covered else None,
+            value=covered_summary,
+            normalized_value=covered_summary,  # Human-readable; actual data in structured_data
             confidence=0.9 if covered else 0.0,
             status="present" if covered else "missing",
             provenance=[FieldProvenance(
@@ -407,10 +524,11 @@ class NsaGuaranteeExtractor(FieldExtractor):
 
         # Excluded components
         excluded = component_data.get("excluded", {})
+        excluded_summary = self._summarize_components(excluded) if excluded else None
         fields.append(ExtractedField(
             name="excluded_components",
-            value=None,
-            normalized_value=json.dumps(excluded) if excluded else None,
+            value=excluded_summary,
+            normalized_value=excluded_summary,  # Human-readable; actual data in structured_data
             confidence=0.9 if excluded else 0.0,
             status="present" if excluded else "missing",
             provenance=[FieldProvenance(
@@ -425,10 +543,11 @@ class NsaGuaranteeExtractor(FieldExtractor):
 
         # Coverage scale
         coverage_scale = component_data.get("coverage_scale", [])
+        coverage_summary = self._summarize_coverage_scale(coverage_scale) if coverage_scale else None
         fields.append(ExtractedField(
             name="coverage_scale",
-            value=None,
-            normalized_value=json.dumps(coverage_scale) if coverage_scale else None,
+            value=coverage_summary,
+            normalized_value=coverage_summary,  # Human-readable; actual data in structured_data
             confidence=0.9 if coverage_scale else 0.0,
             status="present" if coverage_scale else "missing",
             provenance=[FieldProvenance(
@@ -441,7 +560,61 @@ class NsaGuaranteeExtractor(FieldExtractor):
             value_is_placeholder=False,
         ))
 
-        return fields
+        # Build structured data for complex fields
+        structured_data = {}
+        if covered:
+            structured_data["covered_components"] = covered
+        if excluded:
+            structured_data["excluded_components"] = excluded
+        if coverage_scale:
+            structured_data["coverage_scale"] = coverage_scale
+
+        return fields, structured_data
+
+    def _summarize_components(self, components: Dict[str, List[str]]) -> str:
+        """
+        Create a human-readable summary of component categories.
+
+        Args:
+            components: Dict mapping category names to lists of parts
+
+        Returns:
+            Summary string like "Engine: 30 parts, Turbo: 3 parts, ..."
+        """
+        if not components:
+            return ""
+
+        parts = []
+        for category, items in components.items():
+            if items:
+                # Convert category name to readable format
+                readable_category = category.replace("_", " ").title()
+                parts.append(f"{readable_category}: {len(items)} parts")
+
+        return ", ".join(parts)
+
+    def _summarize_coverage_scale(self, coverage_scale: List[Dict[str, Any]]) -> str:
+        """
+        Create a human-readable summary of coverage scale.
+
+        Args:
+            coverage_scale: List of {km_threshold, coverage_percent} dicts
+
+        Returns:
+            Summary string like "80% up to 50'000 km, 60% up to 80'000 km, ..."
+        """
+        if not coverage_scale:
+            return ""
+
+        parts = []
+        for tier in coverage_scale:
+            km = tier.get("km_threshold", 0)
+            pct = tier.get("coverage_percent", 0)
+            # Format km with Swiss thousands separator
+            km_formatted = f"{km:,}".replace(",", "'")
+            parts.append(f"{pct}% up to {km_formatted} km")
+
+        return ", ".join(parts)
 
     def _build_extracted_fields(
         self,

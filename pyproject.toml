@@ -39,3 +39,6 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pylint.messages_control]
+disable = ["wrong-import-position"]

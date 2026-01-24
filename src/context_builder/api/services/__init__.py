@@ -1,5 +1,6 @@
 """Service layer for API endpoints."""
 
+from .aggregation import AggregationError, AggregationService
 from .auth import AuthService, Session
 from .claims import ClaimsService
 from .documents import DocumentsService
@@ -15,6 +16,8 @@ from .users import Role, User, UsersService
 from .workspace import Workspace, WorkspaceRegistry, WorkspaceService, WorkspaceStatus
 
 __all__ = [
+    "AggregationError",
+    "AggregationService",
     "AuditEntry",
     "AuditService",
     "AuthService",

@@ -2,7 +2,7 @@
 name: NSA Guarantee Metadata Extraction
 model: gpt-4o
 temperature: 0.1
-max_tokens: 2048
+max_tokens: 4096
 description: Extracts structured metadata fields from page 1 of NSA Guarantee warranty policies.
 ---
 system:

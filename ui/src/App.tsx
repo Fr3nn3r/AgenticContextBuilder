@@ -12,12 +12,13 @@ function App() {
   const { loading, error, refreshClaims } = useClaims();
 
   // Get current view for sidebar active state
-  function getCurrentView(): "new-claim" | "batches" | "evaluation" | "all-claims" | "templates" | "pipeline" | "truth" | "compliance" | "admin" {
+  function getCurrentView(): "new-claim" | "batches" | "evaluation" | "all-claims" | "claims-explorer" | "templates" | "pipeline" | "truth" | "compliance" | "admin" {
     const path = location.pathname;
     if (path.startsWith("/batches")) return "batches";
     if (path === "/evaluation") return "evaluation";
     if (path === "/claims/new") return "new-claim";
     if (path === "/claims/all") return "all-claims";
+    if (path === "/claims/explorer") return "claims-explorer";
     if (path === "/templates") return "templates";
     if (path === "/pipeline") return "pipeline";
     if (path === "/truth") return "truth";
@@ -41,6 +42,7 @@ function App() {
   }
 
   const isBatchRoute = location.pathname.startsWith("/batches");
+  const isClaimsExplorerRoute = location.pathname === "/claims/explorer";
   const isLoginRoute = location.pathname === "/login";
 
   // Show loading while checking auth
@@ -74,8 +76,8 @@ function App() {
       <Sidebar currentView={getCurrentView()} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header - only show for non-batch routes */}
-        {!isBatchRoute && (
+        {/* Header - only show for non-batch routes (excluding claims explorer which has its own header) */}
+        {!isBatchRoute && !isClaimsExplorerRoute && (
           <header className="bg-card border-b border-border px-6 py-3 flex items-center justify-between">
             <h1 className="text-xl font-semibold text-foreground">
               {getPageTitle()}
@@ -88,7 +90,7 @@ function App() {
         )}
 
         {/* Content */}
-        <main className={isBatchRoute ? "flex-1 overflow-hidden" : "flex-1 overflow-auto"}>
+        <main className={(isBatchRoute || isClaimsExplorerRoute) ? "flex-1 overflow-hidden" : "flex-1 overflow-auto"}>
           {loading && !isBatchRoute ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-muted-foreground">Loading...</div>

@@ -26,6 +26,7 @@ from context_builder.extraction.base import (
 from context_builder.extraction.spec_loader import DocTypeSpec
 from context_builder.extraction.page_parser import find_text_position
 from context_builder.extraction.normalizers import get_normalizer, get_validator
+from context_builder.extraction.evidence_resolver import resolve_evidence_offsets
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.extraction_result import (
     ExtractionResult,
@@ -208,7 +209,7 @@ class GenericFieldExtractor(FieldExtractor):
         # Step 5: Evaluate quality gate
         quality_gate = self._build_quality_gate(fields)
 
-        # Step 6: Log extraction decision
+        # Step 6: Build result
         result = ExtractionResult(
             schema_version="extraction_result_v1",
             run=run_metadata,
@@ -217,6 +218,11 @@ class GenericFieldExtractor(FieldExtractor):
             fields=fields,
             quality_gate=quality_gate,
         )
+
+        # Step 7: Resolve evidence offsets
+        result = resolve_evidence_offsets(result)
+
+        # Step 8: Log extraction decision
         self._log_extraction_decision(result)
 
         return result

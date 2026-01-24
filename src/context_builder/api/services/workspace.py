@@ -13,6 +13,10 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
+from .audit import AuditService
+from .prompt_config import PromptConfigService
+from .users import UsersService
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,6 +225,7 @@ class WorkspaceService:
                 return None
 
         self._initialize_workspace_folders(workspace_path)
+        self._initialize_default_configs(workspace_path)
 
         workspace = Workspace(
             workspace_id=workspace_id,
@@ -244,6 +249,50 @@ class WorkspaceService:
             (workspace_path / subdir).mkdir(exist_ok=True)
 
         logger.debug(f"Initialized workspace folders at {workspace_path}")
+
+    def _initialize_default_configs(self, workspace_path: Path) -> None:
+        """Initialize default configuration files for a new workspace.
+
+        Creates default config files by instantiating services which
+        auto-create their defaults on initialization:
+        - prompt_configs.json (with default prompt configurations)
+        - prompt_configs_history.jsonl (audit trail)
+        - users.json (with default users: su, ted, seb, tod)
+        - sessions.json (empty sessions file)
+        - audit.jsonl is created on first audit log entry
+
+        Args:
+            workspace_path: Path to the workspace root directory.
+        """
+        config_dir = workspace_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize prompt configs (creates prompt_configs.json and history)
+        PromptConfigService(config_dir)
+        logger.debug(f"Initialized prompt configs at {config_dir}")
+
+        # Initialize users (creates users.json with default users)
+        users_service = UsersService(config_dir)
+        logger.debug(f"Initialized users at {config_dir}")
+
+        # Initialize sessions file (create empty sessions.json)
+        sessions_file = config_dir / "sessions.json"
+        if not sessions_file.exists():
+            sessions_file.write_text("{}", encoding="utf-8")
+            logger.debug(f"Initialized sessions at {sessions_file}")
+
+        # AuditService doesn't create file on init, but we can log workspace creation
+        audit_service = AuditService(config_dir)
+        audit_service.log(
+            action=f"Workspace created at {workspace_path}",
+            action_type="workspace_created",
+            entity_type="workspace",
+            entity_id=workspace_path.name,
+            user="system",
+        )
+        logger.debug(f"Initialized audit log at {config_dir}")
+
+        logger.info(f"Initialized default configs for workspace at {workspace_path}")
 
     def activate_workspace(self, workspace_id: str) -> Optional[Workspace]:
         """

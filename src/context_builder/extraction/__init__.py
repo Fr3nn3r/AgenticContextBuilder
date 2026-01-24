@@ -25,9 +25,7 @@ from context_builder.extraction.page_parser import (
     find_quote_in_pages,
 )
 from context_builder.extraction.normalizers import (
-    normalize_uppercase_trim,
-    normalize_date_to_iso,
-    normalize_plate,
+    safe_string,
     get_normalizer,
     get_validator,
 )
@@ -53,9 +51,7 @@ __all__ = [
     "find_text_position",
     "find_quote_in_pages",
     # Normalizers
-    "normalize_uppercase_trim",
-    "normalize_date_to_iso",
-    "normalize_plate",
+    "safe_string",
     "get_normalizer",
     "get_validator",
 ]

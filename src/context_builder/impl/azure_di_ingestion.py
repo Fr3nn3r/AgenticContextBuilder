@@ -124,7 +124,7 @@ class AzureDocumentIntelligenceIngestion(DataIngestion):
             )
 
             # Wait for completion with timeout
-            result = poller.result()
+            result = poller.result(timeout=self.timeout)
             return result
 
         except Exception as e:

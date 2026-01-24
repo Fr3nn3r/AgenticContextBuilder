@@ -32,7 +32,11 @@ from context_builder.pipeline.paths import (
 )
 from context_builder.pipeline.stages import PipelineRunner
 from context_builder.pipeline.state import is_claim_processed
-from context_builder.pipeline.text import build_pages_json, pages_json_to_page_content
+from context_builder.pipeline.text import (
+    build_pages_json,
+    build_pages_json_from_azure_di,
+    pages_json_to_page_content,
+)
 from context_builder.pipeline.writer import ResultWriter
 from context_builder.schemas.extraction_result import (
     DocumentMetadata,
@@ -70,6 +74,15 @@ def _get_workspace_logs_dir(output_base: Path) -> Path:
         return logs_dir
     # Fallback to output/logs relative to project root
     return Path("output/logs")
+
+
+@dataclass
+class IngestionResult:
+    """Result of document ingestion."""
+
+    text_content: str
+    provider_name: str
+    azure_di_data: Optional[Dict[str, Any]] = None  # For Azure DI, includes raw output with page spans
 
 
 @dataclass
@@ -367,7 +380,7 @@ def _ingest_document(
     doc_paths: DocPaths,
     writer: ResultWriter,
     ingestion_factory: Optional[Any] = None,
-) -> str:
+) -> IngestionResult:
     """
     Ingest a PDF or image document to extract text.
 
@@ -383,7 +396,7 @@ def _ingest_document(
         ingestion_factory: Optional factory for creating ingestion instances
 
     Returns:
-        Extracted text content
+        IngestionResult with text content and provider-specific data
 
     Raises:
         Exception: If ingestion fails
@@ -436,7 +449,7 @@ def _ingest_with_provider(
     writer: ResultWriter,
     factory: Any,
     provider_name: str,
-) -> str:
+) -> IngestionResult:
     """
     Ingest a document using a specific provider.
 
@@ -448,7 +461,7 @@ def _ingest_with_provider(
         provider_name: Name of the provider (azure-di, openai, tesseract)
 
     Returns:
-        Extracted text content
+        IngestionResult with text content and provider-specific data
 
     Raises:
         ValueError: If provider returns no content
@@ -471,7 +484,12 @@ def _ingest_with_provider(
         raw_path = doc_paths.text_raw_dir / "azure_di.json"
         writer.write_json(raw_path, data)
 
-        return text_content
+        # Return with Azure DI data for proper page splitting
+        return IngestionResult(
+            text_content=text_content,
+            provider_name=provider_name,
+            azure_di_data=data,
+        )
 
     elif provider_name == "openai":
         result = ingestion.process(doc.source_path, envelope=True)
@@ -504,7 +522,10 @@ def _ingest_with_provider(
         raw_path = doc_paths.text_raw_dir / "vision.json"
         writer.write_json(raw_path, data)
 
-        return text_content
+        return IngestionResult(
+            text_content=text_content,
+            provider_name=provider_name,
+        )
 
     elif provider_name == "tesseract":
         result = ingestion.process(doc.source_path, envelope=True)
@@ -531,7 +552,10 @@ def _ingest_with_provider(
         raw_path = doc_paths.text_raw_dir / "tesseract.json"
         writer.write_json(raw_path, data)
 
-        return text_content
+        return IngestionResult(
+            text_content=text_content,
+            provider_name=provider_name,
+        )
 
     else:
         raise ValueError(f"Unknown provider: {provider_name}")
@@ -670,25 +694,35 @@ class IngestionStage:
             else:
                 self.writer.write_text(context.doc_paths.original_txt, context.doc.content)
 
+            azure_di_data = None
             if context.doc.needs_ingestion:
-                context.text_content = _ingest_document(
+                ingestion_result = _ingest_document(
                     context.doc,
                     context.doc_paths,
                     self.writer,
                     ingestion_factory=context.ingestion_factory,
                 )
+                context.text_content = ingestion_result.text_content
+                azure_di_data = ingestion_result.azure_di_data
             else:
                 context.text_content = context.doc.content
 
             self.writer.write_text(context.doc_paths.source_txt, context.text_content)
 
-            context.pages_data = build_pages_json(
-                context.text_content,
-                context.doc.doc_id,
-                source_type="azure_di" if context.doc.source_type == "pdf" else (
-                    "vision_ocr" if context.doc.source_type == "image" else "preextracted_txt"
-                ),
-            )
+            # Use Azure DI page spans for reliable multi-page splitting
+            if azure_di_data is not None:
+                context.pages_data = build_pages_json_from_azure_di(
+                    azure_di_data,
+                    context.doc.doc_id,
+                )
+            else:
+                context.pages_data = build_pages_json(
+                    context.text_content,
+                    context.doc.doc_id,
+                    source_type="azure_di" if context.doc.source_type == "pdf" else (
+                        "vision_ocr" if context.doc.source_type == "image" else "preextracted_txt"
+                    ),
+                )
             self.writer.write_json(context.doc_paths.pages_json, context.pages_data)
         else:
             try:
@@ -865,7 +899,8 @@ def process_document(
     stage_config: Optional[StageConfig] = None,
     writer: Optional[ResultWriter] = None,
     providers: Optional[PipelineProviders] = None,
-    phase_callback: Optional[Callable[[str, str], None]] = None,
+    phase_callback: Optional[Callable[[str, str, str], None]] = None,
+    phase_end_callback: Optional[Callable[[str, str, str, str], None]] = None,
     version_bundle_id: Optional[str] = None,
     audit_storage_dir: Optional[Path] = None,
     pii_vault: Optional[Any] = None,
@@ -888,7 +923,8 @@ def process_document(
         classifier: Document classifier instance
         run_id: Current run identifier
         stage_config: Configuration for which stages to run (default: all)
-        phase_callback: Optional callback(phase_name, doc_id) for phase transitions
+        phase_callback: Optional callback(phase_name, doc_id, filename) for phase start
+        phase_end_callback: Optional callback(phase_name, doc_id, filename, status) for phase end
         version_bundle_id: Optional version bundle ID for compliance traceability
         audit_storage_dir: Optional workspace-scoped compliance logs directory
         pii_vault: Optional PII vault for tokenizing extraction results
@@ -921,7 +957,12 @@ def process_document(
     # Create phase callback wrapper that passes doc_id
     def on_phase_start(stage_name: str, ctx: DocumentContext) -> None:
         if phase_callback:
-            phase_callback(stage_name, doc.doc_id)
+            phase_callback(stage_name, doc.doc_id, doc.original_filename)
+
+    # Create phase end callback wrapper that passes doc_id and status
+    def on_phase_end(stage_name: str, ctx: DocumentContext, status: str) -> None:
+        if phase_end_callback:
+            phase_end_callback(stage_name, doc.doc_id, doc.original_filename, status)
 
     runner = PipelineRunner(
         [
@@ -930,6 +971,7 @@ def process_document(
             ExtractionStage(writer),
         ],
         on_phase_start=on_phase_start,
+        on_phase_end=on_phase_end,
     )
 
     try:
@@ -940,9 +982,12 @@ def process_document(
     except Exception as e:
         elapsed_ms = int((time.time() - context.start_time) * 1000)
         context.timings.total_ms = elapsed_ms
-        logger.exception(
-            f"Failed to process {doc.original_filename} in {context.current_phase} phase"
+        # Log clean error message (stack trace only at DEBUG level)
+        error_msg = str(e)
+        logger.error(
+            f"Failed to process {doc.original_filename} in {context.current_phase} phase: {error_msg}"
         )
+        logger.debug(f"Full traceback for {doc.original_filename}:", exc_info=True)
         return DocResult(
             doc_id=doc.doc_id,
             original_filename=doc.original_filename,
@@ -1125,8 +1170,9 @@ def process_claim(
     command: str = "",
     compute_metrics: bool = True,
     stage_config: Optional[StageConfig] = None,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None,
-    phase_callback: Optional[Callable[[str, str], None]] = None,
+    progress_callback: Optional[Callable[[int, int, str, "DocResult"], None]] = None,
+    phase_callback: Optional[Callable[[str, str, str], None]] = None,
+    phase_end_callback: Optional[Callable[[str, str, str, str], None]] = None,
     providers: Optional[PipelineProviders] = None,
     pii_vault_enabled: bool = False,
 ) -> ClaimResult:
@@ -1142,8 +1188,9 @@ def process_claim(
         command: CLI command string for manifest
         compute_metrics: If True, compute metrics.json at end
         stage_config: Configuration for which stages to run (default: all)
-        progress_callback: Optional callback(idx, total, filename) for progress reporting
-        phase_callback: Optional callback(phase_name, doc_id) for real-time phase updates
+        progress_callback: Optional callback(idx, total, filename, doc_result) for progress reporting
+        phase_callback: Optional callback(phase_name, doc_id, filename) for phase start
+        phase_end_callback: Optional callback(phase_name, doc_id, filename, status) for phase end
         providers: Optional pipeline providers
         pii_vault_enabled: If True, tokenize PII in extraction results
 
@@ -1253,6 +1300,7 @@ def process_claim(
                 writer=writer,
                 providers=providers,
                 phase_callback=phase_callback,
+                phase_end_callback=phase_end_callback,
                 version_bundle_id=version_bundle.bundle_id,
                 audit_storage_dir=audit_dir,
                 pii_vault=pii_vault,
@@ -1261,7 +1309,7 @@ def process_claim(
 
             # Report progress after document completion
             if progress_callback:
-                progress_callback(idx + 1, len(claim.documents), doc.original_filename)
+                progress_callback(idx + 1, len(claim.documents), doc.original_filename, result)
 
             logger.info(
                 f"Document {doc.original_filename}: {result.status} "

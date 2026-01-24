@@ -87,6 +87,8 @@ export interface ExtractionResult {
   pages: PageContent[];
   fields: ExtractedField[];
   quality_gate: QualityGate;
+  /** Complex structured data (line_items, nested objects) that cannot be represented as simple field values */
+  structured_data?: Record<string, unknown>;
 }
 
 // Truth Label Types (label_v3, with legacy CONFIRMED support)

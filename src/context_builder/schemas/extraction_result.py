@@ -1,7 +1,7 @@
 """Pydantic schemas for extraction results with provenance tracking."""
 
 from datetime import datetime
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -17,6 +17,10 @@ class FieldProvenance(BaseModel):
     text_quote: str = Field(..., description="Exact text from source document")
     char_start: int = Field(..., ge=0, description="Character offset start in page text")
     char_end: int = Field(..., ge=0, description="Character offset end in page text")
+    match_quality: Optional[str] = Field(
+        default=None,
+        description="How quote was matched: exact/case_insensitive/normalized/resolved/not_found/placeholder/page_not_found"
+    )
 
 
 class ExtractedField(BaseModel):
@@ -25,7 +29,7 @@ class ExtractedField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., description="Field name (e.g., 'claim_number')")
-    value: Optional[str] = Field(None, description="Raw extracted value")
+    value: Union[str, List[str], None] = Field(None, description="Raw extracted value (string or list for multi-value fields)")
     normalized_value: Optional[str] = Field(None, description="Value after normalization")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
     status: Literal["present", "missing", "uncertain"] = Field(
@@ -36,6 +40,9 @@ class ExtractedField(BaseModel):
     )
     value_is_placeholder: bool = Field(
         default=False, description="True if value is a redacted placeholder like [NAME_1]"
+    )
+    has_verified_evidence: bool = Field(
+        default=False, description="True if provenance has verified char offsets"
     )
 
 
@@ -109,7 +116,7 @@ class ExtractionResult(BaseModel):
     This is the primary output schema written to *.extraction.json files.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     schema_version: Literal["extraction_result_v1"] = Field(
         default="extraction_result_v1", description="Schema version for compatibility"
@@ -119,3 +126,12 @@ class ExtractionResult(BaseModel):
     pages: List[PageContent] = Field(..., description="Page-level text content")
     fields: List[ExtractedField] = Field(..., description="Extracted fields")
     quality_gate: QualityGate = Field(..., description="Quality assessment")
+    structured_data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Complex structured data (line_items, nested objects) that cannot be represented as simple field values"
+    )
+    extraction_meta: Optional[Dict[str, Any]] = Field(
+        default=None,
+        alias="_extraction_meta",
+        description="Validation results and diagnostics"
+    )

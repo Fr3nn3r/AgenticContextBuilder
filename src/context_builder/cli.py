@@ -22,6 +22,7 @@ from context_builder.ingestion import (
     IngestionError,
     DataIngestion,
 )
+from typing import List
 
 # Import pipeline components for the new pipeline command
 from context_builder.pipeline.discovery import discover_claims
@@ -34,6 +35,79 @@ try:
     from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
 except ImportError:
     pass  # Azure DI dependencies not installed
+
+
+# =============================================================================
+# Pipeline Progress Display
+# =============================================================================
+
+
+class ClaimProgressDisplay:
+    """
+    Displays a single tqdm progress bar for a claim's processing.
+
+    Progress advances on each STAGE completion (not per document).
+    So 4 docs × 3 stages = 12 total steps.
+
+    The bar description shows current document and stage:
+        Processing claim: 65128
+        FZA.pdf: classify |████████████░░░░░░░░| 7/12 [00:15<00:08]
+    """
+
+    def __init__(self, claim_id: str, doc_count: int, stages: List[str]):
+        self.claim_id = claim_id
+        self.doc_count = doc_count
+        self.stages = stages  # e.g., ["ingest", "classify", "extract"]
+        self.stage_count = len(stages)
+        self.total_steps = doc_count * self.stage_count
+        self.pbar: Optional[tqdm] = None
+        self.current_filename: Optional[str] = None
+        self.current_stage: Optional[str] = None
+
+    def start(self) -> None:
+        """Print claim header and initialize progress bar."""
+        print(f"\nProcessing claim: {self.claim_id}")
+        self.pbar = tqdm(
+            total=self.total_steps,
+            unit="stage",
+            leave=True,
+            bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            colour="cyan",
+        )
+
+    def start_document(self, filename: str, doc_id: str) -> None:
+        """Called when starting to process a new document."""
+        self.current_filename = filename
+        # Truncate long filenames
+        if len(filename) > 35:
+            filename = filename[:32] + "..."
+        if self.pbar:
+            self.pbar.set_description_str(f"{filename}")
+
+    def on_phase_start(self, phase: str) -> None:
+        """Called when a phase starts - update the description."""
+        self.current_stage = phase
+        if self.pbar and self.current_filename:
+            filename = self.current_filename
+            if len(filename) > 30:
+                filename = filename[:27] + "..."
+            self.pbar.set_description_str(f"{filename}: {phase}")
+
+    def on_phase_end(self, phase: str, status: str = "success") -> None:
+        """Called when a phase ends - advance the progress bar."""
+        if self.pbar:
+            self.pbar.update(1)
+
+    def complete_document(self, timings: Optional[object] = None, status: str = "success",
+                          doc_type: Optional[str] = None, error: Optional[str] = None) -> None:
+        """Called when a document finishes all stages."""
+        # Progress is already updated by on_phase_end, nothing extra needed
+        pass
+
+    def finish(self) -> None:
+        """Close progress bar for this claim."""
+        if self.pbar:
+            self.pbar.close()
 
 
 # =============================================================================
@@ -523,6 +597,76 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== AGGREGATE SUBCOMMAND ==========
+    aggregate_parser = subparsers.add_parser(
+        "aggregate",
+        help="Aggregate extracted facts for a claim into claim_facts.json",
+        epilog="""
+Aggregates facts from multiple documents into a single claim-level file.
+
+Uses the latest complete run by default. Selection strategy: highest confidence wins.
+
+Output:
+  claims/{claim_id}/context/claim_facts.json
+
+Examples:
+  %(prog)s aggregate --claim-id CLM-001              # Aggregate for a claim
+  %(prog)s aggregate --claim-id CLM-001 --dry-run   # Preview without writing
+  %(prog)s aggregate --claim-id CLM-001 --run-id run_20260124_153000  # Specific run
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    aggregate_parser.add_argument(
+        "--claim-id",
+        required=True,
+        metavar="ID",
+        help="Claim ID to aggregate facts for",
+    )
+    aggregate_parser.add_argument(
+        "--run-id",
+        metavar="ID",
+        help="Specific run ID to use (default: latest complete run)",
+    )
+    aggregate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show aggregated output without writing to file",
+    )
+    aggregate_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    aggregate_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # ========== BACKFILL-EVIDENCE SUBCOMMAND ==========
+    backfill_parser = subparsers.add_parser(
+        "backfill-evidence",
+        help="Reprocess extractions to fill missing evidence offsets",
+        epilog="""
+Reprocesses existing extraction files to:
+1. Fill missing character offsets (char_start/char_end = 0)
+2. Set has_verified_evidence flags on fields
+3. Run validation checks and attach _extraction_meta
+
+Examples:
+  %(prog)s backfill-evidence              # Backfill all extractions
+  %(prog)s backfill-evidence --dry-run    # Preview without writing
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    backfill_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be updated without writing",
+    )
+    backfill_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    backfill_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     return parser
 
 
@@ -956,9 +1100,31 @@ def main():
 
             logger.info(f"Discovered {len(claims)} claim(s)")
 
+            # Parse --doc-types argument early (for dry-run display)
+            # Note: "list" is handled earlier before path validation
+            doc_type_filter = None
+            if args.doc_types:
+                from context_builder.extraction.spec_loader import list_available_specs
+                available_types = list_available_specs()
+
+                # Parse comma-separated list
+                doc_type_filter = [t.strip() for t in args.doc_types.split(",") if t.strip()]
+
+                # Validate doc types
+                invalid_types = [t for t in doc_type_filter if t not in available_types]
+                if invalid_types:
+                    print(f"[!] Invalid doc type(s): {', '.join(invalid_types)}")
+                    print(f"    Available types: {', '.join(available_types)}")
+                    sys.exit(1)
+
+                logger.info(f"Doc type filter: {doc_type_filter}")
+
             # Dry-run mode: just show what would be processed
             if args.dry_run:
                 print(f"\n[DRY RUN] Would process {len(claims)} claim(s):\n")
+                if doc_type_filter:
+                    print(f"  Doc type filter: {', '.join(doc_type_filter)}")
+                    print(f"  (Only documents classified as these types will be extracted)\n")
                 for claim in claims:
                     # Handle encoding for Windows console
                     try:
@@ -995,24 +1161,7 @@ def main():
                 print(f"[!] Invalid --stages argument: {e}")
                 sys.exit(1)
 
-            # Parse --doc-types argument (note: "list" is handled earlier before path validation)
-            doc_type_filter = None
-            if args.doc_types:
-                from context_builder.extraction.spec_loader import list_available_specs
-                available_types = list_available_specs()
-
-                # Parse comma-separated list
-                doc_type_filter = [t.strip() for t in args.doc_types.split(",") if t.strip()]
-
-                # Validate doc types
-                invalid_types = [t for t in doc_type_filter if t not in available_types]
-                if invalid_types:
-                    print(f"[!] Invalid doc type(s): {', '.join(invalid_types)}")
-                    print(f"    Available types: {', '.join(available_types)}")
-                    sys.exit(1)
-
-                logger.info(f"Doc type filter: {doc_type_filter}")
-
+            # doc_type_filter was already parsed above (before dry-run)
             stage_config = StageConfig(stages=stages, doc_type_filter=doc_type_filter)
             logger.info(f"Pipeline stages: {[s.value for s in stages]} (run_kind={stage_config.run_kind})")
 
@@ -1039,44 +1188,59 @@ def main():
             failed_claims = []
             claim_results = []  # Track results for global run manifest
 
-            # Set up claims iterator with optional progress bar
-            if show_progress:
-                claims_pbar = tqdm(
-                    claims,
-                    desc="Claims",
-                    unit="claim",
-                    position=0,
-                    leave=True,
-                )
-            else:
-                claims_pbar = claims
+            # Get stage names for display
+            stage_names = [s.value for s in stages]  # e.g., ["ingest", "classify", "extract"]
 
-            for i, claim in enumerate(claims_pbar, 1):
+            for i, claim in enumerate(claims, 1):
                 if not show_progress:
                     logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
 
-                # Create document progress bar if showing progress
-                doc_pbar = None
+                # Create progress display for this claim
+                display = None
+                if show_progress:
+                    display = ClaimProgressDisplay(
+                        claim_id=claim.claim_id,
+                        doc_count=len(claim.documents),
+                        stages=stage_names,
+                    )
+                    display.start()
 
-                def make_progress_callback(pbar):
-                    """Create a progress callback that updates the given progress bar."""
-                    def callback(idx, total, filename):
-                        if pbar:
-                            pbar.update(1)
+                # Track current document for phase callback
+                current_doc_id = [None]  # Use list to allow mutation in closure
+
+                def make_phase_callback(disp):
+                    """Create a phase callback that updates the display on phase start."""
+                    def callback(phase: str, doc_id: str, filename: str):
+                        if disp:
+                            # If this is a new document, start tracking it
+                            if doc_id != current_doc_id[0]:
+                                current_doc_id[0] = doc_id
+                                disp.start_document(filename, doc_id)
+                            disp.on_phase_start(phase)
                     return callback
 
-                if show_progress:
-                    # Truncate long claim IDs for display
-                    display_id = claim.claim_id[:20] if len(claim.claim_id) > 20 else claim.claim_id
-                    doc_pbar = tqdm(
-                        total=len(claim.documents),
-                        desc=f"  {display_id}",
-                        unit="doc",
-                        position=1,
-                        leave=False,
-                    )
+                def make_phase_end_callback(disp):
+                    """Create a phase end callback that updates the display on phase completion."""
+                    def callback(phase: str, doc_id: str, filename: str, status: str):
+                        if disp:
+                            disp.on_phase_end(phase, status)
+                    return callback
 
-                progress_callback = make_progress_callback(doc_pbar) if show_progress else None
+                def make_progress_callback(disp):
+                    """Create a progress callback that completes the document display."""
+                    def callback(idx, total, filename, doc_result):
+                        if disp:
+                            disp.complete_document(
+                                timings=doc_result.timings,
+                                status=doc_result.status,
+                                doc_type=doc_result.doc_type,
+                                error=doc_result.error,
+                            )
+                    return callback
+
+                phase_callback = make_phase_callback(display) if show_progress else None
+                phase_end_callback = make_phase_end_callback(display) if show_progress else None
+                progress_callback = make_progress_callback(display) if show_progress else None
 
                 try:
                     result = process_claim(
@@ -1089,6 +1253,8 @@ def main():
                         compute_metrics=not args.no_metrics,
                         stage_config=stage_config,
                         progress_callback=progress_callback,
+                        phase_callback=phase_callback,
+                        phase_end_callback=phase_end_callback,
                     )
 
                     total_docs += len(result.documents)
@@ -1105,12 +1271,8 @@ def main():
                     logger.error(f"Failed to process claim {claim.claim_id}: {e}")
                     failed_claims.append(claim.claim_id)
                 finally:
-                    if doc_pbar:
-                        doc_pbar.close()
-
-            # Close claims progress bar if used
-            if show_progress and hasattr(claims_pbar, "close"):
-                claims_pbar.close()
+                    if display:
+                        display.finish()
 
             # Create global (workspace-scoped) run
             if claim_results:
@@ -1259,6 +1421,95 @@ def main():
                     print(f"    Incorrect: {summary['incorrect']}")
                     print(f"    Missing: {summary['missing']}")
                     print(f"    Unverifiable: {summary['unverifiable']}")
+
+        elif args.command == "aggregate":
+            # ========== AGGREGATE COMMAND ==========
+            from context_builder.api.services.aggregation import (
+                AggregationError,
+                AggregationService,
+            )
+            from context_builder.storage.filesystem import FileStorage
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Initialize storage and service
+            storage = FileStorage(workspace_root)
+            service = AggregationService(storage)
+
+            try:
+                # Aggregate facts
+                facts = service.aggregate_claim_facts(
+                    claim_id=args.claim_id,
+                    run_id=getattr(args, "run_id", None),
+                )
+
+                if args.dry_run:
+                    # Print JSON output to stdout
+                    print(facts.model_dump_json(indent=2))
+                else:
+                    # Write to file
+                    output_path = service.write_claim_facts(args.claim_id, facts)
+                    if not args.quiet:
+                        print(f"\n[OK] Aggregated {len(facts.facts)} facts for {args.claim_id}")
+                        print(f"    Run: {facts.run_id}")
+                        print(f"    Sources: {len(facts.sources)} documents")
+                        print(f"    Output: {output_path}")
+
+            except AggregationError as e:
+                logger.error(f"Aggregation failed: {e}")
+                print(f"[X] Aggregation failed: {e}")
+                sys.exit(1)
+
+        elif args.command == "backfill-evidence":
+            # ========== BACKFILL-EVIDENCE COMMAND ==========
+            from context_builder.extraction.backfill import backfill_workspace
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                claims_dir = Path(workspace["path"]) / "claims"
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {claims_dir}")
+            else:
+                claims_dir = Path("output") / "claims"
+
+            if not claims_dir.exists():
+                logger.error(f"Claims directory not found: {claims_dir}")
+                sys.exit(1)
+
+            print(f"Backfilling evidence in: {claims_dir}")
+            if args.dry_run:
+                print("(dry run - no changes will be written)")
+
+            stats = backfill_workspace(claims_dir, dry_run=args.dry_run)
+
+            print(f"\nProcessed: {stats['processed']} extractions")
+            print(f"Improved:  {stats['improved']} extractions")
+            if stats['errors']:
+                print(f"Errors:    {len(stats['errors'])}")
+                for err in stats['errors'][:5]:
+                    print(f"  - {err['file']}: {err['error']}")
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")

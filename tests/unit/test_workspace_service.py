@@ -160,3 +160,42 @@ class TestWorkspaceServiceCRUD:
         service = WorkspaceService(tmp_path)
         result = service.activate_workspace("nonexistent")
         assert result is None
+
+    def test_create_workspace_initializes_default_configs(self, tmp_path: Path):
+        """Test that creating a workspace initializes default config files."""
+        service = WorkspaceService(tmp_path)
+
+        ws = service.create_workspace(
+            name="Config Test",
+            description="Test config initialization",
+        )
+
+        assert ws is not None
+        ws_path = Path(ws.path)
+        config_dir = ws_path / "config"
+
+        # Verify config directory exists
+        assert config_dir.exists()
+
+        # Verify prompt configs were created
+        prompt_configs = config_dir / "prompt_configs.json"
+        assert prompt_configs.exists()
+        assert prompt_configs.stat().st_size > 0
+
+        # Verify prompt config history was created
+        history_file = config_dir / "prompt_configs_history.jsonl"
+        assert history_file.exists()
+
+        # Verify users were created
+        users_file = config_dir / "users.json"
+        assert users_file.exists()
+        assert users_file.stat().st_size > 0
+
+        # Verify sessions file was created
+        sessions_file = config_dir / "sessions.json"
+        assert sessions_file.exists()
+
+        # Verify audit log was created (workspace creation logged)
+        audit_file = config_dir / "audit.jsonl"
+        assert audit_file.exists()
+        assert audit_file.stat().st_size > 0

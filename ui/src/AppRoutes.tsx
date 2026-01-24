@@ -13,6 +13,7 @@ import { PipelineControlCenter } from "./components/PipelineControlCenter";
 import { TruthPage } from "./components/TruthPage";
 import { DocumentDetailPage } from "./components/DocumentDetailPage";
 import { DocumentsListPage } from "./components/DocumentsListPage";
+import { ClaimsExplorerPage } from "./components/ClaimsExplorerPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AdminPage } from "./components/AdminPage";
 import {
@@ -136,6 +137,10 @@ export function AppRoutes() {
       <Route
         path="/claims/all"
         element={<ClaimsTable showAllClaims />}
+      />
+      <Route
+        path="/claims/explorer"
+        element={<ClaimsExplorerPage />}
       />
       <Route
         path="/claims/:claimId/review"

@@ -211,6 +211,9 @@ def _load_active_workspace_on_startup() -> None:
         for ws in registry.get("workspaces", []):
             if ws.get("workspace_id") == active_id:
                 workspace_path = Path(ws.get("path", ""))
+                # Resolve relative paths against project root
+                if not workspace_path.is_absolute():
+                    workspace_path = _PROJECT_ROOT / workspace_path
                 if workspace_path.exists():
                     DATA_DIR = workspace_path / "claims"
                     STAGING_DIR = workspace_path / ".pending"
@@ -226,6 +229,21 @@ def _load_active_workspace_on_startup() -> None:
 
 # Load active workspace on module import
 _load_active_workspace_on_startup()
+
+
+def _resolve_workspace_path(path: str | Path) -> Path:
+    """Resolve a workspace path, handling relative paths.
+
+    Args:
+        path: Workspace path (absolute or relative to project root).
+
+    Returns:
+        Resolved absolute path.
+    """
+    workspace_path = Path(path)
+    if not workspace_path.is_absolute():
+        workspace_path = _PROJECT_ROOT / workspace_path
+    return workspace_path
 
 
 def _get_global_config_dir() -> Path:
@@ -1074,11 +1092,11 @@ def activate_workspace(
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Update DATA_DIR and STAGING_DIR
-    set_data_dir(Path(workspace.path))
+    # Update DATA_DIR and STAGING_DIR (resolve relative paths against project root)
+    workspace_path = _resolve_workspace_path(workspace.path)
+    set_data_dir(workspace_path)
 
     # Ensure workspace directories exist
-    workspace_path = Path(workspace.path)
     (workspace_path / "config").mkdir(parents=True, exist_ok=True)
     (workspace_path / "logs").mkdir(parents=True, exist_ok=True)
 
@@ -1153,7 +1171,7 @@ def rebuild_index(current_user: CurrentUser = Depends(require_admin)):
     if not workspace:
         raise HTTPException(status_code=404, detail="No active workspace")
 
-    output_dir = Path(workspace.path)
+    output_dir = _resolve_workspace_path(workspace.path)
     if not output_dir.exists():
         raise HTTPException(
             status_code=400,
@@ -2726,7 +2744,7 @@ def list_version_bundles(
     if not workspace:
         raise HTTPException(status_code=500, detail="No active workspace configured")
 
-    store = get_version_bundle_store(Path(workspace.path))
+    store = get_version_bundle_store(_resolve_workspace_path(workspace.path))
     run_ids = store.list_bundles()
 
     bundles = []
@@ -2766,7 +2784,7 @@ def get_version_bundle(
     if not workspace:
         raise HTTPException(status_code=500, detail="No active workspace configured")
 
-    store = get_version_bundle_store(Path(workspace.path))
+    store = get_version_bundle_store(_resolve_workspace_path(workspace.path))
     bundle = store.get_version_bundle(run_id)
 
     if not bundle:

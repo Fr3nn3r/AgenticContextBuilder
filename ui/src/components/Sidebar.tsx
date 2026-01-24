@@ -4,7 +4,7 @@ import { cn } from "../lib/utils";
 import { useAuth } from "../context/AuthContext";
 import { getAppVersion } from "../api/client";
 
-type View = "new-claim" | "batches" | "evaluation" | "all-claims" | "documents" | "templates" | "pipeline" | "truth" | "compliance" | "admin";
+type View = "new-claim" | "batches" | "evaluation" | "all-claims" | "claims-explorer" | "documents" | "templates" | "pipeline" | "truth" | "compliance" | "admin";
 
 interface SidebarProps {
   currentView: View;
@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { id: "batches", label: "Batches", path: "/batches", icon: BatchesIcon },
   { id: "evaluation", label: "Evaluation", path: "/evaluation", icon: EvaluationIcon },
   { id: "all-claims", label: "All Claims", path: "/claims/all", icon: ClaimsIcon },
+  { id: "claims-explorer", label: "Claim Explorer", path: "/claims/explorer", icon: ExplorerIcon },
   { id: "documents", label: "Documents", path: "/documents", icon: DocumentsIcon },
   { id: "truth", label: "Ground Truth", path: "/truth", icon: TruthIcon },
   { id: "templates", label: "Templates", path: "/templates", icon: TemplatesIcon },
@@ -210,6 +211,19 @@ function DocumentsIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+}
+
+function ExplorerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
       />
     </svg>
   );

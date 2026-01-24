@@ -426,3 +426,140 @@ class TestBuildPagesJsonFromAzureDi:
         assert "header" in result["pages"][0]["text"]
         assert "body" in result["pages"][1]["text"]
         assert "footer" in result["pages"][2]["text"]
+
+    def test_page_break_markers_not_split_by_build_pages_json(self):
+        """
+        Regression test: build_pages_json does NOT split on <!-- PageBreak --> markers.
+
+        This is the bug scenario. Azure DI produces <!-- PageBreak --> markers,
+        but build_pages_json only looks for <!-- PageNumber="X" --> markers.
+        Therefore, a multi-page document with only PageBreak markers would be
+        treated as a single page by build_pages_json.
+
+        This test documents the limitation and ensures we use
+        build_pages_json_from_azure_di for Azure DI content.
+        """
+        # Content with PageBreak markers (what Azure DI produces)
+        content = """Page one content.
+<!-- PageBreak -->
+Page two content.
+<!-- PageBreak -->
+Page three content."""
+
+        # build_pages_json does NOT split on PageBreak (only PageNumber)
+        result = build_pages_json(content, "doc123")
+
+        # This is the bug: all pages collapsed into one
+        assert result["page_count"] == 1
+        assert "Page one" in result["pages"][0]["text"]
+        assert "Page two" in result["pages"][0]["text"]
+        assert "Page three" in result["pages"][0]["text"]
+
+    def test_azure_di_spans_split_despite_pagebreak_markers(self):
+        """
+        Regression test: build_pages_json_from_azure_di correctly splits pages
+        using spans, regardless of PageBreak markers in the text.
+
+        This is the correct behavior when Azure DI data with spans is available.
+        """
+        # Content with PageBreak markers (as Azure DI produces them)
+        content = """Page one content.
+<!-- PageBreak -->
+Page two content.
+<!-- PageBreak -->
+Page three content."""
+
+        # Azure DI data with proper spans for each page
+        azure_di_data = {
+            "raw_azure_di_output": {
+                "content": content,
+                "pages": [
+                    {"pageNumber": 1, "spans": [{"offset": 0, "length": 17}]},  # "Page one content."
+                    {"pageNumber": 2, "spans": [{"offset": 36, "length": 17}]},  # "Page two content."
+                    {"pageNumber": 3, "spans": [{"offset": 72, "length": 19}]},  # "Page three content."
+                ]
+            }
+        }
+
+        result = build_pages_json_from_azure_di(azure_di_data, "doc123")
+
+        # This should correctly split into 3 pages
+        assert result["page_count"] == 3
+        assert result["pages"][0]["page"] == 1
+        assert result["pages"][1]["page"] == 2
+        assert result["pages"][2]["page"] == 3
+
+    def test_nsa_guarantee_realistic_scenario(self):
+        """
+        Regression test: NSA Guarantee documents should be split correctly.
+
+        This reproduces the real bug where a 12-page NSA Guarantee document
+        was collapsed into 1 page because build_pages_json was used instead
+        of build_pages_json_from_azure_di.
+        """
+        # Simplified version of NSA Guarantee document structure
+        content = """# Spezifische Bedingungen der NSA Garantie
+Policy: 624465
+<!-- PageFooter="..." -->
+<!-- PageBreak -->
+## Abgedeckte Komponenten und Teile
+Motor: Kolben, Zylinder...
+<!-- PageFooter="..." -->
+<!-- PageBreak -->
+## Allgemeine Versicherungsbedingungen
+AVB content here...
+<!-- PageFooter="..." -->"""
+
+        # Build Azure DI data with 3 pages
+        page1_len = content.find("<!-- PageBreak -->")
+        page2_start = page1_len + len("<!-- PageBreak -->\n")
+        page2_end = content.find("<!-- PageBreak -->", page2_start)
+        page3_start = page2_end + len("<!-- PageBreak -->\n")
+
+        azure_di_data = {
+            "raw_azure_di_output": {
+                "content": content,
+                "pages": [
+                    {"pageNumber": 1, "spans": [{"offset": 0, "length": page1_len}]},
+                    {"pageNumber": 2, "spans": [{"offset": page2_start, "length": page2_end - page2_start}]},
+                    {"pageNumber": 3, "spans": [{"offset": page3_start, "length": len(content) - page3_start}]},
+                ]
+            }
+        }
+
+        # Using build_pages_json_from_azure_di should correctly split
+        result = build_pages_json_from_azure_di(azure_di_data, "nsa_doc")
+
+        assert result["page_count"] == 3
+        assert "Spezifische Bedingungen" in result["pages"][0]["text"]
+        assert "Abgedeckte Komponenten" in result["pages"][1]["text"]
+        assert "Allgemeine Versicherungsbedingungen" in result["pages"][2]["text"]
+
+
+class TestIngestionResultIntegration:
+    """Test that the pipeline correctly uses Azure DI data for page splitting."""
+
+    def test_ingestion_result_dataclass_exists(self):
+        """IngestionResult should be importable from run module."""
+        from context_builder.pipeline.run import IngestionResult
+
+        result = IngestionResult(
+            text_content="test",
+            provider_name="azure-di",
+            azure_di_data={"raw_azure_di_output": {"content": "test"}}
+        )
+        assert result.text_content == "test"
+        assert result.provider_name == "azure-di"
+        assert result.azure_di_data is not None
+
+    def test_ingestion_result_without_azure_di_data(self):
+        """IngestionResult should work without Azure DI data."""
+        from context_builder.pipeline.run import IngestionResult
+
+        result = IngestionResult(
+            text_content="test content",
+            provider_name="tesseract",
+        )
+        assert result.text_content == "test content"
+        assert result.provider_name == "tesseract"
+        assert result.azure_di_data is None

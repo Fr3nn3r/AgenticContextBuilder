@@ -357,7 +357,8 @@ class TestNsaGuaranteeExtractorBuildExtractedFields:
         fields = mock_extractor._build_extracted_fields(raw, pages, ["start_date"])
 
         assert len(fields) == 1
-        assert fields[0].normalized_value == "2025-12-31"
+        # Normalizers now preserve raw values (type coercion only)
+        assert fields[0].normalized_value == "31.12.2025"
 
     def test_handles_missing_fields(self, mock_extractor):
         """Test that missing fields are handled gracefully."""
@@ -402,14 +403,14 @@ class TestNsaGuaranteeExtractorComponentExtraction:
         mock_extractor.audited_client.chat_completions_create.return_value = response
 
         pages = [make_page_content(page=2, text="Component list")]
-        fields = mock_extractor._extract_components(pages)
+        fields, structured_data = mock_extractor._extract_components(pages)
 
         covered_field = next(f for f in fields if f.name == "covered_components")
         assert covered_field.status == "present"
-        # normalized_value is a JSON string, parse it to check
-        covered_data = json.loads(covered_field.normalized_value)
-        assert "engine" in covered_data
-        assert "Pistons" in covered_data["engine"]
+        # Actual data is now in structured_data, not normalized_value
+        assert "covered_components" in structured_data
+        assert "engine" in structured_data["covered_components"]
+        assert "Pistons" in structured_data["covered_components"]["engine"]
 
     def test_extract_components_parses_excluded(self, mock_extractor):
         """Test that excluded components are parsed correctly."""
@@ -425,13 +426,13 @@ class TestNsaGuaranteeExtractorComponentExtraction:
         mock_extractor.audited_client.chat_completions_create.return_value = response
 
         pages = [make_page_content(page=2, text="Component list")]
-        fields = mock_extractor._extract_components(pages)
+        fields, structured_data = mock_extractor._extract_components(pages)
 
         excluded_field = next(f for f in fields if f.name == "excluded_components")
         assert excluded_field.status == "present"
-        # normalized_value is a JSON string, parse it to check
-        excluded_data = json.loads(excluded_field.normalized_value)
-        assert "engine" in excluded_data
+        # Actual data is now in structured_data, not normalized_value
+        assert "excluded_components" in structured_data
+        assert "engine" in structured_data["excluded_components"]
 
     def test_extract_components_parses_coverage_scale(self, mock_extractor):
         """Test that coverage scale is parsed correctly."""
@@ -448,16 +449,133 @@ class TestNsaGuaranteeExtractorComponentExtraction:
         mock_extractor.audited_client.chat_completions_create.return_value = response
 
         pages = [make_page_content(page=2, text="Coverage scale")]
-        fields = mock_extractor._extract_components(pages)
+        fields, structured_data = mock_extractor._extract_components(pages)
 
         scale_field = next(f for f in fields if f.name == "coverage_scale")
         assert scale_field.status == "present"
-        # normalized_value is a JSON string, parse it to check
-        scale_data = json.loads(scale_field.normalized_value)
-        assert len(scale_data) == 2
+        # Actual data is now in structured_data, not normalized_value
+        assert "coverage_scale" in structured_data
+        assert len(structured_data["coverage_scale"]) == 2
 
     def test_extract_components_handles_empty_pages(self, mock_extractor):
         """Test that empty pages are handled gracefully."""
-        fields = mock_extractor._extract_components([])
+        fields, structured_data = mock_extractor._extract_components([])
 
         assert len(fields) == 0
+        assert structured_data == {}
+
+    def test_extract_components_includes_value_summary(self, mock_extractor):
+        """Test that extracted components include human-readable value summary."""
+        response = Mock()
+        response.choices = [Mock()]
+        response.choices[0].message.content = json.dumps({
+            "covered": {
+                "engine": ["Pistons", "Crankshaft", "Valves"],
+                "brakes": ["Master cylinder"],
+            },
+            "excluded": {},
+            "coverage_scale": [
+                {"km_threshold": 50000, "coverage_percent": 80},
+                {"km_threshold": 80000, "coverage_percent": 60},
+            ],
+        })
+        mock_extractor.audited_client.chat_completions_create.return_value = response
+
+        pages = [make_page_content(page=2, text="Component list")]
+        fields, structured_data = mock_extractor._extract_components(pages)
+
+        # Check covered components has summary in value
+        covered_field = next(f for f in fields if f.name == "covered_components")
+        assert covered_field.value is not None
+        assert "Engine: 3 parts" in covered_field.value
+        assert "Brakes: 1 parts" in covered_field.value
+
+        # Check coverage scale has summary in value
+        scale_field = next(f for f in fields if f.name == "coverage_scale")
+        assert scale_field.value is not None
+        assert "80% up to 50'000 km" in scale_field.value
+        assert "60% up to 80'000 km" in scale_field.value
+
+
+class TestNsaGuaranteeExtractorSummaryFunctions:
+    """Tests for human-readable summary functions."""
+
+    @pytest.fixture
+    def extractor(self):
+        """Create extractor with mocked dependencies."""
+        with patch("context_builder.extraction.extractors.nsa_guarantee.OpenAI"), \
+             patch("context_builder.extraction.extractors.nsa_guarantee.get_llm_audit_service"):
+            return ExtractorFactory.create("nsa_guarantee")
+
+    def test_summarize_components_empty(self, extractor):
+        """Test summarize_components with empty dict."""
+        result = extractor._summarize_components({})
+        assert result == ""
+
+    def test_summarize_components_single_category(self, extractor):
+        """Test summarize_components with single category."""
+        components = {"engine": ["Pistons", "Crankshaft", "Valves"]}
+        result = extractor._summarize_components(components)
+        assert result == "Engine: 3 parts"
+
+    def test_summarize_components_multiple_categories(self, extractor):
+        """Test summarize_components with multiple categories."""
+        components = {
+            "engine": ["Pistons", "Crankshaft"],
+            "brakes": ["Master cylinder"],
+            "steering": ["Rack", "Pinion", "Tie rods"],
+        }
+        result = extractor._summarize_components(components)
+        assert "Engine: 2 parts" in result
+        assert "Brakes: 1 parts" in result
+        assert "Steering: 3 parts" in result
+
+    def test_summarize_components_underscore_to_title(self, extractor):
+        """Test that underscores in category names are converted to title case."""
+        components = {
+            "automatic_transmission": ["Torque converter"],
+            "four_wd": ["Transfer case", "Diff lock"],
+        }
+        result = extractor._summarize_components(components)
+        assert "Automatic Transmission: 1 parts" in result
+        assert "Four Wd: 2 parts" in result
+
+    def test_summarize_components_skips_empty_categories(self, extractor):
+        """Test that empty categories are skipped."""
+        components = {
+            "engine": ["Pistons"],
+            "brakes": [],
+        }
+        result = extractor._summarize_components(components)
+        assert "Engine: 1 parts" in result
+        assert "Brakes" not in result
+
+    def test_summarize_coverage_scale_empty(self, extractor):
+        """Test summarize_coverage_scale with empty list."""
+        result = extractor._summarize_coverage_scale([])
+        assert result == ""
+
+    def test_summarize_coverage_scale_single_tier(self, extractor):
+        """Test summarize_coverage_scale with single tier."""
+        scale = [{"km_threshold": 50000, "coverage_percent": 80}]
+        result = extractor._summarize_coverage_scale(scale)
+        assert result == "80% up to 50'000 km"
+
+    def test_summarize_coverage_scale_multiple_tiers(self, extractor):
+        """Test summarize_coverage_scale with multiple tiers."""
+        scale = [
+            {"km_threshold": 50000, "coverage_percent": 80},
+            {"km_threshold": 80000, "coverage_percent": 60},
+            {"km_threshold": 110000, "coverage_percent": 40},
+        ]
+        result = extractor._summarize_coverage_scale(scale)
+        assert "80% up to 50'000 km" in result
+        assert "60% up to 80'000 km" in result
+        assert "40% up to 110'000 km" in result
+
+    def test_summarize_coverage_scale_swiss_format(self, extractor):
+        """Test that km values use Swiss thousands separator (apostrophe)."""
+        scale = [{"km_threshold": 150000, "coverage_percent": 30}]
+        result = extractor._summarize_coverage_scale(scale)
+        # Swiss format uses apostrophe: 150'000
+        assert "150'000" in result
