@@ -113,11 +113,27 @@ Use these prefixes to indicate the type of change:
 - **Use `--tb=short`** for concise error output
 - **Known issues**: 4 encryption tests require `pycryptodome` package (skip with `--ignore`)
 
+## Customer Configuration
+
+Customer-specific extractors, prompts, and specs are stored in **separate git repos** (not in the main codebase).
+
+**Workflow:**
+1. Edit in workspace: `workspaces/nsa-2/config/extractors/`, `extraction_specs/`, `prompts/`
+2. Test: `python -m context_builder.cli extract --model gpt-4o`
+3. Copy to customer repo: `cd ../context-builder-nsa && .\copy-from-workspace.ps1`
+4. Commit in customer repo: `git add -A && git commit -m "message" && git push`
+
+**Customer repos:**
+- NSA: [context-builder-nsa](https://github.com/Fr3nn3r/context-builder-nsa) (private)
+
+**Full documentation:** `.claude/docs/customer-config.md`
+
 ## Context Management
 - **BACKLOG.md** - All tasks (todo/doing/done). Update before clearing context.
 - **.claude/docs/** - Reference docs:
   - `architecture.md` - System design and component overview
   - `compliance.md` - Audit logging and regulatory requirements
+  - `customer-config.md` - Customer-specific configuration workflow
   - `testing.md` - Test patterns and best practices
   - `worktrees.md` - Multi-agent parallel development setup
 - Before `/clear`: Add handoff notes to BACKLOG.md under your task
