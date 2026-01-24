@@ -1196,7 +1196,8 @@ def main():
                 from context_builder.storage.index_builder import build_all_indexes
                 try:
                     logger.info("Building indexes...")
-                    stats = build_all_indexes(output_dir)
+                    # Pass workspace root (parent of claims dir), not claims dir itself
+                    stats = build_all_indexes(output_dir.parent)
                     if not args.quiet:
                         print(f"Indexes updated: {stats['doc_count']} docs, {stats['run_count']} runs")
                 except Exception as e:
