@@ -1026,6 +1026,13 @@ def main():
             from context_builder.classification import ClassifierFactory
             classifier = ClassifierFactory.create("openai")
 
+            # Suppress INFO/DEBUG during pipeline - only show warnings/errors
+            # Full logs still go to run.log
+            if show_progress:
+                for handler in logging.getLogger().handlers:
+                    if isinstance(handler, logging.StreamHandler):
+                        handler.setLevel(logging.WARNING)
+
             # Process each claim
             total_docs = 0
             success_docs = 0
@@ -1034,7 +1041,6 @@ def main():
 
             # Set up claims iterator with optional progress bar
             if show_progress:
-                print(f"\nProcessing pipeline (run_id: {run_id})")
                 claims_pbar = tqdm(
                     claims,
                     desc="Claims",
@@ -1048,8 +1054,6 @@ def main():
             for i, claim in enumerate(claims_pbar, 1):
                 if not show_progress:
                     logger.info(f"[{i}/{len(claims)}] Processing claim: {claim.claim_id}")
-                    if not args.quiet:
-                        print(f"\n[{i}/{len(claims)}] Processing claim: {claim.claim_id} ({len(claim.documents)} docs)")
 
                 # Create document progress bar if showing progress
                 doc_pbar = None
