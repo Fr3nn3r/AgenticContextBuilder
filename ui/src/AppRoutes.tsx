@@ -10,6 +10,7 @@ import { MetricsPage } from "./components/metrics";
 import { EvaluationPage } from "./components/evaluation";
 import { NewClaimPage } from "./components/NewClaimPage";
 import { PipelineControlCenter } from "./components/PipelineControlCenter";
+import { TokenCostsPage } from "./components/TokenCostsPage";
 import { TruthPage } from "./components/TruthPage";
 import { DocumentDetailPage } from "./components/DocumentDetailPage";
 import { DocumentsListPage } from "./components/DocumentsListPage";
@@ -166,6 +167,7 @@ export function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route path="/costs" element={<TokenCostsPage />} />
       <Route
         path="/truth"
         element={

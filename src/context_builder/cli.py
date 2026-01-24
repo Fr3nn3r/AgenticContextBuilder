@@ -54,10 +54,17 @@ class ClaimProgressDisplay:
         FZA.pdf: classify |████████████░░░░░░░░| 7/12 [00:15<00:08]
     """
 
+    # Map from stage class names to CLI stage names (PipelineStage enum values)
+    STAGE_NAME_MAP = {
+        "ingestion": "ingest",
+        "classification": "classify",
+        "extraction": "extract",
+    }
+
     def __init__(self, claim_id: str, doc_count: int, stages: List[str]):
         self.claim_id = claim_id
         self.doc_count = doc_count
-        self.stages = stages  # e.g., ["ingest", "classify", "extract"]
+        self.stages = set(stages)  # e.g., {"ingest", "classify", "extract"}
         self.stage_count = len(stages)
         self.total_steps = doc_count * self.stage_count
         self.pbar: Optional[tqdm] = None
@@ -85,7 +92,15 @@ class ClaimProgressDisplay:
             self.pbar.set_description_str(f"{filename}")
 
     def on_phase_start(self, phase: str) -> None:
-        """Called when a phase starts - update the description."""
+        """Called when a phase starts - update the description.
+
+        Only updates for phases that are in the configured stages list.
+        """
+        # Map stage class name (e.g., "extraction") to CLI name (e.g., "extract")
+        cli_phase = self.STAGE_NAME_MAP.get(phase, phase)
+        if cli_phase not in self.stages:
+            return  # Skip phases not in configured stages
+
         self.current_stage = phase
         if self.pbar and self.current_filename:
             filename = self.current_filename
@@ -94,9 +109,16 @@ class ClaimProgressDisplay:
             self.pbar.set_description_str(f"{filename}: {phase}")
 
     def on_phase_end(self, phase: str, status: str = "success") -> None:
-        """Called when a phase ends - advance the progress bar."""
+        """Called when a phase ends - advance the progress bar.
+
+        Only advances for phases that are in the configured stages list.
+        This prevents progress overflow when running partial pipelines.
+        """
         if self.pbar:
-            self.pbar.update(1)
+            # Map stage class name (e.g., "extraction") to CLI name (e.g., "extract")
+            cli_phase = self.STAGE_NAME_MAP.get(phase, phase)
+            if cli_phase in self.stages:
+                self.pbar.update(1)
 
     def complete_document(self, timings: Optional[object] = None, status: str = "success",
                           doc_type: Optional[str] = None, error: Optional[str] = None) -> None:

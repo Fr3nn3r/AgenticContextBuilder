@@ -69,6 +69,7 @@ from context_builder.api.services import (
     PipelineService,
     PromptConfigService,
     Role,
+    TokenCostsService,
     TruthService,
     UploadService,
     UsersService,
@@ -344,6 +345,11 @@ def get_labels_service() -> LabelsService:
 def get_insights_service() -> InsightsService:
     """Get InsightsService instance."""
     return InsightsService(DATA_DIR)
+
+
+def get_token_costs_service() -> TokenCostsService:
+    """Get TokenCostsService instance for token usage and cost aggregation."""
+    return TokenCostsService(_get_workspace_logs_dir())
 
 
 def get_evolution_service() -> EvolutionService:
@@ -1394,6 +1400,122 @@ def get_insights_examples(
         run_id=run_id,
         limit=limit,
     )
+
+
+# =============================================================================
+# TOKEN COST ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/insights/costs/overview")
+def get_costs_overview():
+    """
+    Get overall token usage and cost summary.
+
+    Returns:
+    - total_cost_usd: Total cost across all LLM calls
+    - total_tokens: Total tokens (prompt + completion)
+    - total_prompt_tokens, total_completion_tokens: Token breakdown
+    - total_calls: Number of LLM API calls
+    - docs_processed: Unique documents processed
+    - avg_cost_per_doc, avg_cost_per_call: Average costs
+    - primary_model: Most frequently used model
+    """
+    return get_token_costs_service().get_overview()
+
+
+@app.get("/api/insights/costs/by-operation")
+def get_costs_by_operation():
+    """
+    Get token usage and costs broken down by operation type.
+
+    Operations: classification, extraction, vision_ocr
+
+    Returns list with:
+    - operation: Operation type name
+    - tokens, prompt_tokens, completion_tokens: Token counts
+    - cost_usd: Total cost for this operation
+    - call_count: Number of calls
+    - percentage: Percentage of total cost
+    """
+    return get_token_costs_service().get_by_operation()
+
+
+@app.get("/api/insights/costs/by-run")
+def get_costs_by_run(limit: int = Query(20, ge=1, le=100)):
+    """
+    Get token usage and costs per pipeline run.
+
+    Args:
+        limit: Maximum number of runs to return (default 20)
+
+    Returns list sorted by timestamp (newest first) with:
+    - run_id, timestamp, model
+    - claims_count, docs_count: Scope of run
+    - tokens, cost_usd: Usage metrics
+    - avg_cost_per_doc: Efficiency metric
+    """
+    return get_token_costs_service().get_by_run(limit)
+
+
+@app.get("/api/insights/costs/by-claim")
+def get_costs_by_claim(run_id: Optional[str] = Query(None)):
+    """
+    Get token costs per claim.
+
+    Args:
+        run_id: Optional filter by run ID
+
+    Returns list sorted by cost (highest first) with:
+    - claim_id, docs_count, tokens, cost_usd
+    """
+    return get_token_costs_service().get_by_claim(run_id)
+
+
+@app.get("/api/insights/costs/by-doc")
+def get_costs_by_doc(
+    claim_id: Optional[str] = Query(None),
+    run_id: Optional[str] = Query(None),
+):
+    """
+    Get token costs per document.
+
+    Args:
+        claim_id: Optional filter by claim ID
+        run_id: Optional filter by run ID
+
+    Returns list sorted by cost (highest first) with:
+    - doc_id, claim_id, tokens, cost_usd, operations
+    """
+    return get_token_costs_service().get_by_doc(claim_id, run_id)
+
+
+@app.get("/api/insights/costs/daily-trend")
+def get_costs_daily_trend(days: int = Query(30, ge=1, le=90)):
+    """
+    Get daily token costs for trend chart.
+
+    Args:
+        days: Number of days to include (default 30)
+
+    Returns list in chronological order with:
+    - date: YYYY-MM-DD
+    - tokens, cost_usd, call_count
+    """
+    return get_token_costs_service().get_daily_trend(days)
+
+
+@app.get("/api/insights/costs/by-model")
+def get_costs_by_model():
+    """
+    Get token usage and costs broken down by model.
+
+    Returns list sorted by cost (highest first) with:
+    - model: Model name/identifier
+    - tokens, cost_usd, call_count
+    - percentage: Percentage of total cost
+    """
+    return get_token_costs_service().get_by_model()
 
 
 # =============================================================================

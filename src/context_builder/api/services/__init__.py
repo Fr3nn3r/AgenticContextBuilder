@@ -14,6 +14,7 @@ from .prompt_config import PromptConfig, PromptConfigService
 from .audit import AuditEntry, AuditService
 from .users import Role, User, UsersService
 from .workspace import Workspace, WorkspaceRegistry, WorkspaceService, WorkspaceStatus
+from .token_costs import TokenCostsService
 
 __all__ = [
     "AggregationError",
@@ -45,4 +46,5 @@ __all__ = [
     "WorkspaceRegistry",
     "WorkspaceService",
     "WorkspaceStatus",
+    "TokenCostsService",
 ]

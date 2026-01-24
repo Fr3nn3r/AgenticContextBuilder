@@ -54,16 +54,41 @@ def load_claim_facts(claim_id: str) -> dict:
         return json.load(f)
 
 
+def fix_common_json_errors(json_str: str) -> str:
+    """Fix common JSON errors from LLM output."""
+    # Fix unquoted values like "check_number": 1b -> "check_number": "1b"
+    # Match patterns like : followed by alphanumeric with letters (not pure numbers)
+    json_str = re.sub(
+        r':\s*(\d+[a-zA-Z][a-zA-Z0-9]*)\s*([,\}\]])',
+        r': "\1"\2',
+        json_str
+    )
+    # Also fix patterns like 1b, at start of arrays
+    json_str = re.sub(
+        r'\[\s*(\d+[a-zA-Z][a-zA-Z0-9]*)\s*,',
+        r'["\1",',
+        json_str
+    )
+    return json_str
+
+
 def extract_json_from_response(response_text: str) -> dict | None:
     """Extract JSON object from markdown response."""
     # Look for JSON code block
     json_match = re.search(r"```json\s*\n(.*?)\n```", response_text, re.DOTALL)
     if json_match:
+        json_str = json_match.group(1)
         try:
-            return json.loads(json_match.group(1))
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON from response: {e}")
-            return None
+            logger.warning(f"Initial JSON parse failed: {e}, attempting fixes...")
+            # Try to fix common errors
+            fixed_json = fix_common_json_errors(json_str)
+            try:
+                return json.loads(fixed_json)
+            except json.JSONDecodeError as e2:
+                logger.warning(f"Failed to parse JSON even after fixes: {e2}")
+                return None
     return None
 
 

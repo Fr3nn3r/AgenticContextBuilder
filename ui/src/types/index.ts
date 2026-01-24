@@ -818,3 +818,77 @@ export interface DocTypeMatrixResponse {
   doc_types: DocTypeEvolution[];
   spec_versions: string[];
 }
+
+// =============================================================================
+// TOKEN COST TYPES
+// =============================================================================
+
+/** Overall token usage and cost summary */
+export interface CostOverview {
+  total_cost_usd: number;
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_calls: number;
+  docs_processed: number;
+  avg_cost_per_doc: number;
+  avg_cost_per_call: number;
+  primary_model: string;
+}
+
+/** Token usage and costs by operation type */
+export interface CostByOperation {
+  operation: string;  // "classification" | "extraction" | "vision_ocr" | etc.
+  tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  call_count: number;
+  percentage: number;
+}
+
+/** Token usage and costs per pipeline run */
+export interface CostByRun {
+  run_id: string;
+  timestamp: string | null;
+  model: string | null;
+  claims_count: number;
+  docs_count: number;
+  tokens: number;
+  cost_usd: number;
+  avg_cost_per_doc: number;
+}
+
+/** Token costs per claim */
+export interface CostByClaim {
+  claim_id: string;
+  docs_count: number;
+  tokens: number;
+  cost_usd: number;
+}
+
+/** Token costs per document */
+export interface CostByDoc {
+  doc_id: string;
+  claim_id: string | null;
+  tokens: number;
+  cost_usd: number;
+  operations: string[];
+}
+
+/** Daily token costs for trend chart */
+export interface CostByDay {
+  date: string;  // YYYY-MM-DD
+  tokens: number;
+  cost_usd: number;
+  call_count: number;
+}
+
+/** Token usage and costs by model */
+export interface CostByModel {
+  model: string;
+  tokens: number;
+  cost_usd: number;
+  call_count: number;
+  percentage: number;
+}

@@ -1049,3 +1049,73 @@ import type { VersionInfo } from "../types";
 export async function getAppVersion(): Promise<VersionInfo> {
   return fetchJson<VersionInfo>(`${API_BASE}/version`);
 }
+
+// =============================================================================
+// TOKEN COST API
+// =============================================================================
+
+import type {
+  CostOverview,
+  CostByOperation,
+  CostByRun,
+  CostByClaim,
+  CostByDoc,
+  CostByDay,
+  CostByModel,
+} from "../types";
+
+/**
+ * Get overall token usage and cost summary.
+ */
+export async function getCostOverview(): Promise<CostOverview> {
+  return fetchJson<CostOverview>(`${API_BASE}/insights/costs/overview`);
+}
+
+/**
+ * Get token usage and costs broken down by operation type.
+ */
+export async function getCostByOperation(): Promise<CostByOperation[]> {
+  return fetchJson<CostByOperation[]>(`${API_BASE}/insights/costs/by-operation`);
+}
+
+/**
+ * Get token usage and costs per pipeline run.
+ */
+export async function getCostByRun(limit: number = 20): Promise<CostByRun[]> {
+  return fetchJson<CostByRun[]>(`${API_BASE}/insights/costs/by-run?limit=${limit}`);
+}
+
+/**
+ * Get token costs per claim.
+ */
+export async function getCostByClaim(runId?: string): Promise<CostByClaim[]> {
+  const params = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
+  return fetchJson<CostByClaim[]>(`${API_BASE}/insights/costs/by-claim${params}`);
+}
+
+/**
+ * Get token costs per document.
+ */
+export async function getCostByDoc(claimId?: string, runId?: string): Promise<CostByDoc[]> {
+  const query = new URLSearchParams();
+  if (claimId) query.set("claim_id", claimId);
+  if (runId) query.set("run_id", runId);
+  const queryString = query.toString();
+  return fetchJson<CostByDoc[]>(
+    `${API_BASE}/insights/costs/by-doc${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+/**
+ * Get daily token costs for trend chart.
+ */
+export async function getCostByDay(days: number = 30): Promise<CostByDay[]> {
+  return fetchJson<CostByDay[]>(`${API_BASE}/insights/costs/daily-trend?days=${days}`);
+}
+
+/**
+ * Get token usage and costs broken down by model.
+ */
+export async function getCostByModel(): Promise<CostByModel[]> {
+  return fetchJson<CostByModel[]>(`${API_BASE}/insights/costs/by-model`);
+}
