@@ -257,9 +257,31 @@ class TestNsaGuaranteeExtractorExtraction:
             prompt_version="v1.0",
         )
 
-    def test_extract_filters_pages_for_metadata(self, mock_extractor, sample_pages, sample_doc_meta, sample_run_meta):
-        """Test that extract filters pages correctly for metadata extraction."""
-        # Configure component extraction response too
+    @patch('workspace_extractors.nsa_guarantee.OpenAI')
+    def test_extract_filters_pages_for_metadata(self, mock_openai_class, mock_extractor, sample_pages, sample_doc_meta, sample_run_meta):
+        """Test that extract filters pages correctly for metadata extraction.
+
+        With chunked extraction, metadata uses 4 parallel OpenAI clients (one per group),
+        while components still uses the audited_client.
+        """
+        # Configure mock for parallel metadata group extraction (4 groups)
+        mock_openai_instance = Mock()
+        mock_openai_class.return_value = mock_openai_instance
+
+        def create_metadata_response(*args, **kwargs):
+            response = Mock()
+            response.choices = [Mock()]
+            response.choices[0].message.content = json.dumps({
+                "fields": [
+                    {"name": "policy_number", "value": "625928", "confidence": 0.9}
+                ]
+            })
+            response.usage = Mock(prompt_tokens=100, completion_tokens=50)
+            return response
+
+        mock_openai_instance.chat.completions.create.side_effect = create_metadata_response
+
+        # Configure component extraction response (uses audited_client)
         component_response = Mock()
         component_response.choices = [Mock()]
         component_response.choices[0].message.content = json.dumps({
@@ -267,31 +289,17 @@ class TestNsaGuaranteeExtractorExtraction:
             "excluded": {},
             "coverage_scale": [],
         })
+        component_response.usage = Mock(prompt_tokens=200, completion_tokens=100)
 
-        # Return different responses for metadata and components
-        call_count = [0]
-        def side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                # Metadata extraction
-                response = Mock()
-                response.choices = [Mock()]
-                response.choices[0].message.content = json.dumps({
-                    "fields": [
-                        {"name": "policy_number", "value": "625928", "confidence": 0.9}
-                    ]
-                })
-                return response
-            else:
-                # Component extraction
-                return component_response
-
-        mock_extractor.audited_client.chat_completions_create.side_effect = side_effect
+        mock_extractor.audited_client.chat_completions_create.return_value = component_response
 
         result = mock_extractor.extract(sample_pages, sample_doc_meta, sample_run_meta)
 
-        # Should have made 2 LLM calls (metadata + components)
-        assert mock_extractor.audited_client.chat_completions_create.call_count == 2
+        # Should have made 4 metadata group calls via OpenAI()
+        assert mock_openai_instance.chat.completions.create.call_count == 4
+
+        # Should have made 1 component call via audited_client
+        assert mock_extractor.audited_client.chat_completions_create.call_count == 1
 
     def test_extract_returns_extraction_result(self, mock_extractor, sample_pages, sample_doc_meta, sample_run_meta):
         """Test that extract returns ExtractionResult."""
