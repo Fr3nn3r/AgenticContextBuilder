@@ -64,8 +64,17 @@ python -m pytest tests/unit/test_storage.py -v --tb=short    # Specific file
 python -m pytest tests/unit/ -k "label" --tb=short           # By keyword
 cd ui && npx playwright test labeling                        # E2E by name
 
-# Pipeline (uses active workspace from .contextbuilder/workspaces.json)
-python -m context_builder.cli extract --model gpt-4o
+# Pipeline CLI (uses active workspace from .contextbuilder/workspaces.json)
+python -m context_builder.cli pipeline <input_claims_folder>  # Run full pipeline
+python -m context_builder.cli pipeline <input> --dry-run      # Preview without processing
+python -m context_builder.cli pipeline <input> --stages ingest,classify  # Run specific stages
+python -m context_builder.cli pipeline <input> --doc-types list          # List available doc types
+python -m context_builder.cli pipeline <input> --doc-types fnol_form,police_report  # Filter doc types
+
+# Other CLI commands
+python -m context_builder.cli index build                     # Build registry indexes
+python -m context_builder.cli aggregate --claim-id CLM-001    # Aggregate facts for a claim
+python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 ```
 
 ## Conventions
@@ -119,7 +128,7 @@ Customer-specific extractors, prompts, and specs are stored in **separate git re
 
 **Workflow:**
 1. Edit in workspace: `workspaces/nsa-2/config/extractors/`, `extraction_specs/`, `prompts/`
-2. Test: `python -m context_builder.cli extract --model gpt-4o`
+2. Test: `python -m context_builder.cli pipeline <input_claims_folder>`
 3. Copy to customer repo: `cd ../context-builder-nsa && .\copy-from-workspace.ps1`
 4. Commit in customer repo: `git add -A && git commit -m "message" && git push`
 
