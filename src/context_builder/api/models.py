@@ -45,6 +45,9 @@ class DocSummary(BaseModel):
     confidence: float = 0.0
     # Extraction-centric fields
     missing_required_fields: List[str] = []
+    # Display fields
+    source_type: str = "unknown"  # "pdf", "image", or "text"
+    page_count: int = 0
 
 
 class DocPayload(BaseModel):

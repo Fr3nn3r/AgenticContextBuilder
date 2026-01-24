@@ -35,6 +35,9 @@ export interface DocSummary {
   confidence: number;
   // Extraction-centric fields
   missing_required_fields: string[];
+  // Display fields
+  source_type: string;
+  page_count: number;
 }
 
 export interface PageContent {

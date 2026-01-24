@@ -302,6 +302,8 @@ class ClaimsService:
                 quality_status=quality_status,
                 confidence=round(confidence, 2),
                 missing_required_fields=missing_required_fields,
+                source_type=meta.get("source_type", "unknown"),
+                page_count=meta.get("page_count", 0),
             ))
 
         status_order = {"fail": 0, "warn": 1, "pass": 2, None: 3}

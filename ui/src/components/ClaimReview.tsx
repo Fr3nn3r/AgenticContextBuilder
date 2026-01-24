@@ -423,7 +423,25 @@ interface DocListItemProps {
   onSave: () => void;
 }
 
+function formatSourceType(sourceType: string): string {
+  const labels: Record<string, string> = {
+    pdf: "PDF",
+    image: "Image",
+    text: "Text",
+  };
+  return labels[sourceType] || sourceType;
+}
+
 function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemProps) {
+  // Build subtitle parts: doc_type · source_type · page_count pages
+  const subtitleParts = [doc.doc_type];
+  if (doc.source_type && doc.source_type !== "unknown") {
+    subtitleParts.push(formatSourceType(doc.source_type));
+  }
+  if (doc.page_count > 0) {
+    subtitleParts.push(`${doc.page_count} ${doc.page_count === 1 ? "page" : "pages"}`);
+  }
+
   return (
     <div
       data-testid="doc-strip-item"
@@ -433,14 +451,15 @@ function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemP
       )}
       onClick={onSelect}
     >
-      {/* Status dot */}
-      <GateDot status={doc.quality_status} />
-
       {/* Doc info */}
       <div className="flex-1 min-w-0">
+        {/* Line 1: Filename + checkmark */}
         <div className="flex items-center gap-2">
-          <span className={cn("text-sm font-medium truncate", isActive ? "text-accent-foreground" : "text-foreground")}>
-            {doc.doc_type}
+          <span
+            className={cn("text-sm font-medium truncate", isActive ? "text-accent-foreground" : "text-foreground")}
+            title={doc.filename}
+          >
+            {doc.filename}
           </span>
           {doc.has_labels && (
             <svg className="w-3.5 h-3.5 text-success flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -448,45 +467,30 @@ function DocListItem({ doc, isActive, isSaving, onSelect, onSave }: DocListItemP
             </svg>
           )}
         </div>
+        {/* Line 2: doc_type · source_type · page_count */}
         <div className="text-xs text-muted-foreground truncate">
-          {doc.filename}
+          {subtitleParts.join(" · ")}
         </div>
       </div>
 
-      {/* Confidence */}
-      <div className="text-xs text-muted-foreground/70 flex-shrink-0">
-        {Math.round(doc.confidence * 100)}%
-      </div>
-
       {/* Save button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onSave();
-        }}
-        disabled={isSaving || doc.has_labels}
-        className={cn(
-          "px-2 py-1 text-xs rounded transition-colors flex-shrink-0",
-          doc.has_labels
-            ? "bg-muted text-muted-foreground/70 cursor-default"
-            : isSaving
-            ? "bg-muted text-muted-foreground"
-            : "bg-primary text-white hover:bg-primary/90"
-        )}
-      >
-        {isSaving ? "..." : doc.has_labels ? "Saved" : "Save"}
-      </button>
+      {!doc.has_labels && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSave();
+          }}
+          disabled={isSaving}
+          className={cn(
+            "px-2 py-1 text-xs rounded transition-colors flex-shrink-0",
+            isSaving
+              ? "bg-muted text-muted-foreground"
+              : "bg-primary text-white hover:bg-primary/90"
+          )}
+        >
+          {isSaving ? "..." : "Save"}
+        </button>
+      )}
     </div>
-  );
-}
-
-function GateDot({ status }: { status: string | null }) {
-  const colors: Record<string, string> = {
-    pass: "bg-green-500",
-    warn: "bg-yellow-500",
-    fail: "bg-red-500",
-  };
-  return (
-    <span className={cn("w-2 h-2 rounded-full flex-shrink-0", status ? colors[status] : "bg-gray-300")} />
   );
 }
