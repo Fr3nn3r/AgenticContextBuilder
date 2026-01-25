@@ -142,7 +142,7 @@ export function EvaluationPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Evaluation</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track pipeline evolution and compare batch quality
+            Track assessment accuracy and quality metrics
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -163,30 +163,8 @@ export function EvaluationPage() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation - Pipeline Evolution and Compare Runs hidden for now */}
       <div className="flex items-center gap-1 border-b">
-        <button
-          onClick={() => setActiveTab("evolution")}
-          className={cn(
-            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-            activeTab === "evolution"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Pipeline Evolution
-        </button>
-        <button
-          onClick={() => setActiveTab("compare")}
-          className={cn(
-            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-            activeTab === "compare"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Compare Runs
-        </button>
         <button
           onClick={() => setActiveTab("assessment")}
           className={cn(

@@ -37,9 +37,7 @@ export interface RouteConfig {
   matchPrefix?: boolean;
   /** Show in sidebar navigation */
   showInNav?: boolean;
-  /** Restrict to admin/auditor roles */
-  adminOnly?: boolean;
-  /** Auth screen name for ProtectedRoute */
+  /** Auth screen name for permission check (maps to Screen type in AuthContext) */
   authScreen?: string;
 }
 
@@ -123,7 +121,7 @@ export function getPageTitle(path: string): string {
     }
   }
 
-  return "ContextBuilder";
+  return "True AIm";
 }
 
 /**

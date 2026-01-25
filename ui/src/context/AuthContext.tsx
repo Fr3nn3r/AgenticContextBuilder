@@ -14,7 +14,14 @@ export type Screen =
   | 'templates'
   | 'new-claim'
   | 'compliance'
-  | 'admin';
+  | 'admin'
+  // Nav screens
+  | 'batches'
+  | 'evaluation'
+  | 'all-claims'
+  | 'claims-explorer'
+  | 'documents'
+  | 'costs';
 
 export interface User {
   username: string;
@@ -35,17 +42,24 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 // Permission matrix
 const SCREEN_ACCESS: Record<Screen, Role[]> = {
-  'batch-workspace': ['admin', 'reviewer', 'operator', 'auditor'],
-  'document-review': ['admin', 'reviewer', 'operator', 'auditor'],
+  'batch-workspace': ['admin', 'operator', 'auditor'],
+  'document-review': ['admin', 'operator', 'auditor'],
   'classification-review': ['admin', 'reviewer', 'operator', 'auditor'],
   'claims-table': ['admin', 'reviewer', 'operator', 'auditor'],
   'claim-review': ['admin', 'reviewer', 'operator', 'auditor'],
   'pipeline': ['admin', 'operator', 'auditor'],
-  'ground-truth': ['admin', 'reviewer', 'operator', 'auditor'],
-  'templates': ['admin', 'reviewer', 'auditor'],
+  'ground-truth': ['admin', 'operator', 'auditor'],
+  'templates': ['admin', 'auditor'],
   'new-claim': ['admin', 'reviewer', 'operator'],
   'compliance': ['admin', 'auditor'],
   'admin': ['admin'],
+  // Nav screens
+  'batches': ['admin', 'operator', 'auditor'],
+  'evaluation': ['admin', 'reviewer', 'operator', 'auditor'],
+  'all-claims': ['admin', 'operator', 'auditor'],
+  'claims-explorer': ['admin', 'reviewer', 'operator', 'auditor'],
+  'documents': ['admin', 'operator', 'auditor'],
+  'costs': ['admin', 'auditor'],
 };
 
 const SCREEN_EDIT: Record<Screen, Role[]> = {
@@ -60,6 +74,13 @@ const SCREEN_EDIT: Record<Screen, Role[]> = {
   'new-claim': ['admin', 'reviewer', 'operator'],
   'compliance': ['admin'],
   'admin': ['admin'],
+  // Nav screens
+  'batches': ['admin', 'reviewer', 'operator'],
+  'evaluation': ['admin', 'reviewer'],
+  'all-claims': ['admin', 'reviewer', 'operator'],
+  'claims-explorer': ['admin', 'reviewer'],
+  'documents': ['admin', 'reviewer'],
+  'costs': ['admin'],
 };
 
 const TOKEN_KEY = 'auth_token';
