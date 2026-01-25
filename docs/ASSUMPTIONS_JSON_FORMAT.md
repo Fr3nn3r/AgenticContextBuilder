@@ -265,11 +265,11 @@ After modifying assumptions.json:
 
 ```bash
 # Dry run to see enrichment without API call
-python scripts/run_assessment.py --claim 65128 --dry-run
+python workspaces/nsa/scripts/run_assessment.py --claim 65128 --dry-run
 
 # Run assessment and evaluate
-python scripts/run_assessment.py --all
-python scripts/eval_assessment.py --eval-only
+python workspaces/nsa/scripts/run_assessment.py --all
+python workspaces/nsa/scripts/eval_assessment.py --eval-only
 ```
 
 Check the logs for:
