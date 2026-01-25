@@ -14,6 +14,7 @@ from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from context_builder.api.services import (
+    AssessmentService,
     AuditService,
     AuthService,
     ClaimsService,
@@ -194,6 +195,11 @@ def get_upload_service() -> UploadService:
 def get_truth_service() -> TruthService:
     """Get TruthService instance."""
     return TruthService(get_data_dir())
+
+
+def get_assessment_service() -> AssessmentService:
+    """Get AssessmentService instance."""
+    return AssessmentService(get_data_dir())
 
 
 # Singleton service instances

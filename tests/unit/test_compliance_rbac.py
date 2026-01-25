@@ -20,11 +20,12 @@ def test_app(tmp_path: Path):
     users_service = UsersService(tmp_path)
     auth_service = AuthService(tmp_path, users_service)
 
-    # Patch in both dependencies (for get_current_user) and main (for endpoints)
+    # Patch in dependencies and routers (for endpoints)
     with patch("context_builder.api.dependencies.get_users_service", return_value=users_service), \
          patch("context_builder.api.dependencies.get_auth_service", return_value=auth_service), \
-         patch("context_builder.api.main.get_users_service", return_value=users_service), \
-         patch("context_builder.api.main.get_auth_service", return_value=auth_service):
+         patch("context_builder.api.routers.auth.get_auth_service", return_value=auth_service), \
+         patch("context_builder.api.routers.admin_users.get_users_service", return_value=users_service), \
+         patch("context_builder.api.routers.admin_users.get_auth_service", return_value=auth_service):
         from context_builder.api.main import app
         yield TestClient(app), users_service, auth_service
 
@@ -43,14 +44,14 @@ class TestRequireRoleFunction:
 
     def test_require_role_returns_callable(self):
         """require_role returns a callable dependency."""
-        from context_builder.api.main import require_role
+        from context_builder.api.dependencies import require_role
 
         checker = require_role(["admin"])
         assert callable(checker)
 
     def test_require_role_with_multiple_roles(self):
         """require_role accepts multiple roles."""
-        from context_builder.api.main import require_role
+        from context_builder.api.dependencies import require_role
 
         checker = require_role(["admin", "auditor", "reviewer"])
         assert callable(checker)

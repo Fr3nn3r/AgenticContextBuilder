@@ -117,6 +117,16 @@ export async function getClaimReview(claimId: string): Promise<ClaimReviewPayloa
   return fetchJson<ClaimReviewPayload>(`${API_BASE}/claims/${claimId}/review`);
 }
 
+import type { ClaimFacts } from "../types";
+
+/**
+ * Get aggregated claim facts from the context folder.
+ * Returns null if no facts have been aggregated for this claim.
+ */
+export async function getClaimFacts(claimId: string): Promise<ClaimFacts | null> {
+  return fetchJson<ClaimFacts | null>(`${API_BASE}/claims/${encodeURIComponent(claimId)}/facts`);
+}
+
 export async function saveDocReview(
   docId: string,
   claimId: string,
@@ -1118,4 +1128,129 @@ export async function getCostByDay(days: number = 30): Promise<CostByDay[]> {
  */
 export async function getCostByModel(): Promise<CostByModel[]> {
   return fetchJson<CostByModel[]>(`${API_BASE}/insights/costs/by-model`);
+}
+
+// =============================================================================
+// ASSESSMENT API
+// =============================================================================
+
+import type {
+  ClaimAssessment,
+  AssessmentEvaluation,
+  TriageQueueItem,
+  TriageQueueFilters,
+} from "../types";
+
+/**
+ * Get assessment data for a specific claim.
+ * Returns null if no assessment exists for this claim.
+ */
+export async function getClaimAssessment(claimId: string): Promise<ClaimAssessment | null> {
+  try {
+    return await fetchJson<ClaimAssessment>(
+      `${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment`
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the latest assessment evaluation results.
+ * Returns null if no evaluation has been run.
+ */
+export async function getLatestAssessmentEval(): Promise<AssessmentEvaluation | null> {
+  try {
+    return await fetchJson<AssessmentEvaluation>(`${API_BASE}/assessment/evals/latest`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the triage queue with optional filters.
+ */
+export async function getTriageQueue(filters?: TriageQueueFilters): Promise<TriageQueueItem[]> {
+  const query = new URLSearchParams();
+  if (filters?.priority?.length) {
+    query.set("priority", filters.priority.join(","));
+  }
+  if (filters?.reasons?.length) {
+    query.set("reasons", filters.reasons.join(","));
+  }
+  if (filters?.decision?.length) {
+    query.set("decision", filters.decision.join(","));
+  }
+  if (filters?.min_confidence !== undefined) {
+    query.set("min_confidence", String(filters.min_confidence));
+  }
+  if (filters?.max_confidence !== undefined) {
+    query.set("max_confidence", String(filters.max_confidence));
+  }
+  const queryString = query.toString();
+  return fetchJson<TriageQueueItem[]>(
+    `${API_BASE}/assessment/triage${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+/**
+ * Mark a triage item as reviewed.
+ */
+export async function reviewTriageItem(
+  claimId: string,
+  action: "approve" | "reject" | "escalate"
+): Promise<{ status: string }> {
+  return fetchJson<{ status: string }>(
+    `${API_BASE}/assessment/triage/${encodeURIComponent(claimId)}/review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    }
+  );
+}
+
+/**
+ * Run assessment for a single claim.
+ */
+export async function runClaimAssessment(claimId: string): Promise<ClaimAssessment> {
+  return fetchJson<ClaimAssessment>(
+    `${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/run`,
+    { method: "POST" }
+  );
+}
+
+/**
+ * Run assessment for multiple claims (batch).
+ */
+export async function runBatchAssessment(
+  claimIds: string[]
+): Promise<{ run_id: string; status: string; claims_count: number }> {
+  return fetchJson<{ run_id: string; status: string; claims_count: number }>(
+    `${API_BASE}/assessment/run`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claim_ids: claimIds }),
+    }
+  );
+}
+
+/**
+ * Get assessment history for a claim.
+ */
+export async function getAssessmentHistory(
+  claimId: string
+): Promise<Array<{
+  run_id: string;
+  timestamp: string;
+  decision: "APPROVE" | "REJECT" | "REFER_TO_HUMAN";
+  confidence_score: number;
+  check_count: number;
+  pass_count: number;
+  fail_count: number;
+  assumption_count: number;
+  is_current: boolean;
+}>> {
+  return fetchJson(`${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/history`);
 }

@@ -14,7 +14,7 @@ import { TokenCostsPage } from "./components/TokenCostsPage";
 import { TruthPage } from "./components/TruthPage";
 import { DocumentDetailPage } from "./components/DocumentDetailPage";
 import { DocumentsListPage } from "./components/DocumentsListPage";
-import { ClaimsExplorerPage } from "./components/ClaimsExplorerPage";
+import { ClaimExplorer } from "./components/ClaimExplorer";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AdminPage } from "./components/AdminPage";
 import {
@@ -24,6 +24,7 @@ import {
   ComplianceVersionBundles,
   ComplianceControls,
 } from "./pages/compliance";
+import { AssessmentConsolePage, TriageQueuePage } from "./components/assessment";
 import { useBatch } from "./context/BatchContext";
 import { useClaims } from "./context/ClaimsContext";
 
@@ -141,7 +142,7 @@ export function AppRoutes() {
       />
       <Route
         path="/claims/explorer"
-        element={<ClaimsExplorerPage />}
+        element={<ClaimExplorer />}
       />
       <Route
         path="/claims/:claimId/review"
@@ -228,6 +229,12 @@ export function AppRoutes() {
       />
 
       <Route path="/evaluation" element={<EvaluationPage />} />
+
+      {/* Assessment */}
+      <Route path="/assessment" element={<AssessmentConsolePage />} />
+
+      {/* Triage Queue */}
+      <Route path="/triage" element={<TriageQueuePage />} />
 
       {/* All Documents page (batch-independent) */}
       <Route path="/documents" element={<DocumentsListPage />} />

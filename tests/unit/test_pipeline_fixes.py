@@ -308,7 +308,8 @@ class TestEmptyClaimIdsValidation:
     @pytest.fixture
     def client_with_admin(self, tmp_path):
         """Create test client with admin auth."""
-        from context_builder.api.main import app, get_auth_service, get_users_service
+        from context_builder.api.main import app
+        from context_builder.api.dependencies import get_auth_service, get_users_service
 
         client = TestClient(app)
 
@@ -350,7 +351,8 @@ class TestPipelineAuditLogging:
     @pytest.fixture
     def client_with_admin(self, tmp_path):
         """Create test client with admin auth."""
-        from context_builder.api.main import app, get_auth_service
+        from context_builder.api.main import app
+        from context_builder.api.dependencies import get_auth_service
 
         client = TestClient(app)
         auth_service = get_auth_service()
@@ -365,7 +367,7 @@ class TestPipelineAuditLogging:
 
     def test_start_pipeline_logs_audit(self, client_with_admin, tmp_path):
         """Starting pipeline creates audit log entry."""
-        from context_builder.api.main import get_audit_service
+        from context_builder.api.dependencies import get_audit_service
 
         client, token = client_with_admin
         audit_service = get_audit_service()
