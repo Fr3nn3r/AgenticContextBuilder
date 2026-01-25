@@ -210,7 +210,10 @@ def enrich_claim_facts(claim_facts: dict, assumptions: dict) -> dict:
     - _coverage_lookup to each line item in structured_data
     - _shop_authorization_lookup at top level
     - _assumptions_version for traceability
+    - _enrichment_summary with lookup statistics
     """
+    log = logging.getLogger(__name__)
+
     if not assumptions:
         return claim_facts
 
@@ -219,6 +222,17 @@ def enrich_claim_facts(claim_facts: dict, assumptions: dict) -> dict:
     # Add assumptions version for traceability
     enriched["_assumptions_version"] = assumptions.get("schema_version", "unknown")
     enriched["_assumptions_updated_at"] = assumptions.get("updated_at", "unknown")
+
+    # Track lookup statistics
+    stats = {
+        "covered": 0,
+        "not_covered": 0,
+        "unknown": 0,
+        "covered_amount": 0.0,
+        "not_covered_amount": 0.0,
+        "unknown_amount": 0.0,
+        "unknown_items": [],  # Track for logging
+    }
 
     # Enrich line items with coverage info
     if "structured_data" in enriched and "line_items" in enriched["structured_data"]:
@@ -231,11 +245,68 @@ def enrich_claim_facts(claim_facts: dict, assumptions: dict) -> dict:
             enriched_item["_coverage_lookup"] = coverage
             enriched["structured_data"]["line_items"].append(enriched_item)
 
+            # Track statistics
+            price = item.get("total_price", 0) or 0
+            if coverage.get("covered") is True:
+                stats["covered"] += 1
+                stats["covered_amount"] += price
+            elif coverage.get("covered") is False:
+                stats["not_covered"] += 1
+                stats["not_covered_amount"] += price
+            else:
+                stats["unknown"] += 1
+                stats["unknown_amount"] += price
+                # Track high-value unknown items for logging
+                if price > 100:
+                    stats["unknown_items"].append({
+                        "description": item.get("description", "")[:40],
+                        "price": price,
+                    })
+
+    # Log coverage lookup summary
+    total_items = stats["covered"] + stats["not_covered"] + stats["unknown"]
+    if total_items > 0:
+        log.info(
+            f"Coverage lookup: {stats['covered']} covered (CHF {stats['covered_amount']:.0f}), "
+            f"{stats['not_covered']} not covered (CHF {stats['not_covered_amount']:.0f}), "
+            f"{stats['unknown']} unknown (CHF {stats['unknown_amount']:.0f})"
+        )
+
+        # Warn about high-value unknown items
+        if stats["unknown_items"]:
+            log.warning(
+                f"Unknown coverage for {len(stats['unknown_items'])} high-value items (>CHF 100): "
+                f"{', '.join(i['description'] for i in stats['unknown_items'][:5])}"
+                + ("..." if len(stats["unknown_items"]) > 5 else "")
+            )
+
     # Enrich repair shop authorization
     shop_name = get_fact_value(enriched, "garage_name")
     if shop_name:
         auth = lookup_authorization(shop_name, assumptions)
         enriched["_shop_authorization_lookup"] = auth
+
+        # Log shop authorization result
+        if auth.get("authorized") is True:
+            log.info(f"Shop authorization: AUTHORIZED ({auth.get('lookup_method')}: {shop_name})")
+        elif auth.get("authorized") is False:
+            log.warning(f"Shop authorization: NOT AUTHORIZED ({shop_name})")
+        else:
+            log.warning(
+                f"Shop authorization: UNKNOWN - {auth.get('action', 'REFER_TO_HUMAN')} "
+                f"({shop_name})"
+            )
+
+    # Add enrichment summary to output
+    enriched["_enrichment_summary"] = {
+        "total_line_items": total_items,
+        "covered_count": stats["covered"],
+        "covered_amount": round(stats["covered_amount"], 2),
+        "not_covered_count": stats["not_covered"],
+        "not_covered_amount": round(stats["not_covered_amount"], 2),
+        "unknown_count": stats["unknown"],
+        "unknown_amount": round(stats["unknown_amount"], 2),
+    }
 
     return enriched
 
