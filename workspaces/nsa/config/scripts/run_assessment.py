@@ -352,14 +352,9 @@ def validate_assessment(assessment: dict) -> tuple[bool, list[str]]:
     if "currency" not in payout:
         errors.append("Missing payout.currency")
 
-    # Business rule: REJECT/REFER_TO_HUMAN must have final_payout = 0
-    if decision in ("REJECT", "REFER_TO_HUMAN"):
-        final_payout = payout.get("final_payout", 0)
-        if final_payout > 0:
-            errors.append(
-                f"Business rule violation: {decision} decision must have final_payout=0, "
-                f"got {final_payout}"
-            )
+    # Note: Business rule for REJECT/REFER_TO_HUMAN payout=0 is handled by
+    # enforce_business_rules() rather than failing validation. This allows
+    # the LLM to calculate payout even for referrals, then we auto-correct.
 
     return len(errors) == 0, errors
 
