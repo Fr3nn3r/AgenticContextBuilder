@@ -1,59 +1,57 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "../lib/utils";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, Screen } from "../context/AuthContext";
 import { getAppVersion } from "../api/client";
-
-type View = "new-claim" | "batches" | "evaluation" | "all-claims" | "claims-explorer" | "documents" | "templates" | "pipeline" | "truth" | "costs" | "compliance" | "admin";
+import { getNavItems, ViewId } from "../routes";
 
 interface SidebarProps {
-  currentView: View;
+  currentView: ViewId;
 }
 
-interface NavItem {
-  id: View;
-  label: string;
-  path: string;
-  icon: React.ComponentType<{ className?: string }>;
-  adminOnly?: boolean;
-}
+// Icon components keyed by route ID
+const ICONS: Record<ViewId, React.ComponentType<{ className?: string }>> = {
+  "new-claim": PlusIcon,
+  "batches": BatchesIcon,
+  "evaluation": EvaluationIcon,
+  "all-claims": ClaimsIcon,
+  "claims-explorer": ExplorerIcon,
+  "documents": DocumentsIcon,
+  "truth": TruthIcon,
+  "templates": TemplatesIcon,
+  "pipeline": PipelineIcon,
+  "costs": CostsIcon,
+  "compliance": ComplianceIcon,
+  "admin": AdminIcon,
+  "assessment": EvaluationIcon, // Reuse evaluation icon
+  "triage": ClaimsIcon, // Reuse claims icon
+};
 
-const navItems: NavItem[] = [
-  { id: "new-claim", label: "New Claim", path: "/claims/new", icon: PlusIcon },
-  { id: "batches", label: "Batches", path: "/batches", icon: BatchesIcon },
-  { id: "evaluation", label: "Evaluation", path: "/evaluation", icon: EvaluationIcon },
-  { id: "all-claims", label: "All Claims", path: "/claims/all", icon: ClaimsIcon },
-  { id: "claims-explorer", label: "Claim Explorer", path: "/claims/explorer", icon: ExplorerIcon },
-  { id: "documents", label: "Documents", path: "/documents", icon: DocumentsIcon },
-  { id: "truth", label: "Ground Truth", path: "/truth", icon: TruthIcon },
-  { id: "templates", label: "Templates", path: "/templates", icon: TemplatesIcon },
-  { id: "pipeline", label: "Pipeline", path: "/pipeline", icon: PipelineIcon },
-  { id: "costs", label: "Token Costs", path: "/costs", icon: CostsIcon },
-  { id: "compliance", label: "Compliance", path: "/compliance", icon: ComplianceIcon, adminOnly: true },
-  { id: "admin", label: "Admin", path: "/admin", icon: AdminIcon, adminOnly: true },
-];
+// Get nav items from centralized config
+const navItems = getNavItems();
 
 export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
-  const { user } = useAuth();
-  const [versionDisplay, setVersionDisplay] = useState("ContextBuilder");
+  const { user, canAccess } = useAuth();
+  const [versionDisplay, setVersionDisplay] = useState("True AIm");
 
   // Fetch version on mount
   useEffect(() => {
     getAppVersion()
-      .then((info) => setVersionDisplay(`ContextBuilder ${info.display}`))
-      .catch(() => setVersionDisplay("ContextBuilder"));
+      .then((info) => setVersionDisplay(`True AIm ${info.display}`))
+      .catch(() => setVersionDisplay("True AIm"));
   }, []);
 
   // Check if current path is under /batches (for active highlighting)
   const isBatchRoute = location.pathname.startsWith("/batches");
 
-  // Filter nav items based on user role
+  // Filter nav items based on user role using permission matrix
   const visibleNavItems = navItems.filter((item) => {
-    if (item.adminOnly) {
-      // Admin-only items are visible to admin and auditor roles
-      return user?.role === "admin" || user?.role === "auditor";
+    // If route has authScreen, check permission matrix
+    if (item.authScreen) {
+      return canAccess(item.authScreen as Screen);
     }
+    // Routes without authScreen are accessible to all authenticated users
     return true;
   });
 
@@ -61,16 +59,18 @@ export function Sidebar({ currentView }: SidebarProps) {
     <div className="w-56 bg-sidebar text-sidebar-foreground flex flex-col" data-testid="sidebar">
       {/* Logo */}
       <div className="p-4 flex items-center gap-2">
-        <div className="w-8 h-8 bg-sidebar-primary rounded flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
-          CB
-        </div>
-        <span className="font-semibold text-lg">ContextBuilder</span>
+        <img
+          src="/trueaim-logo.png"
+          alt="True AIm Logo"
+          className="w-8 h-8 object-contain"
+        />
+        <span className="font-semibold text-lg">True AIm</span>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1">
         {visibleNavItems.map((item) => {
-          const Icon = item.icon;
+          const Icon = ICONS[item.id];
           // For batches, check if any batch route is active
           const isActive =
             item.id === "batches"

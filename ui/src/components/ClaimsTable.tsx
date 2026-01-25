@@ -24,7 +24,7 @@ export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
   const navigate = useNavigate();
 
   // Get data from contexts
-  const { claims, filteredClaims, docs, selectClaim } = useClaims();
+  const { claims, filteredClaims, docs, selectClaim, loading, error, refreshClaims } = useClaims();
   const { selectedRunId: _selectedRunId } = useBatch();
   void _selectedRunId; // No longer used - documents now link directly to Document Detail
   const {
@@ -108,6 +108,30 @@ export function ClaimsTable({ showAllClaims = false }: ClaimsTableProps) {
   const totalDocsLabeled = displayClaims.reduce((sum, c) => sum + c.labeled_count, 0);
   const totalDocs = displayClaims.reduce((sum, c) => sum + c.doc_count, 0);
   const totalGateFail = claimsInRunData.reduce((sum, c) => sum + c.gate_fail_count, 0);
+
+  // Handle loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="text-muted-foreground">Loading claims...</div>
+      </div>
+    );
+  }
+
+  // Handle error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-6">
+        <p className="text-destructive mb-4">{error}</p>
+        <button
+          onClick={refreshClaims}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
