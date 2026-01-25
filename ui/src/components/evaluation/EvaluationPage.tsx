@@ -20,15 +20,16 @@ import {
   type RunComparison,
 } from "../../api/client";
 import { EvolutionView } from "./EvolutionView";
+import { AssessmentEvalView } from "../assessment";
 
-type EvaluationTab = "compare" | "evolution";
+type EvaluationTab = "compare" | "evolution" | "assessment";
 
 export function EvaluationPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Tab state (persisted in URL)
-  const activeTab = (searchParams.get("tab") as EvaluationTab) || "evolution";
+  const activeTab = (searchParams.get("tab") as EvaluationTab) || "assessment";
 
   const setActiveTab = (tab: EvaluationTab) => {
     setSearchParams({ tab });
@@ -186,11 +187,24 @@ export function EvaluationPage() {
         >
           Compare Runs
         </button>
+        <button
+          onClick={() => setActiveTab("assessment")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "assessment"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Assessment
+        </button>
       </div>
 
       {/* Tab Content */}
       {activeTab === "evolution" ? (
         <EvolutionView />
+      ) : activeTab === "assessment" ? (
+        <AssessmentEvalView />
       ) : (
         <CompareRunsView
           runs={runs}

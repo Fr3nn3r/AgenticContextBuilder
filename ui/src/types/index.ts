@@ -820,6 +820,178 @@ export interface DocTypeMatrixResponse {
 }
 
 // =============================================================================
+// CLAIM FACTS TYPES (Aggregated Facts from Context Folder)
+// =============================================================================
+
+/** Provenance info for where a fact was extracted from */
+export interface FactProvenance {
+  doc_id: string;
+  doc_type: string;
+  page: number | null;
+  text_quote: string | null;
+  char_start: number | null;
+  char_end: number | null;
+}
+
+/** A single aggregated fact for a claim */
+export interface AggregatedFact {
+  name: string;
+  value: string | string[] | null;
+  confidence: number;
+  selected_from: FactProvenance;
+  /** Complex structured data like service_entries, line_items arrays */
+  structured_value?: unknown;
+}
+
+/** Source document reference in claim facts */
+export interface ClaimFactSource {
+  doc_id: string;
+  filename: string;
+  doc_type: string;
+}
+
+/** Complete claim facts response from context folder */
+export interface ClaimFacts {
+  schema_version: string;
+  claim_id: string;
+  generated_at: string;
+  facts: AggregatedFact[];
+  sources: ClaimFactSource[];
+}
+
+/** Service entry from structured_value */
+export interface ServiceEntry {
+  date?: string | null;
+  mileage?: string | number | null;
+  service_type?: string | null;
+  provider?: string | null;
+  work_performed?: string | null;
+  cost?: string | number | null;
+  [key: string]: unknown;
+}
+
+// =============================================================================
+// ASSESSMENT TYPES
+// =============================================================================
+
+/** Assessment check result status */
+export type CheckResult = "PASS" | "FAIL" | "INCONCLUSIVE";
+
+/** Assessment decision outcome */
+export type AssessmentDecision = "APPROVE" | "REJECT" | "REFER_TO_HUMAN";
+
+/** Assumption impact level */
+export type AssumptionImpact = "high" | "medium" | "low";
+
+/** Single assessment check */
+export interface AssessmentCheck {
+  check_number: number;
+  check_name: string;
+  result: CheckResult;
+  details: string;
+  evidence_refs: string[];
+}
+
+/** Assumption made during assessment */
+export interface AssessmentAssumption {
+  check_number: number;
+  field: string;
+  assumed_value: string;
+  reason: string;
+  impact: AssumptionImpact;
+}
+
+/** Fraud indicator detected */
+export interface FraudIndicator {
+  indicator: string;
+  severity: "high" | "medium" | "low";
+  details: string;
+}
+
+/** Full claim assessment data */
+export interface ClaimAssessment {
+  claim_id: string;
+  decision: AssessmentDecision;
+  confidence_score: number;
+  checks: AssessmentCheck[];
+  assumptions: AssessmentAssumption[];
+  payout?: number;
+  fraud_indicators: FraudIndicator[];
+  recommendations: string[];
+  assessed_at?: string;
+}
+
+/** Assessment evaluation confusion matrix */
+export interface AssessmentConfusionMatrix {
+  matrix: Record<string, Record<string, number>>;
+  total_evaluated: number;
+  decision_accuracy: number;
+}
+
+/** Per-claim evaluation result */
+export interface AssessmentEvalResult {
+  claim_id: string;
+  predicted: AssessmentDecision;
+  actual: AssessmentDecision;
+  is_correct: boolean;
+  confidence_score: number;
+  assumption_count: number;
+}
+
+/** Summary metrics for assessment evaluation */
+export interface AssessmentEvalSummary {
+  total_claims: number;
+  correct_count?: number;
+  accuracy_rate: number;
+  approve_precision: number;
+  reject_precision: number;
+  refer_rate: number;
+  avg_confidence?: number;
+}
+
+/** Full assessment evaluation response */
+export interface AssessmentEvaluation {
+  eval_id: string;
+  timestamp: string;
+  run_id?: string;
+  confusion_matrix: AssessmentConfusionMatrix;
+  results: AssessmentEvalResult[];
+  summary: AssessmentEvalSummary;
+}
+
+/** Triage queue priority level */
+export type TriagePriority = "critical" | "high" | "medium" | "low";
+
+/** Triage reason category */
+export type TriageReason =
+  | "low_confidence"
+  | "high_impact_assumption"
+  | "fraud_indicator"
+  | "inconclusive_check"
+  | "conflicting_evidence";
+
+/** Item in the triage queue */
+export interface TriageQueueItem {
+  claim_id: string;
+  priority: TriagePriority;
+  reasons: TriageReason[];
+  confidence_score: number;
+  assumption_count: number;
+  decision: AssessmentDecision;
+  fraud_indicator_count: number;
+  created_at: string;
+}
+
+/** Filters for triage queue */
+export interface TriageQueueFilters {
+  priority?: TriagePriority[];
+  reasons?: TriageReason[];
+  decision?: AssessmentDecision[];
+  min_confidence?: number;
+  max_confidence?: number;
+}
+
+// =============================================================================
 // TOKEN COST TYPES
 // =============================================================================
 
