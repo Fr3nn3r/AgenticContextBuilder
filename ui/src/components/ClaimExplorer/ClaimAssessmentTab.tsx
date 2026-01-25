@@ -1,0 +1,330 @@
+import { useState } from "react";
+import {
+  Loader2,
+  Play,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  ArrowRightCircle,
+  DollarSign,
+  ShieldAlert,
+  Clock,
+} from "lucide-react";
+import { cn } from "../../lib/utils";
+import type { ClaimAssessment, AssessmentDecision } from "../../types";
+import { formatTimestamp } from "../../lib/formatters";
+import { StatusBadge, ScoreBadge } from "../shared";
+import { AssumptionsPane } from "./AssumptionsPane";
+import { ChecksReviewPanel } from "./ChecksReviewPanel";
+import { WorkflowActionsPanel } from "./WorkflowActionsPanel";
+import { PayoutBreakdownCard } from "./PayoutBreakdownCard";
+
+interface ClaimAssessmentTabProps {
+  claimId: string;
+  assessment: ClaimAssessment | null;
+  loading: boolean;
+  error: string | null;
+  onRunAssessment?: () => Promise<void>;
+  onEvidenceClick?: (ref: string) => void;
+}
+
+const DECISION_CONFIG: Record<AssessmentDecision, {
+  icon: typeof CheckCircle2;
+  label: string;
+  description: string;
+  bgColor: string;
+  textColor: string;
+  borderColor: string;
+}> = {
+  APPROVE: {
+    icon: CheckCircle2,
+    label: "Approved",
+    description: "Claim has been approved for payment",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+    textColor: "text-green-700 dark:text-green-300",
+    borderColor: "border-green-200 dark:border-green-800",
+  },
+  REJECT: {
+    icon: XCircle,
+    label: "Rejected",
+    description: "Claim has been rejected",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+    textColor: "text-red-700 dark:text-red-300",
+    borderColor: "border-red-200 dark:border-red-800",
+  },
+  REFER_TO_HUMAN: {
+    icon: ArrowRightCircle,
+    label: "Referred to Human",
+    description: "Claim requires manual review",
+    bgColor: "bg-amber-50 dark:bg-amber-900/20",
+    textColor: "text-amber-700 dark:text-amber-300",
+    borderColor: "border-amber-200 dark:border-amber-800",
+  },
+};
+
+/**
+ * Assessment tab showing decision, checks, assumptions, and run controls.
+ */
+export function ClaimAssessmentTab({
+  claimId,
+  assessment,
+  loading,
+  error,
+  onRunAssessment,
+  onEvidenceClick,
+}: ClaimAssessmentTabProps) {
+  const [isRunning, setIsRunning] = useState(false);
+
+  const handleRunAssessment = async () => {
+    if (!onRunAssessment) return;
+    setIsRunning(true);
+    try {
+      await onRunAssessment();
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+          <p className="text-sm text-slate-500">Loading assessment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-red-200 dark:border-red-900 p-6 text-center">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // No assessment yet
+  if (!assessment) {
+    return (
+      <div className="p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+            <Play className="h-8 w-8 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-medium text-slate-700 dark:text-slate-200 mb-2">
+            No Assessment Yet
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-md mx-auto">
+            Run an automated assessment to evaluate this claim against policy rules
+            and generate a decision recommendation.
+          </p>
+          <button
+            onClick={handleRunAssessment}
+            disabled={isRunning || !onRunAssessment}
+            className={cn(
+              "inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium",
+              "bg-blue-600 text-white hover:bg-blue-700",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "transition-colors"
+            )}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Running Assessment...
+              </>
+            ) : (
+              <>
+                <Play className="h-5 w-5" />
+                Run Assessment
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const decisionConfig = DECISION_CONFIG[assessment.decision];
+  const DecisionIcon = decisionConfig.icon;
+
+  // Count check results
+  const passCount = assessment.checks.filter((c) => c.result === "PASS").length;
+  const failedChecks = assessment.checks.filter((c) => c.result === "FAIL");
+  const failCount = failedChecks.length;
+  const inconclusiveCount = assessment.checks.filter((c) => c.result === "INCONCLUSIVE").length;
+
+  // Count high-impact assumptions
+  const criticalAssumptions = assessment.assumptions.filter((a) => a.impact === "high").length;
+
+  // Generate decision description - include rejection reason for REJECT
+  const getDecisionDescription = () => {
+    if (assessment.decision === "REJECT" && failedChecks.length > 0) {
+      const reasons = failedChecks.map((c) => c.details).filter(Boolean);
+      if (reasons.length === 1) {
+        return `Claim rejected: ${reasons[0]}`;
+      } else if (reasons.length > 1) {
+        return `Claim rejected: ${reasons[0]}`;
+      }
+      return "Claim has been rejected due to failed checks";
+    }
+    return decisionConfig.description;
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Decision Banner */}
+      <div className={cn(
+        "rounded-lg border p-6",
+        decisionConfig.bgColor,
+        decisionConfig.borderColor
+      )}>
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className={cn(
+              "w-12 h-12 rounded-full flex items-center justify-center",
+              decisionConfig.bgColor
+            )}>
+              <DecisionIcon className={cn("h-7 w-7", decisionConfig.textColor)} />
+            </div>
+            <div>
+              <h2 className={cn("text-xl font-bold", decisionConfig.textColor)}>
+                {decisionConfig.label}
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {getDecisionDescription()}
+              </p>
+              {assessment.assessed_at && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Assessed {formatTimestamp(assessment.assessed_at)}
+                </p>
+              )}
+              {assessment.decision_rationale && (
+                <p className={cn(
+                  "text-sm mt-2 italic",
+                  assessment.decision === "REJECT"
+                    ? "text-red-600 dark:text-red-400 font-medium"
+                    : "text-slate-600 dark:text-slate-400"
+                )}>
+                  "{assessment.decision_rationale}"
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Confidence Score */}
+          <div className="text-right">
+            <div className="text-2xl font-bold text-slate-700 dark:text-slate-200">
+              <ScoreBadge value={assessment.confidence_score} />
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Confidence</p>
+          </div>
+        </div>
+
+        {/* Quick Stats */}
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="text-center">
+            <div className="text-lg font-semibold text-green-600 dark:text-green-400">{passCount}</div>
+            <div className="text-xs text-slate-500">Checks Passed</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-semibold text-red-600 dark:text-red-400">{failCount}</div>
+            <div className="text-xs text-slate-500">Checks Failed</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-semibold text-amber-600 dark:text-amber-400">{inconclusiveCount}</div>
+            <div className="text-xs text-slate-500">Inconclusive</div>
+          </div>
+          <div className="text-center">
+            <div className={cn(
+              "text-lg font-semibold",
+              criticalAssumptions > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-600 dark:text-slate-400"
+            )}>
+              {assessment.assumptions.length}
+            </div>
+            <div className="text-xs text-slate-500">Assumptions</div>
+          </div>
+          {assessment.payout !== undefined && (
+            <div className="text-center">
+              <div className="text-lg font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1">
+                <DollarSign className="h-4 w-4" />
+                {assessment.payout.toLocaleString()}
+              </div>
+              <div className="text-xs text-slate-500">Payout</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Payout Breakdown */}
+      {assessment.payout_breakdown && (
+        <PayoutBreakdownCard breakdown={assessment.payout_breakdown} />
+      )}
+
+      {/* Fraud Indicators (if any) */}
+      {assessment.fraud_indicators.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-400" />
+            <h3 className="font-semibold text-red-700 dark:text-red-300">
+              Fraud Indicators ({assessment.fraud_indicators.length})
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {assessment.fraud_indicators.map((indicator, idx) => (
+              <div key={idx} className="flex items-start gap-2 text-sm">
+                <StatusBadge
+                  variant={indicator.severity === "high" ? "error" : indicator.severity === "medium" ? "warning" : "neutral"}
+                  size="sm"
+                >
+                  {indicator.severity}
+                </StatusBadge>
+                <div>
+                  <span className="font-medium text-red-700 dark:text-red-300">{indicator.indicator}</span>
+                  {indicator.details && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{indicator.details}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recommendations (if any) */}
+      {assessment.recommendations.length > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+          <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-2">Recommendations</h3>
+          <ul className="list-disc list-inside space-y-1">
+            {assessment.recommendations.map((rec, idx) => (
+              <li key={idx} className="text-sm text-blue-700 dark:text-blue-300">{rec}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Checks Panel */}
+      {assessment.checks.length > 0 && (
+        <ChecksReviewPanel
+          checks={assessment.checks}
+          onEvidenceClick={onEvidenceClick}
+        />
+      )}
+
+      {/* Assumptions Panel */}
+      {assessment.assumptions.length > 0 && (
+        <AssumptionsPane assumptions={assessment.assumptions} />
+      )}
+
+      {/* Assessment Feedback */}
+      <WorkflowActionsPanel
+        readiness={{ readinessPct: 0, blockingIssues: [], criticalAssumptions: 0, canAutoApprove: false, canAutoReject: false }}
+        currentDecision={assessment.decision}
+      />
+    </div>
+  );
+}

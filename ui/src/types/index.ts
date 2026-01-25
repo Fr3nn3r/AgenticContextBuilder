@@ -883,6 +883,18 @@ export type AssessmentDecision = "APPROVE" | "REJECT" | "REFER_TO_HUMAN";
 /** Assumption impact level */
 export type AssumptionImpact = "high" | "medium" | "low";
 
+/** Payout breakdown showing step-by-step calculation */
+export interface PayoutBreakdown {
+  total_claimed: number | null;
+  non_covered_deductions: number | null;
+  covered_subtotal: number | null;
+  coverage_percent: number | null;
+  after_coverage: number | null;
+  deductible: number | null;
+  final_payout: number | null;
+  currency: string | null;
+}
+
 /** Single assessment check */
 export interface AssessmentCheck {
   check_number: number;
@@ -916,6 +928,9 @@ export interface ClaimAssessment {
   checks: AssessmentCheck[];
   assumptions: AssessmentAssumption[];
   payout?: number;
+  currency?: string | null;
+  payout_breakdown?: PayoutBreakdown | null;
+  decision_rationale?: string | null;
   fraud_indicators: FraudIndicator[];
   recommendations: string[];
   assessed_at?: string;

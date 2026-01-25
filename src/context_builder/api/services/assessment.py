@@ -103,6 +103,32 @@ class AssessmentService:
             "details": indicator.get("details", ""),
         }
 
+    def _transform_payout(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Transform payout preserving full breakdown.
+
+        Args:
+            data: Raw data from assessment.json
+
+        Returns:
+            Full payout breakdown dict, or None if no payout data
+        """
+        payout = data.get("payout")
+        if not isinstance(payout, dict):
+            if isinstance(payout, (int, float)):
+                return {"final_payout": payout, "currency": data.get("currency")}
+            return None
+
+        return {
+            "total_claimed": payout.get("total_claimed"),
+            "non_covered_deductions": payout.get("non_covered_deductions"),
+            "covered_subtotal": payout.get("covered_subtotal"),
+            "coverage_percent": payout.get("coverage_percent"),
+            "after_coverage": payout.get("after_coverage"),
+            "deductible": payout.get("deductible"),
+            "final_payout": payout.get("final_payout"),
+            "currency": payout.get("currency") or data.get("currency"),
+        }
+
     def _transform_assessment(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform assessment.json data to frontend ClaimAssessment format.
 
@@ -147,6 +173,8 @@ class AssessmentService:
             "assumptions": [self._transform_assumption(a) for a in data.get("assumptions", [])],
             "payout": payout,
             "currency": currency,
+            "payout_breakdown": self._transform_payout(data),
+            "decision_rationale": data.get("decision_rationale"),
             "fraud_indicators": [
                 self._transform_fraud_indicator(f) for f in data.get("fraud_indicators", [])
             ],

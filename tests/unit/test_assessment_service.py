@@ -1,0 +1,457 @@
+"""Unit tests for the AssessmentService."""
+
+import json
+import pytest
+from pathlib import Path
+
+from context_builder.api.services.assessment import AssessmentService
+
+
+class TestAssessmentService:
+    """Tests for AssessmentService."""
+
+    @pytest.fixture
+    def temp_claims_dir(self, tmp_path):
+        """Create a temporary claims directory."""
+        return tmp_path
+
+    @pytest.fixture
+    def service(self, temp_claims_dir):
+        """Create an AssessmentService instance."""
+        return AssessmentService(temp_claims_dir)
+
+    @pytest.fixture
+    def sample_assessment(self):
+        """Return a sample assessment in file format."""
+        return {
+            "schema_version": "claims_assessment_v1",
+            "claim_id": "12345",
+            "assessment_timestamp": "2026-01-24T22:14:20.485908",
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [
+                {
+                    "check_number": 1,
+                    "check_name": "policy_validity",
+                    "result": "PASS",
+                    "details": "Policy is valid.",
+                    "evidence_refs": ["start_date", "end_date"],
+                },
+                {
+                    "check_number": "1b",
+                    "check_name": "damage_date_validity",
+                    "result": "PASS",
+                    "details": "No pre-existing damage.",
+                    "evidence_refs": ["diagnostic_report"],
+                },
+                {
+                    "check_number": 2,
+                    "check_name": "vehicle_id_consistency",
+                    "result": "FAIL",
+                    "details": "VINs do not match.",
+                    "evidence_refs": ["vin"],
+                },
+            ],
+            "payout": {
+                "total_claimed": 5000.0,
+                "final_payout": 4500.0,
+                "currency": "CHF",
+            },
+            "assumptions": [
+                {
+                    "check_number": 1,
+                    "field": "policy_start_date",
+                    "assumed_value": "2025-01-01",
+                    "reason": "Missing from documents",
+                    "confidence_impact": "HIGH",
+                }
+            ],
+            "fraud_indicators": [
+                {
+                    "indicator": "Duplicate claim",
+                    "severity": "high",
+                    "details": "Similar claim filed last month.",
+                }
+            ],
+            "recommendations": ["Verify VIN manually.", "Contact policyholder."],
+        }
+
+    def create_assessment_file(self, claims_dir: Path, claim_id: str, data: dict):
+        """Helper to create an assessment file."""
+        context_dir = claims_dir / claim_id / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        assessment_path = context_dir / "assessment.json"
+        with open(assessment_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def test_get_assessment_file_not_found(self, service):
+        """Test that missing assessment returns None."""
+        result = service.get_assessment("nonexistent_claim")
+        assert result is None
+
+    def test_get_assessment_transforms_correctly(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that assessment is transformed correctly."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment("12345")
+
+        assert result is not None
+        assert result["claim_id"] == "12345"
+        assert result["decision"] == "APPROVE"
+        # confidence_score is converted from decimal (0.95) to percentage (95)
+        assert result["confidence_score"] == 95.0
+
+        # Check timestamp transformation
+        assert result["assessed_at"] == "2026-01-24T22:14:20.485908"
+        assert "assessment_timestamp" not in result
+
+        # Check payout transformation (nested -> flat)
+        assert result["payout"] == 4500.0
+
+        # Check recommendations
+        assert result["recommendations"] == ["Verify VIN manually.", "Contact policyholder."]
+
+    def test_check_number_transformation(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that check_number is properly parsed."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment("12345")
+        checks = result["checks"]
+
+        # Integer check_number should stay as-is
+        assert checks[0]["check_number"] == 1
+
+        # String check_number "1b" should become 1
+        assert checks[1]["check_number"] == 1
+
+        # Integer check_number 2
+        assert checks[2]["check_number"] == 2
+
+    def test_assumption_impact_transformation(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that confidence_impact is transformed to lowercase impact."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment("12345")
+        assumptions = result["assumptions"]
+
+        assert len(assumptions) == 1
+        # confidence_impact: "HIGH" -> impact: "high"
+        assert assumptions[0]["impact"] == "high"
+        assert "confidence_impact" not in assumptions[0]
+
+    def test_fraud_indicators_transformation(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that fraud indicators are transformed correctly."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment("12345")
+        indicators = result["fraud_indicators"]
+
+        assert len(indicators) == 1
+        assert indicators[0]["indicator"] == "Duplicate claim"
+        assert indicators[0]["severity"] == "high"
+        assert indicators[0]["details"] == "Similar claim filed last month."
+
+    def test_get_assessment_handles_json_error(
+        self, service, temp_claims_dir
+    ):
+        """Test that invalid JSON returns None."""
+        context_dir = temp_claims_dir / "badclaim" / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        assessment_path = context_dir / "assessment.json"
+        assessment_path.write_text("not valid json")
+
+        result = service.get_assessment("badclaim")
+        assert result is None
+
+    def test_get_assessment_history_returns_list(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that assessment history returns a list."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment_history("12345")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_get_assessment_history_entry_structure(
+        self, service, temp_claims_dir, sample_assessment
+    ):
+        """Test that history entry has correct structure."""
+        self.create_assessment_file(temp_claims_dir, "12345", sample_assessment)
+
+        result = service.get_assessment_history("12345")
+        entry = result[0]
+
+        assert entry["timestamp"] == "2026-01-24T22:14:20.485908"
+        assert entry["decision"] == "APPROVE"
+        # confidence_score is converted from decimal (0.95) to percentage (95)
+        assert entry["confidence_score"] == 95.0
+        assert entry["payout"] == 4500.0
+        # 2 PASS checks out of 3 total
+        assert entry["checks_passed"] == 2
+        assert entry["checks_total"] == 3
+        assert entry["assumption_count"] == 1
+
+    def test_get_assessment_history_empty_for_missing_claim(self, service):
+        """Test that missing claim returns empty history."""
+        result = service.get_assessment_history("nonexistent")
+        assert result == []
+
+    def test_get_assessment_with_direct_payout_value(
+        self, service, temp_claims_dir
+    ):
+        """Test assessment with payout as a direct number."""
+        assessment = {
+            "claim_id": "67890",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.8,
+            "payout": 0,  # Direct number, not nested
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "67890", assessment)
+
+        result = service.get_assessment("67890")
+
+        assert result["payout"] == 0
+        assert result["decision"] == "REJECT"
+        # confidence_score 0.8 -> 80%
+        assert result["confidence_score"] == 80.0
+
+    def test_confidence_score_percentage_conversion(
+        self, service, temp_claims_dir
+    ):
+        """Test that confidence_score is converted from decimal to percentage."""
+        assessment = {
+            "claim_id": "test123",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 1.0,  # 100%
+            "payout": 1000,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "test123", assessment)
+
+        result = service.get_assessment("test123")
+
+        # 1.0 -> 100%
+        assert result["confidence_score"] == 100.0
+
+    def test_confidence_score_already_percentage_not_converted(
+        self, service, temp_claims_dir
+    ):
+        """Test that confidence_score > 1.0 is not converted (already a percentage)."""
+        assessment = {
+            "claim_id": "test456",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 85.5,  # Already a percentage
+            "payout": 1000,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "test456", assessment)
+
+        result = service.get_assessment("test456")
+
+        # Should remain as-is since it's > 1.0
+        assert result["confidence_score"] == 85.5
+
+    def test_invalid_check_result_mapped_to_inconclusive(
+        self, service, temp_claims_dir
+    ):
+        """Test that invalid check results like N/A are mapped to INCONCLUSIVE."""
+        assessment = {
+            "claim_id": "test789",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.9,
+            "payout": 0,
+            "checks": [
+                {"check_number": 1, "check_name": "test", "result": "N/A", "details": "Not applicable", "evidence_refs": []},
+                {"check_number": 2, "check_name": "test2", "result": "UNKNOWN", "details": "Unknown", "evidence_refs": []},
+                {"check_number": 3, "check_name": "test3", "result": "PASS", "details": "OK", "evidence_refs": []},
+            ],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "test789", assessment)
+
+        result = service.get_assessment("test789")
+        checks = result["checks"]
+
+        # N/A and UNKNOWN should be mapped to INCONCLUSIVE
+        assert checks[0]["result"] == "INCONCLUSIVE"
+        assert checks[1]["result"] == "INCONCLUSIVE"
+        # PASS should remain as-is
+        assert checks[2]["result"] == "PASS"
+
+    def test_parse_check_number_edge_cases(self, service):
+        """Test edge cases for check number parsing."""
+        # Integer
+        assert service._parse_check_number(5) == 5
+
+        # Simple string
+        assert service._parse_check_number("3") == 3
+
+        # String with letter suffix
+        assert service._parse_check_number("2a") == 2
+        assert service._parse_check_number("1b") == 1
+
+        # Multi-digit
+        assert service._parse_check_number("10c") == 10
+
+        # No digits
+        assert service._parse_check_number("abc") == 0
+
+        # Empty string
+        assert service._parse_check_number("") == 0
+
+        # None-like
+        assert service._parse_check_number(None) == 0
+
+    def test_payout_breakdown_full(self, service, temp_claims_dir):
+        """Test that full payout breakdown is preserved."""
+        assessment = {
+            "claim_id": "breakdown1",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "decision_rationale": "All checks passed and policy is valid",
+            "payout": {
+                "total_claimed": 7315.95,
+                "non_covered_deductions": 0,
+                "covered_subtotal": 5642.52,
+                "coverage_percent": 40,
+                "after_coverage": 5000.0,
+                "deductible": 500.0,
+                "final_payout": 4500.0,
+                "currency": "CHF",
+            },
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "breakdown1", assessment)
+
+        result = service.get_assessment("breakdown1")
+
+        # Check payout_breakdown is present with all fields
+        breakdown = result.get("payout_breakdown")
+        assert breakdown is not None
+        assert breakdown["total_claimed"] == 7315.95
+        assert breakdown["non_covered_deductions"] == 0
+        assert breakdown["covered_subtotal"] == 5642.52
+        assert breakdown["coverage_percent"] == 40
+        assert breakdown["after_coverage"] == 5000.0
+        assert breakdown["deductible"] == 500.0
+        assert breakdown["final_payout"] == 4500.0
+        assert breakdown["currency"] == "CHF"
+
+    def test_payout_breakdown_with_direct_number(self, service, temp_claims_dir):
+        """Test payout breakdown when payout is a direct number."""
+        assessment = {
+            "claim_id": "direct_payout",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.9,
+            "payout": 0,  # Direct number
+            "currency": "EUR",
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "direct_payout", assessment)
+
+        result = service.get_assessment("direct_payout")
+
+        breakdown = result.get("payout_breakdown")
+        assert breakdown is not None
+        assert breakdown["final_payout"] == 0
+        assert breakdown["currency"] == "EUR"
+        # Other fields should be None
+        assert breakdown.get("total_claimed") is None
+
+    def test_decision_rationale_preserved(self, service, temp_claims_dir):
+        """Test that decision_rationale is preserved."""
+        assessment = {
+            "claim_id": "rationale1",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.85,
+            "decision_rationale": "Policy expired before incident date",
+            "payout": 0,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "rationale1", assessment)
+
+        result = service.get_assessment("rationale1")
+
+        assert result["decision_rationale"] == "Policy expired before incident date"
+
+    def test_decision_rationale_null_when_missing(self, service, temp_claims_dir):
+        """Test that missing decision_rationale returns None."""
+        assessment = {
+            "claim_id": "no_rationale",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "payout": 1000,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "no_rationale", assessment)
+
+        result = service.get_assessment("no_rationale")
+
+        assert result.get("decision_rationale") is None
+
+    def test_payout_breakdown_currency_fallback(self, service, temp_claims_dir):
+        """Test currency fallback from top-level when not in payout structure."""
+        assessment = {
+            "claim_id": "currency_fallback",
+            "assessment_timestamp": "2026-01-25T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "currency": "USD",  # Top-level currency
+            "payout": {
+                "total_claimed": 1000,
+                "final_payout": 800,
+                # No currency in payout
+            },
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        self.create_assessment_file(temp_claims_dir, "currency_fallback", assessment)
+
+        result = service.get_assessment("currency_fallback")
+
+        breakdown = result.get("payout_breakdown")
+        assert breakdown["currency"] == "USD"  # Falls back to top-level
