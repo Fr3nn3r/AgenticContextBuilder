@@ -189,7 +189,7 @@ export interface DocReviewRequest {
 
 export interface FieldRule {
   normalize?: string;
-  validate?: string;
+  validation?: string;
   hints?: string[];
 }
 

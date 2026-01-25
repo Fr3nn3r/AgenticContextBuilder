@@ -82,6 +82,28 @@ python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 - Test new/changed logic with PyTest or Jest
 - Do not start/stop dev servers automatically - ask user first
 
+## Architecture Rules (CRITICAL)
+
+**NEVER add code to these files - they are being refactored:**
+- `api/main.py` - Use existing routers or create new ones in `api/routers/`
+- `pipeline/run.py` - Add stage logic to `pipeline/stages/` modules
+
+**Where to put new code:**
+| Adding... | Put it in... |
+|-----------|--------------|
+| New API endpoint | `api/routers/{domain}.py` (create if needed) |
+| New business logic | `api/services/{domain}.py` |
+| New pipeline behavior | `pipeline/stages/{stage}.py` |
+| New storage logic | `storage/{domain}.py` |
+| Shared data models | `schemas/` |
+
+**Red flags - STOP and ask user:**
+- Adding >50 lines to any single file
+- Any edit to `api/main.py` or `pipeline/run.py`
+- Duplicating logic that exists elsewhere
+
+**Full guidelines:** `docs/DEVELOPER_GUIDELINES.md`
+
 ## Versioning & Commits
 
 **Current version**: Check `pyproject.toml` (backend) and `ui/package.json` (frontend) - kept in sync.
@@ -127,7 +149,7 @@ Use these prefixes to indicate the type of change:
 Customer-specific extractors, prompts, and specs are stored in **separate git repos** (not in the main codebase).
 
 **Workflow:**
-1. Edit in workspace: `workspaces/nsa-2/config/extractors/`, `extraction_specs/`, `prompts/`
+1. Edit in workspace: `workspaces/nsa/config/extractors/`, `extraction_specs/`, `prompts/`
 2. Test: `python -m context_builder.cli pipeline <input_claims_folder>`
 3. Copy to customer repo: `cd ../context-builder-nsa && .\copy-from-workspace.ps1`
 4. Commit in customer repo: `git add -A && git commit -m "message" && git push`

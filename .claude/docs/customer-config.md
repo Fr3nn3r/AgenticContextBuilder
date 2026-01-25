@@ -17,7 +17,7 @@ Customer-specific extractors, prompts, and field specifications are stored in **
 C:\Users\fbrun\Documents\GitHub\
 ├── AgenticContextBuilder/              # Main application (generic)
 │   ├── src/context_builder/            # Application code
-│   └── workspaces/nsa-2/config/        # Active workspace config (gitignored)
+│   └── workspaces/nsa/config/          # Active workspace config (gitignored)
 │       ├── extractors/                 # Loaded dynamically at runtime
 │       ├── extraction_specs/
 │       └── prompts/
@@ -58,7 +58,7 @@ The active workspace is determined by `.contextbuilder/workspaces.json`. The con
 
 ### For Customer-Specific Changes
 
-1. **Edit** files in the workspace (`workspaces/nsa-2/config/...`)
+1. **Edit** files in the workspace (`workspaces/nsa/config/...`)
 2. **Test** by running extraction (changes load automatically)
 3. **Copy** to customer repo using `copy-from-workspace.ps1`
 4. **Commit** in customer repo

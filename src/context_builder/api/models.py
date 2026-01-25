@@ -138,7 +138,7 @@ class FieldRule(BaseModel):
     """Field extraction rule."""
 
     normalize: str = "uppercase_trim"
-    validate: str = "non_empty"
+    validation: str = "non_empty"
     hints: List[str] = []
 
 

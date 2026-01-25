@@ -190,9 +190,9 @@ function FieldCard({ name, rule, required }: { name: string; rule?: FieldRule; r
               <span className="text-muted-foreground/70">Normalize:</span> {rule.normalize}
             </div>
           )}
-          {rule.validate && (
+          {rule.validation && (
             <div>
-              <span className="text-muted-foreground/70">Validate:</span> {rule.validate}
+              <span className="text-muted-foreground/70">Validation:</span> {rule.validation}
             </div>
           )}
           {rule.hints && rule.hints.length > 0 && (
