@@ -26,6 +26,287 @@ from openai import OpenAI
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.storage.workspace_paths import get_active_workspace_path
 
+
+# JSON Schema for assessment output validation
+ASSESSMENT_SCHEMA = {
+    "type": "object",
+    "required": ["schema_version", "claim_id", "decision", "confidence_score", "checks", "payout"],
+    "properties": {
+        "schema_version": {"type": "string"},
+        "claim_id": {"type": "string"},
+        "decision": {"enum": ["APPROVE", "REJECT", "REFER_TO_HUMAN"]},
+        "decision_rationale": {"type": "string"},
+        "confidence_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "checks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["check_number", "check_name", "result"],
+                "properties": {
+                    "check_number": {"type": ["integer", "string"]},
+                    "check_name": {"type": "string"},
+                    "result": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+                    "details": {"type": "string"},
+                }
+            }
+        },
+        "payout": {
+            "type": "object",
+            "required": ["final_payout", "currency"],
+            "properties": {
+                "total_claimed": {"type": "number", "minimum": 0},
+                "non_covered_deductions": {"type": "number", "minimum": 0},
+                "covered_subtotal": {"type": "number", "minimum": 0},
+                "coverage_percent": {"type": ["number", "integer"]},
+                "after_coverage": {"type": "number", "minimum": 0},
+                "deductible": {"type": "number", "minimum": 0},
+                "final_payout": {"type": "number", "minimum": 0},
+                "currency": {"type": "string"},
+            }
+        },
+        "assumptions": {"type": "array"},
+        "fraud_indicators": {"type": "array"},
+        "recommendations": {"type": "array"},
+    }
+}
+
+
+def load_assumptions() -> dict:
+    """Load assumptions.json from workspace config."""
+    workspace_path = get_active_workspace_path()
+    assumptions_path = workspace_path / "config" / "assumptions.json"
+
+    if not assumptions_path.exists():
+        logging.getLogger(__name__).warning(
+            f"No assumptions.json found at {assumptions_path}"
+        )
+        return {}
+
+    with open(assumptions_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def lookup_part_coverage(item: dict, assumptions: dict) -> dict:
+    """
+    Lookup part coverage from assumptions.
+
+    Returns a dict with:
+    - lookup_method: "part_number", "keyword", "excluded_keyword", or "not_found"
+    - system: the system this part belongs to (if found)
+    - component: specific component name (if found)
+    - covered: True, False, or None (if not found)
+    - action: what to do if not found (e.g., "REFER_TO_HUMAN")
+    """
+    mapping = assumptions.get("part_system_mapping", {})
+    desc = item.get("description", "").upper()  # Use upper for excluded keywords
+
+    # Check excluded items first (these are never covered)
+    excluded = assumptions.get("excluded_items", {})
+    excluded_keywords = excluded.get("keywords", [])
+    for keyword in excluded_keywords:
+        if keyword.upper() in desc:
+            return {
+                "lookup_method": "excluded_keyword",
+                "matched_keyword": keyword,
+                "covered": False,
+                "reason": "excluded_item",
+            }
+
+    # Try part number
+    part_num = item.get("item_code", "")
+    by_part_number = mapping.get("by_part_number", {})
+    if part_num in by_part_number:
+        result = by_part_number[part_num].copy()
+        result["lookup_method"] = "part_number"
+        return result
+
+    # Try keyword matching (case-insensitive)
+    desc_lower = item.get("description", "").lower()
+    by_keyword = mapping.get("by_keyword", {})
+    for keyword, info in by_keyword.items():
+        if keyword.lower() in desc_lower:
+            result = info.copy()
+            result["lookup_method"] = "keyword"
+            result["matched_keyword"] = keyword
+            return result
+
+    # Not found - return default action
+    return {
+        "lookup_method": "not_found",
+        "covered": None,
+        "action": assumptions.get("business_rules", {})
+        .get("unknown_part_coverage", {})
+        .get("action", "REFER_TO_HUMAN"),
+        "reason": assumptions.get("business_rules", {})
+        .get("unknown_part_coverage", {})
+        .get("reason", "Part not found in coverage lookup table"),
+    }
+
+
+def lookup_authorization(shop_name: str, assumptions: dict) -> dict:
+    """
+    Lookup shop authorization status from assumptions.
+
+    Returns a dict with:
+    - lookup_method: "exact_name", "pattern", or "not_found"
+    - authorized: True, False, or None
+    - action: what to do if not found
+    """
+    partners = assumptions.get("authorized_partners", {})
+
+    if not shop_name:
+        return {
+            "lookup_method": "not_found",
+            "authorized": None,
+            "action": partners.get("_default_if_unknown", "REFER_TO_HUMAN"),
+            "reason": "No shop name provided",
+        }
+
+    # Try exact name match first
+    by_name = partners.get("by_name", {})
+    for name, info in by_name.items():
+        if name.lower() in shop_name.lower() or shop_name.lower() in name.lower():
+            result = info.copy()
+            result["lookup_method"] = "exact_name"
+            result["matched_name"] = name
+            return result
+
+    # Try pattern matching
+    by_pattern = partners.get("by_pattern", [])
+    for pattern_info in by_pattern:
+        pattern = pattern_info.get("pattern", "")
+        try:
+            if re.match(pattern, shop_name, re.IGNORECASE):
+                result = pattern_info.copy()
+                result["lookup_method"] = "pattern"
+                return result
+        except re.error:
+            continue
+
+    # Not found
+    return {
+        "lookup_method": "not_found",
+        "authorized": None,
+        "action": partners.get("_default_if_unknown", "REFER_TO_HUMAN"),
+        "reason": "Shop not found in authorized partners list",
+    }
+
+
+def get_fact_value(claim_facts: dict, fact_name: str) -> str | None:
+    """Extract a fact value from claim_facts by name."""
+    facts = claim_facts.get("facts", [])
+    for fact in facts:
+        if fact.get("name") == fact_name:
+            return fact.get("value")
+    return None
+
+
+def enrich_claim_facts(claim_facts: dict, assumptions: dict) -> dict:
+    """
+    Pre-process claim facts using assumptions lookup.
+    Adds deterministic coverage flags before sending to LLM.
+
+    Adds:
+    - _coverage_lookup to each line item in structured_data
+    - _shop_authorization_lookup at top level
+    - _assumptions_version for traceability
+    """
+    if not assumptions:
+        return claim_facts
+
+    enriched = claim_facts.copy()
+
+    # Add assumptions version for traceability
+    enriched["_assumptions_version"] = assumptions.get("schema_version", "unknown")
+    enriched["_assumptions_updated_at"] = assumptions.get("updated_at", "unknown")
+
+    # Enrich line items with coverage info
+    if "structured_data" in enriched and "line_items" in enriched["structured_data"]:
+        enriched["structured_data"] = enriched["structured_data"].copy()
+        enriched["structured_data"]["line_items"] = []
+
+        for item in claim_facts["structured_data"]["line_items"]:
+            enriched_item = item.copy()
+            coverage = lookup_part_coverage(item, assumptions)
+            enriched_item["_coverage_lookup"] = coverage
+            enriched["structured_data"]["line_items"].append(enriched_item)
+
+    # Enrich repair shop authorization
+    shop_name = get_fact_value(enriched, "garage_name")
+    if shop_name:
+        auth = lookup_authorization(shop_name, assumptions)
+        enriched["_shop_authorization_lookup"] = auth
+
+    return enriched
+
+
+def validate_assessment(assessment: dict) -> tuple[bool, list[str]]:
+    """
+    Validate assessment against schema and business rules.
+
+    Returns:
+        Tuple of (is_valid, list_of_errors)
+    """
+    errors = []
+
+    # Check required fields
+    required = ["schema_version", "claim_id", "decision", "confidence_score", "payout"]
+    for field in required:
+        if field not in assessment:
+            errors.append(f"Missing required field: {field}")
+
+    # Validate decision enum
+    decision = assessment.get("decision")
+    if decision and decision not in ("APPROVE", "REJECT", "REFER_TO_HUMAN"):
+        errors.append(f"Invalid decision value: {decision}")
+
+    # Validate confidence score range
+    confidence = assessment.get("confidence_score")
+    if confidence is not None:
+        if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+            errors.append(f"Confidence score must be between 0 and 1: {confidence}")
+
+    # Validate payout structure
+    payout = assessment.get("payout", {})
+    if "final_payout" not in payout:
+        errors.append("Missing payout.final_payout")
+    if "currency" not in payout:
+        errors.append("Missing payout.currency")
+
+    # Business rule: REJECT/REFER_TO_HUMAN must have final_payout = 0
+    if decision in ("REJECT", "REFER_TO_HUMAN"):
+        final_payout = payout.get("final_payout", 0)
+        if final_payout > 0:
+            errors.append(
+                f"Business rule violation: {decision} decision must have final_payout=0, "
+                f"got {final_payout}"
+            )
+
+    return len(errors) == 0, errors
+
+
+def enforce_business_rules(assessment: dict) -> dict:
+    """
+    Enforce business rules on the assessment output.
+
+    Rules:
+    - REJECT/REFER_TO_HUMAN must have final_payout = 0
+    """
+    decision = assessment.get("decision")
+
+    if decision in ("REJECT", "REFER_TO_HUMAN"):
+        if "payout" in assessment:
+            original_payout = assessment["payout"].get("final_payout", 0)
+            if original_payout > 0:
+                assessment["payout"]["final_payout"] = 0
+                assessment["payout"]["_original_payout_before_enforcement"] = original_payout
+                assessment["payout"]["_enforcement_note"] = (
+                    f"Payout set to 0 because decision is {decision}"
+                )
+
+    return assessment
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -116,6 +397,14 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
 
     # Load claim facts
     claim_facts = load_claim_facts(claim_id)
+
+    # Load assumptions and enrich claim facts with lookup results
+    assumptions = load_assumptions()
+    if assumptions:
+        logger.info(f"Loaded assumptions v{assumptions.get('schema_version', '?')}")
+        claim_facts = enrich_claim_facts(claim_facts, assumptions)
+        logger.info("Enriched claim facts with coverage and authorization lookups")
+
     claim_facts_json = json.dumps(claim_facts, indent=2)
 
     # Load and render prompt
@@ -159,6 +448,15 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
             "raw_response": response_text
         }
 
+    # Validate assessment output
+    is_valid, validation_errors = validate_assessment(assessment_json)
+    if not is_valid:
+        logger.warning(f"Assessment validation errors: {validation_errors}")
+        assessment_json["_validation_errors"] = validation_errors
+
+    # Enforce business rules (e.g., payout=0 for REJECT)
+    assessment_json = enforce_business_rules(assessment_json)
+
     # Add metadata
     assessment_json["_meta"] = {
         "model": config.get("model", "gpt-4o"),
@@ -167,6 +465,8 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
         "completion_tokens": response.usage.completion_tokens,
         "total_tokens": response.usage.total_tokens,
         "processed_at": datetime.now().isoformat(),
+        "assumptions_version": assumptions.get("schema_version") if assumptions else None,
+        "assumptions_updated_at": assumptions.get("updated_at") if assumptions else None,
     }
 
     # Save outputs
