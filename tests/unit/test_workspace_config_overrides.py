@@ -436,20 +436,20 @@ class TestWorkspaceConfigHash:
 
     def test_compute_workspace_config_hash_empty_dir(self, tmp_path):
         """Test hash computation with empty config dir."""
-        from context_builder.pipeline.run import _compute_workspace_config_hash
+        from context_builder.pipeline.helpers.metadata import compute_workspace_config_hash
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            result = _compute_workspace_config_hash()
+            result = compute_workspace_config_hash()
             assert result is None  # Empty dir returns None
 
     def test_compute_workspace_config_hash_with_files(self, tmp_path):
         """Test hash computation with config files."""
-        from context_builder.pipeline.run import _compute_workspace_config_hash
+        from context_builder.pipeline.helpers.metadata import compute_workspace_config_hash
 
         config_dir = tmp_path / "config"
         prompts_dir = config_dir / "prompts"
@@ -459,44 +459,44 @@ class TestWorkspaceConfigHash:
         (prompts_dir / "test.md").write_text("test prompt content")
         (config_dir / "tenant.yaml").write_text("tenant_id: test")
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            result = _compute_workspace_config_hash()
+            result = compute_workspace_config_hash()
             assert result is not None
             assert len(result) == 64  # SHA-256 hex length
 
     def test_compute_workspace_config_hash_deterministic(self, tmp_path):
         """Test that hash is deterministic for same content."""
-        from context_builder.pipeline.run import _compute_workspace_config_hash
+        from context_builder.pipeline.helpers.metadata import compute_workspace_config_hash
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "test.yaml").write_text("content: same")
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            hash1 = _compute_workspace_config_hash()
-            hash2 = _compute_workspace_config_hash()
+            hash1 = compute_workspace_config_hash()
+            hash2 = compute_workspace_config_hash()
             assert hash1 == hash2
 
     def test_compute_workspace_config_hash_changes_with_content(self, tmp_path):
         """Test that hash changes when content changes."""
-        from context_builder.pipeline.run import _compute_workspace_config_hash
+        from context_builder.pipeline.helpers.metadata import compute_workspace_config_hash
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         test_file = config_dir / "test.yaml"
         test_file.write_text("content: original")
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            hash1 = _compute_workspace_config_hash()
+            hash1 = compute_workspace_config_hash()
 
             test_file.write_text("content: modified")
-            hash2 = _compute_workspace_config_hash()
+            hash2 = compute_workspace_config_hash()
 
             assert hash1 != hash2
 
@@ -506,7 +506,7 @@ class TestWorkspaceConfigSnapshot:
 
     def test_snapshot_workspace_config_creates_copy(self, tmp_path):
         """Test that snapshot creates a copy of config dir."""
-        from context_builder.pipeline.run import _snapshot_workspace_config
+        from context_builder.pipeline.helpers.metadata import snapshot_workspace_config
         from context_builder.pipeline.paths import RunPaths
 
         # Create config dir with files
@@ -531,10 +531,10 @@ class TestWorkspaceConfigSnapshot:
             complete_marker=run_root / ".complete",
         )
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            snapshot_path = _snapshot_workspace_config(run_paths)
+            snapshot_path = snapshot_workspace_config(run_paths)
 
             assert snapshot_path is not None
             assert snapshot_path.exists()
@@ -547,7 +547,7 @@ class TestWorkspaceConfigSnapshot:
 
     def test_snapshot_workspace_config_empty_returns_none(self, tmp_path):
         """Test that snapshot returns None for empty config dir."""
-        from context_builder.pipeline.run import _snapshot_workspace_config
+        from context_builder.pipeline.helpers.metadata import snapshot_workspace_config
         from context_builder.pipeline.paths import RunPaths
 
         config_dir = tmp_path / "config"
@@ -567,10 +567,10 @@ class TestWorkspaceConfigSnapshot:
             complete_marker=run_root / ".complete",
         )
 
-        with patch("context_builder.pipeline.run.get_workspace_config_dir") as mock_config:
+        with patch("context_builder.pipeline.helpers.metadata.get_workspace_config_dir") as mock_config:
             mock_config.return_value = config_dir
 
-            result = _snapshot_workspace_config(run_paths)
+            result = snapshot_workspace_config(run_paths)
             assert result is None
 
 

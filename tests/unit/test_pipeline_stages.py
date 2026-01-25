@@ -4,7 +4,7 @@ Tests for:
 - PipelineStage enum
 - StageConfig dataclass and its properties
 - parse_stages() CLI helper
-- _load_existing_ingestion() and _load_existing_classification()
+- load_existing_ingestion() and load_existing_classification()
 - Stage-aware process_document() behavior
 """
 
@@ -17,12 +17,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from context_builder.schemas.run_errors import PipelineStage
-from context_builder.pipeline.run import (
-    StageConfig,
-    DocResult,
-    _load_existing_ingestion,
-    _load_existing_classification,
-)
+from context_builder.pipeline.stages import StageConfig, DocResult
+from context_builder.pipeline.stages.ingestion import load_existing_ingestion
+from context_builder.pipeline.stages.classification import load_existing_classification
 from context_builder.cli import parse_stages
 
 
@@ -167,7 +164,7 @@ class TestParseStages:
 
 
 class TestLoadExistingIngestion:
-    """Tests for _load_existing_ingestion()."""
+    """Tests for load_existing_ingestion()."""
 
     @pytest.fixture
     def doc_paths_with_pages(self, tmp_path):
@@ -200,7 +197,7 @@ class TestLoadExistingIngestion:
         """Successfully load existing pages.json."""
         doc_paths, expected_data = doc_paths_with_pages
 
-        text_content, pages_data = _load_existing_ingestion(doc_paths)
+        text_content, pages_data = load_existing_ingestion(doc_paths)
 
         assert pages_data["doc_id"] == "test_doc_123"
         assert pages_data["page_count"] == 2
@@ -210,14 +207,14 @@ class TestLoadExistingIngestion:
     def test_load_missing_pages_json(self, doc_paths_without_pages):
         """Raise FileNotFoundError when pages.json missing."""
         with pytest.raises(FileNotFoundError) as excinfo:
-            _load_existing_ingestion(doc_paths_without_pages)
+            load_existing_ingestion(doc_paths_without_pages)
         assert "pages.json not found" in str(excinfo.value)
 
     def test_reconstructed_text_from_pages(self, doc_paths_with_pages):
         """Text should be reconstructed from all pages."""
         doc_paths, _ = doc_paths_with_pages
 
-        text_content, _ = _load_existing_ingestion(doc_paths)
+        text_content, _ = load_existing_ingestion(doc_paths)
 
         # Text should contain content from both pages
         assert "Page 1 content" in text_content
@@ -225,7 +222,7 @@ class TestLoadExistingIngestion:
 
 
 class TestLoadExistingClassification:
-    """Tests for _load_existing_classification()."""
+    """Tests for load_existing_classification()."""
 
     @pytest.fixture
     def doc_paths_with_doc_json(self, tmp_path):
@@ -256,7 +253,7 @@ class TestLoadExistingClassification:
         """Successfully load existing doc.json."""
         doc_paths, expected = doc_paths_with_doc_json
 
-        doc_type, language, confidence = _load_existing_classification(doc_paths)
+        doc_type, language, confidence = load_existing_classification(doc_paths)
 
         assert doc_type == "fnol_form"
         assert language == "en"
@@ -265,7 +262,7 @@ class TestLoadExistingClassification:
     def test_load_missing_doc_json(self, doc_paths_without_doc_json):
         """Raise FileNotFoundError when doc.json missing."""
         with pytest.raises(FileNotFoundError) as excinfo:
-            _load_existing_classification(doc_paths_without_doc_json)
+            load_existing_classification(doc_paths_without_doc_json)
         assert "doc.json not found" in str(excinfo.value)
 
     def test_default_values_for_missing_fields(self, tmp_path):
@@ -277,7 +274,7 @@ class TestLoadExistingClassification:
         doc_json.write_text(json.dumps({"doc_id": "test"}), encoding="utf-8")
         doc_paths.doc_json = doc_json
 
-        doc_type, language, confidence = _load_existing_classification(doc_paths)
+        doc_type, language, confidence = load_existing_classification(doc_paths)
 
         assert doc_type == "unknown"
         assert language == "es"
