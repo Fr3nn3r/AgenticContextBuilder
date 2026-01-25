@@ -23,8 +23,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from openai import OpenAI
-
+from context_builder.services.assessment_audit import (
+    create_assessment_client,
+    log_assessment_decision,
+)
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.storage.workspace_paths import get_active_workspace_path
 
@@ -510,16 +512,17 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
         logger.info(f"  - Max tokens: {config.get('max_tokens', 8192)}")
         return {"status": "dry_run", "claim_id": claim_id}
 
-    # Call OpenAI API
-    client = OpenAI()
+    # Call OpenAI API with audited client for token tracking
+    audited_client = create_assessment_client(claim_id=claim_id)
 
-    logger.info("Calling OpenAI API...")
-    response = client.chat.completions.create(
+    logger.info("Calling OpenAI API (audited)...")
+    response = audited_client.chat_completions_create(
         model=config.get("model", "gpt-4o"),
         messages=messages,
         temperature=config.get("temperature", 0.2),
         max_tokens=config.get("max_tokens", 8192),
     )
+    call_id = audited_client.get_call_id()
 
     response_text = response.choices[0].message.content
 
@@ -590,16 +593,37 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
     # Log summary
     decision = assessment_json.get("decision", "UNKNOWN")
     confidence = assessment_json.get("confidence_score", 0)
-    payout = assessment_json.get("payout", {}).get("final_payout", "N/A")
+    payout_data = assessment_json.get("payout", {})
+    payout_amount = payout_data.get("final_payout", "N/A")
 
-    logger.info(f"Assessment complete: Decision={decision}, Confidence={confidence}, Payout={payout}")
+    # Log assessment decision to compliance ledger
+    try:
+        log_assessment_decision(
+            claim_id=claim_id,
+            decision=decision,
+            confidence_score=confidence if isinstance(confidence, float) else 0.0,
+            payout=payout_data,
+            checks=assessment_json.get("checks", []),
+            llm_call_id=call_id,
+            rationale_summary=assessment_json.get("decision_rationale"),
+            metadata={
+                "model": config.get("model"),
+                "input_hash": input_hash,
+                "assumptions_version": assumptions.get("schema_version") if assumptions else None,
+            },
+        )
+        logger.info("Assessment decision logged to compliance ledger")
+    except Exception as e:
+        logger.warning(f"Failed to log assessment decision to compliance ledger: {e}")
+
+    logger.info(f"Assessment complete: Decision={decision}, Confidence={confidence}, Payout={payout_amount}")
 
     return {
         "status": "success",
         "claim_id": claim_id,
         "decision": decision,
         "confidence_score": confidence,
-        "final_payout": payout,
+        "final_payout": payout_amount,
         "report_path": str(report_path),
         "json_path": str(json_path),
     }

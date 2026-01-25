@@ -21,6 +21,7 @@ class DecisionType(str, Enum):
     QUALITY_GATE = "quality_gate"
     HUMAN_REVIEW = "human_review"
     OVERRIDE = "override"
+    ASSESSMENT = "assessment"
 
 
 class ScopeSnapshot(BaseModel):
@@ -146,6 +147,20 @@ class DecisionOutcome(BaseModel):
     original_value: Optional[Any] = Field(None, description="Original value before override")
     override_value: Optional[Any] = Field(None, description="New value after override")
     override_reason: Optional[str] = Field(None, description="Reason for the override")
+
+    # Assessment outcomes
+    assessment_decision: Optional[str] = Field(
+        None, description="Assessment decision: APPROVE/REJECT/REFER_TO_HUMAN"
+    )
+    assessment_payout: Optional[Dict[str, Any]] = Field(
+        None, description="Payout calculation details"
+    )
+    assessment_checks: Optional[List[Dict[str, Any]]] = Field(
+        None, description="List of checks performed with results"
+    )
+    assessment_confidence: Optional[float] = Field(
+        None, description="Confidence score for the assessment (0-1)"
+    )
 
 
 class DecisionRecord(BaseModel):

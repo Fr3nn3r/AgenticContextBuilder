@@ -162,6 +162,7 @@ class TokenCostsService:
                 "vision": "vision_ocr",
                 "vision_ocr": "vision_ocr",
                 "ocr": "vision_ocr",
+                "assessment": "assessment",
             }
             operation = op_map.get(operation, operation)
 
