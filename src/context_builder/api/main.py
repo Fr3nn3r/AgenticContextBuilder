@@ -21,19 +21,11 @@ Data structure expected:
       labels/{doc_id}.labels.json
 """
 
-from pathlib import Path as _Path
-from dotenv import load_dotenv
 import os as _os
 
-# Find project root (where .env is located) by going up from this file
-_project_root = _Path(__file__).resolve().parent.parent.parent.parent
-_env_path = _project_root / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path)
-    print(f"[startup] Loaded .env from {_env_path}")
-    print(f"[startup] AZURE_DI_ENDPOINT = {_os.getenv('AZURE_DI_ENDPOINT', 'NOT SET')[:30]}...")
-else:
-    print(f"[startup] WARNING: .env not found at {_env_path}")
+# Initialize startup (loads .env and workspace)
+from context_builder.startup import ensure_initialized as _ensure_initialized
+_ensure_initialized()
 
 import json
 import subprocess
@@ -58,33 +50,47 @@ from context_builder.api.models import (
     TemplateSpec,
 )
 from context_builder.api.services import (
-    AuditService,
-    AuthService,
-    ClaimsService,
     DocPhase,
-    DocumentsService,
-    EvolutionService,
-    InsightsService,
-    LabelsService,
-    PipelineService,
-    PromptConfigService,
     Role,
-    TokenCostsService,
-    TruthService,
-    UploadService,
-    UsersService,
     Workspace,
-    WorkspaceService,
 )
 from context_builder.api.services.utils import extract_claim_number, get_global_runs_dir
-from context_builder.services.compliance import (
-    DecisionStorage,
-    LLMCallStorage,
+from context_builder.api.dependencies import (
+    CurrentUser,
+    _get_global_config_dir,
+    _get_workspace_config_dir,
+    _get_workspace_logs_dir,
+    _get_workspace_registry_dir,
+    _reset_service_singletons,
+    get_audit_service,
+    get_auth_service,
+    get_claims_service,
+    get_compliance_config,
+    get_current_user,
+    get_data_dir,
+    get_decision_storage,
+    get_documents_service,
+    get_evolution_service,
+    get_insights_service,
+    get_labels_service,
+    get_llm_call_storage,
+    get_optional_user,
+    get_pipeline_service,
+    get_project_root,
+    get_prompt_config_service,
+    get_staging_dir,
+    get_storage,
+    get_token_costs_service,
+    get_truth_service,
+    get_upload_service,
+    get_users_service,
+    get_workspace_service,
+    require_admin,
+    require_compliance_access,
+    require_role,
+    set_data_dir,
 )
-from context_builder.services.compliance.config import ComplianceStorageConfig
-from context_builder.services.compliance.storage_factory import ComplianceStorageFactory
-from context_builder.services.llm_audit import reset_llm_audit_service
-from context_builder.storage.workspace_paths import reset_workspace_cache
+from context_builder.api.websocket import ConnectionManager, ws_manager
 
 
 # =============================================================================
@@ -114,18 +120,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Data directory - now points to output/claims with new structure
-# Compute path relative to project root (3 levels up from this file)
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-
-# Default paths (will be overwritten by active workspace on startup)
-DATA_DIR: Path = _PROJECT_ROOT / "output" / "claims"
-STAGING_DIR: Path = _PROJECT_ROOT / "output" / ".pending"
-
-# Check for Render persistent disk environment variable
-_RENDER_WORKSPACE = _os.getenv("RENDER_WORKSPACE_PATH")
-
-
 # =============================================================================
 # VERSION INFO
 # =============================================================================
@@ -133,7 +127,7 @@ _RENDER_WORKSPACE = _os.getenv("RENDER_WORKSPACE_PATH")
 
 def _get_app_version() -> str:
     """Read version from pyproject.toml."""
-    pyproject_path = _PROJECT_ROOT / "pyproject.toml"
+    pyproject_path = get_project_root() / "pyproject.toml"
     if not pyproject_path.exists():
         return "unknown"
 
@@ -158,7 +152,7 @@ def _get_git_commit_short() -> Optional[str]:
             capture_output=True,
             text=True,
             timeout=5,
-            cwd=str(_PROJECT_ROOT),
+            cwd=str(get_project_root()),
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -179,59 +173,6 @@ class VersionInfo(BaseModel):
     display: str  # Formatted for UI display
 
 
-def _load_active_workspace_on_startup() -> None:
-    """Load the active workspace from registry and set DATA_DIR/STAGING_DIR."""
-    global DATA_DIR, STAGING_DIR
-
-    # If running on Render with persistent disk, use that path
-    if _RENDER_WORKSPACE:
-        workspace_path = Path(_RENDER_WORKSPACE)
-        workspace_path.mkdir(parents=True, exist_ok=True)
-        DATA_DIR = workspace_path / "claims"
-        STAGING_DIR = workspace_path / ".pending"
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        STAGING_DIR.mkdir(parents=True, exist_ok=True)
-        print(f"[startup] Using Render workspace: {workspace_path}")
-        return
-
-    registry_path = _PROJECT_ROOT / ".contextbuilder" / "workspaces.json"
-
-    if not registry_path.exists():
-        print(f"[startup] No workspace registry found, using default: {DATA_DIR}")
-        return
-
-    try:
-        with open(registry_path, "r", encoding="utf-8") as f:
-            registry = json.load(f)
-
-        active_id = registry.get("active_workspace_id")
-        if not active_id:
-            print(f"[startup] No active workspace in registry, using default: {DATA_DIR}")
-            return
-
-        for ws in registry.get("workspaces", []):
-            if ws.get("workspace_id") == active_id:
-                workspace_path = Path(ws.get("path", ""))
-                # Resolve relative paths against project root
-                if not workspace_path.is_absolute():
-                    workspace_path = _PROJECT_ROOT / workspace_path
-                if workspace_path.exists():
-                    DATA_DIR = workspace_path / "claims"
-                    STAGING_DIR = workspace_path / ".pending"
-                    print(f"[startup] Loaded active workspace '{active_id}': {workspace_path}")
-                else:
-                    print(f"[startup] WARNING: Active workspace path does not exist: {workspace_path}")
-                return
-
-        print(f"[startup] WARNING: Active workspace '{active_id}' not found in registry")
-    except Exception as e:
-        print(f"[startup] WARNING: Failed to load workspace registry: {e}")
-
-
-# Load active workspace on module import
-_load_active_workspace_on_startup()
-
-
 def _resolve_workspace_path(path: str | Path) -> Path:
     """Resolve a workspace path, handling relative paths.
 
@@ -243,395 +184,24 @@ def _resolve_workspace_path(path: str | Path) -> Path:
     """
     workspace_path = Path(path)
     if not workspace_path.is_absolute():
-        workspace_path = _PROJECT_ROOT / workspace_path
+        workspace_path = get_project_root() / workspace_path
     return workspace_path
 
 
-def _get_global_config_dir() -> Path:
-    """Get global config directory (.contextbuilder/).
-
-    Used for data shared across all workspaces:
-    - Users and authentication
-    - Sessions
-    - Global audit logs
-    """
-    config_dir = _PROJECT_ROOT / ".contextbuilder"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
-
-
-def _get_workspace_config_dir() -> Path:
-    """Get workspace-scoped config directory.
-
-    Used for data specific to the active workspace:
-    - Pipeline prompt configs
-    - Workspace-specific settings
-    """
-    # DATA_DIR is {workspace}/claims, so parent is workspace root
-    config_dir = DATA_DIR.parent / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
-
-
-def _get_workspace_registry_dir() -> Path:
-    """Get workspace-scoped registry directory.
-
-    Used for indexes and batch counters:
-    - doc_index.jsonl
-    - run_index.jsonl
-    - label_index.jsonl
-    - batch_counter.json
-    """
-    # DATA_DIR is {workspace}/claims, so parent is workspace root
-    registry_dir = DATA_DIR.parent / "registry"
-    registry_dir.mkdir(parents=True, exist_ok=True)
-    return registry_dir
-
-
-def _get_workspace_logs_dir() -> Path:
-    """Get workspace-scoped logs directory.
-
-    Used for compliance logs specific to the active workspace:
-    - Decision ledger
-    - LLM call logs
-    """
-    # DATA_DIR is {workspace}/claims, so parent is workspace root
-    logs_dir = DATA_DIR.parent / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    return logs_dir
-
-
-# Storage abstraction layer (uses indexes when available)
-from context_builder.storage import FileStorage, StorageFacade
-
-
-def get_storage() -> StorageFacade:
-    """Get Storage instance (fresh for each request to see new runs)."""
-    return StorageFacade.from_storage(FileStorage(DATA_DIR))
-
-
-def set_data_dir(path: Path):
-    """Set the data directory for the API.
-
-    Args:
-        path: Base workspace path (e.g., output/).
-              DATA_DIR will be set to path/claims.
-              STAGING_DIR will be set to path/.pending.
-    """
-    global DATA_DIR, STAGING_DIR
-    DATA_DIR = path / "claims"
-    STAGING_DIR = path / ".pending"
-
-
-def get_claims_service() -> ClaimsService:
-    """Get ClaimsService instance."""
-    return ClaimsService(DATA_DIR, get_storage)
-
-
-def get_documents_service() -> DocumentsService:
-    """Get DocumentsService instance."""
-    return DocumentsService(DATA_DIR, get_storage)
-
-
-def get_labels_service() -> LabelsService:
-    """Get LabelsService instance with workspace-scoped compliance logging and index updates."""
-    return LabelsService(
-        get_storage,
-        ledger_dir=_get_workspace_logs_dir(),
-        registry_dir=_get_workspace_registry_dir(),
-    )
-
-
-def get_insights_service() -> InsightsService:
-    """Get InsightsService instance."""
-    return InsightsService(DATA_DIR)
-
-
-def get_token_costs_service() -> TokenCostsService:
-    """Get TokenCostsService instance for token usage and cost aggregation."""
-    return TokenCostsService(_get_workspace_logs_dir())
-
-
-def get_evolution_service() -> EvolutionService:
-    """Get EvolutionService instance.
-
-    Note: DATA_DIR is {workspace}/claims, but version_bundles are stored
-    at {workspace}/version_bundles, so we pass the workspace root.
-    """
-    return EvolutionService(DATA_DIR.parent)
-
-
-def get_upload_service() -> UploadService:
-    """Get UploadService instance with compliance logging."""
-    return UploadService(STAGING_DIR, DATA_DIR, ledger_dir=_get_workspace_logs_dir())
-
-
-def get_truth_service() -> TruthService:
-    """Get TruthService instance."""
-    return TruthService(DATA_DIR)
-
-
-# Global PipelineService instance (needs to maintain state across requests)
-_pipeline_service: Optional[PipelineService] = None
-
-
-def get_pipeline_service() -> PipelineService:
-    """Get PipelineService singleton instance."""
-    global _pipeline_service
-    if _pipeline_service is None:
-        _pipeline_service = PipelineService(DATA_DIR, get_upload_service())
-    return _pipeline_service
-
-
-# Global PromptConfigService instance
-_prompt_config_service: Optional[PromptConfigService] = None
-
-
-def get_prompt_config_service() -> PromptConfigService:
-    """Get PromptConfigService singleton instance (workspace-scoped)."""
-    global _prompt_config_service
-    if _prompt_config_service is None:
-        _prompt_config_service = PromptConfigService(_get_workspace_config_dir())
-    return _prompt_config_service
-
-
-# Global AuditService instance
-_audit_service: Optional[AuditService] = None
-
-
-def get_audit_service() -> AuditService:
-    """Get AuditService singleton instance (global, shared across workspaces)."""
-    global _audit_service
-    if _audit_service is None:
-        _audit_service = AuditService(_get_global_config_dir())
-    return _audit_service
-
-
-# Global UsersService instance
-_users_service: Optional[UsersService] = None
-
-
-def get_users_service() -> UsersService:
-    """Get UsersService singleton instance (global, shared across workspaces)."""
-    global _users_service
-    if _users_service is None:
-        _users_service = UsersService(_get_global_config_dir())
-    return _users_service
-
-
-# Global AuthService instance
-_auth_service: Optional[AuthService] = None
-
-
-def get_auth_service() -> AuthService:
-    """Get AuthService singleton instance (global, shared across workspaces)."""
-    global _auth_service
-    if _auth_service is None:
-        _auth_service = AuthService(_get_global_config_dir(), get_users_service())
-    return _auth_service
-
-
-# Global ComplianceStorageConfig instance
-_compliance_config: Optional[ComplianceStorageConfig] = None
-
-
-def get_compliance_config() -> ComplianceStorageConfig:
-    """Get ComplianceStorageConfig singleton instance (workspace-scoped).
-
-    Loads configuration from environment variables with COMPLIANCE_ prefix,
-    falling back to workspace logs directory.
-    """
-    global _compliance_config
-    if _compliance_config is None:
-        # Try loading from environment, fall back to defaults
-        try:
-            _compliance_config = ComplianceStorageConfig.from_env()
-        except Exception:
-            pass
-
-        # If not configured via env, use workspace logs directory
-        if _compliance_config is None:
-            _compliance_config = ComplianceStorageConfig(
-                storage_dir=_get_workspace_logs_dir()
-            )
-    return _compliance_config
-
-
-def get_decision_storage() -> DecisionStorage:
-    """Get DecisionStorage instance based on compliance config."""
-    config = get_compliance_config()
-    return ComplianceStorageFactory.create_decision_storage(config)
-
-
-def get_llm_call_storage() -> LLMCallStorage:
-    """Get LLMCallStorage instance based on compliance config."""
-    config = get_compliance_config()
-    return ComplianceStorageFactory.create_llm_storage(config)
-
-
-# Global WorkspaceService instance
-_workspace_service: Optional[WorkspaceService] = None
-
-
-def get_workspace_service() -> WorkspaceService:
-    """Get WorkspaceService singleton instance."""
-    global _workspace_service
-    if _workspace_service is None:
-        _workspace_service = WorkspaceService(_PROJECT_ROOT)
-    return _workspace_service
-
-
-def _reset_service_singletons() -> None:
-    """Reset workspace-scoped service singletons to pick up new workspace paths.
-
-    Called after workspace switch to ensure services use new paths.
-
-    Note: Global services (users, auth, audit) are NOT reset since they are
-    shared across all workspaces and stored in .contextbuilder/.
-    """
-    global _pipeline_service, _prompt_config_service, _compliance_config
-
-    # Only reset workspace-scoped singletons
-    _pipeline_service = None
-    _prompt_config_service = None
-    _compliance_config = None
-
-    # Reset LLM audit service singleton so it recreates with new workspace path
-    reset_llm_audit_service()
-
-    # Reset workspace path cache to force re-reading registry
-    reset_workspace_cache()
-
-    # Note: _users_service, _auth_service, _audit_service are global and NOT reset
-
-
 # =============================================================================
-# AUTHENTICATION DEPENDENCY
+# BACKWARDS COMPATIBILITY
 # =============================================================================
+# Module-level variables for backwards compatibility with existing imports.
+# New code should use get_data_dir() and get_staging_dir() from dependencies.
 
 
-class CurrentUser(BaseModel):
-    """Current authenticated user."""
-    username: str
-    role: str
-
-
-def get_current_user(authorization: Optional[str] = Header(None)) -> CurrentUser:
-    """
-    Dependency to get the current authenticated user from the Authorization header.
-
-    Expects: Authorization: Bearer <token>
-    """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-    token = authorization[7:]  # Remove "Bearer " prefix
-
-    auth_service = get_auth_service()
-    user = auth_service.validate_session(token)
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    return CurrentUser(username=user.username, role=user.role)
-
-
-def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[CurrentUser]:
-    """
-    Dependency to optionally get the current user.
-    Returns None if not authenticated instead of raising an exception.
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-
-    token = authorization[7:]
-    auth_service = get_auth_service()
-    user = auth_service.validate_session(token)
-
-    if not user:
-        return None
-
-    return CurrentUser(username=user.username, role=user.role)
-
-
-def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """Dependency to require admin role."""
-    if current_user.role != Role.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return current_user
-
-
-def require_role(allowed_roles: list[str]):
-    """Factory for role-based access control dependency.
-
-    Args:
-        allowed_roles: List of role values that are permitted access
-
-    Returns:
-        Dependency function that validates user role
-
-    Example:
-        @app.get("/api/compliance/ledger")
-        def get_ledger(user: CurrentUser = Depends(require_role(["admin", "auditor"]))):
-            ...
-    """
-    def role_checker(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if current_user.role not in allowed_roles:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied. Required role: {' or '.join(allowed_roles)}"
-            )
-        return current_user
-    return role_checker
-
-
-# Pre-built role checker for compliance endpoints (admin or auditor)
-require_compliance_access = require_role([Role.ADMIN.value, Role.AUDITOR.value])
-
-
-# =============================================================================
-# WEBSOCKET CONNECTION MANAGER
-# =============================================================================
-
-
-class ConnectionManager:
-    """Manage WebSocket connections for pipeline progress updates."""
-
-    def __init__(self):
-        self.active_connections: Dict[str, List[WebSocket]] = {}
-
-    async def connect(self, websocket: WebSocket, run_id: str) -> None:
-        """Accept and track a WebSocket connection."""
-        await websocket.accept()
-        if run_id not in self.active_connections:
-            self.active_connections[run_id] = []
-        self.active_connections[run_id].append(websocket)
-
-    def disconnect(self, websocket: WebSocket, run_id: str) -> None:
-        """Remove a WebSocket connection."""
-        if run_id in self.active_connections:
-            if websocket in self.active_connections[run_id]:
-                self.active_connections[run_id].remove(websocket)
-
-    async def broadcast(self, run_id: str, message: dict) -> None:
-        """Broadcast message to all connections for a run."""
-        if run_id not in self.active_connections:
-            return
-        disconnected = []
-        for connection in self.active_connections[run_id]:
-            try:
-                await connection.send_json(message)
-            except Exception:
-                disconnected.append(connection)
-        # Clean up disconnected
-        for conn in disconnected:
-            self.disconnect(conn, run_id)
-
-
-ws_manager = ConnectionManager()
+def __getattr__(name: str):
+    """Provide backwards compatibility for DATA_DIR and STAGING_DIR imports."""
+    if name == "DATA_DIR":
+        return get_data_dir()
+    if name == "STAGING_DIR":
+        return get_staging_dir()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # =============================================================================
@@ -761,7 +331,7 @@ def get_run_summary():
 @app.get("/health")  # Keep both for compatibility
 def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "data_dir": str(DATA_DIR)}
+    return {"status": "healthy", "data_dir": str(get_data_dir())}
 
 
 @app.get("/api/version", response_model=VersionInfo)
@@ -1252,7 +822,7 @@ def get_templates():
                 field_rules={
                     name: {
                         "normalize": rule.normalize,
-                        "validate": rule.validate,
+                        "validation": rule.validation,
                         "hints": rule.hints,
                     }
                     for name, rule in spec.field_rules.items()
@@ -1887,7 +1457,7 @@ def get_classification_stats(run_id: str = Query(..., description="Run ID to get
     by_predicted_type: Dict[str, Dict[str, int]] = {}
     confusion_entries: Dict[tuple, int] = {}  # (predicted, truth) -> count
 
-    for claim_dir in DATA_DIR.iterdir():
+    for claim_dir in get_data_dir().iterdir():
         if not claim_dir.is_dir() or claim_dir.name.startswith("."):
             continue
 
@@ -2960,7 +2530,7 @@ def get_truth_history(
     """
     from context_builder.storage.truth_store import TruthStore
 
-    store = TruthStore(DATA_DIR)
+    store = TruthStore(get_data_dir())
     history = store.get_truth_history(file_md5)
 
     return {
@@ -2998,7 +2568,7 @@ def get_label_history(
     else:
         # Fallback for FileStorage directly
         from context_builder.storage import FileStorage
-        fs = FileStorage(DATA_DIR)
+        fs = FileStorage(get_data_dir())
         history = fs.get_label_history(doc_id)
 
     return {
@@ -3128,7 +2698,7 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
 # =============================================================================
 # Serve React frontend in production when ui/dist exists
 
-_UI_DIST_DIR = _PROJECT_ROOT / "ui" / "dist"
+_UI_DIST_DIR = get_project_root() / "ui" / "dist"
 
 if _UI_DIST_DIR.exists() and _UI_DIST_DIR.is_dir():
     print(f"[startup] Serving static frontend from {_UI_DIST_DIR}")

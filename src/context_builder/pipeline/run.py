@@ -1,12 +1,8 @@
 """Run module: orchestrate ingestion, classification, and extraction pipeline."""
 
-# Ensure .env is loaded for pipeline execution (fallback for CLI usage)
-from pathlib import Path as _Path
-from dotenv import load_dotenv
-_project_root = _Path(__file__).resolve().parent.parent.parent.parent
-_env_path = _project_root / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path)
+# Initialize environment and workspace on import
+from context_builder.startup import ensure_initialized as _ensure_initialized
+_ensure_initialized()
 
 import hashlib
 import json

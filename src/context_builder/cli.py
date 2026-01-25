@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 import colorlog
-from dotenv import load_dotenv
 from rich.console import Console
+
+from context_builder.startup import ensure_initialized as _ensure_initialized
 from tqdm import tqdm
 
 from context_builder.ingestion import (
@@ -929,8 +930,8 @@ def main():
     # Set up signal handlers for graceful shutdown
     setup_signal_handlers()
 
-    # Load environment variables
-    load_dotenv()
+    # Initialize environment and workspace
+    _ensure_initialized()
 
     # Parse arguments
     parser = setup_argparser()

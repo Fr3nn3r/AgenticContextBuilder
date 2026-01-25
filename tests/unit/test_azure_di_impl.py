@@ -459,10 +459,10 @@ class TestEnvironmentVariableLoading:
             "azure_di_ingestion.py must call load_dotenv() as fallback"
 
     def test_main_py_loads_dotenv_at_startup(self):
-        """Verify that main.py loads .env at module level.
+        """Verify that main.py initializes environment at module level.
 
         This ensures env vars are available before any request handlers run.
-        The failure case was when main.py didn't load .env early enough.
+        The initialization is now done via startup.ensure_initialized().
         """
         import ast
         from pathlib import Path
@@ -471,15 +471,15 @@ class TestEnvironmentVariableLoading:
         source = main_py.read_text()
         tree = ast.parse(source)
 
-        # Find the first occurrence of load_dotenv call
-        load_dotenv_line = None
+        # Find the ensure_initialized call (now handles .env loading)
+        ensure_init_line = None
         first_decorator_line = float('inf')
 
         for node in ast.walk(tree):
-            # Find load_dotenv calls
+            # Find _ensure_initialized() calls
             if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == 'load_dotenv':
-                    load_dotenv_line = node.lineno
+                if isinstance(node.func, ast.Name) and node.func.id == '_ensure_initialized':
+                    ensure_init_line = node.lineno
                     break
             # Find first @app decorator (marks where routes start)
             if isinstance(node, ast.FunctionDef):
@@ -489,6 +489,14 @@ class TestEnvironmentVariableLoading:
                             if decorator.func.value.id == 'app':
                                 first_decorator_line = min(first_decorator_line, decorator.lineno)
 
-        assert load_dotenv_line is not None, "load_dotenv() must be called in main.py"
-        assert load_dotenv_line < first_decorator_line, \
-            f"load_dotenv() at line {load_dotenv_line} must come before route decorators at line {first_decorator_line}"
+        assert ensure_init_line is not None, "_ensure_initialized() must be called in main.py"
+        assert ensure_init_line < first_decorator_line, \
+            f"_ensure_initialized() at line {ensure_init_line} must come before route decorators at line {first_decorator_line}"
+
+        # Also verify startup.py has load_dotenv
+        startup_py = Path(__file__).parent.parent.parent / "src" / "context_builder" / "startup.py"
+        startup_source = startup_py.read_text()
+        assert "from dotenv import load_dotenv" in startup_source, \
+            "startup.py must import load_dotenv"
+        assert "load_dotenv(" in startup_source, \
+            "startup.py must call load_dotenv()"
