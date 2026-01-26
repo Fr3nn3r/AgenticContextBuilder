@@ -23,12 +23,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+# Add workspaces to path for enrichment module
+sys.path.insert(0, str(REPO_ROOT))
+
 from context_builder.services.assessment_audit import (
     create_assessment_client,
     log_assessment_decision,
 )
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.storage.workspace_paths import get_active_workspace_path
+
+# Import NSA enricher module
+from workspaces.nsa.config.enrichment.enricher import NSAEnricher
 
 
 # JSON Schema for assessment output validation
@@ -641,19 +647,22 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
     # Load claim facts
     claim_facts = load_claim_facts(claim_id)
 
-    # Load assumptions and enrich claim facts with lookup results
-    assumptions = load_assumptions()
-    if assumptions:
-        logger.info(f"Loaded assumptions v{assumptions.get('schema_version', '?')}")
-        claim_facts = enrich_claim_facts(claim_facts, assumptions)
-        logger.info("Enriched claim facts with coverage and authorization lookups")
+    # Get workspace path for enrichment
+    workspace_path = get_active_workspace_path()
+
+    # Enrich claim facts using NSA enricher module
+    # This replaces the inline enrichment with the modular enricher
+    enricher = NSAEnricher(workspace_path)
+    if enricher.assumptions:
+        logger.info(f"Loaded assumptions v{enricher.assumptions.get('schema_version', '?')}")
+    claim_facts = enricher.enrich(claim_facts, reconciliation_report=None)
+    logger.info("Enriched claim facts with coverage and authorization lookups")
 
     # Compute input hash for audit trail (before any LLM processing)
     input_hash = compute_input_hash(claim_facts)
     logger.info(f"Input hash: {input_hash}")
 
     # Save enriched facts to separate file for audit trail
-    workspace_path = get_active_workspace_path()
     output_dir = workspace_path / "claims" / claim_id / "context"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -741,8 +750,8 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
         "total_tokens": response.usage.total_tokens,
         "processed_at": datetime.now().isoformat(),
         "input_hash": input_hash,
-        "assumptions_version": assumptions.get("schema_version") if assumptions else None,
-        "assumptions_updated_at": assumptions.get("updated_at") if assumptions else None,
+        "assumptions_version": enricher.assumptions.get("schema_version") if enricher.assumptions else None,
+        "assumptions_updated_at": enricher.assumptions.get("updated_at") if enricher.assumptions else None,
     }
 
     # Save markdown report
@@ -776,7 +785,7 @@ def run_assessment(claim_id: str, dry_run: bool = False) -> dict:
             metadata={
                 "model": config.get("model"),
                 "input_hash": input_hash,
-                "assumptions_version": assumptions.get("schema_version") if assumptions else None,
+                "assumptions_version": enricher.assumptions.get("schema_version") if enricher.assumptions else None,
             },
         )
         logger.info("Assessment decision logged to compliance ledger")
