@@ -6,13 +6,36 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from context_builder.pipeline.paths import DocPaths
 from context_builder.pipeline.stages.context import DocumentContext
 from context_builder.pipeline.writer import ResultWriter
 
 logger = logging.getLogger(__name__)
+
+
+def _build_combined_text(
+    azure_text: str,
+    vision_data: Optional[Dict[str, Any]],
+) -> str:
+    """Combine Azure DI OCR text with Vision semantic text for classification."""
+    if not vision_data:
+        return azure_text
+
+    # Extract text from Vision pages
+    vision_parts = []
+    for page in vision_data.get("pages", []):
+        if text := page.get("text_content", ""):
+            vision_parts.append(text)
+        elif summary := page.get("summary", ""):
+            vision_parts.append(summary)
+
+    vision_text = "\n".join(vision_parts)
+    if not vision_text:
+        return azure_text
+
+    return f"{azure_text}\n\n--- Vision Semantic Analysis ---\n{vision_text}"
 
 
 def load_existing_classification(
@@ -66,8 +89,16 @@ class ClassificationStage:
                     run_id=context.run_id,
                 )
 
+            # For images with Vision data, use combined text for better classification
+            if context.doc.source_type == "image" and context.vision_data:
+                combined_text = _build_combined_text(context.text_content, context.vision_data)
+                logger.info(f"Using combined Azure DI + Vision text for image classification")
+                classification = context.classifier.classify(
+                    combined_text,
+                    context.doc.original_filename,
+                )
             # Use page-based classification if pages data is available
-            if context.pages_data and "pages" in context.pages_data:
+            elif context.pages_data and "pages" in context.pages_data:
                 pages = [p.get("text", "") for p in context.pages_data["pages"]]
                 classification = context.classifier.classify_pages(
                     pages,
@@ -89,6 +120,7 @@ class ClassificationStage:
             context.language = classification.get("language", "es")
             confidence = classification.get("confidence")
             context.confidence = confidence if confidence is not None else 0.8
+            context.classification_result = classification  # Store full result for other stages
 
             context_data = {
                 "doc_id": context.doc.doc_id,

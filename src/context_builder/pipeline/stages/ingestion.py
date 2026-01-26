@@ -68,18 +68,25 @@ def ingest_document(
         )
 
     # Fall back to extension-based routing
+    # Azure DI is used for PDFs to get word-level coordinates for evidence highlighting.
     if doc.source_type == "pdf":
-        # Use Azure DI for PDFs
         logger.info(f"Ingesting PDF with Azure DI: {doc.original_filename}")
-        return _ingest_with_provider(
-            doc, doc_paths, writer, factory, "azure-di"
-        )
+        return _ingest_with_provider(doc, doc_paths, writer, factory, "azure-di")
 
     elif doc.source_type == "image":
-        # Use OpenAI Vision for images
-        logger.info(f"Ingesting image with OpenAI Vision: {doc.original_filename}")
-        return _ingest_with_provider(
-            doc, doc_paths, writer, factory, "openai"
+        # Run BOTH Azure DI (coordinates) and Vision (semantic) for images
+        # Azure DI provides OCR + word-level coordinates for evidence highlighting
+        # Vision provides semantic understanding for better classification of sparse-text images
+        logger.info(f"Ingesting image with Azure DI + Vision: {doc.original_filename}")
+
+        azure_result = _ingest_with_provider(doc, doc_paths, writer, factory, "azure-di")
+        vision_data = _run_vision_for_image(doc, doc_paths, writer, factory)
+
+        return IngestionResult(
+            text_content=azure_result.text_content,
+            provider_name="azure-di+vision",
+            azure_di_data=azure_result.azure_di_data,
+            vision_data=vision_data,
         )
 
     else:
@@ -204,6 +211,35 @@ def _ingest_with_provider(
         raise ValueError(f"Unknown provider: {provider_name}")
 
 
+def _run_vision_for_image(
+    doc: DiscoveredDocument,
+    doc_paths: DocPaths,
+    writer: ResultWriter,
+    factory: Any,
+) -> Optional[Dict[str, Any]]:
+    """
+    Run OpenAI Vision on an image for semantic understanding.
+    Non-blocking - returns None on failure.
+    """
+    try:
+        ingestion = factory.create("openai")
+        result = ingestion.process(doc.source_path, envelope=True)
+        data = result.get("data", {})
+
+        if not data:
+            logger.warning(f"Vision returned no data for {doc.original_filename}")
+            return None
+
+        # Save vision.json
+        vision_path = doc_paths.text_raw_dir / "vision.json"
+        writer.write_json(vision_path, data)
+
+        return data
+    except Exception as e:
+        logger.warning(f"Vision enrichment failed for {doc.original_filename}: {e}")
+        return None
+
+
 def load_existing_ingestion(
     doc_paths: DocPaths,
 ) -> tuple[str, Dict[str, Any]]:
@@ -261,6 +297,7 @@ class IngestionStage:
                 )
                 context.text_content = ingestion_result.text_content
                 azure_di_data = ingestion_result.azure_di_data
+                context.vision_data = ingestion_result.vision_data  # Store Vision data for images
             else:
                 context.text_content = context.doc.content
 
@@ -273,12 +310,12 @@ class IngestionStage:
                     context.doc.doc_id,
                 )
             else:
+                # Both PDFs and images use Azure DI, so source_type is azure_di
+                # Only preextracted text files use a different source_type
                 context.pages_data = build_pages_json(
                     context.text_content,
                     context.doc.doc_id,
-                    source_type="azure_di" if context.doc.source_type == "pdf" else (
-                        "vision_ocr" if context.doc.source_type == "image" else "preextracted_txt"
-                    ),
+                    source_type="azure_di" if context.doc.source_type in ("pdf", "image") else "preextracted_txt",
                 )
             self.writer.write_json(context.doc_paths.pages_json, context.pages_data)
         else:

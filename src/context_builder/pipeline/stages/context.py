@@ -18,6 +18,7 @@ class IngestionResult:
     text_content: str
     provider_name: str
     azure_di_data: Optional[Dict[str, Any]] = None  # For Azure DI, includes raw output with page spans
+    vision_data: Optional[Dict[str, Any]] = None  # Semantic understanding from Vision
 
 
 @dataclass
@@ -26,6 +27,7 @@ class PhaseTimings:
 
     ingestion_ms: int = 0
     classification_ms: int = 0
+    vision_enrichment_ms: int = 0  # Optional Vision enrichment for images
     extraction_ms: int = 0
     total_ms: int = 0
 
@@ -151,6 +153,8 @@ class DocumentContext:
     version_bundle_id: Optional[str] = None  # For compliance traceability
     audit_storage_dir: Optional[Path] = None  # Workspace-scoped compliance logs dir
     pii_vault: Optional[Any] = None  # PII vault for tokenizing extraction results
+    classification_result: Optional[Dict[str, Any]] = None  # Full classification result
+    vision_data: Optional[Dict[str, Any]] = None  # Vision enrichment data for images
 
     def to_doc_result(self) -> DocResult:
         """Convert the context into a DocResult."""
