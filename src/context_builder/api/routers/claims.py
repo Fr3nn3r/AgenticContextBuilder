@@ -1,15 +1,20 @@
 """Claims router - endpoints for listing and reviewing claims."""
 
+import asyncio
 import json
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from context_builder.api.dependencies import (
     get_assessment_service,
     get_claims_service,
     get_data_dir,
     get_documents_service,
+    get_workspace_path,
 )
 from context_builder.api.models import (
     ClaimReviewPayload,
@@ -17,8 +22,28 @@ from context_builder.api.models import (
     DocSummary,
     RunSummary,
 )
+from context_builder.api.websocket import ConnectionManager
 
 router = APIRouter(tags=["claims"])
+
+# WebSocket manager for assessment progress
+assessment_ws_manager = ConnectionManager()
+
+# In-memory tracking of running assessment runs
+# run_id -> {"claim_id": str, "status": str, "started_at": str, "result": Optional[dict]}
+_active_assessment_runs: Dict[str, Dict[str, Any]] = {}
+
+
+class AssessmentRunRequest(BaseModel):
+    """Request body for starting an assessment run."""
+    processing_type: str = "assessment"
+
+
+class AssessmentRunResponse(BaseModel):
+    """Response from starting an assessment run."""
+    run_id: str
+    claim_id: str
+    status: str
 
 
 @router.get("/api/claims", response_model=List[ClaimSummary])
@@ -137,3 +162,311 @@ def get_latest_assessment_eval() -> Optional[Dict[str, Any]]:
         no evaluation files exist.
     """
     return get_assessment_service().get_latest_evaluation()
+
+
+# =============================================================================
+# ASSESSMENT RUN ENDPOINTS
+# =============================================================================
+
+
+@router.get("/api/claims/{claim_id}/assessment/{assessment_id}")
+def get_historical_assessment(
+    claim_id: str, assessment_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a specific historical assessment by ID.
+
+    Args:
+        claim_id: The claim ID
+        assessment_id: The assessment ID (timestamp_version format)
+
+    Returns:
+        Transformed assessment matching frontend ClaimAssessment type,
+        or null if not found.
+    """
+    return get_assessment_service().get_assessment_by_id(claim_id, assessment_id)
+
+
+@router.post("/api/claims/{claim_id}/assessment/run", response_model=AssessmentRunResponse)
+async def start_assessment_run(
+    claim_id: str,
+    request: AssessmentRunRequest = AssessmentRunRequest(),
+) -> AssessmentRunResponse:
+    """
+    Start an assessment run for a claim.
+
+    This triggers the claim-level pipeline (reconciliation -> processing)
+    and returns a run_id for tracking progress via WebSocket.
+
+    Args:
+        claim_id: The claim ID to assess
+        request: Optional configuration for the run
+
+    Returns:
+        Run ID and status for tracking via WebSocket
+    """
+    # Check if there's already a running assessment for this claim
+    for run_id, run_info in _active_assessment_runs.items():
+        if run_info["claim_id"] == claim_id and run_info["status"] == "running":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Assessment already running for claim {claim_id} (run_id: {run_id})"
+            )
+
+    # Verify claim has facts to assess
+    data_dir = get_data_dir()
+    facts_path = data_dir / claim_id / "context" / "claim_facts.json"
+    if not facts_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"No claim facts found for {claim_id}. Run extraction first."
+        )
+
+    # Generate run ID and track the run
+    run_id = f"ASM-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    _active_assessment_runs[run_id] = {
+        "claim_id": claim_id,
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "processing_type": request.processing_type,
+        "result": None,
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+
+    # Start the assessment pipeline in background
+    asyncio.create_task(_run_assessment_pipeline(run_id, claim_id, request.processing_type))
+
+    return AssessmentRunResponse(
+        run_id=run_id,
+        claim_id=claim_id,
+        status="running",
+    )
+
+
+async def _run_assessment_pipeline(run_id: str, claim_id: str, processing_type: str) -> None:
+    """Background task that runs the assessment pipeline.
+
+    Broadcasts progress via WebSocket and saves results.
+    """
+    from pathlib import Path
+    from context_builder.pipeline.claim_stages import (
+        ClaimContext,
+        ClaimPipelineRunner,
+        ClaimStageConfig,
+        ReconciliationStage,
+        ProcessingStage,
+        get_processor,
+    )
+
+    workspace_path = get_workspace_path()
+
+    # Create context with streaming callbacks
+    async def token_callback(input_tokens: int, output_tokens: int) -> None:
+        await assessment_ws_manager.broadcast(run_id, {
+            "type": "tokens",
+            "input": input_tokens,
+            "output": output_tokens,
+        })
+
+    async def stage_callback(stage_name: str, status: str) -> None:
+        await assessment_ws_manager.broadcast(run_id, {
+            "type": "stage",
+            "stage": stage_name,
+            "status": status,
+        })
+
+    # Wrap async callbacks for sync pipeline
+    loop = asyncio.get_event_loop()
+
+    def sync_token_callback(input_tokens: int, output_tokens: int) -> None:
+        # Store in run state for late-connecting clients (fixes race condition)
+        if run_id in _active_assessment_runs:
+            _active_assessment_runs[run_id]["input_tokens"] = input_tokens
+            _active_assessment_runs[run_id]["output_tokens"] = output_tokens
+        # Broadcast to connected clients
+        asyncio.run_coroutine_threadsafe(
+            token_callback(input_tokens, output_tokens), loop
+        )
+
+    def sync_stage_callback(stage_name: str, status: str) -> None:
+        asyncio.run_coroutine_threadsafe(
+            stage_callback(stage_name, status), loop
+        )
+
+    context = ClaimContext(
+        claim_id=claim_id,
+        workspace_path=workspace_path,
+        run_id=run_id,
+        stage_config=ClaimStageConfig(
+            run_reconciliation=True,
+            run_processing=True,
+            processing_type=processing_type,
+        ),
+        processing_type=processing_type,
+        on_token_update=sync_token_callback,
+        on_stage_update=sync_stage_callback,
+    )
+
+    try:
+        # Check if processor is registered
+        processor = get_processor(processing_type)
+        if processor is None:
+            raise ValueError(f"No processor registered for type: {processing_type}")
+
+        # Run pipeline stages
+        stages = [ReconciliationStage(), ProcessingStage()]
+        runner = ClaimPipelineRunner(stages)
+
+        # Run synchronously (blocking)
+        # TODO: Consider running in thread pool for true async
+        context = runner.run(context)
+
+        # Save result if successful
+        if context.status == "success" and context.processing_result:
+            assessment_service = get_assessment_service()
+            saved = assessment_service.save_assessment(
+                claim_id=claim_id,
+                assessment_data=context.processing_result,
+                prompt_version=context.prompt_version,
+                extraction_bundle_id=context.extraction_bundle_id,
+            )
+
+            _active_assessment_runs[run_id]["status"] = "completed"
+            _active_assessment_runs[run_id]["result"] = saved
+
+            # Broadcast completion
+            await assessment_ws_manager.broadcast(run_id, {
+                "type": "complete",
+                "decision": context.processing_result.get("decision"),
+                "assessment_id": saved.get("id"),
+                "input_tokens": _active_assessment_runs[run_id].get("input_tokens", 0),
+                "output_tokens": _active_assessment_runs[run_id].get("output_tokens", 0),
+            })
+        else:
+            _active_assessment_runs[run_id]["status"] = "error"
+            _active_assessment_runs[run_id]["error"] = context.error or "Unknown error"
+
+            await assessment_ws_manager.broadcast(run_id, {
+                "type": "error",
+                "message": context.error or "Assessment failed",
+            })
+
+    except Exception as e:
+        _active_assessment_runs[run_id]["status"] = "error"
+        _active_assessment_runs[run_id]["error"] = str(e)
+
+        await assessment_ws_manager.broadcast(run_id, {
+            "type": "error",
+            "message": str(e),
+        })
+
+
+@router.get("/api/claims/{claim_id}/assessment/status/{run_id}")
+def get_assessment_run_status(claim_id: str, run_id: str) -> Dict[str, Any]:
+    """
+    Get the status of an assessment run.
+
+    Args:
+        claim_id: The claim ID
+        run_id: The run ID from start_assessment_run
+
+    Returns:
+        Run status including result if completed
+    """
+    if run_id not in _active_assessment_runs:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+
+    run_info = _active_assessment_runs[run_id]
+    if run_info["claim_id"] != claim_id:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found for claim {claim_id}")
+
+    return run_info
+
+
+@router.websocket("/api/claims/{claim_id}/assessment/ws/{run_id}")
+async def assessment_websocket(websocket: WebSocket, claim_id: str, run_id: str):
+    """
+    WebSocket endpoint for real-time assessment progress updates.
+
+    Messages sent to client:
+    - {"type": "sync", "status": "...", "claim_id": "..."} - Initial state on connect
+    - {"type": "stage", "stage": "...", "status": "running|complete"}
+    - {"type": "tokens", "input": N, "output": N}
+    - {"type": "complete", "decision": "...", "assessment_id": "..."}
+    - {"type": "error", "message": "..."}
+    - {"type": "ping"} - Keepalive
+    """
+    await assessment_ws_manager.connect(websocket, run_id)
+
+    try:
+        # Send current state on connect
+        if run_id in _active_assessment_runs:
+            run_info = _active_assessment_runs[run_id]
+            if run_info["claim_id"] != claim_id:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Run {run_id} not found for claim {claim_id}",
+                })
+                return
+
+            await websocket.send_json({
+                "type": "sync",
+                "run_id": run_id,
+                "claim_id": claim_id,
+                "status": run_info["status"],
+                "input_tokens": run_info.get("input_tokens", 0),
+                "output_tokens": run_info.get("output_tokens", 0),
+            })
+
+            # If already completed, send result and close
+            if run_info["status"] == "completed":
+                await websocket.send_json({
+                    "type": "complete",
+                    "decision": run_info.get("result", {}).get("decision"),
+                    "assessment_id": run_info.get("result", {}).get("id"),
+                    "input_tokens": run_info.get("input_tokens", 0),
+                    "output_tokens": run_info.get("output_tokens", 0),
+                })
+                return
+            elif run_info["status"] == "error":
+                await websocket.send_json({
+                    "type": "error",
+                    "message": run_info.get("error", "Unknown error"),
+                })
+                return
+        else:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Run {run_id} not found",
+            })
+            return
+
+        # Keep connection alive while run is in progress
+        while True:
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=30.0,
+                )
+                if data == "pong":
+                    continue
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
+
+            # Check if run is complete
+            if run_id in _active_assessment_runs:
+                run_info = _active_assessment_runs[run_id]
+                if run_info["status"] in ("completed", "error"):
+                    break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        assessment_ws_manager.disconnect(websocket, run_id)
