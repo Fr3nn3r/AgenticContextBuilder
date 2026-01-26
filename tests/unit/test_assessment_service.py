@@ -197,8 +197,8 @@ class TestAssessmentService:
         assert entry["confidence_score"] == 95.0
         assert entry["payout"] == 4500.0
         # 2 PASS checks out of 3 total
-        assert entry["checks_passed"] == 2
-        assert entry["checks_total"] == 3
+        assert entry["pass_count"] == 2
+        assert entry["check_count"] == 3
         assert entry["assumption_count"] == 1
 
     def test_get_assessment_history_empty_for_missing_claim(self, service):
@@ -455,3 +455,359 @@ class TestAssessmentService:
 
         breakdown = result.get("payout_breakdown")
         assert breakdown["currency"] == "USD"  # Falls back to top-level
+
+
+class TestAssessmentServiceVersioning:
+    """Tests for AssessmentService versioning and history features."""
+
+    @pytest.fixture
+    def temp_claims_dir(self, tmp_path):
+        """Create a temporary claims directory."""
+        return tmp_path
+
+    @pytest.fixture
+    def service(self, temp_claims_dir):
+        """Create an AssessmentService instance."""
+        return AssessmentService(temp_claims_dir)
+
+    def test_save_assessment_creates_versioned_file(self, service, temp_claims_dir):
+        """Test that save_assessment creates a timestamped file."""
+        assessment_data = {
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        result = service.save_assessment(
+            claim_id="CLM-001",
+            assessment_data=assessment_data,
+            prompt_version="v1.0",
+        )
+
+        # Check result metadata
+        assert "id" in result
+        assert "filename" in result
+        assert result["prompt_version"] == "v1.0"
+        assert result["is_current"] is True
+
+        # Check file was created
+        assessments_dir = temp_claims_dir / "CLM-001" / "context" / "assessments"
+        assert assessments_dir.exists()
+        files = list(assessments_dir.glob("*.json"))
+        # Should have index.json and the versioned file
+        assert len(files) >= 1
+
+    def test_save_assessment_updates_index(self, service, temp_claims_dir):
+        """Test that save_assessment updates the index file."""
+        assessment_data = {
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        service.save_assessment(
+            claim_id="CLM-002",
+            assessment_data=assessment_data,
+            prompt_version="v1.0",
+        )
+
+        # Check index was created
+        index_path = temp_claims_dir / "CLM-002" / "context" / "assessments" / "index.json"
+        assert index_path.exists()
+
+        with open(index_path) as f:
+            index = json.load(f)
+
+        assert "assessments" in index
+        assert len(index["assessments"]) == 1
+        assert index["assessments"][0]["is_current"] is True
+
+    def test_save_assessment_marks_previous_not_current(self, service, temp_claims_dir):
+        """Test that saving a new assessment marks previous as not current."""
+        assessment_v1 = {
+            "decision": "APPROVE",
+            "confidence_score": 0.8,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        assessment_v2 = {
+            "decision": "REJECT",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        service.save_assessment("CLM-003", assessment_v1, prompt_version="v1.0")
+        service.save_assessment("CLM-003", assessment_v2, prompt_version="v2.0")
+
+        index_path = temp_claims_dir / "CLM-003" / "context" / "assessments" / "index.json"
+        with open(index_path) as f:
+            index = json.load(f)
+
+        assert len(index["assessments"]) == 2
+        # First should no longer be current
+        assert index["assessments"][0]["is_current"] is False
+        # Second should be current
+        assert index["assessments"][1]["is_current"] is True
+
+    def test_save_assessment_copies_to_main_file(self, service, temp_claims_dir):
+        """Test that save_assessment also updates the main assessment.json."""
+        assessment_data = {
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        service.save_assessment("CLM-004", assessment_data, prompt_version="v1.0")
+
+        main_path = temp_claims_dir / "CLM-004" / "context" / "assessment.json"
+        assert main_path.exists()
+
+        with open(main_path) as f:
+            data = json.load(f)
+
+        assert data["decision"] == "APPROVE"
+        assert data["prompt_version"] == "v1.0"
+
+    def test_get_assessment_by_id_found(self, service, temp_claims_dir):
+        """Test retrieving a specific assessment by ID."""
+        assessment_data = {
+            "decision": "APPROVE",
+            "confidence_score": 0.85,
+            "checks": [{"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        result = service.save_assessment("CLM-005", assessment_data, prompt_version="v1.0")
+        assessment_id = result["id"]
+
+        loaded = service.get_assessment_by_id("CLM-005", assessment_id)
+
+        assert loaded is not None
+        assert loaded["decision"] == "APPROVE"
+        # Should be transformed (confidence as percentage)
+        assert loaded["confidence_score"] == 85.0
+
+    def test_get_assessment_by_id_not_found(self, service, temp_claims_dir):
+        """Test that non-existent assessment ID returns None."""
+        result = service.get_assessment_by_id("CLM-006", "nonexistent_id")
+        assert result is None
+
+    def test_get_assessment_history_with_versioned_entries(self, service, temp_claims_dir):
+        """Test get_assessment_history returns versioned entries."""
+        assessment_v1 = {
+            "decision": "REFER_TO_HUMAN",
+            "confidence_score": 0.6,
+            "checks": [{"check_number": 1, "check_name": "test", "result": "INCONCLUSIVE", "details": "", "evidence_refs": []}],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+        assessment_v2 = {
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [{"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        service.save_assessment("CLM-007", assessment_v1, prompt_version="v1.0")
+        service.save_assessment("CLM-007", assessment_v2, prompt_version="v2.0")
+
+        history = service.get_assessment_history("CLM-007")
+
+        assert len(history) == 2
+        # Newest first
+        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["is_current"] is True
+        assert history[1]["decision"] == "REFER_TO_HUMAN"
+        assert history[1]["is_current"] is False
+
+
+class TestAssessmentServiceEvaluation:
+    """Tests for AssessmentService evaluation features."""
+
+    @pytest.fixture
+    def temp_workspace(self, tmp_path):
+        """Create a temporary workspace with claims dir."""
+        claims_dir = tmp_path / "claims"
+        claims_dir.mkdir()
+        return tmp_path
+
+    @pytest.fixture
+    def service(self, temp_workspace):
+        """Create an AssessmentService instance."""
+        return AssessmentService(temp_workspace / "claims")
+
+    def test_get_latest_evaluation_no_files(self, service, temp_workspace):
+        """Test that None is returned when no evaluation files exist."""
+        result = service.get_latest_evaluation()
+        assert result is None
+
+    def test_get_latest_evaluation_loads_file(self, service, temp_workspace):
+        """Test loading and transforming an evaluation file."""
+        eval_dir = temp_workspace / "eval"
+        eval_dir.mkdir()
+
+        eval_data = {
+            "evaluated_at": "2026-01-25T12:00:00",
+            "confusion_matrix": {
+                "matrix": {
+                    "APPROVE": {"APPROVE": 5, "REJECT": 1, "REFER_TO_HUMAN": 0},
+                    "REJECT": {"APPROVE": 0, "REJECT": 3, "REFER_TO_HUMAN": 1},
+                    "REFER_TO_HUMAN": {"APPROVE": 0, "REJECT": 0, "REFER_TO_HUMAN": 2},
+                },
+                "total_evaluated": 12,
+                "decision_accuracy": 0.833,
+            },
+            "results": [
+                {
+                    "claim_id": "CLM-001",
+                    "ai_decision": "APPROVE",
+                    "expected_decision": "APPROVE",
+                    "passed": True,
+                    "confidence_score": 0.95,
+                },
+            ],
+            "summary": {
+                "total_claims": 12,
+                "accuracy": 0.833,
+            },
+        }
+
+        eval_path = eval_dir / "assessment_eval_20260125_120000.json"
+        with open(eval_path, "w") as f:
+            json.dump(eval_data, f)
+
+        result = service.get_latest_evaluation()
+
+        assert result is not None
+        assert result["eval_id"] == "assessment_eval_20260125_120000"
+        assert result["confusion_matrix"]["total_evaluated"] == 12
+        # Accuracy should be converted to percentage
+        assert result["summary"]["accuracy_rate"] == 83.3
+
+    def test_get_latest_evaluation_picks_newest(self, service, temp_workspace):
+        """Test that the newest evaluation file is selected."""
+        eval_dir = temp_workspace / "eval"
+        eval_dir.mkdir()
+
+        for timestamp in ["20260125_100000", "20260125_120000", "20260125_110000"]:
+            eval_path = eval_dir / f"assessment_eval_{timestamp}.json"
+            eval_data = {
+                "evaluated_at": f"2026-01-25T{timestamp[9:11]}:00:00",
+                "confusion_matrix": {"matrix": {}, "total_evaluated": 0, "decision_accuracy": 0},
+                "results": [],
+                "summary": {"total_claims": 0, "accuracy": 0},
+            }
+            with open(eval_path, "w") as f:
+                json.dump(eval_data, f)
+
+        result = service.get_latest_evaluation()
+
+        # Should pick 120000 (newest by filename sort)
+        assert result["eval_id"] == "assessment_eval_20260125_120000"
+
+    def test_compute_precision_approve(self, service):
+        """Test precision calculation for APPROVE decision."""
+        matrix = {
+            "APPROVE": {"APPROVE": 8, "REJECT": 2, "REFER_TO_HUMAN": 0},
+            "REJECT": {"APPROVE": 1, "REJECT": 5, "REFER_TO_HUMAN": 1},
+            "REFER_TO_HUMAN": {"APPROVE": 1, "REJECT": 0, "REFER_TO_HUMAN": 3},
+        }
+
+        precision = service._compute_precision(matrix, "APPROVE")
+
+        # TP = 8, FP = 1 + 1 = 2, Precision = 8 / 10 = 0.8
+        assert abs(precision - 0.8) < 0.01
+
+    def test_compute_precision_no_predictions(self, service):
+        """Test precision when no predictions of that type exist."""
+        matrix = {
+            "APPROVE": {"APPROVE": 0, "REJECT": 5, "REFER_TO_HUMAN": 0},
+            "REJECT": {"APPROVE": 0, "REJECT": 10, "REFER_TO_HUMAN": 0},
+        }
+
+        precision = service._compute_precision(matrix, "APPROVE")
+
+        # No APPROVE predictions at all
+        assert precision == 0.0
+
+    def test_compute_refer_rate(self, service):
+        """Test refer rate calculation."""
+        results = [
+            {"predicted": "APPROVE"},
+            {"predicted": "REJECT"},
+            {"predicted": "REFER_TO_HUMAN"},
+            {"predicted": "REFER_TO_HUMAN"},
+            {"predicted": "APPROVE"},
+        ]
+
+        rate = service._compute_refer_rate(results)
+
+        # 2 out of 5 = 0.4
+        assert abs(rate - 0.4) < 0.01
+
+    def test_compute_refer_rate_empty(self, service):
+        """Test refer rate with empty results."""
+        rate = service._compute_refer_rate([])
+        assert rate == 0.0
+
+    def test_transform_evaluation_results(self, service, temp_workspace):
+        """Test that evaluation results are transformed correctly."""
+        eval_dir = temp_workspace / "eval"
+        eval_dir.mkdir()
+
+        eval_data = {
+            "evaluated_at": "2026-01-25T12:00:00",
+            "confusion_matrix": {"matrix": {}, "total_evaluated": 2, "decision_accuracy": 0.5},
+            "results": [
+                {
+                    "claim_id": "CLM-001",
+                    "ai_decision": "APPROVE",
+                    "expected_decision": "APPROVE",
+                    "passed": True,
+                    "confidence_score": 0.9,
+                },
+                {
+                    "claim_id": "CLM-002",
+                    "ai_decision": "REJECT",
+                    "expected_decision": "APPROVE",
+                    "passed": False,
+                    "confidence_score": 0.7,
+                },
+            ],
+            "summary": {"total_claims": 2, "accuracy": 0.5},
+        }
+
+        eval_path = eval_dir / "assessment_eval_20260125_120000.json"
+        with open(eval_path, "w") as f:
+            json.dump(eval_data, f)
+
+        result = service.get_latest_evaluation()
+        results = result["results"]
+
+        assert len(results) == 2
+        # Check field mapping: ai_decision -> predicted, expected_decision -> actual
+        assert results[0]["predicted"] == "APPROVE"
+        assert results[0]["actual"] == "APPROVE"
+        assert results[0]["is_correct"] is True
+        assert results[1]["predicted"] == "REJECT"
+        assert results[1]["actual"] == "APPROVE"
+        assert results[1]["is_correct"] is False
