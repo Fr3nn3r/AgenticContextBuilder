@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Loader2,
   Play,
@@ -6,9 +6,10 @@ import {
   XCircle,
   AlertTriangle,
   ArrowRightCircle,
-  DollarSign,
   ShieldAlert,
   Clock,
+  RefreshCw,
+  History,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ClaimAssessment, AssessmentDecision } from "../../types";
@@ -18,6 +19,8 @@ import { AssumptionsPane } from "./AssumptionsPane";
 import { ChecksReviewPanel } from "./ChecksReviewPanel";
 import { WorkflowActionsPanel } from "./WorkflowActionsPanel";
 import { PayoutBreakdownCard } from "./PayoutBreakdownCard";
+import { AssessmentProgressCard } from "./AssessmentProgressCard";
+import { useAssessmentWebSocket } from "../../hooks/useAssessmentWebSocket";
 
 interface ClaimAssessmentTabProps {
   claimId: string;
@@ -25,7 +28,10 @@ interface ClaimAssessmentTabProps {
   loading: boolean;
   error: string | null;
   onRunAssessment?: () => Promise<void>;
+  onRefreshAssessment?: () => Promise<void>;
+  onRefreshHistory?: () => Promise<void>;
   onEvidenceClick?: (ref: string) => void;
+  onViewHistory?: () => void;
 }
 
 const DECISION_CONFIG: Record<AssessmentDecision, {
@@ -71,19 +77,41 @@ export function ClaimAssessmentTab({
   loading,
   error,
   onRunAssessment,
+  onRefreshAssessment,
+  onRefreshHistory,
   onEvidenceClick,
+  onViewHistory,
 }: ClaimAssessmentTabProps) {
-  const [isRunning, setIsRunning] = useState(false);
+  const { progress, startAssessment, isRunning, reset } = useAssessmentWebSocket();
 
-  const handleRunAssessment = async () => {
-    if (!onRunAssessment) return;
-    setIsRunning(true);
-    try {
-      await onRunAssessment();
-    } finally {
-      setIsRunning(false);
+  const handleRunAssessment = useCallback(async () => {
+    const runId = await startAssessment(claimId);
+    if (runId) {
+      // Assessment started - WebSocket will track progress
     }
-  };
+  }, [claimId, startAssessment]);
+
+  const handleViewResult = useCallback(() => {
+    reset();
+    if (onRefreshAssessment) {
+      onRefreshAssessment();
+    }
+    if (onRefreshHistory) {
+      onRefreshHistory();
+    }
+  }, [reset, onRefreshAssessment, onRefreshHistory]);
+
+  const handleDismissProgress = useCallback(() => {
+    reset();
+    if (progress.status === "completed") {
+      if (onRefreshAssessment) {
+        onRefreshAssessment();
+      }
+      if (onRefreshHistory) {
+        onRefreshHistory();
+      }
+    }
+  }, [reset, progress.status, onRefreshAssessment, onRefreshHistory]);
 
   if (loading) {
     return (
@@ -176,6 +204,45 @@ export function ClaimAssessmentTab({
 
   return (
     <div className="p-4 space-y-4">
+      {/* Action Bar */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+          Assessment
+        </h2>
+        <div className="flex items-center gap-2">
+          {onViewHistory && (
+            <button
+              onClick={onViewHistory}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <History className="h-4 w-4" />
+              History
+            </button>
+          )}
+          <button
+            onClick={handleRunAssessment}
+            disabled={isRunning}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+              "bg-blue-600 text-white hover:bg-blue-700",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Running...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Re-run Assessment
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* Decision Banner */}
       <div className={cn(
         "rounded-lg border p-6",
@@ -221,7 +288,7 @@ export function ClaimAssessmentTab({
             <div className="text-2xl font-bold text-slate-700 dark:text-slate-200">
               <ScoreBadge value={assessment.confidence_score} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Confidence</p>
+            <p className="text-xs text-slate-500">Confidence</p>
           </div>
         </div>
 
@@ -250,8 +317,8 @@ export function ClaimAssessmentTab({
           </div>
           {assessment.payout !== undefined && (
             <div className="text-center">
-              <div className="text-lg font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1">
-                <DollarSign className="h-4 w-4" />
+              <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
+                {assessment.currency || assessment.payout_breakdown?.currency || "CHF"}{" "}
                 {assessment.payout.toLocaleString()}
               </div>
               <div className="text-xs text-slate-500">Payout</div>
@@ -324,6 +391,13 @@ export function ClaimAssessmentTab({
       <WorkflowActionsPanel
         readiness={{ readinessPct: 0, blockingIssues: [], criticalAssumptions: 0, canAutoApprove: false, canAutoReject: false }}
         currentDecision={assessment.decision}
+      />
+
+      {/* Progress Card (floating) */}
+      <AssessmentProgressCard
+        progress={progress}
+        onDismiss={handleDismissProgress}
+        onViewResult={handleViewResult}
       />
     </div>
   );

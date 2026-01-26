@@ -10,10 +10,12 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from pydantic import BaseModel
 
 from context_builder.api.dependencies import (
+    get_aggregation_service,
     get_assessment_service,
     get_claims_service,
     get_data_dir,
     get_documents_service,
+    get_reconciliation_service,
     get_workspace_path,
 )
 from context_builder.api.models import (
@@ -314,8 +316,9 @@ async def _run_assessment_pipeline(run_id: str, claim_id: str, processing_type: 
         if processor is None:
             raise ValueError(f"No processor registered for type: {processing_type}")
 
-        # Run pipeline stages
-        stages = [ReconciliationStage(), ProcessingStage()]
+        # Run pipeline stages: Reconciliation -> Enrichment -> Processing
+        from context_builder.pipeline.claim_stages import EnrichmentStage
+        stages = [ReconciliationStage(), EnrichmentStage(), ProcessingStage()]
         runner = ClaimPipelineRunner(stages)
 
         # Run synchronously (blocking)
@@ -470,3 +473,139 @@ async def assessment_websocket(websocket: WebSocket, claim_id: str, run_id: str)
         pass
     finally:
         assessment_ws_manager.disconnect(websocket, run_id)
+
+
+# =============================================================================
+# RECONCILIATION ENDPOINTS
+# =============================================================================
+
+
+class ReconciliationRunRequest(BaseModel):
+    """Request body for running reconciliation."""
+    run_id: Optional[str] = None
+
+
+class ReconciliationRunResponse(BaseModel):
+    """Response from running reconciliation."""
+    claim_id: str
+    success: bool
+    gate_status: Optional[str] = None
+    fact_count: Optional[int] = None
+    conflict_count: Optional[int] = None
+    error: Optional[str] = None
+    report_path: Optional[str] = None
+
+
+@router.post("/api/claims/{claim_id}/reconcile", response_model=ReconciliationRunResponse)
+def run_reconciliation(
+    claim_id: str,
+    request: ReconciliationRunRequest = ReconciliationRunRequest(),
+) -> ReconciliationRunResponse:
+    """
+    Trigger reconciliation for a claim.
+
+    Runs the reconciliation process which:
+    1. Aggregates facts from document extractions
+    2. Detects conflicts (same fact with different values)
+    3. Evaluates quality gate (pass/warn/fail)
+    4. Writes reconciliation_report.json to claim context
+
+    Args:
+        claim_id: The claim ID to reconcile
+        request: Optional run_id to reconcile against specific run
+
+    Returns:
+        Reconciliation result with gate status and summary
+    """
+    service = get_reconciliation_service()
+
+    result = service.reconcile(claim_id, request.run_id)
+
+    if not result.success:
+        return ReconciliationRunResponse(
+            claim_id=claim_id,
+            success=False,
+            error=result.error,
+        )
+
+    # Write the report and claim facts
+    report = result.report
+    report_path = service.write_reconciliation_report(claim_id, report)
+
+    # Also write claim_facts.json (via aggregation service)
+    claim_facts = service.aggregation.aggregate_claim_facts(claim_id, request.run_id)
+    service.write_claim_facts(claim_id, claim_facts)
+
+    return ReconciliationRunResponse(
+        claim_id=claim_id,
+        success=True,
+        gate_status=report.gate.status.value,
+        fact_count=report.fact_count,
+        conflict_count=report.gate.conflict_count,
+        report_path=str(report_path),
+    )
+
+
+@router.get("/api/claims/{claim_id}/reconciliation-report")
+def get_reconciliation_report(claim_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get the latest reconciliation report for a claim.
+
+    Returns the contents of reconciliation_report.json if it exists,
+    or null if no reconciliation has been run.
+
+    The report includes:
+    - gate: status (pass/warn/fail), reasons, conflict count
+    - conflicts: list of detected conflicts with values and sources
+    - fact_count: total aggregated facts
+    - critical_facts_spec: list of required facts for this claim's doc types
+    - critical_facts_present: which critical facts were found
+    """
+    data_dir = get_data_dir()
+    report_path = data_dir / claim_id / "context" / "reconciliation_report.json"
+
+    if not report_path.exists():
+        return None
+
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        raise HTTPException(status_code=500, detail=f"Error reading reconciliation report: {e}")
+
+
+@router.get("/api/reconciliation/evals/latest")
+def get_latest_reconciliation_eval() -> Optional[Dict[str, Any]]:
+    """
+    Get the latest reconciliation gate evaluation.
+
+    Reads the most recent reconciliation_gate_eval_*.json file from the workspace
+    eval directory.
+
+    Returns:
+        Evaluation with summary, per-claim results, top missing facts and conflicts.
+        Returns null if no evaluation files exist.
+    """
+    workspace_path = get_workspace_path()
+    eval_dir = workspace_path / "eval"
+
+    if not eval_dir.exists():
+        return None
+
+    # Find the most recent reconciliation_gate_eval file
+    eval_files = sorted(
+        eval_dir.glob("reconciliation_gate_eval_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not eval_files:
+        return None
+
+    try:
+        with open(eval_files[0], "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error reading reconciliation evaluation: {e}"
+        )

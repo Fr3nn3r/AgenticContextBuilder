@@ -162,7 +162,7 @@ export function ComplianceVersionBundles() {
                   />
                   <DetailRow label="Extractor" value={selectedBundle.extractor_version} />
                   <DetailRow
-                    label="ContextBuilder"
+                    label="True AIm"
                     value={selectedBundle.contextbuilder_version}
                   />
                 </div>

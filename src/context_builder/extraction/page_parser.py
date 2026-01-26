@@ -140,6 +140,27 @@ def find_text_position(page_text: str, quote: str) -> Optional[Tuple[int, int]]:
         # Map back to original position (approximate)
         return (pos, pos + len(quote_normalized))
 
+    # P1.2: Try with German number format normalization (85.525.335 -> 85525335)
+    def normalize_german_numbers(s: str) -> str:
+        """Convert German thousand separators (dots) to plain digits."""
+        # Match digit followed by dot followed by exactly 3 digits (thousand separator)
+        # Apply repeatedly to handle numbers like 85.525.335
+        result = s
+        while True:
+            new_result = re.sub(r"(\d)\.(\d{3})(?=\D|$)", r"\1\2", result)
+            if new_result == result:
+                break
+            result = new_result
+        return result
+
+    page_de = normalize_german_numbers(page_text)
+    quote_de = normalize_german_numbers(quote)
+
+    pos = page_de.lower().find(quote_de.lower())
+    if pos >= 0:
+        # Map back to original position (approximate - may be slightly off due to removed dots)
+        return (pos, pos + len(quote_de))
+
     return None
 
 

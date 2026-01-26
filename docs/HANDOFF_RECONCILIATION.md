@@ -1,7 +1,7 @@
 # Handoff: Reconciliation Implementation
 
 **Date:** 2026-01-26
-**Status:** Phase 1-3 Complete, Phase 4-5 Pending
+**Status:** All Phases Complete (1-5)
 
 ## Summary
 
@@ -140,20 +140,105 @@ GET /api/claims/{claim_id}/reconciliation-report
   - Returns reconciliation_report.json contents or null
 ```
 
-## Remaining Work
+### Phase 4: Run-Level Aggregation ✅
 
-### Phase 4: Run-Level Aggregation
+**New Schemas (in `src/context_builder/schemas/reconciliation.py`):**
+- `ReconciliationClaimResult` - Per-claim result in evaluation
+- `FactFrequency` - Frequency count for missing/conflicting facts
+- `ReconciliationEvalSummary` - Summary statistics
+- `ReconciliationRunEval` - Full run-level evaluation output
 
-Create aggregation script to produce `eval/reconciliation_gate_eval.json` for dashboard:
-- Aggregate all `reconciliation_report.json` files from a run
-- Summary: pass/warn/fail counts, top missing facts, top conflicts
+**Files Modified:**
 
-### Phase 5: UI Components
+| File | Change |
+|------|--------|
+| `src/context_builder/schemas/reconciliation.py` | Added run-level evaluation schemas |
+| `src/context_builder/schemas/__init__.py` | Export new schemas |
+| `src/context_builder/api/services/reconciliation.py` | Added `aggregate_run_evaluation()` and `write_run_evaluation()` methods |
+| `src/context_builder/cli.py` | Added `reconcile-eval` CLI command |
 
-Add to Evaluation page:
-- Claim Reconciliation Gate section
-- KPI cards: pass rate, avg conflicts, avg missing critical
-- Tables: problem claims, top missing facts, top conflicts
+**New CLI Command:**
+```bash
+python -m context_builder.cli reconcile-eval              # Aggregate all reconciliation reports
+python -m context_builder.cli reconcile-eval --dry-run    # Preview without writing
+python -m context_builder.cli reconcile-eval --top-n 5    # Include top 5 missing/conflicts
+```
+
+**Output File:** `eval/reconciliation_gate_eval_YYYYMMDD_HHMMSS.json`
+
+**Example Output:**
+```json
+{
+  "schema_version": "reconciliation_eval_v1",
+  "evaluated_at": "2026-01-26T15:30:14",
+  "run_id": "run_20260124_221046_7cc77c7",
+  "summary": {
+    "total_claims": 4,
+    "passed": 0,
+    "warned": 3,
+    "failed": 1,
+    "pass_rate": 0.0,
+    "pass_rate_percent": "0.0%",
+    "avg_fact_count": 73.0,
+    "avg_conflicts": 2.0,
+    "total_conflicts": 8
+  },
+  "top_missing_facts": [],
+  "top_conflicts": [
+    {"fact_name": "document_date", "count": 3, "claim_ids": ["65128", "65157", "65196"]}
+  ],
+  "results": [...]
+}
+```
+
+### Phase 5: UI Components ✅
+
+**New Files:**
+
+| File | Purpose |
+|------|---------|
+| `ui/src/components/assessment/ReconciliationEvalView.tsx` | Reconciliation evaluation view component |
+| `ui/src/types/index.ts` (additions) | TypeScript types for reconciliation evaluation |
+
+**Files Modified:**
+
+| File | Change |
+|------|--------|
+| `src/context_builder/api/routers/claims.py` | Added `GET /api/reconciliation/evals/latest` endpoint |
+| `ui/src/api/client.ts` | Added `getLatestReconciliationEval()` API client function |
+| `ui/src/components/assessment/index.ts` | Export `ReconciliationEvalView` |
+| `ui/src/components/evaluation/EvaluationPage.tsx` | Added "Reconciliation" tab |
+
+**New Features:**
+- "Reconciliation" tab on Evaluation page (`/evaluation?tab=reconciliation`)
+- KPI cards: total claims, pass rate, pass/warn/fail counts
+- Secondary KPIs: avg facts, avg conflicts, total conflicts, avg missing critical
+- Top missing facts table (facts missing across multiple claims)
+- Top conflicts table (facts conflicting across multiple claims)
+- Per-claim results table with gate status, filters, and links to Claim Explorer
+
+**API Endpoint:**
+```
+GET /api/reconciliation/evals/latest
+  - Returns the most recent reconciliation_gate_eval_*.json
+  - Returns null if no evaluation exists
+```
+
+## Implementation Complete
+
+All reconciliation features are now available:
+
+1. **CLI Commands:**
+   - `reconcile --claim-id <id>` - Reconcile a single claim
+   - `reconcile-eval` - Aggregate all reconciliation reports into evaluation
+
+2. **API Endpoints:**
+   - `POST /api/claims/{claim_id}/reconcile` - Trigger reconciliation
+   - `GET /api/claims/{claim_id}/reconciliation-report` - Get claim's report
+   - `GET /api/reconciliation/evals/latest` - Get latest evaluation
+
+3. **UI:**
+   - Evaluation page → Reconciliation tab
 
 ## Related Documents
 
@@ -164,12 +249,20 @@ Add to Evaluation page:
 
 Test the implementation:
 ```bash
-# Run reconciliation for a claim
+# Run reconciliation for a single claim
 python -m context_builder.cli reconcile --claim-id 65196
 
-# Preview without writing
-python -m context_builder.cli reconcile --claim-id 65196 --dry-run
+# Run reconciliation for all claims (example)
+for id in 65128 65157 65196 65258; do
+  python -m context_builder.cli reconcile --claim-id $id -q
+done
 
-# Check output
+# Generate run-level evaluation
+python -m context_builder.cli reconcile-eval
+
+# Check output files
 cat workspaces/nsa/claims/65196/context/reconciliation_report.json
+cat workspaces/nsa/eval/reconciliation_gate_eval_*.json
+
+# View in UI: http://localhost:5173/evaluation?tab=reconciliation
 ```

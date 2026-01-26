@@ -34,8 +34,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md p-8 space-y-6 bg-card rounded-lg shadow-lg border border-border">
         <div className="text-center">
+          <div className="flex justify-center mb-4">
+            <img
+              src="/trueaim-logo.png"
+              alt="True AIm Logo"
+              className="w-16 h-16 object-contain"
+            />
+          </div>
           <h1 className="text-2xl font-bold text-foreground">
-            ContextBuilder
+            True AIm
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in to your account

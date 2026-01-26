@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { LayoutDashboard, FileText, ClipboardCheck, History, AlertTriangle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ClaimSummary, DocSummary, ClaimFacts, ClaimAssessment } from "../../types";
@@ -113,6 +113,38 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
       loadHistory();
     }
   }, [claim.claim_id, assessmentLoading]);
+
+  // Refresh assessment data (for re-run callback)
+  const handleRefreshAssessment = useCallback(async () => {
+    setAssessmentLoading(true);
+    setAssessmentError(null);
+    try {
+      const data = await getClaimAssessment(claim.claim_id);
+      setAssessment(data);
+    } catch (err) {
+      console.warn("Assessment refresh error:", err);
+      setAssessmentError(err instanceof Error ? err.message : "Failed to load assessment");
+      setAssessment(null);
+    } finally {
+      setAssessmentLoading(false);
+    }
+  }, [claim.claim_id]);
+
+  // Refresh history data (for re-run callback)
+  const handleRefreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const data = await getAssessmentHistory(claim.claim_id);
+      setHistory(data);
+    } catch (err) {
+      console.warn("History refresh error:", err);
+      setHistoryError(err instanceof Error ? err.message : "Failed to load history");
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [claim.claim_id]);
 
   // Handle viewing source document with evidence highlighting
   const handleViewSource = (
@@ -261,6 +293,9 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
             loading={assessmentLoading}
             error={assessmentError}
             onRunAssessment={handleRunAssessment}
+            onRefreshAssessment={handleRefreshAssessment}
+            onRefreshHistory={handleRefreshHistory}
+            onViewHistory={() => setActiveSubTab("history")}
             onEvidenceClick={(ref) => {
               // Synthetic refs (computed lookups) - no navigation
               if (ref.startsWith("_")) {

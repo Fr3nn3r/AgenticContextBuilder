@@ -20,11 +20,15 @@ from context_builder.api.services.aggregation import AggregationError, Aggregati
 from context_builder.schemas.claim_facts import ClaimFacts
 from context_builder.schemas.reconciliation import (
     FactConflict,
+    FactFrequency,
     GateStatus,
     GateThresholds,
+    ReconciliationClaimResult,
+    ReconciliationEvalSummary,
     ReconciliationGate,
     ReconciliationReport,
     ReconciliationResult,
+    ReconciliationRunEval,
 )
 from context_builder.storage.filesystem import FileStorage
 
@@ -471,3 +475,159 @@ class ReconciliationService:
             Path to written file.
         """
         return self.aggregation.write_claim_facts(claim_id, claim_facts)
+
+    # =========================================================================
+    # RUN-LEVEL AGGREGATION
+    # =========================================================================
+
+    def aggregate_run_evaluation(self, top_n: int = 10) -> ReconciliationRunEval:
+        """Aggregate reconciliation reports from all claims into a run-level evaluation.
+
+        Scans all claims in the workspace for reconciliation_report.json files
+        and produces a summary evaluation.
+
+        Args:
+            top_n: Number of top missing facts and conflicts to include (default 10).
+
+        Returns:
+            ReconciliationRunEval with summary and per-claim results.
+        """
+        claims_dir = self.storage.claims_dir
+        results: List[ReconciliationClaimResult] = []
+        missing_facts_counter: Dict[str, List[str]] = defaultdict(list)
+        conflicts_counter: Dict[str, List[str]] = defaultdict(list)
+        run_ids: Set[str] = set()
+
+        # Scan all claim directories for reconciliation reports
+        for claim_folder in claims_dir.iterdir():
+            if not claim_folder.is_dir():
+                continue
+
+            report_path = claim_folder / "context" / "reconciliation_report.json"
+            if not report_path.exists():
+                continue
+
+            try:
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_data = json.load(f)
+
+                claim_id = report_data.get("claim_id", claim_folder.name)
+                gate_data = report_data.get("gate", {})
+                gate_status = GateStatus(gate_data.get("status", "fail"))
+                missing_critical = gate_data.get("missing_critical_facts", [])
+
+                # Track run_id
+                if "run_id" in report_data:
+                    run_ids.add(report_data["run_id"])
+
+                # Build per-claim result
+                result = ReconciliationClaimResult(
+                    claim_id=claim_id,
+                    gate_status=gate_status,
+                    fact_count=report_data.get("fact_count", 0),
+                    conflict_count=gate_data.get("conflict_count", 0),
+                    missing_critical_count=len(missing_critical),
+                    missing_critical_facts=missing_critical,
+                    provenance_coverage=gate_data.get("provenance_coverage", 0.0),
+                    reasons=gate_data.get("reasons", []),
+                )
+                results.append(result)
+
+                # Count missing facts
+                for fact in missing_critical:
+                    missing_facts_counter[fact].append(claim_id)
+
+                # Count conflicts
+                for conflict in report_data.get("conflicts", []):
+                    fact_name = conflict.get("fact_name", "unknown")
+                    conflicts_counter[fact_name].append(claim_id)
+
+            except (json.JSONDecodeError, IOError, KeyError) as e:
+                logger.warning(f"Failed to read reconciliation report {report_path}: {e}")
+                continue
+
+        # Build summary
+        total = len(results)
+        passed = sum(1 for r in results if r.gate_status == GateStatus.PASS)
+        warned = sum(1 for r in results if r.gate_status == GateStatus.WARN)
+        failed = sum(1 for r in results if r.gate_status == GateStatus.FAIL)
+        total_conflicts = sum(r.conflict_count for r in results)
+
+        summary = ReconciliationEvalSummary(
+            total_claims=total,
+            passed=passed,
+            warned=warned,
+            failed=failed,
+            pass_rate=passed / total if total > 0 else 0.0,
+            pass_rate_percent=f"{(passed / total * 100) if total > 0 else 0:.1f}%",
+            avg_fact_count=sum(r.fact_count for r in results) / total if total > 0 else 0.0,
+            avg_conflicts=total_conflicts / total if total > 0 else 0.0,
+            avg_missing_critical=(
+                sum(r.missing_critical_count for r in results) / total if total > 0 else 0.0
+            ),
+            total_conflicts=total_conflicts,
+        )
+
+        # Build top missing facts
+        top_missing = sorted(
+            missing_facts_counter.items(), key=lambda x: len(x[1]), reverse=True
+        )[:top_n]
+        top_missing_facts = [
+            FactFrequency(fact_name=fact, count=len(claims), claim_ids=claims)
+            for fact, claims in top_missing
+        ]
+
+        # Build top conflicts
+        top_conflict_items = sorted(
+            conflicts_counter.items(), key=lambda x: len(x[1]), reverse=True
+        )[:top_n]
+        top_conflicts = [
+            FactFrequency(fact_name=fact, count=len(claims), claim_ids=claims)
+            for fact, claims in top_conflict_items
+        ]
+
+        # Determine run_id (use single if consistent, None if multiple)
+        run_id = run_ids.pop() if len(run_ids) == 1 else None
+
+        return ReconciliationRunEval(
+            run_id=run_id,
+            summary=summary,
+            top_missing_facts=top_missing_facts,
+            top_conflicts=top_conflicts,
+            results=sorted(results, key=lambda r: r.claim_id),
+        )
+
+    def write_run_evaluation(self, evaluation: ReconciliationRunEval) -> Path:
+        """Write run-level evaluation to workspace eval directory.
+
+        Args:
+            evaluation: ReconciliationRunEval to write.
+
+        Returns:
+            Path to written file.
+        """
+        # claims_dir is {workspace}/claims, so parent is the workspace root
+        eval_dir = self.storage.claims_dir.parent / "eval"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = eval_dir / f"reconciliation_gate_eval_{timestamp}.json"
+        tmp_path = output_path.with_suffix(".tmp")
+
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    evaluation.model_dump(mode="json"),
+                    f,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
+            tmp_path.replace(output_path)
+            logger.info(f"Wrote reconciliation_gate_eval to {output_path}")
+            return output_path
+
+        except IOError as e:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise ReconciliationError(f"Failed to write run evaluation: {e}")

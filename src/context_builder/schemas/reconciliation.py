@@ -109,3 +109,84 @@ class ReconciliationResult(BaseModel):
         None, description="Reconciliation report (if successful)"
     )
     error: Optional[str] = Field(None, description="Error message (if failed)")
+
+
+# =============================================================================
+# RUN-LEVEL EVALUATION SCHEMAS
+# =============================================================================
+
+
+class ReconciliationClaimResult(BaseModel):
+    """Per-claim result in run-level evaluation."""
+
+    claim_id: str = Field(..., description="Claim identifier")
+    gate_status: GateStatus = Field(..., description="Gate status (pass/warn/fail)")
+    fact_count: int = Field(default=0, description="Number of aggregated facts")
+    conflict_count: int = Field(default=0, description="Number of conflicts detected")
+    missing_critical_count: int = Field(
+        default=0, description="Number of missing critical facts"
+    )
+    missing_critical_facts: List[str] = Field(
+        default_factory=list, description="List of missing critical facts"
+    )
+    provenance_coverage: float = Field(
+        default=0.0, description="Fraction of facts with provenance"
+    )
+    reasons: List[str] = Field(
+        default_factory=list, description="Gate status reasons"
+    )
+
+
+class FactFrequency(BaseModel):
+    """Frequency count for a fact (missing or conflicting)."""
+
+    fact_name: str = Field(..., description="Fact name")
+    count: int = Field(..., description="Number of claims affected")
+    claim_ids: List[str] = Field(
+        default_factory=list, description="Claims where this fact is missing/conflicting"
+    )
+
+
+class ReconciliationEvalSummary(BaseModel):
+    """Summary statistics for run-level evaluation."""
+
+    total_claims: int = Field(default=0, description="Total claims evaluated")
+    passed: int = Field(default=0, description="Claims with PASS gate status")
+    warned: int = Field(default=0, description="Claims with WARN gate status")
+    failed: int = Field(default=0, description="Claims with FAIL gate status")
+    pass_rate: float = Field(default=0.0, description="Fraction of claims passing (0.0-1.0)")
+    pass_rate_percent: str = Field(default="0.0%", description="Pass rate as percentage")
+    avg_fact_count: float = Field(default=0.0, description="Average facts per claim")
+    avg_conflicts: float = Field(default=0.0, description="Average conflicts per claim")
+    avg_missing_critical: float = Field(
+        default=0.0, description="Average missing critical facts per claim"
+    )
+    total_conflicts: int = Field(default=0, description="Total conflicts across all claims")
+
+
+class ReconciliationRunEval(BaseModel):
+    """Run-level reconciliation gate evaluation output."""
+
+    schema_version: str = Field(
+        default="reconciliation_eval_v1", description="Schema version identifier"
+    )
+    evaluated_at: datetime = Field(
+        default_factory=datetime.utcnow, description="When evaluation was performed"
+    )
+    run_id: Optional[str] = Field(
+        None, description="Run ID used for reconciliation (if consistent)"
+    )
+    summary: ReconciliationEvalSummary = Field(
+        default_factory=ReconciliationEvalSummary, description="Summary statistics"
+    )
+    top_missing_facts: List[FactFrequency] = Field(
+        default_factory=list,
+        description="Most frequently missing critical facts across claims",
+    )
+    top_conflicts: List[FactFrequency] = Field(
+        default_factory=list,
+        description="Most frequently conflicting facts across claims",
+    )
+    results: List[ReconciliationClaimResult] = Field(
+        default_factory=list, description="Per-claim results"
+    )

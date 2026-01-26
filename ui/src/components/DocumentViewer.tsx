@@ -192,7 +192,12 @@ export function DocumentViewer({
         )}
 
         {activeTab === "image" && sourceUrl && (
-          <ImageViewer url={sourceUrl} alt="Document" />
+          <ImageViewer
+            url={sourceUrl}
+            alt="Document"
+            highlightBboxes={highlightBboxes}
+            pageNumber={highlightPage}
+          />
         )}
 
         {activeTab === "json" && extraction && (

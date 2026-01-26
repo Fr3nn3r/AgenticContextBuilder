@@ -1,4 +1,5 @@
 import { CheckCircle2, XCircle, HelpCircle, ClipboardCheck } from "lucide-react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { cn } from "../../lib/utils";
 import type { AssessmentCheck, CheckResult } from "../../types";
 
@@ -68,6 +69,7 @@ export function ChecksSummaryPanel({ checks, onCheckClick, className }: ChecksSu
   }
 
   return (
+    <Tooltip.Provider delayDuration={300}>
     <div className={cn("bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden", className)}>
       {/* Header with visual summary */}
       <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
@@ -123,7 +125,7 @@ export function ChecksSummaryPanel({ checks, onCheckClick, className }: ChecksSu
       </div>
 
       {/* Compact check list */}
-      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[280px] overflow-y-auto">
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
         {checks.map((check) => {
           const config = RESULT_CONFIG[check.result];
           const Icon = config.icon;
@@ -145,14 +147,35 @@ export function ChecksSummaryPanel({ checks, onCheckClick, className }: ChecksSu
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-slate-400 font-mono">#{check.check_number}</span>
-                  <span className={cn(
-                    "text-sm truncate",
-                    check.result === "PASS"
-                      ? "text-slate-600 dark:text-slate-300"
-                      : config.text
-                  )}>
-                    {check.check_name}
-                  </span>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <span className={cn(
+                        "text-sm truncate cursor-help",
+                        check.result === "PASS"
+                          ? "text-slate-600 dark:text-slate-300"
+                          : config.text
+                      )}>
+                        {check.check_name}
+                      </span>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        side="top"
+                        align="start"
+                        sideOffset={5}
+                        className={cn(
+                          "z-50 max-w-[320px] select-none",
+                          "rounded-lg border border-slate-200 dark:border-slate-700",
+                          "bg-white dark:bg-slate-800 px-3 py-2 shadow-lg",
+                          "text-sm text-slate-600 dark:text-slate-300",
+                          "animate-in fade-in-0 zoom-in-95"
+                        )}
+                      >
+                        {check.details}
+                        <Tooltip.Arrow className="fill-white dark:fill-slate-800" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
                 </div>
               </div>
 
@@ -180,5 +203,6 @@ export function ChecksSummaryPanel({ checks, onCheckClick, className }: ChecksSu
         </div>
       </div>
     </div>
+    </Tooltip.Provider>
   );
 }

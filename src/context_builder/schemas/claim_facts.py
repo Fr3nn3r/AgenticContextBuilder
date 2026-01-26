@@ -53,6 +53,14 @@ class LineItemProvenance(BaseModel):
     doc_type: str = Field(..., description="Document type (e.g., cost_estimate)")
     filename: str = Field(..., description="Original filename")
     run_id: str = Field(..., description="Run ID that produced this extraction")
+    # Row-level positioning (P0.1)
+    page: Optional[int] = Field(None, description="Page number where item was found")
+    char_start: Optional[int] = Field(None, description="Character start offset in page text")
+    char_end: Optional[int] = Field(None, description="Character end offset in page text")
+    text_quote: Optional[str] = Field(None, description="Text snippet containing the value")
+    # Table cell reference (P1.1)
+    table_index: Optional[int] = Field(None, description="Index of the table on the page")
+    row_index: Optional[int] = Field(None, description="Row index within the table")
 
 
 class AggregatedLineItem(BaseModel):

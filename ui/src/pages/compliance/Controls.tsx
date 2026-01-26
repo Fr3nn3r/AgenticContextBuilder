@@ -83,7 +83,7 @@ export function ComplianceControls() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Control Mapping</h1>
           <p className="text-muted-foreground mt-1">
-            How ContextBuilder maps to audit-first compliance requirements
+            How True AIm maps to audit-first compliance requirements
           </p>
         </div>
         <Link

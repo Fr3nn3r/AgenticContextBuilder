@@ -206,6 +206,31 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         }
       }
 
+      // Tier 4: German number format matching (P1.2)
+      // Handles German thousand separators: 85.525.335 -> 85525335
+      if (matchIndex === -1) {
+        const normalizeGermanNumbers = (text: string): string => {
+          // Repeatedly remove dots used as thousand separators (digit.3digits pattern)
+          let result = text;
+          let prev = "";
+          while (result !== prev) {
+            prev = result;
+            result = result.replace(/(\d)\.(\d{3})(?=\D|$)/g, "$1$2");
+          }
+          return result;
+        };
+
+        const searchDe = normalizeGermanNumbers(cleanedSearch);
+        const fullTextDe = normalizeGermanNumbers(fullText);
+
+        const deIndex = fullTextDe.toLowerCase().indexOf(searchDe.toLowerCase());
+        if (deIndex !== -1) {
+          // Map back to original position (approximate)
+          matchIndex = deIndex;
+          matchLength = searchDe.length;
+        }
+      }
+
       if (matchIndex === -1) return;
 
       highlightRange(charMap, matchIndex, matchIndex + matchLength);

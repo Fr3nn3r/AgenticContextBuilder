@@ -8,12 +8,34 @@ from context_builder.schemas.claim_facts import (
     FactProvenance,
     SourceDocument,
 )
+from context_builder.schemas.reconciliation import (
+    FactConflict,
+    FactFrequency,
+    GateStatus,
+    GateThresholds,
+    ReconciliationClaimResult,
+    ReconciliationEvalSummary,
+    ReconciliationGate,
+    ReconciliationReport,
+    ReconciliationResult,
+    ReconciliationRunEval,
+)
 
 __all__ = [
     "AggregatedFact",
     "ClaimFacts",
     "DocumentAnalysis",
+    "FactConflict",
+    "FactFrequency",
     "FactProvenance",
+    "GateStatus",
+    "GateThresholds",
     "LLMCallRecord",
+    "ReconciliationClaimResult",
+    "ReconciliationEvalSummary",
+    "ReconciliationGate",
+    "ReconciliationReport",
+    "ReconciliationResult",
+    "ReconciliationRunEval",
     "SourceDocument",
 ]

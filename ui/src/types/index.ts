@@ -46,12 +46,21 @@ export interface PageContent {
   text_md5: string;
 }
 
+/** Reference to a specific table cell */
+export interface CellReference {
+  tableIndex: number;
+  rowIndex: number;
+  columnIndex: number;
+}
+
 export interface FieldProvenance {
   page: number;
   method: string;
   text_quote: string;
   char_start: number;
   char_end: number;
+  /** Reference to specific table cell when value comes from a table (P1.1) */
+  cell_ref?: CellReference | null;
 }
 
 export interface ExtractedField {
@@ -859,6 +868,26 @@ export interface ClaimFacts {
   sources: ClaimFactSource[];
 }
 
+/** Provenance for a service entry with row-level positioning (P0.1) */
+export interface ServiceEntryProvenance {
+  doc_id: string;
+  doc_type: string;
+  filename: string;
+  run_id: string;
+  /** Page number where item was found */
+  page?: number | null;
+  /** Character start offset in page text */
+  char_start?: number | null;
+  /** Character end offset in page text */
+  char_end?: number | null;
+  /** Text snippet containing the value */
+  text_quote?: string | null;
+  /** Index of the table on the page */
+  table_index?: number | null;
+  /** Row index within the table */
+  row_index?: number | null;
+}
+
 /** Service entry from structured_value */
 export interface ServiceEntry {
   date?: string | null;
@@ -867,6 +896,8 @@ export interface ServiceEntry {
   provider?: string | null;
   work_performed?: string | null;
   cost?: string | number | null;
+  /** Row-level provenance for this service entry (P0.1) */
+  provenance?: ServiceEntryProvenance | null;
   [key: string]: unknown;
 }
 
@@ -972,6 +1003,57 @@ export interface AssessmentEvaluation {
   confusion_matrix: AssessmentConfusionMatrix;
   results: AssessmentEvalResult[];
   summary: AssessmentEvalSummary;
+}
+
+// =============================================================================
+// RECONCILIATION EVALUATION TYPES
+// =============================================================================
+
+/** Gate status for reconciliation */
+export type ReconciliationGateStatus = "pass" | "warn" | "fail";
+
+/** Per-claim result in reconciliation evaluation */
+export interface ReconciliationClaimResult {
+  claim_id: string;
+  gate_status: ReconciliationGateStatus;
+  fact_count: number;
+  conflict_count: number;
+  missing_critical_count: number;
+  missing_critical_facts: string[];
+  provenance_coverage: number;
+  reasons: string[];
+}
+
+/** Frequency count for a fact (missing or conflicting) */
+export interface FactFrequency {
+  fact_name: string;
+  count: number;
+  claim_ids: string[];
+}
+
+/** Summary statistics for reconciliation evaluation */
+export interface ReconciliationEvalSummary {
+  total_claims: number;
+  passed: number;
+  warned: number;
+  failed: number;
+  pass_rate: number;
+  pass_rate_percent: string;
+  avg_fact_count: number;
+  avg_conflicts: number;
+  avg_missing_critical: number;
+  total_conflicts: number;
+}
+
+/** Full reconciliation evaluation response */
+export interface ReconciliationEvaluation {
+  schema_version: string;
+  evaluated_at: string;
+  run_id?: string;
+  summary: ReconciliationEvalSummary;
+  top_missing_facts: FactFrequency[];
+  top_conflicts: FactFrequency[];
+  results: ReconciliationClaimResult[];
 }
 
 /** Triage queue priority level */

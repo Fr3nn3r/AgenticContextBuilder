@@ -108,7 +108,7 @@ export function ChecksReviewPanel({ checks, onEvidenceClick, className }: Checks
       </div>
 
       {/* Check cards */}
-      <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
+      <div className="p-4 space-y-2">
         {filteredChecks.length > 0 ? (
           filteredChecks.map((check, idx) => {
             // Find the original index for expansion tracking

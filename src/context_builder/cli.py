@@ -709,6 +709,49 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== RECONCILE-EVAL SUBCOMMAND ==========
+    reconcile_eval_parser = subparsers.add_parser(
+        "reconcile-eval",
+        help="Aggregate reconciliation reports into a run-level evaluation",
+        epilog="""
+Aggregates all reconciliation_report.json files from claims in the workspace
+and produces a summary evaluation file.
+
+The evaluation includes:
+- Summary: total claims, pass/warn/fail counts, pass rate
+- Top missing critical facts across all claims
+- Top conflicting facts across all claims
+- Per-claim gate status and metrics
+
+Output:
+  eval/reconciliation_gate_eval_YYYYMMDD_HHMMSS.json
+
+Examples:
+  %(prog)s reconcile-eval              # Aggregate all reconciliation reports
+  %(prog)s reconcile-eval --dry-run    # Preview without writing
+  %(prog)s reconcile-eval --top-n 5    # Include top 5 missing/conflicts
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    reconcile_eval_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show evaluation output without writing to files",
+    )
+    reconcile_eval_parser.add_argument(
+        "--top-n",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of top missing facts and conflicts to include (default: 10)",
+    )
+    reconcile_eval_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    reconcile_eval_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     # ========== BACKFILL-EVIDENCE SUBCOMMAND ==========
     backfill_parser = subparsers.add_parser(
         "backfill-evidence",
@@ -1640,6 +1683,81 @@ def main():
             except ReconciliationError as e:
                 logger.error(f"Reconciliation failed: {e}")
                 print(f"[X] Reconciliation failed: {e}")
+                sys.exit(1)
+
+        elif args.command == "reconcile-eval":
+            # ========== RECONCILE-EVAL COMMAND ==========
+            from context_builder.api.services.aggregation import AggregationService
+            from context_builder.api.services.reconciliation import (
+                ReconciliationError,
+                ReconciliationService,
+            )
+            from context_builder.storage.filesystem import FileStorage
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Initialize storage and services
+            storage = FileStorage(workspace_root)
+            aggregation = AggregationService(storage)
+            reconciliation = ReconciliationService(storage, aggregation)
+
+            try:
+                # Aggregate reconciliation reports
+                top_n = getattr(args, "top_n", 10)
+                evaluation = reconciliation.aggregate_run_evaluation(top_n=top_n)
+
+                if evaluation.summary.total_claims == 0:
+                    print("[!] No reconciliation reports found in workspace")
+                    print("    Run 'reconcile --claim-id <id>' for each claim first")
+                    sys.exit(0)
+
+                if args.dry_run:
+                    # Print JSON output to stdout
+                    print(evaluation.model_dump_json(indent=2))
+                else:
+                    # Write evaluation file
+                    output_path = reconciliation.write_run_evaluation(evaluation)
+
+                    if not args.quiet:
+                        # Print summary
+                        summary = evaluation.summary
+                        print(f"\n[OK] Reconciliation evaluation complete")
+                        print(f"    Claims evaluated: {summary.total_claims}")
+                        print(f"    Pass: {summary.passed} ({summary.pass_rate_percent})")
+                        print(f"    Warn: {summary.warned}")
+                        print(f"    Fail: {summary.failed}")
+                        print(f"    Avg facts: {summary.avg_fact_count:.1f}")
+                        print(f"    Avg conflicts: {summary.avg_conflicts:.1f}")
+                        print(f"    Total conflicts: {summary.total_conflicts}")
+                        if evaluation.top_missing_facts:
+                            print(f"    Top missing facts:")
+                            for f in evaluation.top_missing_facts[:3]:
+                                print(f"      - {f.fact_name}: {f.count} claims")
+                        if evaluation.top_conflicts:
+                            print(f"    Top conflicts:")
+                            for c in evaluation.top_conflicts[:3]:
+                                print(f"      - {c.fact_name}: {c.count} claims")
+                        print(f"    Output: {output_path}")
+
+            except ReconciliationError as e:
+                logger.error(f"Reconciliation evaluation failed: {e}")
+                print(f"[X] Reconciliation evaluation failed: {e}")
                 sys.exit(1)
 
         elif args.command == "backfill-evidence":

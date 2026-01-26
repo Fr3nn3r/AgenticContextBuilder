@@ -5,6 +5,16 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 
+class CellReference(BaseModel):
+    """Reference to a specific table cell."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_index: int = Field(..., ge=0, description="Index of the table on the page")
+    row_index: int = Field(..., ge=0, description="Row index within the table")
+    column_index: int = Field(..., ge=0, description="Column index within the table")
+
+
 class FieldProvenance(BaseModel):
     """Evidence source for an extracted field value."""
 
@@ -20,6 +30,11 @@ class FieldProvenance(BaseModel):
     match_quality: Optional[str] = Field(
         default=None,
         description="How quote was matched: exact/case_insensitive/normalized/resolved/not_found/placeholder/page_not_found"
+    )
+    # Table cell reference (P1.1)
+    cell_ref: Optional[CellReference] = Field(
+        default=None,
+        description="Reference to specific table cell when value comes from a table"
     )
 
 

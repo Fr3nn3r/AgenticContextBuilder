@@ -1,30 +1,106 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "../lib/utils";
+import type { BoundingBox, SmartBoundingBox } from "../types";
+import { BboxOverlay } from "./BboxOverlay";
 
 interface ImageViewerProps {
   url: string;
   alt?: string;
   className?: string;
+  /** Bounding boxes to highlight on the image (P0.2) */
+  highlightBboxes?: (BoundingBox | SmartBoundingBox)[];
+  /** Page number for filtering bboxes (images are single-page, typically page 1) */
+  pageNumber?: number;
 }
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
 const ZOOM_SENSITIVITY = 0.002;
 
-export function ImageViewer({ url, alt = "Document", className }: ImageViewerProps) {
+// Default DPI for images (standard for most scanned documents)
+const DEFAULT_IMAGE_DPI = 72;
+
+export function ImageViewer({
+  url,
+  alt = "Document",
+  className,
+  highlightBboxes,
+  pageNumber = 1
+}: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imageLoaded, setImageLoaded] = useState(false);
 
+  // Image dimensions for bbox overlay
+  const [imageDimensions, setImageDimensions] = useState<{
+    naturalWidth: number;
+    naturalHeight: number;
+    displayWidth: number;
+    displayHeight: number;
+    widthInches: number;
+    heightInches: number;
+  } | null>(null);
+
   // Reset state when URL changes
   useEffect(() => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
     setImageLoaded(false);
+    setImageDimensions(null);
   }, [url]);
+
+  // Handle image load and calculate dimensions
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true);
+
+    if (imgRef.current) {
+      const img = imgRef.current;
+      const naturalWidth = img.naturalWidth;
+      const naturalHeight = img.naturalHeight;
+      const displayWidth = img.clientWidth;
+      const displayHeight = img.clientHeight;
+
+      // Calculate page dimensions in inches (assume 72 DPI for images)
+      const widthInches = naturalWidth / DEFAULT_IMAGE_DPI;
+      const heightInches = naturalHeight / DEFAULT_IMAGE_DPI;
+
+      setImageDimensions({
+        naturalWidth,
+        naturalHeight,
+        displayWidth,
+        displayHeight,
+        widthInches,
+        heightInches,
+      });
+    }
+  }, []);
+
+  // Update display dimensions on resize
+  useEffect(() => {
+    if (!imageLoaded || !imgRef.current) return;
+
+    const updateDisplayDimensions = () => {
+      if (imgRef.current && imageDimensions) {
+        const displayWidth = imgRef.current.clientWidth;
+        const displayHeight = imgRef.current.clientHeight;
+
+        setImageDimensions(prev => prev ? {
+          ...prev,
+          displayWidth,
+          displayHeight,
+        } : null);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(updateDisplayDimensions);
+    resizeObserver.observe(imgRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [imageLoaded, imageDimensions]);
 
   // Handle mouse wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -83,6 +159,14 @@ export function ImageViewer({ url, alt = "Document", className }: ImageViewerPro
   const isZoomed = scale > 1;
   const showZoomIndicator = scale !== 1;
 
+  // Filter bboxes for this page and adjust dimensions for image
+  const filteredBboxes = highlightBboxes?.filter(b => b.pageNumber === pageNumber).map(bbox => ({
+    ...bbox,
+    // Override page dimensions with actual image dimensions in inches
+    pageWidthInches: imageDimensions?.widthInches || bbox.pageWidthInches,
+    pageHeightInches: imageDimensions?.heightInches || bbox.pageHeightInches,
+  })) || [];
+
   return (
     <div
       ref={containerRef}
@@ -108,13 +192,26 @@ export function ImageViewer({ url, alt = "Document", className }: ImageViewerPro
           transition: isDragging ? "none" : "transform 0.1s ease-out",
         }}
       >
-        <img
-          src={url}
-          alt={alt}
-          className="max-w-full max-h-full object-contain shadow-lg select-none"
-          draggable={false}
-          onLoad={() => setImageLoaded(true)}
-        />
+        {/* Image wrapper for bbox overlay positioning */}
+        <div className="relative inline-block">
+          <img
+            ref={imgRef}
+            src={url}
+            alt={alt}
+            className="max-w-full max-h-full object-contain shadow-lg select-none"
+            draggable={false}
+            onLoad={handleImageLoad}
+          />
+
+          {/* Bbox overlay for image highlighting (P0.2) */}
+          {imageLoaded && imageDimensions && filteredBboxes.length > 0 && (
+            <BboxOverlay
+              bboxes={filteredBboxes}
+              canvasWidth={imageDimensions.displayWidth}
+              canvasHeight={imageDimensions.displayHeight}
+            />
+          )}
+        </div>
       </div>
 
       {/* Zoom indicator */}

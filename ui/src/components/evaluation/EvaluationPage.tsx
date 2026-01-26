@@ -20,9 +20,9 @@ import {
   type RunComparison,
 } from "../../api/client";
 import { EvolutionView } from "./EvolutionView";
-import { AssessmentEvalView } from "../assessment";
+import { AssessmentEvalView, ReconciliationEvalView } from "../assessment";
 
-type EvaluationTab = "compare" | "evolution" | "assessment";
+type EvaluationTab = "compare" | "evolution" | "assessment" | "reconciliation";
 
 export function EvaluationPage() {
   const navigate = useNavigate();
@@ -176,6 +176,17 @@ export function EvaluationPage() {
         >
           Assessment
         </button>
+        <button
+          onClick={() => setActiveTab("reconciliation")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "reconciliation"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Reconciliation
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -183,6 +194,8 @@ export function EvaluationPage() {
         <EvolutionView />
       ) : activeTab === "assessment" ? (
         <AssessmentEvalView />
+      ) : activeTab === "reconciliation" ? (
+        <ReconciliationEvalView />
       ) : (
         <CompareRunsView
           runs={runs}

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { AlertTriangle, Wrench, Calendar } from "lucide-react";
-import type { AggregatedFact, ServiceEntry } from "../../types";
+import { AlertTriangle, Wrench, Calendar, ExternalLink } from "lucide-react";
+import type { AggregatedFact, ServiceEntry, ServiceEntryProvenance } from "../../types";
 import { cn } from "../../lib/utils";
 
 interface ServiceTimelineProps {
@@ -81,12 +81,19 @@ function TimelineNode({
   entry,
   isFirst,
   isLast,
-  prevEntry
+  prevEntry,
+  onViewSource
 }: {
   entry: TimelineEntry;
   isFirst: boolean;
   isLast: boolean;
   prevEntry?: TimelineEntry;
+  onViewSource?: (
+    docId: string,
+    page: number | null,
+    charStart: number | null,
+    charEnd: number | null
+  ) => void;
 }) {
   // Calculate gap from previous entry
   let gapDays = 0;
@@ -103,6 +110,20 @@ function TimelineNode({
   const hasTimeGap = gapDays > 365;
   const hasMileageGap = gapKm > 30000;
   const hasGap = hasTimeGap || hasMileageGap;
+
+  // P0.1: Handle per-row click for viewing source
+  const hasRowProvenance = entry.provenance && entry.provenance.doc_id;
+  const handleEntryClick = (e: React.MouseEvent) => {
+    if (!onViewSource || !entry.provenance) return;
+    e.stopPropagation(); // Prevent bubbling to parent container
+
+    onViewSource(
+      entry.provenance.doc_id,
+      entry.provenance.page ?? null,
+      entry.provenance.char_start ?? null,
+      entry.provenance.char_end ?? null
+    );
+  };
 
   return (
     <div className="relative flex items-start gap-3">
@@ -154,13 +175,20 @@ function TimelineNode({
           </div>
         )}
 
-        {/* Service entry card */}
-        <div className={cn(
-          "rounded-lg border p-2.5 transition-all hover:shadow-sm",
-          hasGap
-            ? "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30"
-            : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50"
-        )}>
+        {/* Service entry card - P0.1: clickable for per-row navigation */}
+        <div
+          className={cn(
+            "rounded-lg border p-2.5 transition-all",
+            hasGap
+              ? "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30"
+              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50",
+            hasRowProvenance && onViewSource
+              ? "cursor-pointer hover:shadow-md hover:border-primary/50"
+              : "hover:shadow-sm"
+          )}
+          onClick={hasRowProvenance ? handleEntryClick : undefined}
+          title={hasRowProvenance ? "Click to view source" : undefined}
+        >
           {/* Header: Date and Type */}
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="flex items-center gap-2">
@@ -176,11 +204,17 @@ function TimelineNode({
               )}
             </div>
 
-            {entry.parsedMileage && (
-              <span className="text-xs font-mono text-slate-500 dark:text-slate-400 tabular-nums">
-                {formatMileage(entry.parsedMileage)}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {entry.parsedMileage && (
+                <span className="text-xs font-mono text-slate-500 dark:text-slate-400 tabular-nums">
+                  {formatMileage(entry.parsedMileage)}
+                </span>
+              )}
+              {/* P0.1: Show indicator when row has provenance */}
+              {hasRowProvenance && onViewSource && (
+                <ExternalLink className="h-3 w-3 text-slate-400" />
+              )}
+            </div>
           </div>
 
           {/* Service details */}
@@ -322,6 +356,7 @@ export function ServiceTimeline({ facts, onViewSource }: ServiceTimelineProps) {
             isFirst={idx === 0}
             isLast={idx === serviceEntries.length - 1}
             prevEntry={idx > 0 ? serviceEntries[idx - 1] : undefined}
+            onViewSource={onViewSource}
           />
         ))}
       </div>

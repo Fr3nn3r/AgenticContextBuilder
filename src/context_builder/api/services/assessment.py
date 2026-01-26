@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +25,145 @@ class AssessmentService:
     def _get_assessment_path(self, claim_id: str) -> Path:
         """Get the path to a claim's assessment file."""
         return self.claims_dir / claim_id / "context" / "assessment.json"
+
+    def _get_assessments_dir(self, claim_id: str) -> Path:
+        """Get the path to a claim's assessments history directory."""
+        return self.claims_dir / claim_id / "context" / "assessments"
+
+    def _get_assessments_index_path(self, claim_id: str) -> Path:
+        """Get the path to a claim's assessments index file."""
+        return self._get_assessments_dir(claim_id) / "index.json"
+
+    def _load_assessments_index(self, claim_id: str) -> Dict[str, Any]:
+        """Load the assessments index, creating empty structure if missing."""
+        index_path = self._get_assessments_index_path(claim_id)
+        if index_path.exists():
+            try:
+                with open(index_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load assessments index: {e}")
+        return {"assessments": []}
+
+    def _save_assessments_index(self, claim_id: str, index: Dict[str, Any]) -> None:
+        """Save the assessments index file."""
+        index_path = self._get_assessments_index_path(claim_id)
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(index_path, "w", encoding="utf-8") as f:
+            json.dump(index, f, indent=2)
+
+    def save_assessment(
+        self,
+        claim_id: str,
+        assessment_data: Dict[str, Any],
+        prompt_version: Optional[str] = None,
+        extraction_bundle_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Save a new assessment with versioned history.
+
+        Creates a timestamped file in assessments/ directory, updates index.json,
+        and copies to assessment.json for backwards compatibility.
+
+        Args:
+            claim_id: The claim ID
+            assessment_data: Raw assessment data to save
+            prompt_version: Optional prompt version string
+            extraction_bundle_id: Optional extraction bundle identifier
+
+        Returns:
+            Assessment metadata including id, filename, timestamp
+        """
+        # Generate timestamp and assessment ID
+        now = datetime.now(timezone.utc)
+        timestamp_str = now.strftime("%Y-%m-%dT%H-%M-%S")
+        version_str = prompt_version or "unknown"
+        assessment_id = f"{timestamp_str}_v{version_str}"
+        filename = f"{assessment_id}.json"
+
+        # Ensure directory exists
+        assessments_dir = self._get_assessments_dir(claim_id)
+        assessments_dir.mkdir(parents=True, exist_ok=True)
+
+        # Add metadata to assessment
+        assessment_with_meta = {
+            **assessment_data,
+            "assessment_id": assessment_id,
+            "assessment_timestamp": now.isoformat(),
+            "prompt_version": prompt_version,
+            "extraction_bundle_id": extraction_bundle_id,
+        }
+
+        # Save versioned file
+        versioned_path = assessments_dir / filename
+        with open(versioned_path, "w", encoding="utf-8") as f:
+            json.dump(assessment_with_meta, f, indent=2)
+        logger.info(f"Saved assessment to {versioned_path}")
+
+        # Update index
+        index = self._load_assessments_index(claim_id)
+
+        # Mark all existing as not current
+        for entry in index["assessments"]:
+            entry["is_current"] = False
+
+        # Add new entry
+        new_entry = {
+            "id": assessment_id,
+            "filename": filename,
+            "timestamp": now.isoformat(),
+            "prompt_version": prompt_version,
+            "extraction_bundle_id": extraction_bundle_id,
+            "decision": assessment_data.get("decision"),
+            "confidence_score": assessment_data.get("confidence_score"),
+            "is_current": True,
+        }
+        index["assessments"].append(new_entry)
+        self._save_assessments_index(claim_id, index)
+
+        # Copy to assessment.json for backwards compatibility
+        main_path = self._get_assessment_path(claim_id)
+        main_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(main_path, "w", encoding="utf-8") as f:
+            json.dump(assessment_with_meta, f, indent=2)
+        logger.info(f"Updated main assessment at {main_path}")
+
+        return new_entry
+
+    def get_assessment_by_id(
+        self, claim_id: str, assessment_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Load a specific assessment by its ID.
+
+        Args:
+            claim_id: The claim ID
+            assessment_id: The assessment ID (timestamp_version format)
+
+        Returns:
+            Transformed assessment, or None if not found
+        """
+        index = self._load_assessments_index(claim_id)
+
+        # Find entry in index
+        entry = next(
+            (a for a in index["assessments"] if a["id"] == assessment_id), None
+        )
+        if not entry:
+            logger.debug(f"Assessment {assessment_id} not found in index")
+            return None
+
+        # Load from file
+        assessment_path = self._get_assessments_dir(claim_id) / entry["filename"]
+        if not assessment_path.exists():
+            logger.warning(f"Assessment file missing: {assessment_path}")
+            return None
+
+        try:
+            with open(assessment_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return self._transform_assessment(data)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load assessment {assessment_id}: {e}")
+            return None
 
     def _parse_check_number(self, check_number: Any) -> int:
         """Parse check_number to integer, handling strings like '1b'.
@@ -210,35 +350,81 @@ class AssessmentService:
             return None
 
     def get_assessment_history(self, claim_id: str) -> List[Dict[str, Any]]:
-        """Return current assessment as single history entry.
+        """Return all assessment history entries for a claim.
 
-        Currently, we only store the latest assessment, so history
-        is just the current assessment wrapped in a list.
+        Reads from assessments/index.json if available, falling back to
+        wrapping the current assessment as a single entry.
 
         Args:
             claim_id: The claim ID to load assessment history for
 
         Returns:
-            List containing single AssessmentHistoryEntry, or empty list
-            if no assessment exists
+            List of AssessmentHistoryEntry dicts, newest first, or empty list
         """
-        assessment = self.get_assessment(claim_id)
+        index = self._load_assessments_index(claim_id)
 
+        # If we have versioned history, use it
+        if index["assessments"]:
+            history = []
+            for entry in reversed(index["assessments"]):  # Newest first
+                # Load full assessment to get check counts
+                assessment = self.get_assessment_by_id(claim_id, entry["id"])
+                checks_passed = 0
+                checks_total = 0
+                assumption_count = 0
+
+                if assessment:
+                    checks_passed = sum(
+                        1
+                        for c in assessment.get("checks", [])
+                        if c.get("result") == "PASS"
+                    )
+                    checks_total = len(assessment.get("checks", []))
+                    assumption_count = len(assessment.get("assumptions", []))
+
+                # Convert confidence_score to percentage if needed
+                confidence = entry.get("confidence_score", 0)
+                if isinstance(confidence, (int, float)) and confidence <= 1.0:
+                    confidence = confidence * 100
+
+                history.append({
+                    "run_id": entry.get("id"),
+                    "timestamp": entry.get("timestamp"),
+                    "decision": entry.get("decision"),
+                    "confidence_score": confidence,
+                    "payout": assessment.get("payout") if assessment else None,
+                    "prompt_version": entry.get("prompt_version"),
+                    "extraction_bundle_id": entry.get("extraction_bundle_id"),
+                    "is_current": entry.get("is_current", False),
+                    "check_count": checks_total,
+                    "pass_count": checks_passed,
+                    "fail_count": checks_total - checks_passed,
+                    "assumption_count": assumption_count,
+                })
+            return history
+
+        # Fallback: wrap current assessment as single entry
+        assessment = self.get_assessment(claim_id)
         if assessment is None:
             return []
 
-        # Return current assessment as single history entry
-        # Note: confidence_score is already converted to percentage in get_assessment()
+        checks = assessment.get("checks", [])
+        checks_total = len(checks)
+        checks_passed = sum(1 for c in checks if c.get("result") == "PASS")
+
         return [
             {
+                "run_id": None,
                 "timestamp": assessment.get("assessed_at"),
                 "decision": assessment.get("decision"),
                 "confidence_score": assessment.get("confidence_score"),
                 "payout": assessment.get("payout"),
-                "checks_passed": sum(
-                    1 for c in assessment.get("checks", []) if c.get("result") == "PASS"
-                ),
-                "checks_total": len(assessment.get("checks", [])),
+                "prompt_version": None,
+                "extraction_bundle_id": None,
+                "is_current": True,
+                "check_count": checks_total,
+                "pass_count": checks_passed,
+                "fail_count": checks_total - checks_passed,
                 "assumption_count": len(assessment.get("assumptions", [])),
             }
         ]

@@ -1137,6 +1137,7 @@ export async function getCostByModel(): Promise<CostByModel[]> {
 import type {
   ClaimAssessment,
   AssessmentEvaluation,
+  ReconciliationEvaluation,
   TriageQueueItem,
   TriageQueueFilters,
 } from "../types";
@@ -1162,6 +1163,18 @@ export async function getClaimAssessment(claimId: string): Promise<ClaimAssessme
 export async function getLatestAssessmentEval(): Promise<AssessmentEvaluation | null> {
   try {
     return await fetchJson<AssessmentEvaluation>(`${API_BASE}/assessment/evals/latest`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the latest reconciliation gate evaluation results.
+ * Returns null if no evaluation has been run.
+ */
+export async function getLatestReconciliationEval(): Promise<ReconciliationEvaluation | null> {
+  try {
+    return await fetchJson<ReconciliationEvaluation>(`${API_BASE}/reconciliation/evals/latest`);
   } catch {
     return null;
   }
