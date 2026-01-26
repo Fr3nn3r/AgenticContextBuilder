@@ -14,6 +14,7 @@ from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from context_builder.api.services import (
+    AggregationService,
     AssessmentService,
     AuditService,
     AuthService,
@@ -24,6 +25,7 @@ from context_builder.api.services import (
     LabelsService,
     PipelineService,
     PromptConfigService,
+    ReconciliationService,
     Role,
     TokenCostsService,
     TruthService,
@@ -67,6 +69,14 @@ def get_data_dir() -> Path:
 def get_staging_dir() -> Path:
     """Get the current staging directory."""
     return _startup_get_staging_dir()
+
+
+def get_workspace_path() -> Path:
+    """Get the current workspace root directory.
+
+    DATA_DIR is {workspace}/claims, so workspace root is its parent.
+    """
+    return get_data_dir().parent
 
 
 def _get_global_config_dir() -> Path:
@@ -200,6 +210,19 @@ def get_truth_service() -> TruthService:
 def get_assessment_service() -> AssessmentService:
     """Get AssessmentService instance."""
     return AssessmentService(get_data_dir())
+
+
+def get_aggregation_service() -> AggregationService:
+    """Get AggregationService instance."""
+    storage = FileStorage(get_data_dir())
+    return AggregationService(storage)
+
+
+def get_reconciliation_service() -> ReconciliationService:
+    """Get ReconciliationService instance."""
+    storage = FileStorage(get_data_dir())
+    aggregation = get_aggregation_service()
+    return ReconciliationService(storage, aggregation)
 
 
 # Singleton service instances

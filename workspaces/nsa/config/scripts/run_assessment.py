@@ -312,7 +312,174 @@ def enrich_claim_facts(claim_facts: dict, assumptions: dict) -> dict:
         "unknown_amount": round(stats["unknown_amount"], 2),
     }
 
-    return enriched
+    # Compress line items to reduce token count (filter items < 50 CHF)
+    if "structured_data" in enriched and "line_items" in enriched["structured_data"]:
+        compressed = compress_line_items(enriched)
+        enriched["_line_items_summary"] = compressed["_line_items_summary"]
+        enriched["_primary_repairs"] = compressed["_primary_repairs"]
+        enriched["structured_data"]["line_items"] = compressed["line_items"]
+
+        log.info(
+            f"Line items compressed: {compressed['_line_items_summary']['total_items']} → "
+            f"{compressed['_line_items_summary']['filtered_items']} items, "
+            f"{len(compressed['_primary_repairs'])} primary repairs identified"
+        )
+
+    # Compute check inputs summary (for LLM "fast path")
+    check_inputs = compute_check_inputs(enriched, assumptions)
+
+    # Build output with _check_inputs FIRST for LLM visibility
+    # This ensures critical check inputs are at the TOP of the JSON,
+    # reducing "lost in the middle" problems for large claims
+    ordered = {
+        "_check_inputs": check_inputs,
+        "_shop_authorization_lookup": enriched.pop("_shop_authorization_lookup", {}),
+        "_enrichment_summary": enriched.pop("_enrichment_summary", {}),
+        "_line_items_summary": enriched.pop("_line_items_summary", {}),
+        "_primary_repairs": enriched.pop("_primary_repairs", []),
+    }
+    ordered.update(enriched)
+
+    return ordered
+
+
+def compute_check_inputs(claim_facts: dict, assumptions: dict) -> dict:
+    """
+    Pre-compute all check inputs for fast LLM processing.
+
+    This creates a summary section at the TOP of the enriched facts with
+    all the key values needed for each check, reducing the "lost in the middle"
+    problem for large claims.
+    """
+    facts = claim_facts.get("facts", [])
+    structured = claim_facts.get("structured_data", {})
+
+    def get_fact(name: str):
+        for f in facts:
+            if f.get("name") == name:
+                return f.get("value")
+        return None
+
+    # Check 1: Policy validity inputs
+    check_1 = {
+        "policy_start": get_fact("start_date"),
+        "policy_end": get_fact("end_date"),
+        "claim_date": get_fact("document_date"),
+        "km_limited_to": get_fact("km_limited_to"),
+        "current_odometer": get_fact("odometer_km") or get_fact("vehicle_current_km"),
+    }
+
+    # Check 4a: Shop authorization (copy from enrichment)
+    check_4a = claim_facts.get("_shop_authorization_lookup", {})
+
+    # Check 4b: Service compliance
+    service_entries = structured.get("service_entries", [])
+    last_service = None
+    if service_entries:
+        # Get last service date
+        for entry in reversed(service_entries):
+            if entry.get("service_date"):
+                last_service = entry.get("service_date")
+                break
+
+    check_4b = {
+        "last_service_date": last_service,
+        "service_count": len(service_entries),
+        "claim_date": get_fact("document_date"),
+    }
+
+    # Check 5: Coverage summary (from enrichment)
+    summary = claim_facts.get("_enrichment_summary", {})
+    check_5 = {
+        "total_items": summary.get("total_line_items", 0),
+        "covered_count": summary.get("covered_count", 0),
+        "covered_total": summary.get("covered_amount", 0),
+        "not_covered_count": summary.get("not_covered_count", 0),
+        "not_covered_total": summary.get("not_covered_amount", 0),
+        "unknown_count": summary.get("unknown_count", 0),
+        "unknown_total": summary.get("unknown_amount", 0),
+    }
+
+    return {
+        "check_1_policy_validity": check_1,
+        "check_4a_shop_auth": check_4a,
+        "check_4b_service": check_4b,
+        "check_5_coverage": check_5,
+    }
+
+
+def identify_primary_repairs(line_items: list, threshold: float = 500.0) -> list:
+    """
+    Identify primary repair components (high-value covered parts).
+
+    These are the main components being repaired, not supporting items
+    like labor, fees, gaskets, or bolts.
+    """
+    primary = []
+    for item in line_items:
+        coverage = item.get("_coverage_lookup", {})
+        price = item.get("total_price", 0) or 0
+        item_type = item.get("item_type", "")
+
+        # Primary = high value + not labor/fee + covered or unknown
+        if price >= threshold and item_type not in ("labor", "fee"):
+            if coverage.get("covered") in (True, None):
+                primary.append({
+                    "description": item.get("description"),
+                    "item_code": item.get("item_code"),
+                    "total_price": price,
+                    "system": coverage.get("system"),
+                    "covered": coverage.get("covered"),
+                })
+    return primary
+
+
+def compress_line_items(
+    claim_facts: dict,
+    small_item_threshold: float = 50.0
+) -> dict:
+    """
+    Create compressed line items representation.
+
+    Filters out small items (<50 CHF) to reduce token count while
+    preserving important repair details.
+    """
+    structured = claim_facts.get("structured_data", {})
+    line_items = structured.get("line_items", [])
+
+    # Summary by type
+    by_type = {"parts": 0.0, "labor": 0.0, "fee": 0.0, "other": 0.0}
+    by_type_count = {"parts": 0, "labor": 0, "fee": 0, "other": 0}
+
+    for item in line_items:
+        item_type = item.get("item_type", "other") or "other"
+        price = item.get("total_price", 0) or 0
+        if item_type in by_type:
+            by_type[item_type] += price
+            by_type_count[item_type] += 1
+        else:
+            by_type["other"] += price
+            by_type_count["other"] += 1
+
+    # Primary repairs only
+    primary = identify_primary_repairs(line_items)
+
+    # Filtered line items (exclude small items)
+    filtered = [
+        item for item in line_items
+        if (item.get("total_price", 0) or 0) >= small_item_threshold
+    ]
+
+    return {
+        "_line_items_summary": {
+            "total_items": len(line_items),
+            "filtered_items": len(filtered),
+            "by_type_amount": {k: round(v, 2) for k, v in by_type.items()},
+            "by_type_count": by_type_count,
+        },
+        "_primary_repairs": primary,
+        "line_items": filtered,  # Replace full list with filtered
+    }
 
 
 def compute_input_hash(data: dict) -> str:

@@ -662,6 +662,53 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== RECONCILE SUBCOMMAND ==========
+    reconcile_parser = subparsers.add_parser(
+        "reconcile",
+        help="Reconcile facts for a claim: aggregate, detect conflicts, evaluate quality gate",
+        epilog="""
+Runs claim-level reconciliation which:
+1. Aggregates facts from document extractions (highest confidence wins)
+2. Detects conflicts (same fact with different values across documents)
+3. Evaluates a quality gate (pass/warn/fail based on missing facts and conflicts)
+4. Writes reconciliation_report.json with gate status and conflict details
+
+The gate is advisory - it does not block downstream processing.
+
+Output:
+  claims/{claim_id}/context/claim_facts.json          # Aggregated facts
+  claims/{claim_id}/context/reconciliation_report.json # Gate status & conflicts
+
+Examples:
+  %(prog)s reconcile --claim-id 65196              # Reconcile a claim
+  %(prog)s reconcile --claim-id 65196 --dry-run   # Preview without writing
+  %(prog)s reconcile --claim-id 65196 --run-id run_20260124_153000  # Specific run
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    reconcile_parser.add_argument(
+        "--claim-id",
+        required=True,
+        metavar="ID",
+        help="Claim ID to reconcile",
+    )
+    reconcile_parser.add_argument(
+        "--run-id",
+        metavar="ID",
+        help="Specific run ID to use (default: latest complete run)",
+    )
+    reconcile_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show reconciliation output without writing to files",
+    )
+    reconcile_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    reconcile_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     # ========== BACKFILL-EVIDENCE SUBCOMMAND ==========
     backfill_parser = subparsers.add_parser(
         "backfill-evidence",
@@ -1497,6 +1544,102 @@ def main():
             except AggregationError as e:
                 logger.error(f"Aggregation failed: {e}")
                 print(f"[X] Aggregation failed: {e}")
+                sys.exit(1)
+
+        elif args.command == "reconcile":
+            # ========== RECONCILE COMMAND ==========
+            from context_builder.api.services.aggregation import (
+                AggregationService,
+            )
+            from context_builder.api.services.reconciliation import (
+                ReconciliationError,
+                ReconciliationService,
+            )
+            from context_builder.storage.filesystem import FileStorage
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Initialize storage and services
+            storage = FileStorage(workspace_root)
+            aggregation = AggregationService(storage)
+            reconciliation = ReconciliationService(storage, aggregation)
+
+            try:
+                # Run reconciliation
+                result = reconciliation.reconcile(
+                    claim_id=args.claim_id,
+                    run_id=getattr(args, "run_id", None),
+                )
+
+                if not result.success:
+                    logger.error(f"Reconciliation failed: {result.error}")
+                    print(f"[X] Reconciliation failed: {result.error}")
+                    sys.exit(1)
+
+                report = result.report
+
+                if args.dry_run:
+                    # Print JSON output to stdout
+                    print(report.model_dump_json(indent=2))
+                else:
+                    # Write files
+                    # First write claim_facts.json
+                    facts = aggregation.aggregate_claim_facts(
+                        args.claim_id, report.run_id
+                    )
+                    facts_path = aggregation.write_claim_facts(args.claim_id, facts)
+
+                    # Then write reconciliation_report.json
+                    report_path = reconciliation.write_reconciliation_report(
+                        args.claim_id, report
+                    )
+
+                    if not args.quiet:
+                        # Print summary
+                        gate = report.gate
+                        status_color = {
+                            "pass": "\033[92m",  # Green
+                            "warn": "\033[93m",  # Yellow
+                            "fail": "\033[91m",  # Red
+                        }.get(gate.status.value, "")
+                        reset = "\033[0m"
+
+                        print(f"\n[OK] Reconciliation complete for {args.claim_id}")
+                        print(f"    Gate: {status_color}{gate.status.value.upper()}{reset}")
+                        print(f"    Facts: {report.fact_count}")
+                        print(f"    Conflicts: {gate.conflict_count}")
+                        print(f"    Missing critical: {len(gate.missing_critical_facts)}")
+                        if gate.missing_critical_facts:
+                            print(f"      {', '.join(gate.missing_critical_facts[:5])}")
+                        if report.conflicts:
+                            print(f"    Conflict details:")
+                            for c in report.conflicts[:3]:
+                                print(f"      - {c.fact_name}: {c.values}")
+                        print(f"    Reasons: {', '.join(gate.reasons)}")
+                        print(f"    Run: {report.run_id}")
+                        print(f"    Output:")
+                        print(f"      {facts_path}")
+                        print(f"      {report_path}")
+
+            except ReconciliationError as e:
+                logger.error(f"Reconciliation failed: {e}")
+                print(f"[X] Reconciliation failed: {e}")
                 sys.exit(1)
 
         elif args.command == "backfill-evidence":

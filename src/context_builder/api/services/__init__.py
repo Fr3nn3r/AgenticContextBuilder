@@ -8,6 +8,7 @@ from .documents import DocumentsService
 from .evolution import EvolutionService
 from .insights import InsightsService
 from .labels import LabelsService
+from .reconciliation import ReconciliationError, ReconciliationService
 from .truth import TruthService
 from .upload import PendingClaim, PendingDocument, UploadService
 from .pipeline import DocPhase, DocProgress, PipelineRun, PipelineService, PipelineStatus
@@ -38,6 +39,8 @@ __all__ = [
     "PipelineStatus",
     "PromptConfig",
     "PromptConfigService",
+    "ReconciliationError",
+    "ReconciliationService",
     "Role",
     "Session",
     "TruthService",

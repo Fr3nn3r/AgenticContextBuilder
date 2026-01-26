@@ -9,6 +9,54 @@
 
 _Currently active work. Add handoff notes inline._
 
+### 2026-01-26 - Reconciliation Implementation (Phase 1-2 Complete)
+
+**Status**: Backend engine and CLI complete. API endpoints pending.
+
+**Completed**:
+- Phase 1: ReconciliationService with conflict detection, gate evaluation
+- Phase 2: CLI `reconcile` command with dry-run support
+
+**New Files**:
+- `src/context_builder/schemas/reconciliation.py` - Pydantic models
+- `src/context_builder/api/services/reconciliation.py` - ReconciliationService
+
+**Modified Files**:
+- `src/context_builder/pipeline/claim_stages/reconciliation.py` - Replaced stub
+- `src/context_builder/cli.py` - Added `reconcile` command
+
+**Test Results**: All 4 claims reconcile successfully (65128, 65157, 65196, 65258)
+
+**Remaining**:
+- Phase 3: API endpoints (`POST /claims/{id}/reconcile`, `GET /claims/{id}/reconciliation-report`)
+- Phase 4: Run-level aggregation for dashboard
+- Phase 5: UI components
+
+**Handoff**: See `docs/HANDOFF_RECONCILIATION.md` for full details.
+
+---
+
+### 2025-01-25 - Backend Refactoring Week 2 ✅ COMPLETE
+
+**Status**: Router extraction complete. main.py reduced from 2723 to 160 lines.
+
+**Completed**:
+- Created 14 router files in `api/routers/`
+- Extracted all endpoints from main.py
+- Fixed test imports to use dependencies.py
+- All 1049 tests passing (2 pre-existing failures)
+
+**Router Files Created**:
+- `claims.py`, `documents.py`, `insights.py`, `evolution.py`
+- `classification.py`, `upload.py`, `pipeline.py`, `compliance.py`
+- (Plus 4 from Week 1: `system.py`, `auth.py`, `admin_users.py`, `admin_workspaces.py`)
+
+**Handoff**: See `docs/REFACTORING_HANDOFF.md` for full details.
+
+**Next Steps**: Optional service layer refactoring or storage cleanup.
+
+---
+
 ### 2026-01-17 - E2E Test Fixes ✅ COMPLETE
 
 **Status**: All E2E tests passing (255 passed, 9 skipped, 0 failed)
