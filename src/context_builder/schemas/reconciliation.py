@@ -80,7 +80,8 @@ class ReconciliationReport(BaseModel):
         default="reconciliation_v1", description="Schema version identifier"
     )
     claim_id: str = Field(..., description="Claim identifier")
-    run_id: str = Field(..., description="Run ID used for reconciliation")
+    claim_run_id: str = Field(..., description="Claim run ID that produced this reconciliation")
+    run_id: str = Field(..., description="Extraction run ID used for reconciliation")
     generated_at: datetime = Field(
         default_factory=datetime.utcnow, description="When reconciliation was performed"
     )

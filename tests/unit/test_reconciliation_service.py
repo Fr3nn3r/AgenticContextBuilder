@@ -196,13 +196,14 @@ class TestEvaluateGate:
                     selected_from=FactProvenance(
                         doc_id="doc1",
                         doc_type="test",
-                        run_id="run_001",
+                        extraction_run_id="run_001",
                     ),
                 )
             )
         return ClaimFacts(
             claim_id="test_claim",
-            run_id="run_001",
+            claim_run_id="run_001",
+            extraction_runs_used=["run_001"],
             facts=facts,
             sources=[],
         )
@@ -313,12 +314,12 @@ class TestEvaluateGate:
                     value="x" * 100,  # Long value
                     confidence=0.9,
                     selected_from=FactProvenance(
-                        doc_id="doc1", doc_type="test", run_id="run_001"
+                        doc_id="doc1", doc_type="test", extraction_run_id="run_001"
                     ),
                 )
             )
         claim_facts = ClaimFacts(
-            claim_id="test", run_id="run_001", facts=facts, sources=[]
+            claim_id="test", claim_run_id="run_001", extraction_runs_used=["run_001"], facts=facts, sources=[]
         )
 
         gate = service.evaluate_gate(claim_facts, [], [], thresholds)
@@ -337,12 +338,12 @@ class TestEvaluateGate:
                     value="x" * 50,
                     confidence=0.9,
                     selected_from=FactProvenance(
-                        doc_id="doc1", doc_type="test", run_id="run_001"
+                        doc_id="doc1", doc_type="test", extraction_run_id="run_001"
                     ),
                 )
             )
         claim_facts = ClaimFacts(
-            claim_id="test", run_id="run_001", facts=facts, sources=[]
+            claim_id="test", claim_run_id="run_001", extraction_runs_used=["run_001"], facts=facts, sources=[]
         )
 
         gate = service.evaluate_gate(claim_facts, [], [], thresholds)
@@ -359,7 +360,7 @@ class TestEvaluateGate:
                 selected_from=FactProvenance(
                     doc_id="doc1",
                     doc_type="test",
-                    run_id="run_001",
+                    extraction_run_id="run_001",
                     text_quote="quote here",  # Has provenance
                 ),
             ),
@@ -370,13 +371,13 @@ class TestEvaluateGate:
                 selected_from=FactProvenance(
                     doc_id="doc1",
                     doc_type="test",
-                    run_id="run_001",
+                    extraction_run_id="run_001",
                     text_quote=None,  # No provenance
                 ),
             ),
         ]
         claim_facts = ClaimFacts(
-            claim_id="test", run_id="run_001", facts=facts, sources=[]
+            claim_id="test", claim_run_id="run_001", extraction_runs_used=["run_001"], facts=facts, sources=[]
         )
 
         gate = service.evaluate_gate(claim_facts, [], [], default_thresholds)
@@ -794,6 +795,7 @@ class TestWriteReconciliationReport:
 
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
             fact_count=10,
@@ -816,6 +818,7 @@ class TestWriteReconciliationReport:
 
         report = ReconciliationReport(
             claim_id="NONEXISTENT",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )

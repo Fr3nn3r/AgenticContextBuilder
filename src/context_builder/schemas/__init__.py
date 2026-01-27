@@ -7,7 +7,9 @@ from context_builder.schemas.claim_facts import (
     ClaimFacts,
     FactProvenance,
     SourceDocument,
+    migrate_claim_facts_to_v3,
 )
+from context_builder.schemas.claim_run import ClaimRunManifest
 from context_builder.schemas.reconciliation import (
     FactConflict,
     FactFrequency,
@@ -24,6 +26,7 @@ from context_builder.schemas.reconciliation import (
 __all__ = [
     "AggregatedFact",
     "ClaimFacts",
+    "ClaimRunManifest",
     "DocumentAnalysis",
     "FactConflict",
     "FactFrequency",
@@ -38,4 +41,5 @@ __all__ = [
     "ReconciliationResult",
     "ReconciliationRunEval",
     "SourceDocument",
+    "migrate_claim_facts_to_v3",
 ]

@@ -292,10 +292,11 @@ class TestAggregateSingleDoc:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         assert facts.claim_id == claim_id
-        assert facts.run_id == run_id
+        assert facts.claim_run_id == "test_claim_run"
+        assert run_id in facts.extraction_runs_used
         assert len(facts.facts) == 1
         assert facts.facts[0].name == "invoice_number"
         assert facts.facts[0].value == "INV-001"
@@ -312,7 +313,7 @@ class TestAggregateMultipleDocs:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # Find policy_number fact
         policy_fact = next(f for f in facts.facts if f.name == "policy_number")
@@ -327,7 +328,7 @@ class TestAggregateMultipleDocs:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # Find insured_name fact
         name_fact = next(f for f in facts.facts if f.name == "insured_name")
@@ -342,7 +343,7 @@ class TestAggregateMultipleDocs:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # loss_date only in doc2
         loss_fact = next(f for f in facts.facts if f.name == "loss_date")
@@ -360,7 +361,7 @@ class TestMissingRunRaises:
         service = AggregationService(storage)
 
         with pytest.raises(AggregationError) as exc_info:
-            service.aggregate_claim_facts(claim_no_complete_run["claim_id"])
+            service.aggregate_claim_facts(claim_no_complete_run["claim_id"], claim_run_id="test_claim_run")
 
         assert "No complete runs found" in str(exc_info.value)
 
@@ -373,7 +374,7 @@ class TestMissingRunRaises:
         service = AggregationService(storage)
 
         with pytest.raises(AggregationError) as exc_info:
-            service.aggregate_claim_facts("NONEXISTENT")
+            service.aggregate_claim_facts("NONEXISTENT", claim_run_id="test_claim_run")
 
         assert "No complete runs found" in str(exc_info.value)
 
@@ -387,7 +388,7 @@ class TestDryRunNoWrite:
         service = AggregationService(storage)
 
         # This should not write any files
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # Verify facts were returned
         assert isinstance(facts, ClaimFacts)
@@ -411,7 +412,7 @@ class TestWriteClaimFacts:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
         output_path = service.write_claim_facts(claim_with_extractions["claim_id"], facts)
 
         assert output_path.exists()
@@ -422,7 +423,7 @@ class TestWriteClaimFacts:
             written_data = json.load(f)
 
         assert written_data["claim_id"] == claim_with_extractions["claim_id"]
-        assert written_data["schema_version"] == "claim_facts_v2"
+        assert written_data["schema_version"] == "claim_facts_v3"
         assert len(written_data["facts"]) > 0
 
     def test_write_nonexistent_claim_raises(self, tmp_path):
@@ -436,7 +437,8 @@ class TestWriteClaimFacts:
         # Create a mock ClaimFacts object
         facts = ClaimFacts(
             claim_id="NONEXISTENT",
-            run_id="test_run",
+            claim_run_id="test_run",
+            extraction_runs_used=["test_run"],
             facts=[],
             sources=[],
         )
@@ -455,7 +457,7 @@ class TestSourceDocuments:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # Should have 2 source documents
         assert len(facts.sources) == 2
@@ -546,7 +548,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Verify structured_data is populated
         assert facts.structured_data is not None
@@ -563,7 +565,7 @@ class TestStructuredDataAggregation:
         assert labor_item.total_price == 75.00
         assert labor_item.source.doc_id == doc_id
         assert labor_item.source.doc_type == "cost_estimate"
-        assert labor_item.source.run_id == run_id
+        assert labor_item.source.extraction_run_id == run_id
 
         parts_item = next(
             i for i in facts.structured_data.line_items if i.item_type == "parts"
@@ -632,7 +634,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Should have merged line items from both documents
         assert facts.structured_data is not None
@@ -648,7 +650,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
         # Existing fixture has insurance_policy and loss_notice, not cost_estimate
         assert facts.structured_data is None
@@ -703,19 +705,19 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Empty line_items should result in None structured_data
         assert facts.structured_data is None
 
-    def test_schema_version_is_v2(self, claim_with_extractions):
-        """ClaimFacts should use schema_version claim_facts_v2."""
+    def test_schema_version_is_v3(self, claim_with_extractions):
+        """ClaimFacts should use schema_version claim_facts_v3."""
         storage = FileStorage(claim_with_extractions["tmp_path"])
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"])
+        facts = service.aggregate_claim_facts(claim_with_extractions["claim_id"], claim_run_id="test_claim_run")
 
-        assert facts.schema_version == "claim_facts_v2"
+        assert facts.schema_version == "claim_facts_v3"
 
     def test_service_entries_from_service_history(self, tmp_path):
         """Service entries from service_history should be aggregated with provenance."""
@@ -792,7 +794,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Verify structured_data is populated with service_entries
         assert facts.structured_data is not None
@@ -811,7 +813,7 @@ class TestStructuredDataAggregation:
         assert first_entry.is_authorized_partner is True
         assert first_entry.source.doc_id == doc_id
         assert first_entry.source.doc_type == "service_history"
-        assert first_entry.source.run_id == run_id
+        assert first_entry.source.extraction_run_id == run_id
 
         # Verify second entry captures unauthorized partner
         second_entry = facts.structured_data.service_entries[1]
@@ -889,7 +891,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Should have merged service entries from both documents
         assert facts.structured_data is not None
@@ -972,7 +974,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Both should be present
         assert facts.structured_data is not None
@@ -1035,7 +1037,7 @@ class TestStructuredDataAggregation:
         storage = FileStorage(tmp_path)
         service = AggregationService(storage)
 
-        facts = service.aggregate_claim_facts(claim_id)
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
 
         # Empty service_entries should result in None structured_data
         assert facts.structured_data is None

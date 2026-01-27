@@ -191,7 +191,7 @@ class AggregationService:
                     "doc_id": doc_id,
                     "doc_type": doc_type,
                     "filename": filename,
-                    "run_id": run_id,
+                    "extraction_run_id": run_id,
                     "page": provenance.get("page"),
                     "text_quote": provenance.get("text_quote"),
                     "char_start": provenance.get("char_start"),
@@ -237,7 +237,7 @@ class AggregationService:
                 selected_from=FactProvenance(
                     doc_id=primary["doc_id"],
                     doc_type=primary["doc_type"],
-                    run_id=primary["run_id"],
+                    extraction_run_id=primary["extraction_run_id"],
                     page=primary.get("page"),
                     text_quote=primary.get("text_quote"),
                     char_start=primary.get("char_start"),
@@ -273,7 +273,7 @@ class AggregationService:
                 doc_id=doc_id,
                 doc_type=doc_type,
                 filename=filename,
-                run_id=run_id,
+                extraction_run_id=run_id,
             )
 
             # Collect line items from cost estimates
@@ -326,13 +326,14 @@ class AggregationService:
         return None
 
     def aggregate_claim_facts(
-        self, claim_id: str, run_id: Optional[str] = None
+        self, claim_id: str, claim_run_id: str, run_id: Optional[str] = None
     ) -> ClaimFacts:
         """Aggregate facts from all documents in a claim.
 
         Args:
             claim_id: Claim identifier.
-            run_id: Optional specific run ID. If not provided, uses latest complete run.
+            claim_run_id: Claim run ID to associate with this aggregation.
+            run_id: Optional specific extraction run ID. If not provided, uses latest complete.
 
         Returns:
             ClaimFacts object with aggregated facts.
@@ -340,7 +341,7 @@ class AggregationService:
         Raises:
             AggregationError: If no complete runs exist or aggregation fails.
         """
-        # Find run to use
+        # Find extraction run to use
         if run_id is None:
             run_id = self.find_latest_complete_run(claim_id)
             if not run_id:
@@ -379,15 +380,16 @@ class AggregationService:
         return ClaimFacts(
             claim_id=claim_id,
             generated_at=datetime.utcnow(),
-            run_id=run_id,
-            run_policy="latest_complete" if run_id else "specified",
+            claim_run_id=claim_run_id,
+            extraction_runs_used=[run_id],
+            run_policy="latest_complete",
             facts=facts,
             sources=sources,
             structured_data=structured_data,
         )
 
     def write_claim_facts(self, claim_id: str, facts: ClaimFacts) -> Path:
-        """Write aggregated facts to claim context directory.
+        """Write aggregated facts to claim run directory.
 
         Args:
             claim_id: Claim identifier.
@@ -403,28 +405,16 @@ class AggregationService:
         if not claim_folder:
             raise AggregationError(f"Claim not found: {claim_id}")
 
-        context_dir = claim_folder / "context"
-        context_dir.mkdir(parents=True, exist_ok=True)
+        from context_builder.storage.claim_run import ClaimRunStorage
 
-        output_path = context_dir / "claim_facts.json"
-        tmp_path = output_path.with_suffix(".tmp")
-
+        claim_run_storage = ClaimRunStorage(claim_folder)
         try:
-            # Write to temp file first (atomic write pattern)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    facts.model_dump(mode="json"),
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str,
-                )
-            # Atomic rename
-            tmp_path.replace(output_path)
+            output_path = claim_run_storage.write_to_claim_run(
+                facts.claim_run_id,
+                "claim_facts.json",
+                facts.model_dump(mode="json"),
+            )
             logger.info(f"Wrote claim_facts.json to {output_path}")
             return output_path
-
-        except IOError as e:
-            if tmp_path.exists():
-                tmp_path.unlink()
+        except Exception as e:
             raise AggregationError(f"Failed to write claim_facts.json: {e}")

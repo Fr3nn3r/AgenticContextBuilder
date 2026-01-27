@@ -11,7 +11,7 @@ class FactProvenance(BaseModel):
 
     doc_id: str = Field(..., description="Document ID where this value was extracted")
     doc_type: str = Field(..., description="Document type (e.g., insurance_policy)")
-    run_id: str = Field(..., description="Run ID that produced this extraction")
+    extraction_run_id: str = Field(..., description="Extraction run ID that produced this value")
     page: Optional[int] = Field(None, description="Page number where value was found")
     text_quote: Optional[str] = Field(
         None, description="Text snippet containing the value"
@@ -52,7 +52,7 @@ class LineItemProvenance(BaseModel):
     doc_id: str = Field(..., description="Document ID where this line item was extracted")
     doc_type: str = Field(..., description="Document type (e.g., cost_estimate)")
     filename: str = Field(..., description="Original filename")
-    run_id: str = Field(..., description="Run ID that produced this extraction")
+    extraction_run_id: str = Field(..., description="Extraction run ID that produced this line item")
     # Row-level positioning (P0.1)
     page: Optional[int] = Field(None, description="Page number where item was found")
     char_start: Optional[int] = Field(None, description="Character start offset in page text")
@@ -109,13 +109,16 @@ class ClaimFacts(BaseModel):
     """Aggregated facts for a claim, selected from multiple documents."""
 
     schema_version: str = Field(
-        default="claim_facts_v2", description="Schema version identifier"
+        default="claim_facts_v3", description="Schema version identifier"
     )
     claim_id: str = Field(..., description="Claim identifier")
     generated_at: datetime = Field(
         default_factory=datetime.utcnow, description="When aggregation was performed"
     )
-    run_id: str = Field(..., description="Run ID used for aggregation")
+    claim_run_id: str = Field(..., description="Claim run ID that produced this aggregation")
+    extraction_runs_used: List[str] = Field(
+        default_factory=list, description="Extraction run IDs that contributed facts"
+    )
     run_policy: str = Field(
         default="latest_complete",
         description="Policy used to select run (latest_complete)",
@@ -129,3 +132,61 @@ class ClaimFacts(BaseModel):
     structured_data: Optional[StructuredClaimData] = Field(
         None, description="Complex structured data (line items, etc.)"
     )
+
+
+def migrate_claim_facts_to_v3(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Migrate claim facts data from v2 to v3 schema in-place.
+
+    This function is idempotent - safe to call on already-migrated data.
+
+    Handles:
+    - Top-level `run_id` -> `extraction_runs_used` list
+    - Adds placeholder `claim_run_id` (caller must set to actual value)
+    - Updates `schema_version` to `claim_facts_v3`
+    - Provenance `run_id` -> `extraction_run_id` in facts
+    - Provenance in structured_data line_items and service_entries
+
+    Args:
+        data: Dictionary containing claim facts data (modified in-place)
+
+    Returns:
+        The modified dictionary (same reference as input)
+    """
+    # Already migrated - return early
+    if data.get("schema_version") == "claim_facts_v3":
+        return data
+
+    # Migrate top-level run_id -> extraction_runs_used
+    if "run_id" in data and "extraction_runs_used" not in data:
+        old_run_id = data.pop("run_id")
+        data["extraction_runs_used"] = [old_run_id] if old_run_id else []
+
+    # Add placeholder claim_run_id if not present (caller should set real value)
+    if "claim_run_id" not in data:
+        data["claim_run_id"] = "MIGRATION_PLACEHOLDER"
+
+    # Update schema version
+    data["schema_version"] = "claim_facts_v3"
+
+    # Migrate provenance in facts
+    for fact in data.get("facts", []):
+        selected_from = fact.get("selected_from", {})
+        if "run_id" in selected_from and "extraction_run_id" not in selected_from:
+            selected_from["extraction_run_id"] = selected_from.pop("run_id")
+
+    # Migrate provenance in structured_data
+    structured_data = data.get("structured_data")
+    if structured_data:
+        # Line items
+        for item in structured_data.get("line_items") or []:
+            source = item.get("source", {})
+            if "run_id" in source and "extraction_run_id" not in source:
+                source["extraction_run_id"] = source.pop("run_id")
+
+        # Service entries
+        for entry in structured_data.get("service_entries") or []:
+            source = entry.get("source", {})
+            if "run_id" in source and "extraction_run_id" not in source:
+                source["extraction_run_id"] = source.pop("run_id")
+
+    return data

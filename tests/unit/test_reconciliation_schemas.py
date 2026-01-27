@@ -177,11 +177,13 @@ class TestReconciliationReport:
         """Test creating report with required fields."""
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )
 
         assert report.claim_id == "CLM-001"
+        assert report.claim_run_id == "clmrun_001"
         assert report.run_id == "run_001"
         assert report.gate.status == GateStatus.PASS
 
@@ -189,6 +191,7 @@ class TestReconciliationReport:
         """Test that schema version has default value."""
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )
@@ -199,6 +202,7 @@ class TestReconciliationReport:
         """Test that generated_at is set automatically."""
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )
@@ -210,6 +214,7 @@ class TestReconciliationReport:
         """Test full report serializes correctly."""
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             generated_at=datetime(2026, 1, 25, 12, 0, 0),
             gate=ReconciliationGate(
@@ -246,6 +251,7 @@ class TestReconciliationResult:
         """Test creating a successful result."""
         report = ReconciliationReport(
             claim_id="CLM-001",
+            claim_run_id="clmrun_001",
             run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )

@@ -69,25 +69,65 @@ class ReconciliationService:
     ) -> ReconciliationResult:
         """Run full reconciliation for a claim.
 
+        Creates a new claim run and writes all outputs to it.
+
         Steps:
+        0. Create claim run
         1. Aggregate facts from extractions
         2. Load critical facts spec from extraction specs
         3. Detect conflicts
         4. Evaluate quality gate
         5. Build report
+        6. Write outputs to claim run
+        7. Update manifest
 
         Args:
             claim_id: Claim identifier.
-            run_id: Optional specific run ID. If not provided, uses latest complete run.
+            run_id: Optional specific extraction run ID. If not provided, uses latest complete.
 
         Returns:
             ReconciliationResult with report (if successful) or error.
         """
         try:
-            # Step 1: Aggregate facts
+            # Step 0: Create claim run
+            from context_builder.storage.claim_run import ClaimRunStorage
+            from context_builder import get_version
+
             logger.info(f"Starting reconciliation for claim {claim_id}")
-            claim_facts = self.aggregation.aggregate_claim_facts(claim_id, run_id)
-            actual_run_id = claim_facts.run_id
+
+            claim_folder = self.storage._find_claim_folder(claim_id)
+            if not claim_folder:
+                return ReconciliationResult(
+                    claim_id=claim_id,
+                    success=False,
+                    error=f"Claim not found: {claim_id}",
+                )
+
+            claim_run_storage = ClaimRunStorage(claim_folder)
+
+            # Find extraction run to use
+            if run_id is None:
+                run_id = self.aggregation.find_latest_complete_run(claim_id)
+                if not run_id:
+                    return ReconciliationResult(
+                        claim_id=claim_id,
+                        success=False,
+                        error=f"No complete extraction runs found for claim '{claim_id}'",
+                    )
+
+            # Create claim run
+            manifest = claim_run_storage.create_claim_run(
+                extraction_runs=[run_id],
+                contextbuilder_version=get_version(),
+            )
+            claim_run_id = manifest.claim_run_id
+            logger.info(f"Created claim run {claim_run_id} for {claim_id}")
+
+            # Step 1: Aggregate facts (pass claim_run_id)
+            claim_facts = self.aggregation.aggregate_claim_facts(
+                claim_id, claim_run_id=claim_run_id, run_id=run_id
+            )
+            actual_run_id = claim_facts.extraction_runs_used[0] if claim_facts.extraction_runs_used else run_id
 
             # Step 2: Load critical facts spec and thresholds
             critical_facts_by_doctype = self.load_critical_facts_spec()
@@ -124,6 +164,7 @@ class ReconciliationService:
 
             report = ReconciliationReport(
                 claim_id=claim_id,
+                claim_run_id=claim_facts.claim_run_id,
                 run_id=actual_run_id,
                 generated_at=datetime.utcnow(),
                 gate=gate,
@@ -133,6 +174,15 @@ class ReconciliationService:
                 critical_facts_present=critical_present,
                 thresholds_used=thresholds,
             )
+
+            # Step 6: Write outputs to claim run
+            self.aggregation.write_claim_facts(claim_id, claim_facts)
+            self.write_reconciliation_report(claim_id, report)
+
+            # Step 7: Update manifest with stages_completed
+            manifest.stages_completed = ["reconciliation"]
+            claim_run_storage.write_manifest(manifest)
+            logger.info(f"Reconciliation complete for claim {claim_id}, claim run {claim_run_id}")
 
             return ReconciliationResult(
                 claim_id=claim_id,
@@ -420,7 +470,7 @@ class ReconciliationService:
     def write_reconciliation_report(
         self, claim_id: str, report: ReconciliationReport
     ) -> Path:
-        """Write reconciliation report to claim context directory.
+        """Write reconciliation report to claim run directory.
 
         Args:
             claim_id: Claim identifier.
@@ -436,30 +486,18 @@ class ReconciliationService:
         if not claim_folder:
             raise ReconciliationError(f"Claim not found: {claim_id}")
 
-        context_dir = claim_folder / "context"
-        context_dir.mkdir(parents=True, exist_ok=True)
+        from context_builder.storage.claim_run import ClaimRunStorage
 
-        output_path = context_dir / "reconciliation_report.json"
-        tmp_path = output_path.with_suffix(".tmp")
-
+        claim_run_storage = ClaimRunStorage(claim_folder)
         try:
-            # Write to temp file first (atomic write pattern)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    report.model_dump(mode="json"),
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str,
-                )
-            # Atomic rename
-            tmp_path.replace(output_path)
+            output_path = claim_run_storage.write_to_claim_run(
+                report.claim_run_id,
+                "reconciliation_report.json",
+                report.model_dump(mode="json"),
+            )
             logger.info(f"Wrote reconciliation_report.json to {output_path}")
             return output_path
-
-        except IOError as e:
-            if tmp_path.exists():
-                tmp_path.unlink()
+        except Exception as e:
             raise ReconciliationError(f"Failed to write reconciliation report: {e}")
 
     def write_claim_facts(self, claim_id: str, claim_facts: ClaimFacts) -> Path:

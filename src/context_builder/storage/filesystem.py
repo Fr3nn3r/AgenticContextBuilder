@@ -27,6 +27,7 @@ from .models import (
     ExtractionRef,
 )
 from .index_reader import IndexReader
+from .claim_run import ClaimRunStorage
 
 logger = logging.getLogger(__name__)
 
@@ -1172,3 +1173,24 @@ class FileStorage:
         self.invalidate_indexes()
 
         return (global_deleted or claims_affected > 0 or claims_deleted > 0, claims_affected, claims_deleted)
+
+    # -------------------------------------------------------------------------
+    # Claim Run Access
+    # -------------------------------------------------------------------------
+
+    def get_claim_run_storage(self, claim_id: str) -> ClaimRunStorage:
+        """Get ClaimRunStorage for a specific claim.
+
+        Args:
+            claim_id: Claim identifier.
+
+        Returns:
+            ClaimRunStorage instance.
+
+        Raises:
+            ValueError: If claim not found.
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            raise ValueError(f"Claim not found: {claim_id}")
+        return ClaimRunStorage(claim_folder)

@@ -49,6 +49,7 @@ from .models import (
 from .index_reader import IndexReader
 from .index_builder import build_all_indexes
 from .truth_store import TruthStore
+from .claim_run import ClaimRunStorage
 from .workspace_paths import (
     get_workspace_logs_dir,
     get_workspace_claims_dir,
@@ -82,6 +83,8 @@ __all__ = [
     "IndexReader",
     "build_all_indexes",
     "TruthStore",
+    # Claim runs
+    "ClaimRunStorage",
     # Workspace paths
     "get_workspace_logs_dir",
     "get_workspace_claims_dir",
