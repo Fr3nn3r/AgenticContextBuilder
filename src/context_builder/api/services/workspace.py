@@ -351,3 +351,118 @@ class WorkspaceService:
         self._save_registry(registry)
         logger.info(f"Deleted workspace from registry: {workspace_id}")
         return True
+
+    # Directories to clear during reset (DATA directories)
+    DATA_DIRS = ["claims", "runs", "logs", "registry", "version_bundles", ".pending", ".input"]
+
+    def reset_workspace(
+        self,
+        workspace_id: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """
+        Reset a workspace by clearing all data while preserving configuration.
+
+        This is the equivalent of "DROP DATABASE" - clears all claims, runs, logs,
+        indexes, and registries while keeping users and configuration intact.
+
+        Cleared directories:
+        - claims/ - all documents and extractions
+        - runs/ - pipeline run results
+        - logs/ - compliance logs (decisions.jsonl, llm_calls.jsonl)
+        - registry/ - indexes and labels
+        - version_bundles/ - version snapshots
+        - .pending/ - pending uploads
+        - .input/ - input staging
+
+        Preserved:
+        - config/ - users, sessions, extractors, extraction_specs, prompts, etc.
+
+        Args:
+            workspace_id: ID of workspace to reset. If None, uses active workspace.
+            dry_run: If True, only report what would be deleted without actually deleting.
+
+        Returns:
+            Dict with reset statistics:
+            - workspace_id: ID of reset workspace
+            - workspace_path: Path to workspace
+            - cleared_dirs: List of directories that were cleared
+            - preserved_dirs: List of directories that were preserved
+            - files_deleted: Count of files deleted
+            - dirs_deleted: Count of directories deleted
+            - dry_run: Whether this was a dry run
+
+        Raises:
+            ValueError: If workspace not found.
+        """
+        import shutil
+
+        # Get workspace
+        if workspace_id is None:
+            workspace = self.get_active_workspace()
+            if workspace is None:
+                raise ValueError("No active workspace found")
+        else:
+            workspace = self.get_workspace(workspace_id)
+            if workspace is None:
+                raise ValueError(f"Workspace not found: {workspace_id}")
+
+        workspace_path = Path(workspace.path)
+        if not workspace_path.exists():
+            raise ValueError(f"Workspace path does not exist: {workspace_path}")
+
+        stats = {
+            "workspace_id": workspace.workspace_id,
+            "workspace_path": str(workspace_path),
+            "cleared_dirs": [],
+            "preserved_dirs": ["config"],
+            "files_deleted": 0,
+            "dirs_deleted": 0,
+            "dry_run": dry_run,
+        }
+
+        # Clear data directories
+        for dir_name in self.DATA_DIRS:
+            dir_path = workspace_path / dir_name
+            if dir_path.exists() and dir_path.is_dir():
+                # Count contents before clearing
+                file_count = sum(1 for _ in dir_path.rglob("*") if _.is_file())
+                dir_count = sum(1 for _ in dir_path.rglob("*") if _.is_dir())
+
+                stats["files_deleted"] += file_count
+                stats["dirs_deleted"] += dir_count
+                stats["cleared_dirs"].append(dir_name)
+
+                if not dry_run:
+                    # Remove all contents but keep the directory
+                    shutil.rmtree(dir_path)
+                    dir_path.mkdir(exist_ok=True)
+                    logger.info(f"Cleared {dir_name}/ ({file_count} files, {dir_count} dirs)")
+
+        # Log the reset action (unless dry run)
+        if not dry_run:
+            config_dir = workspace_path / "config"
+            if config_dir.exists():
+                try:
+                    audit_service = AuditService(config_dir)
+                    audit_service.log(
+                        action=f"Workspace reset: cleared {len(stats['cleared_dirs'])} directories",
+                        action_type="workspace_reset",
+                        entity_type="workspace",
+                        entity_id=workspace.workspace_id,
+                        user="system",
+                        metadata={
+                            "files_deleted": stats["files_deleted"],
+                            "dirs_deleted": stats["dirs_deleted"],
+                            "cleared_dirs": stats["cleared_dirs"],
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to log reset action: {e}")
+
+            logger.info(
+                f"Reset workspace '{workspace.workspace_id}': "
+                f"deleted {stats['files_deleted']} files, {stats['dirs_deleted']} dirs"
+            )
+
+        return stats

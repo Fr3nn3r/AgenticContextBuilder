@@ -620,64 +620,25 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
-    # ========== AGGREGATE SUBCOMMAND ==========
-    aggregate_parser = subparsers.add_parser(
-        "aggregate",
-        help="Aggregate extracted facts for a claim into claim_facts.json",
-        epilog="""
-Aggregates facts from multiple documents into a single claim-level file.
-
-Uses the latest complete run by default. Selection strategy: highest confidence wins.
-
-Output:
-  claims/{claim_id}/context/claim_facts.json
-
-Examples:
-  %(prog)s aggregate --claim-id CLM-001              # Aggregate for a claim
-  %(prog)s aggregate --claim-id CLM-001 --dry-run   # Preview without writing
-  %(prog)s aggregate --claim-id CLM-001 --run-id run_20260124_153000  # Specific run
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    aggregate_parser.add_argument(
-        "--claim-id",
-        required=True,
-        metavar="ID",
-        help="Claim ID to aggregate facts for",
-    )
-    aggregate_parser.add_argument(
-        "--run-id",
-        metavar="ID",
-        help="Specific run ID to use (default: latest complete run)",
-    )
-    aggregate_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show aggregated output without writing to file",
-    )
-    aggregate_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose logging"
-    )
-    aggregate_parser.add_argument(
-        "-q", "--quiet", action="store_true", help="Minimal console output"
-    )
-
     # ========== RECONCILE SUBCOMMAND ==========
     reconcile_parser = subparsers.add_parser(
         "reconcile",
         help="Reconcile facts for a claim: aggregate, detect conflicts, evaluate quality gate",
         epilog="""
 Runs claim-level reconciliation which:
-1. Aggregates facts from document extractions (highest confidence wins)
-2. Detects conflicts (same fact with different values across documents)
-3. Evaluates a quality gate (pass/warn/fail based on missing facts and conflicts)
-4. Writes reconciliation_report.json with gate status and conflict details
+1. Creates a new claim run (versioned processing)
+2. Aggregates facts from document extractions (highest confidence wins)
+3. Detects conflicts (same fact with different values across documents)
+4. Evaluates a quality gate (pass/warn/fail based on missing facts and conflicts)
+5. Writes outputs to the claim run directory
 
 The gate is advisory - it does not block downstream processing.
 
 Output:
-  claims/{claim_id}/context/claim_facts.json          # Aggregated facts
-  claims/{claim_id}/context/reconciliation_report.json # Gate status & conflicts
+  claims/{claim_id}/claim_runs/{claim_run_id}/
+    ├── manifest.json              # Claim run metadata
+    ├── claim_facts.json           # Aggregated facts
+    └── reconciliation_report.json # Gate status & conflicts
 
 Examples:
   %(prog)s reconcile --claim-id 65196              # Reconcile a claim
@@ -777,6 +738,125 @@ Examples:
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     backfill_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # ========== WORKSPACE SUBCOMMAND ==========
+    workspace_parser = subparsers.add_parser(
+        "workspace",
+        help="Manage workspaces (reset, list, etc.)",
+        epilog="""
+Workspace management commands for clearing data or listing workspaces.
+
+Examples:
+  %(prog)s workspace reset              # Reset active workspace (dry-run first!)
+  %(prog)s workspace reset --dry-run    # Preview what would be deleted
+  %(prog)s workspace reset --force      # Reset without confirmation
+  %(prog)s workspace list               # List all workspaces
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    workspace_subparsers = workspace_parser.add_subparsers(
+        dest="workspace_command", help="Workspace commands"
+    )
+    workspace_subparsers.required = True
+
+    # Reset subcommand
+    workspace_reset_parser = workspace_subparsers.add_parser(
+        "reset",
+        help="Clear all data from a workspace (DROP DATABASE equivalent)",
+        epilog="""
+Reset clears all data while preserving configuration:
+
+CLEARED (data):
+  - claims/        All documents and extractions
+  - runs/          Pipeline run results
+  - logs/          Compliance logs (decisions.jsonl, llm_calls.jsonl)
+  - registry/      Indexes and labels
+  - version_bundles/  Version snapshots
+  - .pending/      Pending uploads
+  - .input/        Input staging
+
+PRESERVED (config):
+  - config/        Users, sessions, extractors, extraction_specs, prompts
+
+Examples:
+  %(prog)s --dry-run                    # Preview what would be deleted
+  %(prog)s --workspace-id nsa --force   # Reset specific workspace
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    workspace_reset_parser.add_argument(
+        "--workspace-id",
+        metavar="ID",
+        help="Workspace ID to reset (default: active workspace)",
+    )
+    workspace_reset_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview what would be deleted without actually deleting",
+    )
+    workspace_reset_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+    workspace_reset_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    workspace_reset_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # List subcommand
+    workspace_list_parser = workspace_subparsers.add_parser(
+        "list",
+        help="List all registered workspaces",
+    )
+    workspace_list_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed information"
+    )
+
+    # ========== EXPORT SUBCOMMAND ==========
+    export_parser = subparsers.add_parser(
+        "export",
+        help="Export workspace data to Excel file",
+        epilog="""
+Exports all workspace data to an Excel file with separate sheets for each entity type.
+
+Sheets exported:
+  - Claims: All claims with document counts
+  - Documents: All documents with metadata
+  - Runs: Global pipeline runs
+  - Claim_Runs: Per-claim processing runs
+  - Extractions: Extracted fields (one row per field)
+  - Claim_Facts: Aggregated facts (one row per fact)
+  - Labels: Human ground truth labels (one row per field)
+  - Reconciliation: Quality gate reports
+
+Examples:
+  %(prog)s export                                 # Export to workspace_export.xlsx
+  %(prog)s export -o my_export.xlsx              # Export to specific file
+  %(prog)s export --output-dir exports/          # Export to directory
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    export_parser.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        help="Output file path (default: workspace_export_YYYYMMDD_HHMMSS.xlsx)",
+    )
+    export_parser.add_argument(
+        "--output-dir",
+        metavar="DIR",
+        help="Output directory (filename will be auto-generated)",
+    )
+    export_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    export_parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
@@ -1535,60 +1615,6 @@ def main():
                     print(f"    Missing: {summary['missing']}")
                     print(f"    Unverifiable: {summary['unverifiable']}")
 
-        elif args.command == "aggregate":
-            # ========== AGGREGATE COMMAND ==========
-            from context_builder.api.services.aggregation import (
-                AggregationError,
-                AggregationService,
-            )
-            from context_builder.storage.filesystem import FileStorage
-
-            if args.verbose:
-                logging.getLogger().setLevel(logging.DEBUG)
-            elif args.quiet:
-                logging.getLogger().setLevel(logging.WARNING)
-
-            # Use active workspace
-            workspace = get_active_workspace()
-            if workspace and workspace.get("path"):
-                workspace_root = Path(workspace["path"])
-                if not args.quiet:
-                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
-            else:
-                workspace_root = Path("output")
-
-            if not workspace_root.exists():
-                logger.error(f"Workspace not found: {workspace_root}")
-                sys.exit(1)
-
-            # Initialize storage and service
-            storage = FileStorage(workspace_root)
-            service = AggregationService(storage)
-
-            try:
-                # Aggregate facts
-                facts = service.aggregate_claim_facts(
-                    claim_id=args.claim_id,
-                    run_id=getattr(args, "run_id", None),
-                )
-
-                if args.dry_run:
-                    # Print JSON output to stdout
-                    print(facts.model_dump_json(indent=2))
-                else:
-                    # Write to file
-                    output_path = service.write_claim_facts(args.claim_id, facts)
-                    if not args.quiet:
-                        print(f"\n[OK] Aggregated {len(facts.facts)} facts for {args.claim_id}")
-                        print(f"    Run: {facts.run_id}")
-                        print(f"    Sources: {len(facts.sources)} documents")
-                        print(f"    Output: {output_path}")
-
-            except AggregationError as e:
-                logger.error(f"Aggregation failed: {e}")
-                print(f"[X] Aggregation failed: {e}")
-                sys.exit(1)
-
         elif args.command == "reconcile":
             # ========== RECONCILE COMMAND ==========
             from context_builder.api.services.aggregation import (
@@ -1640,45 +1666,31 @@ def main():
                 if args.dry_run:
                     # Print JSON output to stdout
                     print(report.model_dump_json(indent=2))
-                else:
-                    # Write files
-                    # First write claim_facts.json
-                    facts = aggregation.aggregate_claim_facts(
-                        args.claim_id, report.run_id
-                    )
-                    facts_path = aggregation.write_claim_facts(args.claim_id, facts)
+                elif not args.quiet:
+                    # reconcile() already wrote all files, just print summary
+                    gate = report.gate
+                    status_color = {
+                        "pass": "\033[92m",  # Green
+                        "warn": "\033[93m",  # Yellow
+                        "fail": "\033[91m",  # Red
+                    }.get(gate.status.value, "")
+                    reset = "\033[0m"
 
-                    # Then write reconciliation_report.json
-                    report_path = reconciliation.write_reconciliation_report(
-                        args.claim_id, report
-                    )
-
-                    if not args.quiet:
-                        # Print summary
-                        gate = report.gate
-                        status_color = {
-                            "pass": "\033[92m",  # Green
-                            "warn": "\033[93m",  # Yellow
-                            "fail": "\033[91m",  # Red
-                        }.get(gate.status.value, "")
-                        reset = "\033[0m"
-
-                        print(f"\n[OK] Reconciliation complete for {args.claim_id}")
-                        print(f"    Gate: {status_color}{gate.status.value.upper()}{reset}")
-                        print(f"    Facts: {report.fact_count}")
-                        print(f"    Conflicts: {gate.conflict_count}")
-                        print(f"    Missing critical: {len(gate.missing_critical_facts)}")
-                        if gate.missing_critical_facts:
-                            print(f"      {', '.join(gate.missing_critical_facts[:5])}")
-                        if report.conflicts:
-                            print(f"    Conflict details:")
-                            for c in report.conflicts[:3]:
-                                print(f"      - {c.fact_name}: {c.values}")
-                        print(f"    Reasons: {', '.join(gate.reasons)}")
-                        print(f"    Run: {report.run_id}")
-                        print(f"    Output:")
-                        print(f"      {facts_path}")
-                        print(f"      {report_path}")
+                    print(f"\n[OK] Reconciliation complete for {args.claim_id}")
+                    print(f"    Claim Run: {report.claim_run_id}")
+                    print(f"    Gate: {status_color}{gate.status.value.upper()}{reset}")
+                    print(f"    Facts: {report.fact_count}")
+                    print(f"    Conflicts: {gate.conflict_count}")
+                    print(f"    Missing critical: {len(gate.missing_critical_facts)}")
+                    if gate.missing_critical_facts:
+                        print(f"      {', '.join(gate.missing_critical_facts[:5])}")
+                    if report.conflicts:
+                        print(f"    Conflict details:")
+                        for c in report.conflicts[:3]:
+                            print(f"      - {c.fact_name}: {c.values}")
+                    print(f"    Reasons: {', '.join(gate.reasons)}")
+                    print(f"    Extraction Run: {report.run_id}")
+                    print(f"    Output: claim_runs/{report.claim_run_id}/")
 
             except ReconciliationError as e:
                 logger.error(f"Reconciliation failed: {e}")
@@ -1794,6 +1806,162 @@ def main():
                 print(f"Errors:    {len(stats['errors'])}")
                 for err in stats['errors'][:5]:
                     print(f"  - {err['file']}: {err['error']}")
+
+        elif args.command == "workspace":
+            # ========== WORKSPACE COMMAND ==========
+            from context_builder.api.services.workspace import WorkspaceService
+
+            project_root = get_project_root()
+            workspace_service = WorkspaceService(project_root)
+
+            if args.workspace_command == "reset":
+                if args.verbose:
+                    logging.getLogger().setLevel(logging.DEBUG)
+                elif args.quiet:
+                    logging.getLogger().setLevel(logging.WARNING)
+
+                # Get workspace info for display
+                workspace_id = getattr(args, "workspace_id", None)
+                if workspace_id:
+                    workspace = workspace_service.get_workspace(workspace_id)
+                else:
+                    workspace = workspace_service.get_active_workspace()
+
+                if not workspace:
+                    print(f"[X] Workspace not found: {workspace_id or 'active'}")
+                    sys.exit(1)
+
+                # First do a dry run to show what would be deleted
+                preview = workspace_service.reset_workspace(
+                    workspace_id=workspace.workspace_id,
+                    dry_run=True,
+                )
+
+                if args.dry_run:
+                    # Just show preview
+                    print(f"\n[DRY RUN] Would reset workspace: {workspace.workspace_id}")
+                    print(f"  Path: {preview['workspace_path']}")
+                    print(f"\n  Would clear:")
+                    for d in preview['cleared_dirs']:
+                        print(f"    - {d}/")
+                    print(f"\n  Would preserve:")
+                    for d in preview['preserved_dirs']:
+                        print(f"    - {d}/")
+                    print(f"\n  Files to delete: {preview['files_deleted']}")
+                    print(f"  Dirs to delete:  {preview['dirs_deleted']}")
+                    print(f"\n  To execute: remove --dry-run flag")
+                    sys.exit(0)
+
+                # Confirm unless --force
+                if not args.force:
+                    print(f"\n[!] About to reset workspace: {workspace.workspace_id}")
+                    print(f"    Path: {preview['workspace_path']}")
+                    print(f"    Files to delete: {preview['files_deleted']}")
+                    print(f"    Dirs to delete:  {preview['dirs_deleted']}")
+                    print(f"\n    This will DELETE all claims, runs, logs, and indexes.")
+                    print(f"    Config (users, extractors, prompts) will be preserved.")
+                    print(f"\n    THIS ACTION CANNOT BE UNDONE.")
+                    try:
+                        confirm = input("\n    Type APPROVED to confirm: ")
+                        if confirm != "APPROVED":
+                            print("\n[!] Aborted. You must type APPROVED (case-sensitive).")
+                            sys.exit(0)
+                    except EOFError:
+                        print("\n[!] No input available. Use --force to skip confirmation.")
+                        sys.exit(1)
+
+                # Execute reset
+                stats = workspace_service.reset_workspace(
+                    workspace_id=workspace.workspace_id,
+                    dry_run=False,
+                )
+
+                if not args.quiet:
+                    print(f"\n[OK] Workspace reset: {stats['workspace_id']}")
+                    print(f"    Cleared: {', '.join(stats['cleared_dirs'])}")
+                    print(f"    Files deleted: {stats['files_deleted']}")
+                    print(f"    Dirs deleted:  {stats['dirs_deleted']}")
+                    print(f"    Preserved: {', '.join(stats['preserved_dirs'])}")
+
+            elif args.workspace_command == "list":
+                workspaces = workspace_service.list_workspaces()
+                active_id = workspace_service.get_active_workspace_id()
+
+                if not workspaces:
+                    print("No workspaces registered.")
+                    sys.exit(0)
+
+                print(f"\nRegistered workspaces ({len(workspaces)}):\n")
+                for ws in workspaces:
+                    active_marker = " (active)" if ws.workspace_id == active_id else ""
+                    print(f"  {ws.workspace_id}{active_marker}")
+                    if args.verbose:
+                        print(f"    Name: {ws.name}")
+                        print(f"    Path: {ws.path}")
+                        print(f"    Created: {ws.created_at}")
+                        if ws.description:
+                            print(f"    Description: {ws.description}")
+                        print()
+
+        elif args.command == "export":
+            # ========== EXPORT COMMAND ==========
+            from context_builder.api.services.export import ExportService
+            from context_builder.storage.filesystem import FileStorage
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                workspace_name = workspace.get("name", workspace.get("workspace_id"))
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace_name}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+                workspace_name = "output"
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Determine output path
+            if args.output:
+                output_path = Path(args.output)
+            elif getattr(args, "output_dir", None):
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = Path(args.output_dir) / f"workspace_export_{timestamp}.xlsx"
+            else:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = workspace_root / f"workspace_export_{timestamp}.xlsx"
+
+            # Initialize storage and service
+            storage = FileStorage(workspace_root)
+            export_service = ExportService(storage)
+
+            if not args.quiet:
+                print(f"Exporting workspace '{workspace_name}' to Excel...")
+
+            try:
+                stats = export_service.export_to_excel(output_path)
+
+                if not args.quiet:
+                    print(f"\n[OK] Export complete: {output_path}")
+                    print(f"    Claims:         {stats['claims']}")
+                    print(f"    Documents:      {stats['documents']}")
+                    print(f"    Runs:           {stats['runs']}")
+                    print(f"    Claim Runs:     {stats['claim_runs']}")
+                    print(f"    Extractions:    {stats['extractions']}")
+                    print(f"    Claim Facts:    {stats['claim_facts']}")
+                    print(f"    Labels:         {stats['labels']}")
+                    print(f"    Reconciliation: {stats['reconciliation']}")
+            except Exception as e:
+                logger.error(f"Export failed: {e}")
+                print(f"[X] Export failed: {e}")
+                sys.exit(1)
 
     except KeyboardInterrupt:
         print("\n[!] Process interrupted by user. Exiting gracefully...")

@@ -8,8 +8,8 @@ import {
   ArrowRightCircle,
   ShieldAlert,
   Clock,
-  RefreshCw,
   History,
+  Mail,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ClaimAssessment, AssessmentDecision } from "../../types";
@@ -20,6 +20,7 @@ import { ChecksReviewPanel } from "./ChecksReviewPanel";
 import { WorkflowActionsPanel } from "./WorkflowActionsPanel";
 import { PayoutBreakdownCard } from "./PayoutBreakdownCard";
 import { AssessmentProgressCard } from "./AssessmentProgressCard";
+import { CustomerDraftModal } from "./CustomerDraftModal";
 import { useAssessmentWebSocket } from "../../hooks/useAssessmentWebSocket";
 
 interface ClaimAssessmentTabProps {
@@ -83,6 +84,7 @@ export function ClaimAssessmentTab({
   onViewHistory,
 }: ClaimAssessmentTabProps) {
   const { progress, startAssessment, isRunning, reset } = useAssessmentWebSocket();
+  const [showDraftModal, setShowDraftModal] = useState(false);
 
   const handleRunAssessment = useCallback(async () => {
     const runId = await startAssessment(claimId);
@@ -220,25 +222,14 @@ export function ClaimAssessmentTab({
             </button>
           )}
           <button
-            onClick={handleRunAssessment}
-            disabled={isRunning}
+            onClick={() => setShowDraftModal(true)}
             className={cn(
               "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-              "bg-blue-600 text-white hover:bg-blue-700",
-              "disabled:opacity-50 disabled:cursor-not-allowed"
+              "bg-blue-600 text-white hover:bg-blue-700"
             )}
           >
-            {isRunning ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                Re-run Assessment
-              </>
-            )}
+            <Mail className="h-4 w-4" />
+            View Customer Draft
           </button>
         </div>
       </div>
@@ -398,6 +389,13 @@ export function ClaimAssessmentTab({
         progress={progress}
         onDismiss={handleDismissProgress}
         onViewResult={handleViewResult}
+      />
+
+      {/* Customer Draft Modal */}
+      <CustomerDraftModal
+        isOpen={showDraftModal}
+        onClose={() => setShowDraftModal(false)}
+        claimId={claimId}
       />
     </div>
   );

@@ -78,3 +78,5 @@ workspaces/
 .contextbuilder/
 
 output_ui/.env
+
+backup/

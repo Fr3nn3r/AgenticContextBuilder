@@ -1267,3 +1267,32 @@ export async function getAssessmentHistory(
 }>> {
   return fetchJson(`${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/history`);
 }
+
+// =============================================================================
+// CUSTOMER COMMUNICATION
+// =============================================================================
+
+export interface CustomerDraftResponse {
+  subject: string;
+  body: string;
+  language: string;
+  claim_id: string;
+  tokens_used: number;
+}
+
+/**
+ * Generate a customer communication draft email for a claim assessment.
+ */
+export async function generateCustomerDraft(
+  claimId: string,
+  language: "en" | "de" = "en"
+): Promise<CustomerDraftResponse> {
+  return fetchJson<CustomerDraftResponse>(
+    `${API_BASE}/claims/${encodeURIComponent(claimId)}/communication/draft`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language }),
+    }
+  );
+}

@@ -9,28 +9,44 @@
 
 _Currently active work. Add handoff notes inline._
 
-### 2026-01-26 - Reconciliation Implementation (Phase 1-2 Complete)
+### 2026-01-26 - Claim-Level Runs Architecture (Pending Decision)
 
-**Status**: Backend engine and CLI complete. API endpoints pending.
+**Status**: Architecture designed, awaiting confirmation before implementation.
+
+**Context**: During reconciliation implementation, identified fundamental gap:
+- Extraction has runs (versioned), claim-level stages don't
+- Missing per-field provenance (which extraction run produced each fact)
+- Reconciliation can span multiple extraction runs
+
+**Proposed Solution**:
+- Level 1: Add `extraction_run_id` to FactProvenance (per-field traceability)
+- Level 2: Introduce `claim_runs/` structure (versioned claim-level processing)
+
+**Estimated Effort**: ~22 hours for full implementation
+
+**Documents**:
+- `docs/CLAIM_LEVEL_RUNS_DESIGN.md` - Architecture design and decision matrix
+- `docs/HANDOFF_CLAIM_RUNS.md` - Implementation scope and file changes
+
+**Next Steps**:
+1. User confirms architecture
+2. Create detailed implementation plan
+3. Implement in phases
+
+---
+
+### 2026-01-26 - Reconciliation Implementation ✅ COMPLETE
+
+**Status**: All 5 phases complete.
 
 **Completed**:
 - Phase 1: ReconciliationService with conflict detection, gate evaluation
 - Phase 2: CLI `reconcile` command with dry-run support
-
-**New Files**:
-- `src/context_builder/schemas/reconciliation.py` - Pydantic models
-- `src/context_builder/api/services/reconciliation.py` - ReconciliationService
-
-**Modified Files**:
-- `src/context_builder/pipeline/claim_stages/reconciliation.py` - Replaced stub
-- `src/context_builder/cli.py` - Added `reconcile` command
-
-**Test Results**: All 4 claims reconcile successfully (65128, 65157, 65196, 65258)
-
-**Remaining**:
 - Phase 3: API endpoints (`POST /claims/{id}/reconcile`, `GET /claims/{id}/reconciliation-report`)
-- Phase 4: Run-level aggregation for dashboard
-- Phase 5: UI components
+- Phase 4: Run-level aggregation (`reconcile-eval` CLI command)
+- Phase 5: UI components (Reconciliation tab on Evaluation page)
+
+**Note**: This implementation will be enhanced by Claim-Level Runs architecture (above).
 
 **Handoff**: See `docs/HANDOFF_RECONCILIATION.md` for full details.
 
