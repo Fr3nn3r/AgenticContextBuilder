@@ -7,6 +7,9 @@ Tests:
 - Invalid key handling
 - Tampering detection
 - Error handling
+
+Requires: pycryptodome (optional dependency)
+Install with: pip install context-builder[encryption]
 """
 
 import base64
@@ -14,6 +17,9 @@ import os
 from pathlib import Path
 
 import pytest
+
+# Skip entire module if pycryptodome is not installed
+pytest.importorskip("Crypto", reason="pycryptodome not installed (optional dependency)")
 
 from context_builder.services.compliance.crypto import (
     KEK_SIZE,

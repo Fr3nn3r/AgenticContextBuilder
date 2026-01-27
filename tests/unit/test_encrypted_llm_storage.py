@@ -5,11 +5,17 @@ Tests:
 - Query and read with decryption
 - Combined storage operations
 - Factory integration
+
+Requires: pycryptodome (optional dependency)
+Install with: pip install context-builder[encryption]
 """
 
 from pathlib import Path
 
 import pytest
+
+# Skip entire module if pycryptodome is not installed
+pytest.importorskip("Crypto", reason="pycryptodome not installed (optional dependency)")
 
 from context_builder.schemas.llm_call_record import LLMCallRecord
 from context_builder.services.compliance import (

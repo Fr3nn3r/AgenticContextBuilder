@@ -4,12 +4,19 @@ Tests:
 - Factory creates correct backends
 - Invalid config raises errors
 - Combined create_all method
+
+Requires: pycryptodome (optional dependency) for encrypted backend tests
+Install with: pip install context-builder[encryption]
 """
 
 import tempfile
 from pathlib import Path
 
 import pytest
+
+# Skip entire module if pycryptodome is not installed
+# (this module tests encrypted backends which require pycryptodome)
+pytest.importorskip("Crypto", reason="pycryptodome not installed (optional dependency)")
 
 from context_builder.services.compliance import (
     DecisionStorage,
