@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from openai import OpenAI
+from context_builder.services.openai_client import get_openai_client
 
 from context_builder.pipeline.claim_stages.context import ClaimContext
 from context_builder.pipeline.claim_stages.processing import (
@@ -39,19 +39,13 @@ class AssessmentProcessor:
     def __init__(self):
         """Initialize the assessment processor."""
         # OpenAI client will be created lazily
-        self._client: Optional[OpenAI] = None
+        self._client = None
         self._audited_client: Optional[AuditedOpenAIClient] = None
 
     def _ensure_client(self) -> None:
-        """Ensure OpenAI client is initialized."""
+        """Ensure OpenAI client is initialized (uses Azure OpenAI if configured)."""
         if self._client is None:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError(
-                    "OPENAI_API_KEY not found in environment variables. "
-                    "Please set it in your .env file."
-                )
-            self._client = OpenAI(api_key=api_key, timeout=120)
+            self._client = get_openai_client()
             audit_service = get_llm_audit_service(get_workspace_logs_dir())
             self._audited_client = AuditedOpenAIClient(self._client, audit_service)
 

@@ -138,8 +138,8 @@ class AuditedOpenAIClient:
     or any LLMCallSink implementation (for interface-based injection).
 
     Usage:
-        from openai import OpenAI
-        client = OpenAI()
+        from context_builder.services.openai_client import get_openai_client
+        client = get_openai_client()  # Uses Azure OpenAI if configured
 
         # Option 1: With LLMAuditService (backwards compatible)
         audited = AuditedOpenAIClient(client, audit_service)
@@ -399,7 +399,7 @@ def create_audited_client(
     storage_dir: Optional[Path] = None,
     sink: Optional["LLMCallSink"] = None,
 ) -> AuditedOpenAIClient:
-    """Create an audited OpenAI client.
+    """Create an audited OpenAI client (uses Azure OpenAI if configured).
 
     Args:
         storage_dir: Optional storage directory for audit logs
@@ -408,9 +408,9 @@ def create_audited_client(
     Returns:
         AuditedOpenAIClient wrapping a new OpenAI client
     """
-    from openai import OpenAI
+    from context_builder.services.openai_client import get_openai_client
 
-    client = OpenAI()
+    client = get_openai_client()
 
     if sink is not None:
         return AuditedOpenAIClient(client, sink)

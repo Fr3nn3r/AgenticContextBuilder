@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-from openai import OpenAI
+from context_builder.services.openai_client import get_openai_client, get_default_model
 
 from context_builder.extraction.base import (
     FieldExtractor,
@@ -91,16 +91,16 @@ class GenericFieldExtractor(FieldExtractor):
         prompt_data = load_prompt(self.PROMPT_NAME)
         prompt_config = prompt_data["config"]
 
-        # Use provided values or fall back to prompt config
-        resolved_model = model or prompt_config.get("model", "gpt-4o")
+        # Use provided values or fall back to prompt config (uses Azure deployment as default if configured)
+        resolved_model = model or prompt_config.get("model", get_default_model())
         resolved_temperature = temperature if temperature is not None else prompt_config.get("temperature", 0.1)
 
         super().__init__(spec, resolved_model)
         self.temperature = resolved_temperature
         self.max_tokens = prompt_config.get("max_tokens", 2048)
 
-        # Use audited client for compliance logging
-        raw_client = OpenAI()
+        # Use audited client for compliance logging (uses Azure OpenAI if configured)
+        raw_client = get_openai_client()
         # Use injected sink or create default audit service
         if llm_sink is not None:
             self.audited_client = AuditedOpenAIClient(raw_client, llm_sink)

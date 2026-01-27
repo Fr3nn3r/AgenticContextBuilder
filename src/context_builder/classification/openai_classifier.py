@@ -152,26 +152,14 @@ class OpenAIDocumentClassifier(DocumentClassifier):
         """
         super().__init__()
 
-        # Get API key from environment
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ConfigurationError(
-                "OPENAI_API_KEY not found in environment variables. "
-                "Please set it in your .env file."
-            )
-
-        # Initialize OpenAI client
+        # Initialize OpenAI client (uses Azure OpenAI if configured)
         try:
-            from openai import OpenAI
+            from context_builder.services.openai_client import get_openai_client
 
             self.timeout = 60  # seconds
             self.retries = 3
 
-            self.client = OpenAI(
-                api_key=self.api_key,
-                timeout=self.timeout,
-                max_retries=0,  # We handle retries ourselves
-            )
+            self.client = get_openai_client()
 
             # Initialize audited client for compliance logging
             # Use injected sink or create default audit service
@@ -187,6 +175,8 @@ class OpenAIDocumentClassifier(DocumentClassifier):
                 "OpenAI package not installed. "
                 "Please install it with: pip install openai"
             )
+        except ValueError as e:
+            raise ConfigurationError(str(e))
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize OpenAI client: {e}")
 
@@ -222,12 +212,14 @@ class OpenAIDocumentClassifier(DocumentClassifier):
     def _load_prompt_config(self):
         """Load prompt configuration from markdown file."""
         try:
+            from context_builder.services.openai_client import get_default_model
+
             prompt_data = load_prompt(self.prompt_name)
             self.prompt_config = prompt_data["config"]
             logger.debug(f"Loaded prompt: {self.prompt_config.get('name', 'unnamed')}")
 
-            # Extract configuration
-            self.model = self.prompt_config.get("model", "gpt-4o")
+            # Extract configuration (use Azure deployment name as default if configured)
+            self.model = self.prompt_config.get("model", get_default_model())
             self.max_tokens = self.prompt_config.get("max_tokens", 2048)
             self.temperature = self.prompt_config.get("temperature", 0.2)
 

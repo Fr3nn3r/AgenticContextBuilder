@@ -37,23 +37,11 @@ class CustomerCommunicationService:
 
     def __init__(self):
         """Initialize the customer communication service."""
-        # Get API key from environment
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "OPENAI_API_KEY not found in environment variables. "
-                "Please set it in your .env file."
-            )
-
-        # Initialize OpenAI client with audit logging
+        # Initialize OpenAI client with audit logging (uses Azure OpenAI if configured)
         try:
-            from openai import OpenAI
+            from context_builder.services.openai_client import get_openai_client
 
-            self.client = OpenAI(
-                api_key=self.api_key,
-                timeout=60,
-                max_retries=0,
-            )
+            self.client = get_openai_client()
 
             audit_service = get_llm_audit_service()
             self.audited_client = AuditedOpenAIClient(self.client, audit_service)
@@ -64,6 +52,8 @@ class CustomerCommunicationService:
                 "OpenAI package not installed. "
                 "Please install it with: pip install openai"
             )
+        except ValueError as e:
+            raise ValueError(str(e))
 
     def _load_prompt_config(self) -> Dict[str, Any]:
         """Load prompt configuration from markdown file."""
@@ -157,12 +147,14 @@ class CustomerCommunicationService:
             currency=currency,
         )
 
+        from context_builder.services.openai_client import get_default_model
+
         config = prompt_data["config"]
         messages = prompt_data["messages"]
 
-        # Make LLM call
+        # Make LLM call (use Azure deployment as default if configured)
         response = self.audited_client.chat_completions_create(
-            model=config.get("model", "gpt-4o"),
+            model=config.get("model", get_default_model()),
             messages=messages,
             temperature=config.get("temperature", 0.3),
             max_tokens=config.get("max_tokens", 1024),

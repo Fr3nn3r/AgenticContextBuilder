@@ -127,7 +127,7 @@ class TestVehicleRegistrationExtractorConfig:
 class TestVehicleRegistrationVisionExtraction:
     """Tests for vision-based extraction."""
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_vision_extract_with_image(self, mock_audit_service, mock_openai):
         """Test vision extraction when source image file exists."""
@@ -177,7 +177,7 @@ class TestVehicleRegistrationVisionExtraction:
         finally:
             Path(temp_path).unlink(missing_ok=True)
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_text_fallback_when_no_source_file(self, mock_audit_service, mock_openai):
         """Test text fallback when no source file is available."""
@@ -203,7 +203,7 @@ class TestVehicleRegistrationVisionExtraction:
         assert result is not None
         assert len(result.fields) > 0
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_quality_gate_pass_with_required_fields(self, mock_audit_service, mock_openai):
         """Test quality gate passes when required fields are extracted."""
@@ -244,7 +244,7 @@ class TestVehicleRegistrationVisionExtraction:
         finally:
             Path(temp_path).unlink(missing_ok=True)
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_quality_gate_fail_missing_required(self, mock_audit_service, mock_openai):
         """Test quality gate fails when required field is missing."""
@@ -289,7 +289,7 @@ class TestVehicleRegistrationVisionExtraction:
 class TestVehicleRegistrationParseResponse:
     """Tests for vision response parsing."""
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_parse_json_with_code_block(self, mock_audit_service, mock_openai):
         """Test parsing JSON response wrapped in markdown code block."""
@@ -314,7 +314,7 @@ class TestVehicleRegistrationParseResponse:
         assert owner_field is not None
         assert owner_field.value == "Test User"
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_parse_invalid_json_returns_missing_fields(self, mock_audit_service, mock_openai):
         """Test that invalid JSON returns missing fields for all spec fields."""
@@ -336,7 +336,7 @@ class TestVehicleRegistrationParseResponse:
 class TestVehicleRegistrationImageEncoding:
     """Tests for image encoding methods."""
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_encode_image_jpg(self, mock_audit_service, mock_openai):
         """Test encoding JPEG image."""
@@ -357,7 +357,7 @@ class TestVehicleRegistrationImageEncoding:
         finally:
             temp_path.unlink(missing_ok=True)
 
-    @patch("context_builder.extraction.extractors.vehicle_registration.OpenAI")
+    @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_encode_image_png(self, mock_audit_service, mock_openai):
         """Test encoding PNG image."""

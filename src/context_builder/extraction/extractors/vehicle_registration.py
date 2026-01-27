@@ -13,7 +13,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
+from context_builder.services.openai_client import get_openai_client, get_default_model
 
 from context_builder.extraction.base import FieldExtractor, ExtractorFactory
 from context_builder.extraction.spec_loader import DocTypeSpec, get_spec
@@ -65,19 +65,19 @@ class VehicleRegistrationExtractor(FieldExtractor):
         try:
             prompt_data = load_prompt(self.PROMPT_NAME)
             prompt_config = prompt_data["config"]
-            resolved_model = model or prompt_config.get("model", "gpt-4o")
+            resolved_model = model or prompt_config.get("model", get_default_model())
             self.temperature = prompt_config.get("temperature", 0.1)
             self.max_tokens = prompt_config.get("max_tokens", 1024)
         except Exception:
             # Fallback if prompt not found
-            resolved_model = model or "gpt-4o"
+            resolved_model = model or get_default_model()
             self.temperature = 0.1
             self.max_tokens = 1024
 
         super().__init__(spec, resolved_model)
 
-        # Initialize OpenAI client with audit wrapper
-        raw_client = OpenAI()
+        # Initialize OpenAI client with audit wrapper (uses Azure OpenAI if configured)
+        raw_client = get_openai_client()
         audit_service = get_llm_audit_service(audit_storage_dir)
         self.audited_client = AuditedOpenAIClient(raw_client, audit_service)
 

@@ -52,28 +52,16 @@ class OpenAIVisionIngestion(DataIngestion):
         """
         super().__init__()
 
-        # Get API key from environment
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ConfigurationError(
-                "OPENAI_API_KEY not found in environment variables. "
-                "Please set it in your .env file."
-            )
-
-        # Initialize OpenAI client
+        # Initialize OpenAI client (uses Azure OpenAI if configured)
         try:
-            from openai import OpenAI
+            from context_builder.services.openai_client import get_openai_client
 
             # Default timeout and retry configuration
             self.timeout = 120  # seconds
             self.retries = 3  # number of retries
 
-            # Initialize client with timeout
-            self.client = OpenAI(
-                api_key=self.api_key,
-                timeout=self.timeout,
-                max_retries=0  # We handle retries ourselves for better control
-            )
+            # Initialize client
+            self.client = get_openai_client()
 
             # Initialize audited client for compliance logging
             audit_service = get_llm_audit_service(audit_storage_dir)
@@ -86,20 +74,24 @@ class OpenAIVisionIngestion(DataIngestion):
                 "OpenAI package not installed. "
                 "Please install it with: pip install openai"
             )
+        except ValueError as e:
+            raise ConfigurationError(str(e))
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize OpenAI client: {e}")
 
         # Load prompt configuration
         # This demonstrates separation of concerns: config lives in .md file
         try:
+            from context_builder.services.openai_client import get_default_model
+
             prompt_data = load_prompt("document_analysis")
             self.prompt_config = prompt_data["config"]
             logger.debug(f"Loaded prompt: {self.prompt_config.get('name', 'unnamed')}")
         except Exception as e:
             raise ConfigurationError(f"Failed to load prompt configuration: {e}")
 
-        # Extract configuration from prompt file
-        self.model = self.prompt_config.get("model", "gpt-4o")
+        # Extract configuration from prompt file (use Azure deployment as default if configured)
+        self.model = self.prompt_config.get("model", get_default_model())
         self.max_tokens = self.prompt_config.get("max_tokens", 4096)
         self.temperature = self.prompt_config.get("temperature", 0.2)
 

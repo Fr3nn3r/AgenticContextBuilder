@@ -18,10 +18,9 @@ class TestOpenAIVisionIngestionProcess:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock OpenAIVisionIngestion instance."""
-        with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
-            with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
-                return OpenAIVisionIngestion()
+        with patch('context_builder.services.openai_client.get_openai_client'):
+            from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+            return OpenAIVisionIngestion()
 
     def test_process_implementation_image_success(self, mock_ingestion, tmp_path):
         """Test successful image file processing."""
@@ -198,14 +197,13 @@ class TestOpenAIVisionIngestionRetry:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock OpenAIVisionIngestion instance."""
-        with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
-            with patch('openai.OpenAI') as mock_openai:
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
-                ingestion = OpenAIVisionIngestion()
-                # Reset retries to default
-                ingestion.retries = 3
-                ingestion.timeout = 120
-                return ingestion
+        with patch('context_builder.services.openai_client.get_openai_client'):
+            from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+            ingestion = OpenAIVisionIngestion()
+            # Reset retries to default
+            ingestion.retries = 3
+            ingestion.timeout = 120
+            return ingestion
 
     def test_retry_on_rate_limit(self, mock_ingestion):
         """Test retry logic on rate limit errors."""
