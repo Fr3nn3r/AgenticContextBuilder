@@ -185,8 +185,8 @@ export function ClaimOverviewTab({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-          <p className="text-sm text-slate-500">Loading claim overview...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading claim overview...</p>
         </div>
       </div>
     );
@@ -195,8 +195,8 @@ export function ClaimOverviewTab({
   if (factsError && assessmentError) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-red-200 dark:border-red-900 p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">
+        <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+          <p className="text-sm text-destructive">
             Failed to load claim data: {factsError || assessmentError}
           </p>
         </div>

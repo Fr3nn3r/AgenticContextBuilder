@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutDashboard, FileText, ClipboardCheck, History, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, FileText, ClipboardCheck, History, AlertTriangle, Database } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ClaimSummary, DocSummary, ClaimFacts, ClaimAssessment } from "../../types";
 import { getClaimFacts, getClaimAssessment, getAssessmentHistory } from "../../api/client";
@@ -9,6 +9,7 @@ import { ClaimFactsTab } from "./ClaimFactsTab";
 import { ClaimAssessmentTab } from "./ClaimAssessmentTab";
 import { ClaimAssumptionsTab } from "./ClaimAssumptionsTab";
 import { ClaimHistoryTab, type AssessmentHistoryEntry } from "./ClaimHistoryTab";
+import { ClaimDataTab } from "./ClaimDataTab";
 import { DocumentSlidePanel, type EvidenceLocation } from "./DocumentSlidePanel";
 
 interface ClaimWithDocs extends ClaimSummary {
@@ -21,7 +22,7 @@ interface ClaimSummaryTabProps {
   onViewSource?: (docId: string, page: number | null, charStart: number | null, charEnd: number | null) => void;
 }
 
-type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "history";
+type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "history" | "data";
 
 const SUB_TABS: { id: SubTab; label: string; icon: typeof FileText }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -29,6 +30,7 @@ const SUB_TABS: { id: SubTab; label: string; icon: typeof FileText }[] = [
   { id: "assessment", label: "Assessment", icon: ClipboardCheck },
   { id: "assumptions", label: "Assumptions", icon: AlertTriangle },
   { id: "history", label: "History", icon: History },
+  { id: "data", label: "Data", icon: Database },
 ];
 
 /**
@@ -197,7 +199,7 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
   const failedChecks = assessment?.checks.filter((c) => c.result === "FAIL").length || 0;
 
   return (
-    <div className="h-full overflow-hidden bg-slate-100 dark:bg-slate-950 flex flex-col">
+    <div className="h-full overflow-hidden bg-muted/50 flex flex-col">
       {/* Sticky Context Bar */}
       <ClaimContextBar
         claim={claim}
@@ -207,7 +209,7 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
       />
 
       {/* Sub-Tab Navigation */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4">
+      <div className="bg-card border-b border-border px-4">
         <div className="flex gap-1">
           {SUB_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -217,19 +219,19 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
             let badge: React.ReactNode = null;
             if (tab.id === "assessment" && failedChecks > 0) {
               badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-destructive/10 text-destructive">
                   {failedChecks}
                 </span>
               );
             } else if (tab.id === "assumptions" && criticalAssumptions > 0) {
               badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-destructive/10 text-destructive">
                   {criticalAssumptions}
                 </span>
               );
             } else if (tab.id === "assumptions" && assumptionCount > 0) {
               badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-warning/10 text-warning">
                   {assumptionCount}
                 </span>
               );
@@ -242,8 +244,8 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
                 className={cn(
                   "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
                   isActive
-                    ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-                    : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -346,6 +348,14 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
               console.log("View run:", runId);
               // TODO: Load and display historical assessment
             }}
+          />
+        )}
+
+        {activeSubTab === "data" && (
+          <ClaimDataTab
+            claim={claim}
+            onDocumentClick={handleDocumentClick}
+            onViewSource={handleViewSource}
           />
         )}
       </div>

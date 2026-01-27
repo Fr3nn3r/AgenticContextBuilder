@@ -47,25 +47,25 @@ const DECISION_CONFIG: Record<AssessmentDecision, {
     icon: CheckCircle2,
     label: "Approved",
     description: "Claim has been approved for payment",
-    bgColor: "bg-green-50 dark:bg-green-900/20",
-    textColor: "text-green-700 dark:text-green-300",
-    borderColor: "border-green-200 dark:border-green-800",
+    bgColor: "bg-success/10",
+    textColor: "text-success",
+    borderColor: "border-success/30",
   },
   REJECT: {
     icon: XCircle,
     label: "Rejected",
     description: "Claim has been rejected",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-    textColor: "text-red-700 dark:text-red-300",
-    borderColor: "border-red-200 dark:border-red-800",
+    bgColor: "bg-destructive/10",
+    textColor: "text-destructive",
+    borderColor: "border-destructive/30",
   },
   REFER_TO_HUMAN: {
     icon: ArrowRightCircle,
     label: "Referred to Human",
     description: "Claim requires manual review",
-    bgColor: "bg-amber-50 dark:bg-amber-900/20",
-    textColor: "text-amber-700 dark:text-amber-300",
-    borderColor: "border-amber-200 dark:border-amber-800",
+    bgColor: "bg-warning/10",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
   },
 };
 
@@ -119,8 +119,8 @@ export function ClaimAssessmentTab({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-          <p className="text-sm text-slate-500">Loading assessment...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading assessment...</p>
         </div>
       </div>
     );
@@ -129,8 +129,8 @@ export function ClaimAssessmentTab({
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-red-200 dark:border-red-900 p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       </div>
     );
@@ -140,14 +140,14 @@ export function ClaimAssessmentTab({
   if (!assessment) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-            <Play className="h-8 w-8 text-slate-400" />
+        <div className="bg-card rounded-lg border border-border p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <Play className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-medium text-slate-700 dark:text-slate-200 mb-2">
+          <h3 className="text-lg font-medium text-foreground mb-2">
             No Assessment Yet
           </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-md mx-auto">
+          <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
             Run an automated assessment to evaluate this claim against policy rules
             and generate a decision recommendation.
           </p>
@@ -156,7 +156,7 @@ export function ClaimAssessmentTab({
             disabled={isRunning || !onRunAssessment}
             className={cn(
               "inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium",
-              "bg-blue-600 text-white hover:bg-blue-700",
+              "bg-primary text-primary-foreground hover:bg-primary/90",
               "disabled:opacity-50 disabled:cursor-not-allowed",
               "transition-colors"
             )}
@@ -208,14 +208,14 @@ export function ClaimAssessmentTab({
     <div className="p-4 space-y-4">
       {/* Action Bar */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+        <h2 className="text-lg font-semibold text-foreground">
           Assessment
         </h2>
         <div className="flex items-center gap-2">
           {onViewHistory && (
             <button
               onClick={onViewHistory}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
             >
               <History className="h-4 w-4" />
               History
@@ -225,7 +225,7 @@ export function ClaimAssessmentTab({
             onClick={() => setShowDraftModal(true)}
             className={cn(
               "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-              "bg-blue-600 text-white hover:bg-blue-700"
+              "bg-primary text-primary-foreground hover:bg-primary/90"
             )}
           >
             <Mail className="h-4 w-4" />
@@ -276,43 +276,43 @@ export function ClaimAssessmentTab({
 
           {/* Confidence Score */}
           <div className="text-right">
-            <div className="text-2xl font-bold text-slate-700 dark:text-slate-200">
+            <div className="text-2xl font-bold text-foreground">
               <ScoreBadge value={assessment.confidence_score} />
             </div>
-            <p className="text-xs text-slate-500">Confidence</p>
+            <p className="text-xs text-muted-foreground">Confidence</p>
           </div>
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center">
-            <div className="text-lg font-semibold text-green-600 dark:text-green-400">{passCount}</div>
-            <div className="text-xs text-slate-500">Checks Passed</div>
+            <div className="text-lg font-semibold text-success">{passCount}</div>
+            <div className="text-xs text-muted-foreground">Checks Passed</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-semibold text-red-600 dark:text-red-400">{failCount}</div>
-            <div className="text-xs text-slate-500">Checks Failed</div>
+            <div className="text-lg font-semibold text-destructive">{failCount}</div>
+            <div className="text-xs text-muted-foreground">Checks Failed</div>
           </div>
           <div className="text-center">
-            <div className="text-lg font-semibold text-amber-600 dark:text-amber-400">{inconclusiveCount}</div>
-            <div className="text-xs text-slate-500">Inconclusive</div>
+            <div className="text-lg font-semibold text-warning">{inconclusiveCount}</div>
+            <div className="text-xs text-muted-foreground">Inconclusive</div>
           </div>
           <div className="text-center">
             <div className={cn(
               "text-lg font-semibold",
-              criticalAssumptions > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-600 dark:text-slate-400"
+              criticalAssumptions > 0 ? "text-warning" : "text-muted-foreground"
             )}>
               {assessment.assumptions.length}
             </div>
-            <div className="text-xs text-slate-500">Assumptions</div>
+            <div className="text-xs text-muted-foreground">Assumptions</div>
           </div>
           {assessment.payout !== undefined && (
             <div className="text-center">
-              <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
+              <div className="text-lg font-semibold text-foreground">
                 {assessment.currency || assessment.payout_breakdown?.currency || "CHF"}{" "}
                 {assessment.payout.toLocaleString()}
               </div>
-              <div className="text-xs text-slate-500">Payout</div>
+              <div className="text-xs text-muted-foreground">Payout</div>
             </div>
           )}
         </div>
@@ -325,10 +325,10 @@ export function ClaimAssessmentTab({
 
       {/* Fraud Indicators (if any) */}
       {assessment.fraud_indicators.length > 0 && (
-        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 p-4">
+        <div className="bg-destructive/10 rounded-lg border border-destructive/30 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-400" />
-            <h3 className="font-semibold text-red-700 dark:text-red-300">
+            <ShieldAlert className="h-5 w-5 text-destructive" />
+            <h3 className="font-semibold text-destructive">
               Fraud Indicators ({assessment.fraud_indicators.length})
             </h3>
           </div>
@@ -342,9 +342,9 @@ export function ClaimAssessmentTab({
                   {indicator.severity}
                 </StatusBadge>
                 <div>
-                  <span className="font-medium text-red-700 dark:text-red-300">{indicator.indicator}</span>
+                  <span className="font-medium text-destructive">{indicator.indicator}</span>
                   {indicator.details && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{indicator.details}</p>
+                    <p className="text-xs text-destructive/80 mt-0.5">{indicator.details}</p>
                   )}
                 </div>
               </div>
@@ -355,11 +355,11 @@ export function ClaimAssessmentTab({
 
       {/* Recommendations (if any) */}
       {assessment.recommendations.length > 0 && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
-          <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-2">Recommendations</h3>
+        <div className="bg-info/10 rounded-lg border border-info/30 p-4">
+          <h3 className="font-semibold text-info mb-2">Recommendations</h3>
           <ul className="list-disc list-inside space-y-1">
             {assessment.recommendations.map((rec, idx) => (
-              <li key={idx} className="text-sm text-blue-700 dark:text-blue-300">{rec}</li>
+              <li key={idx} className="text-sm text-info">{rec}</li>
             ))}
           </ul>
         </div>

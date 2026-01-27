@@ -21,7 +21,7 @@ interface ClaimTreeProps {
 // Status indicator - only show for errors
 function ClaimStatusIcon({ claim }: { claim: ClaimSummary }) {
   if (claim.gate_fail_count > 0) {
-    return <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />;
+    return <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />;
   }
   return null;
 }
@@ -29,7 +29,7 @@ function ClaimStatusIcon({ claim }: { claim: ClaimSummary }) {
 // Document status indicator - only show for errors
 function DocStatusIcon({ doc }: { doc: DocSummary }) {
   if (doc.quality_status === "fail") {
-    return <AlertTriangle className="h-3 w-3 text-red-500 flex-shrink-0" />;
+    return <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />;
   }
   return null;
 }

@@ -38,18 +38,18 @@ export function WorkflowActionsPanel({
 
   if (submitted) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-semibold text-foreground">
             Assessment Feedback
           </h3>
         </div>
         <div className="p-6 text-center">
-          <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-3" />
-          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+          <CheckCircle2 className="h-10 w-10 text-success mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground">
             Thank you for your feedback!
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Your input helps improve the assessment system.
           </p>
           <button
@@ -58,7 +58,7 @@ export function WorkflowActionsPanel({
               setRating(null);
               setComment("");
             }}
-            className="mt-4 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            className="mt-4 text-xs text-primary hover:underline"
           >
             Submit another response
           </button>
@@ -68,10 +68,10 @@ export function WorkflowActionsPanel({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-semibold text-foreground">
           Assessment Feedback
         </h3>
       </div>
@@ -79,7 +79,7 @@ export function WorkflowActionsPanel({
       <div className="p-4 space-y-4">
         {/* Rating Question */}
         <div>
-          <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+          <p className="text-sm text-foreground mb-3">
             How well did this assessment perform?
           </p>
           <div className="flex gap-3">
@@ -89,8 +89,8 @@ export function WorkflowActionsPanel({
                 "flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all",
                 "border-2",
                 rating === "good"
-                  ? "bg-green-50 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-300"
-                  : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-green-300 dark:hover:border-green-700"
+                  ? "bg-success/10 border-success text-success"
+                  : "bg-muted border-border text-muted-foreground hover:border-success/50"
               )}
             >
               <ThumbsUp className={cn("h-5 w-5", rating === "good" && "fill-current")} />
@@ -102,8 +102,8 @@ export function WorkflowActionsPanel({
                 "flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all",
                 "border-2",
                 rating === "poor"
-                  ? "bg-red-50 dark:bg-red-900/30 border-red-500 text-red-700 dark:text-red-300"
-                  : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-700"
+                  ? "bg-destructive/10 border-destructive text-destructive"
+                  : "bg-muted border-border text-muted-foreground hover:border-destructive/50"
               )}
             >
               <ThumbsDown className={cn("h-5 w-5", rating === "poor" && "fill-current")} />
@@ -114,7 +114,7 @@ export function WorkflowActionsPanel({
 
         {/* Comment Field */}
         <div>
-          <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
             Comments (optional)
           </label>
@@ -129,9 +129,9 @@ export function WorkflowActionsPanel({
             rows={3}
             className={cn(
               "w-full px-3 py-2 text-sm rounded-lg border transition-colors resize-none",
-              "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-              "text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500",
-              "focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+              "bg-muted border-border",
+              "text-foreground placeholder-muted-foreground",
+              "focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
             )}
           />
         </div>
@@ -143,8 +143,8 @@ export function WorkflowActionsPanel({
           className={cn(
             "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors",
             rating
-              ? "bg-blue-600 text-white hover:bg-blue-700"
-              : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
         >
           <Send className="h-4 w-4" />
@@ -152,7 +152,7 @@ export function WorkflowActionsPanel({
         </button>
 
         {/* Help Text */}
-        <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+        <p className="text-xs text-muted-foreground text-center">
           Your feedback helps improve assessment accuracy over time.
         </p>
       </div>

@@ -28,20 +28,20 @@ const DECISION_CONFIG: Record<AssessmentDecision, {
   APPROVE: {
     icon: CheckCircle2,
     label: "Approved",
-    bg: "bg-green-100 dark:bg-green-900/30",
-    text: "text-green-700 dark:text-green-400",
+    bg: "bg-success/10",
+    text: "text-success",
   },
   REJECT: {
     icon: XCircle,
     label: "Rejected",
-    bg: "bg-red-100 dark:bg-red-900/30",
-    text: "text-red-700 dark:text-red-400",
+    bg: "bg-destructive/10",
+    text: "text-destructive",
   },
   REFER_TO_HUMAN: {
     icon: ArrowRightCircle,
     label: "Referred",
-    bg: "bg-amber-100 dark:bg-amber-900/30",
-    text: "text-amber-700 dark:text-amber-400",
+    bg: "bg-warning/10",
+    text: "text-warning",
   },
 };
 
@@ -66,13 +66,13 @@ function CopyButton({ value }: { value: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-all"
       title="Copy"
     >
       {copied ? (
-        <Check className="h-3 w-3 text-emerald-500" />
+        <Check className="h-3 w-3 text-success" />
       ) : (
-        <Copy className="h-3 w-3 text-slate-400" />
+        <Copy className="h-3 w-3 text-muted-foreground" />
       )}
     </button>
   );
@@ -108,10 +108,10 @@ function ActionButton({
   disabled?: boolean;
 }) {
   const variantStyles = {
-    approve: "bg-green-600 hover:bg-green-700 text-white",
-    reject: "bg-red-600 hover:bg-red-700 text-white",
-    refer: "bg-amber-500 hover:bg-amber-600 text-white",
-    neutral: "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200",
+    approve: "bg-success hover:bg-success/90 text-success-foreground",
+    reject: "bg-destructive hover:bg-destructive/90 text-destructive-foreground",
+    refer: "bg-warning hover:bg-warning/90 text-warning-foreground",
+    neutral: "bg-muted hover:bg-muted/80 text-foreground",
   };
 
   return (
@@ -167,12 +167,12 @@ export function ClaimContextBar({
   return (
     <div
       className={cn(
-        "sticky top-0 z-10 bg-white dark:bg-slate-900 border-b px-5 py-3",
+        "sticky top-0 z-10 bg-card border-b px-5 py-3",
         hasErrors
-          ? "border-b-red-500"
+          ? "border-b-destructive"
           : hasWarnings
-            ? "border-b-amber-500"
-            : "border-b-emerald-500",
+            ? "border-b-warning"
+            : "border-b-success",
         className
       )}
       data-testid="claim-context-bar"
@@ -188,18 +188,18 @@ export function ClaimContextBar({
           </div>
 
           {/* Claim ID + Vehicle */}
-          <div className="min-w-0 border-l border-slate-200 dark:border-slate-700 pl-4">
+          <div className="min-w-0 border-l border-border pl-4">
             <div className="flex items-center gap-2 group">
-              <span className="text-sm font-mono font-semibold text-slate-800 dark:text-slate-100 truncate">
+              <span className="text-sm font-mono font-semibold text-foreground truncate">
                 {claim.claim_id}
               </span>
               <CopyButton value={claim.claim_id} />
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{vehicleTitle}</span>
               {licensePlate && (
                 <>
-                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                  <span className="text-border">|</span>
                   <span className="font-mono">{licensePlate}</span>
                 </>
               )}
@@ -207,15 +207,15 @@ export function ClaimContextBar({
           </div>
 
           {/* Payout total */}
-          <div className="hidden md:block border-l border-slate-200 dark:border-slate-700 pl-4">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+          <div className="hidden md:block border-l border-border pl-4">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
               Total
             </span>
             <span className={cn(
               "text-lg font-bold tabular-nums font-mono",
               payoutAmount > 5000
-                ? "text-red-600 dark:text-red-400"
-                : "text-slate-800 dark:text-slate-100"
+                ? "text-destructive"
+                : "text-foreground"
             )}>
               {formatCurrency(payoutAmount, payoutCurrency)}
             </span>

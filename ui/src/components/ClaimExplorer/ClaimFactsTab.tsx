@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Loader2,
   Car,
@@ -13,6 +13,9 @@ import {
   Hash,
   Gauge,
   Clock,
+  Copy,
+  Check,
+  Database,
 } from "lucide-react";
 import type { ClaimSummary, DocSummary, ClaimFacts, AggregatedFact } from "../../types";
 import { cn } from "../../lib/utils";
@@ -137,18 +140,18 @@ function FactItem({ icon: Icon, label, value, fact, mono, onViewSource }: FactIt
       className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md transition-colors",
         hasSource && onViewSource
-          ? "hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
+          ? "hover:bg-muted/50 cursor-pointer"
           : ""
       )}
       onClick={hasSource ? handleClick : undefined}
     >
-      {Icon && <Icon className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
-      <span className="text-xs text-slate-500 dark:text-slate-400 flex-shrink-0 min-w-[70px]">
+      {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+      <span className="text-xs text-muted-foreground flex-shrink-0 min-w-[70px]">
         {label}
       </span>
       <span
         className={cn(
-          "text-sm font-medium text-slate-700 dark:text-slate-200 truncate",
+          "text-sm font-medium text-foreground truncate",
           mono && "font-mono text-xs"
         )}
         title={value}
@@ -156,7 +159,7 @@ function FactItem({ icon: Icon, label, value, fact, mono, onViewSource }: FactIt
         {value}
       </span>
       {hasSource && onViewSource && (
-        <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 flex-shrink-0 ml-auto" />
+        <ExternalLink className="h-3 w-3 text-border flex-shrink-0 ml-auto" />
       )}
     </div>
   );
@@ -171,17 +174,98 @@ interface FactCardProps {
 
 function FactCard({ icon: Icon, title, children, badge }: FactCardProps) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-slate-500" />
-          <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
             {title}
           </h4>
         </div>
         {badge}
       </div>
       <div className="p-2">{children}</div>
+    </div>
+  );
+}
+
+interface ClaimRunBadgeProps {
+  claimRunId?: string;
+  generatedAt?: string;
+  extractionRuns?: string[];
+}
+
+/** Shows the current claim run ID with copy functionality */
+function ClaimRunBadge({ claimRunId, generatedAt, extractionRuns }: ClaimRunBadgeProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    if (!claimRunId) return;
+    try {
+      await navigator.clipboard.writeText(claimRunId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, [claimRunId]);
+
+  if (!claimRunId && !generatedAt) return null;
+
+  // Format timestamp for display
+  const formattedDate = generatedAt
+    ? new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(generatedAt))
+    : null;
+
+  // Shorten claim run ID for display (keep prefix + last 6 chars)
+  const shortId = claimRunId
+    ? claimRunId.length > 20
+      ? `${claimRunId.slice(0, 4)}...${claimRunId.slice(-6)}`
+      : claimRunId
+    : null;
+
+  return (
+    <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+      <Database className="h-3.5 w-3.5" />
+      <span>Claim Run:</span>
+      {shortId && (
+        <button
+          onClick={handleCopy}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-xs",
+            "bg-muted hover:bg-muted/80",
+            "transition-colors cursor-pointer"
+          )}
+          title={`Click to copy: ${claimRunId}`}
+        >
+          {claimRunId}
+          {copied ? (
+            <Check className="h-3 w-3 text-success" />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground" />
+          )}
+        </button>
+      )}
+      {formattedDate && (
+        <>
+          <span className="text-border">|</span>
+          <span>{formattedDate}</span>
+        </>
+      )}
+      {extractionRuns && extractionRuns.length > 0 && (
+        <>
+          <span className="text-border">|</span>
+          <span title={extractionRuns.join(", ")}>
+            {extractionRuns.length} extraction run{extractionRuns.length !== 1 ? "s" : ""}
+          </span>
+        </>
+      )}
     </div>
   );
 }
@@ -267,8 +351,8 @@ export function ClaimFactsTab({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-          <p className="text-sm text-slate-500">Loading facts...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading facts...</p>
         </div>
       </div>
     );
@@ -277,8 +361,8 @@ export function ClaimFactsTab({
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-red-200 dark:border-red-900 p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       </div>
     );
@@ -287,16 +371,23 @@ export function ClaimFactsTab({
   if (!hasAnyFacts) {
     return (
       <div className="p-4">
+        {/* Show claim run info even when no facts */}
+        <ClaimRunBadge
+          claimRunId={facts?.claim_run_id}
+          generatedAt={facts?.generated_at}
+          extractionRuns={facts?.extraction_runs_used}
+        />
+
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div className="lg:col-span-3">
-            <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
-              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                <FileText className="h-6 w-6 text-slate-400" />
+            <div className="bg-card rounded-lg border border-border p-8 text-center">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                <FileText className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+              <h3 className="text-sm font-medium text-foreground mb-1">
                 No Facts Extracted
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 Run the extraction pipeline to generate claim facts.
               </p>
             </div>
@@ -314,6 +405,13 @@ export function ClaimFactsTab({
 
   return (
     <div className="p-4">
+      {/* Claim Run Badge */}
+      <ClaimRunBadge
+        claimRunId={facts?.claim_run_id}
+        generatedAt={facts?.generated_at}
+        extractionRuns={facts?.extraction_runs_used}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT COLUMN - Facts Cards */}
         <div className="lg:col-span-3 space-y-3">
@@ -512,21 +610,21 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 {service.diagnosis.value && (
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 mt-2">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                  <div className="pt-2 border-t border-border mt-2">
+                    <p className="text-xs text-muted-foreground mb-1">
                       Diagnosis
                     </p>
-                    <p className="text-sm text-slate-700 dark:text-slate-200">
+                    <p className="text-sm text-foreground">
                       {service.diagnosis.value}
                     </p>
                   </div>
                 )}
                 {service.workDone.value && (
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 mt-2">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                  <div className="pt-2 border-t border-border mt-2">
+                    <p className="text-xs text-muted-foreground mb-1">
                       Work Performed
                     </p>
-                    <p className="text-sm text-slate-700 dark:text-slate-200">
+                    <p className="text-sm text-foreground">
                       {service.workDone.value}
                     </p>
                   </div>
@@ -541,7 +639,7 @@ export function ClaimFactsTab({
               icon={Shield}
               title="Coverage Details"
               badge={
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted-foreground">
                   {coverageFacts.length} items
                 </span>
               }
@@ -573,13 +671,9 @@ export function ClaimFactsTab({
                       }}
                       className={cn(
                         "px-2 py-1 rounded text-xs font-medium transition-colors",
-                        isTrue &&
-                          "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300",
-                        isFalse &&
-                          "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
-                        !isTrue &&
-                          !isFalse &&
-                          "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        isTrue && "bg-success/10 text-success",
+                        isFalse && "bg-destructive/10 text-destructive",
+                        !isTrue && !isFalse && "bg-muted text-foreground"
                       )}
                     >
                       {fact.name

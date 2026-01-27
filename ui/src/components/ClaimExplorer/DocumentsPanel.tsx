@@ -47,15 +47,15 @@ function FilterButton({
       className={cn(
         "px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide transition-all",
         isActive
-          ? "bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900"
-          : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+          ? "bg-primary text-primary-foreground"
+          : "bg-muted text-muted-foreground hover:bg-muted/80"
       )}
     >
       {label}
       {count > 0 && (
         <span className={cn(
           "ml-1",
-          isActive ? "text-slate-300 dark:text-slate-600" : "text-slate-400"
+          isActive ? "opacity-70" : "text-muted-foreground"
         )}>
           {count}
         </span>
@@ -77,8 +77,8 @@ function DocumentRow({
   return (
     <div
       className={cn(
-        "group flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-b-0",
-        "transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50",
+        "group flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-b-0",
+        "transition-all hover:bg-muted/50",
         onClick && "cursor-pointer"
       )}
       onClick={onClick}
@@ -86,27 +86,27 @@ function DocumentRow({
       {/* Icon with type indicator */}
       <div className={cn(
         "w-8 h-8 rounded flex items-center justify-center flex-shrink-0",
-        type === "pdf" && "bg-red-100 dark:bg-red-900/30",
-        type === "image" && "bg-blue-100 dark:bg-blue-900/30",
-        type === "other" && "bg-slate-100 dark:bg-slate-800"
+        type === "pdf" && "bg-destructive/10",
+        type === "image" && "bg-info/10",
+        type === "other" && "bg-muted"
       )}>
         <Icon className={cn(
           "h-4 w-4",
-          type === "pdf" && "text-red-600 dark:text-red-400",
-          type === "image" && "text-blue-600 dark:text-blue-400",
-          type === "other" && "text-slate-500"
+          type === "pdf" && "text-destructive",
+          type === "image" && "text-info",
+          type === "other" && "text-muted-foreground"
         )} />
       </div>
 
       {/* File info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+        <p className="text-sm font-medium text-foreground truncate group-hover:text-foreground transition-colors">
           {doc.filename}
         </p>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-muted-foreground">
           {formatDocType(doc.doc_type)}
           {doc.page_count > 0 && (
-            <span className="ml-1.5 text-slate-400">
+            <span className="ml-1.5 opacity-70">
               · {doc.page_count} page{doc.page_count !== 1 ? "s" : ""}
             </span>
           )}
@@ -114,7 +114,7 @@ function DocumentRow({
       </div>
 
       {/* Hover arrow */}
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400">
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground">
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
@@ -147,27 +147,27 @@ export function DocumentsPanel({ documents, onDocumentClick }: DocumentsPanelPro
 
   if (!documents || documents.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
           Source Documents
         </h3>
-        <p className="text-sm text-slate-500">No documents</p>
+        <p className="text-sm text-muted-foreground">No documents</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header with filters */}
-      <div className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+      <div className="px-3 py-2.5 border-b border-border bg-muted/50">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Documents
             </h3>
           </div>
-          <span className="text-xs text-slate-400 font-mono">
+          <span className="text-xs text-muted-foreground font-mono">
             {filteredDocs.length}/{documents.length}
           </span>
         </div>
@@ -210,7 +210,7 @@ export function DocumentsPanel({ documents, onDocumentClick }: DocumentsPanelPro
         ))}
 
         {filteredDocs.length === 0 && (
-          <div className="p-4 text-center text-sm text-slate-500">
+          <div className="p-4 text-center text-sm text-muted-foreground">
             No {filter} documents
           </div>
         )}
