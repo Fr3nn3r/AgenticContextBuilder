@@ -626,6 +626,68 @@ def list_claim_runs_for_claim(claim_id: str) -> List[Dict[str, Any]]:
     return results
 
 
+@router.get("/api/claims/{claim_id}/claim-runs/{claim_run_id}/facts")
+def get_claim_facts_by_run(claim_id: str, claim_run_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get claim facts for a specific claim run.
+
+    Reads claim_facts.json from the specified claim run directory.
+
+    Args:
+        claim_id: The claim identifier
+        claim_run_id: The claim run identifier
+
+    Returns:
+        Claim facts data including aggregated facts and provenance,
+        or null if no facts exist for this run.
+    """
+    from context_builder.storage.filesystem import FileStorage
+
+    data_dir = get_data_dir()
+    storage = FileStorage(data_dir)
+
+    try:
+        claim_run_storage = storage.get_claim_run_storage(claim_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
+
+    # Read claim_facts.json from the specific claim run
+    facts_data = claim_run_storage.read_from_claim_run(claim_run_id, "claim_facts.json")
+    return facts_data
+
+
+@router.get("/api/claims/{claim_id}/claim-runs/{claim_run_id}/reconciliation-report")
+def get_reconciliation_report_by_run(
+    claim_id: str, claim_run_id: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Get reconciliation report for a specific claim run.
+
+    Reads reconciliation_report.json from the specified claim run directory.
+
+    Args:
+        claim_id: The claim identifier
+        claim_run_id: The claim run identifier
+
+    Returns:
+        Reconciliation report including gate status, conflicts, and metrics,
+        or null if no report exists for this run.
+    """
+    from context_builder.storage.filesystem import FileStorage
+
+    data_dir = get_data_dir()
+    storage = FileStorage(data_dir)
+
+    try:
+        claim_run_storage = storage.get_claim_run_storage(claim_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Claim not found: {claim_id}")
+
+    # Read reconciliation_report.json from the specific claim run
+    report_data = claim_run_storage.read_from_claim_run(claim_run_id, "reconciliation_report.json")
+    return report_data
+
+
 @router.get("/api/reconciliation/evals/latest")
 def get_latest_reconciliation_eval() -> Optional[Dict[str, Any]]:
     """

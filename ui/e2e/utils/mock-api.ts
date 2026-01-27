@@ -21,6 +21,9 @@ const pendingClaimsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "
 const uploadResultFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "upload-result.json"), "utf-8"));
 const pipelineRunFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-run.json"), "utf-8"));
 const pipelineStatusFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "pipeline-status.json"), "utf-8"));
+const claimRunsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claim-runs.json"), "utf-8"));
+const claimFactsFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "claim-facts.json"), "utf-8"));
+const reconciliationReportFixture = JSON.parse(fs.readFileSync(path.join(fixturesDir, "reconciliation-report.json"), "utf-8"));
 
 // Compliance fixtures
 const complianceDecisionsFixture = JSON.parse(
@@ -440,6 +443,45 @@ export async function setupApiMocks(page: Page) {
       contentType: "application/json",
       body: JSON.stringify(batchesFixture),
     });
+  });
+
+  // Mock GET /api/claims/:claimId/claim-runs (list claim runs for a claim)
+  await page.route(/\/api\/claims\/[^/]+\/claim-runs$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(claimRunsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/claims/:claimId/claim-runs/:runId/facts
+  await page.route(/\/api\/claims\/[^/]+\/claim-runs\/[^/]+\/facts$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(claimFactsFixture),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // Mock GET /api/claims/:claimId/claim-runs/:runId/reconciliation-report
+  await page.route(/\/api\/claims\/[^/]+\/claim-runs\/[^/]+\/reconciliation-report$/, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(reconciliationReportFixture),
+      });
+    } else {
+      await route.continue();
+    }
   });
 }
 

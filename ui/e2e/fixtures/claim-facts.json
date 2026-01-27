@@ -1,0 +1,94 @@
+{
+  "claim_id": "CLM-2024-001",
+  "claim_run_id": "run-2026-01-15-001",
+  "extraction_runs_used": ["ext-run-001", "ext-run-002"],
+  "facts": [
+    {
+      "name": "date_of_loss",
+      "value": "2024-01-10",
+      "confidence": 0.95,
+      "provenance_count": 2,
+      "selected_from": {
+        "doc_id": "doc_001",
+        "doc_type": "loss_notice",
+        "run_id": "ext-run-001",
+        "page": 1,
+        "char_start": 150,
+        "char_end": 180
+      }
+    },
+    {
+      "name": "claimant_name",
+      "value": "John Smith",
+      "confidence": 0.98,
+      "provenance_count": 1,
+      "selected_from": {
+        "doc_id": "doc_001",
+        "doc_type": "loss_notice",
+        "run_id": "ext-run-001",
+        "page": 1,
+        "char_start": 50,
+        "char_end": 60
+      }
+    },
+    {
+      "name": "policy_number",
+      "value": "POL-2024-12345",
+      "confidence": 0.99,
+      "provenance_count": 2,
+      "selected_from": {
+        "doc_id": "doc_003",
+        "doc_type": "insurance_policy",
+        "run_id": "ext-run-002",
+        "page": 1,
+        "char_start": 20,
+        "char_end": 45
+      }
+    },
+    {
+      "name": "incident_location",
+      "value": "123 Main Street, Springfield",
+      "confidence": 0.85,
+      "provenance_count": 1,
+      "selected_from": {
+        "doc_id": "doc_002",
+        "doc_type": "police_report",
+        "run_id": "ext-run-001",
+        "page": 2,
+        "char_start": 300,
+        "char_end": 350
+      }
+    },
+    {
+      "name": "estimated_damage",
+      "value": "$15,000",
+      "confidence": 0.75,
+      "provenance_count": 1,
+      "selected_from": {
+        "doc_id": "doc_001",
+        "doc_type": "loss_notice",
+        "run_id": "ext-run-001",
+        "page": 2,
+        "char_start": 400,
+        "char_end": 420
+      }
+    }
+  ],
+  "sources": [
+    {
+      "doc_id": "doc_001",
+      "doc_type": "loss_notice",
+      "filename": "loss_notice.pdf"
+    },
+    {
+      "doc_id": "doc_002",
+      "doc_type": "police_report",
+      "filename": "police_report.pdf"
+    },
+    {
+      "doc_id": "doc_003",
+      "doc_type": "insurance_policy",
+      "filename": "insurance_policy.pdf"
+    }
+  ]
+}

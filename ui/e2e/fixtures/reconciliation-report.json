@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "claim_id": "CLM-2024-001",
+  "claim_run_id": "run-2026-01-15-001",
+  "generated_at": "2026-01-15T10:30:05Z",
+  "gate": {
+    "status": "warn",
+    "missing_critical_facts": ["vehicle_vin"],
+    "conflict_count": 1,
+    "provenance_coverage": 0.85,
+    "estimated_tokens": 1250,
+    "reasons": [
+      "Missing critical fact: vehicle_vin",
+      "1 conflict requiring manual review"
+    ]
+  },
+  "conflicts": [
+    {
+      "fact_name": "date_of_loss",
+      "values": ["2024-01-10", "2024-01-09"],
+      "sources": [
+        ["doc_001", "loss_notice"],
+        ["doc_002", "police_report"]
+      ],
+      "selected_value": "2024-01-10",
+      "selected_confidence": 0.95,
+      "selection_reason": "Higher confidence from primary source"
+    }
+  ],
+  "fact_count": 5,
+  "critical_facts_spec": ["date_of_loss", "claimant_name", "policy_number", "vehicle_vin"],
+  "critical_facts_present": ["date_of_loss", "claimant_name", "policy_number"]
+}
