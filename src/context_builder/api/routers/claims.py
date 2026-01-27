@@ -661,3 +661,96 @@ def get_latest_reconciliation_eval() -> Optional[Dict[str, Any]]:
         raise HTTPException(
             status_code=500, detail=f"Error reading reconciliation evaluation: {e}"
         )
+
+
+# =============================================================================
+# CUSTOMER COMMUNICATION ENDPOINTS
+# =============================================================================
+
+
+class CustomerDraftRequest(BaseModel):
+    """Request body for generating a customer communication draft."""
+
+    language: str = "en"  # "en" or "de"
+
+
+class CustomerDraftResponse(BaseModel):
+    """Response containing the generated customer draft."""
+
+    subject: str
+    body: str
+    language: str
+    claim_id: str
+    tokens_used: int = 0
+
+
+@router.post(
+    "/api/claims/{claim_id}/communication/draft",
+    response_model=CustomerDraftResponse,
+)
+def generate_customer_draft(
+    claim_id: str,
+    request: CustomerDraftRequest = CustomerDraftRequest(),
+) -> CustomerDraftResponse:
+    """
+    Generate a customer communication draft email for a claim assessment.
+
+    This uses the LLM to draft a polite email explaining the assessment
+    decision and rationale to the policyholder.
+
+    Args:
+        claim_id: The claim ID
+        request: Language preference ("en" for English, "de" for German)
+
+    Returns:
+        Draft email with subject and body in the requested language
+    """
+    from context_builder.api.services.customer_communication import (
+        get_customer_communication_service,
+    )
+    from context_builder.storage.filesystem import FileStorage
+    from context_builder.schemas.claim_facts import migrate_claim_facts_to_v3
+
+    # First, get the assessment for this claim
+    assessment = get_assessment_service().get_assessment(claim_id)
+    if not assessment:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No assessment found for claim {claim_id}. Run assessment first.",
+        )
+
+    # Get claim facts for policyholder name
+    claim_facts = None
+    try:
+        data_dir = get_data_dir()
+        storage = FileStorage(data_dir)
+        claim_run_storage = storage.get_claim_run_storage(claim_id)
+        claim_facts = claim_run_storage.read_with_fallback("claim_facts.json")
+        if claim_facts:
+            claim_facts = migrate_claim_facts_to_v3(claim_facts)
+    except Exception:
+        # Non-fatal: continue without policyholder name
+        pass
+
+    try:
+        service = get_customer_communication_service()
+        result = service.generate_draft(
+            claim_id=claim_id,
+            assessment=assessment,
+            claim_facts=claim_facts,
+            language=request.language,
+        )
+
+        return CustomerDraftResponse(
+            subject=result.subject,
+            body=result.body,
+            language=result.language,
+            claim_id=result.claim_id,
+            tokens_used=result.tokens_used,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate draft: {e}"
+        )

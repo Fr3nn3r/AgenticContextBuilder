@@ -394,7 +394,7 @@ class TestVersionBundleStore:
 
         assert bundle.extractor_version == "v1.0.0"
         # contextbuilder_version comes from pyproject.toml
-        assert bundle.contextbuilder_version == "0.2.0"
+        assert bundle.contextbuilder_version == "0.3.0"
 
     def test_nonexistent_bundle_returns_none(self, bundle_store):
         """Test that getting nonexistent bundle returns None."""
