@@ -16,7 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       defaultTheme="system"
       defaultColorTheme="northern-lights"
       themes={['light', 'dark', 'system']}
-      colorThemes={['northern-lights', 'default', 'pink']}
+      colorThemes={['northern-lights', 'default', 'pink', 'modern-minimal', 'ocean-breeze', 'clean-slate']}
       animationType={ThemeAnimationType.CIRCLE}
       duration={500}
     >

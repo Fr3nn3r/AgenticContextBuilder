@@ -10,6 +10,9 @@ export default {
     "theme-northern-lights",
     "theme-default",
     "theme-pink",
+    "theme-modern-minimal",
+    "theme-ocean-breeze",
+    "theme-clean-slate",
     "dark",
   ],
   theme: {

@@ -6,6 +6,9 @@ const COLOR_THEMES = [
   { id: "northern-lights", name: "Northern Lights" },
   { id: "default", name: "Default" },
   { id: "pink", name: "Pink" },
+  { id: "modern-minimal", name: "Modern Minimal" },
+  { id: "ocean-breeze", name: "Ocean Breeze" },
+  { id: "clean-slate", name: "Clean Slate" },
 ] as const;
 
 const MODE_OPTIONS = [
