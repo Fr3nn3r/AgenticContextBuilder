@@ -15,13 +15,21 @@ class GateStatus(str, Enum):
     FAIL = "fail"
 
 
+class ConflictSource(BaseModel):
+    """Source document info for a conflicting value."""
+
+    doc_id: str = Field(..., description="Document identifier")
+    doc_type: str = Field(..., description="Document type (e.g., cost_estimate, service_history)")
+    filename: str = Field(..., description="Original filename for display")
+
+
 class FactConflict(BaseModel):
     """A fact with conflicting values across documents."""
 
     fact_name: str = Field(..., description="Name of the conflicting fact")
     values: List[str] = Field(..., description="Different values found across documents")
-    sources: List[List[str]] = Field(
-        ..., description="Doc IDs grouped by value (parallel to values list)"
+    sources: List[List[ConflictSource]] = Field(
+        ..., description="Source documents grouped by value (parallel to values list)"
     )
     selected_value: str = Field(..., description="The value selected (highest confidence)")
     selected_confidence: float = Field(..., description="Confidence of selected value")
@@ -77,7 +85,7 @@ class ReconciliationReport(BaseModel):
     """Full reconciliation report written to claim context directory."""
 
     schema_version: str = Field(
-        default="reconciliation_v1", description="Schema version identifier"
+        default="reconciliation_v2", description="Schema version identifier"
     )
     claim_id: str = Field(..., description="Claim identifier")
     claim_run_id: str = Field(..., description="Claim run ID that produced this reconciliation")

@@ -117,7 +117,7 @@ export async function getClaimReview(claimId: string): Promise<ClaimReviewPayloa
   return fetchJson<ClaimReviewPayload>(`${API_BASE}/claims/${claimId}/review`);
 }
 
-import type { ClaimFacts } from "../types";
+import type { ClaimFacts, ClaimRunManifest, ReconciliationReport } from "../types";
 
 /**
  * Get aggregated claim facts from the context folder.
@@ -125,6 +125,50 @@ import type { ClaimFacts } from "../types";
  */
 export async function getClaimFacts(claimId: string): Promise<ClaimFacts | null> {
   return fetchJson<ClaimFacts | null>(`${API_BASE}/claims/${encodeURIComponent(claimId)}/facts`);
+}
+
+/**
+ * Get all claim runs for a claim.
+ * Returns a list of claim run manifests sorted by date (newest first).
+ */
+export async function getClaimRunsForClaim(claimId: string): Promise<ClaimRunManifest[]> {
+  return fetchJson<ClaimRunManifest[]>(
+    `${API_BASE}/claims/${encodeURIComponent(claimId)}/claim-runs`
+  );
+}
+
+/**
+ * Get claim facts for a specific claim run.
+ * Returns null if no facts exist for this run.
+ */
+export async function getClaimFactsByRun(
+  claimId: string,
+  claimRunId: string
+): Promise<ClaimFacts | null> {
+  try {
+    return await fetchJson<ClaimFacts>(
+      `${API_BASE}/claims/${encodeURIComponent(claimId)}/claim-runs/${encodeURIComponent(claimRunId)}/facts`
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get reconciliation report for a specific claim run.
+ * Returns null if no report exists for this run.
+ */
+export async function getReconciliationReport(
+  claimId: string,
+  claimRunId: string
+): Promise<ReconciliationReport | null> {
+  try {
+    return await fetchJson<ReconciliationReport>(
+      `${API_BASE}/claims/${encodeURIComponent(claimId)}/claim-runs/${encodeURIComponent(claimRunId)}/reconciliation-report`
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function saveDocReview(

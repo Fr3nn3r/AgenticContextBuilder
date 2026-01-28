@@ -25,7 +25,7 @@ from context_builder.extraction.base import (
 )
 from context_builder.extraction.spec_loader import DocTypeSpec
 from context_builder.extraction.page_parser import find_text_position
-from context_builder.extraction.normalizers import get_normalizer, get_validator
+from context_builder.extraction.normalizers import get_normalizer, get_validator, safe_string
 from context_builder.extraction.evidence_resolver import resolve_evidence_offsets
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.extraction_result import (
@@ -413,12 +413,14 @@ class GenericFieldExtractor(FieldExtractor):
             is_placeholder = raw.get("is_placeholder", False)
 
             # Normalize value
+            # Always use safe_string to ensure normalized_value is a string,
+            # even for fields without explicit normalization rules
             if value and field_name in self.spec.field_rules:
                 rule = self.spec.field_rules[field_name]
                 normalizer = get_normalizer(rule.normalize)
                 normalized_value = normalizer(value)
             else:
-                normalized_value = value
+                normalized_value = safe_string(value) if value else None
 
             # Build provenance if we have a quote
             # Use candidate pages as hints for more accurate page detection

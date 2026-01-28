@@ -169,18 +169,26 @@ export function QualityGateSummary({ claim, facts, className }: QualityGateSumma
 
   return (
     <div className={cn(
-      "bg-card rounded-lg border overflow-hidden",
+      "bg-card rounded-lg border overflow-hidden shadow-sm relative",
       overallStatus === "fail" && "border-destructive/30",
       overallStatus === "warn" && "border-warning/30",
-      overallStatus === "pass" && "border-border",
+      overallStatus === "pass" && "border-success/30",
       className
     )}>
-      {/* Header */}
+      {/* Left accent bar */}
       <div className={cn(
-        "px-4 py-3 border-b flex items-center justify-between",
-        overallStatus === "fail" && "bg-destructive/10 border-destructive/30",
-        overallStatus === "warn" && "bg-warning/10 border-warning/30",
-        overallStatus === "pass" && "bg-muted/50 border-border"
+        "absolute left-0 top-0 bottom-0 w-1",
+        overallStatus === "pass" && "bg-success",
+        overallStatus === "warn" && "bg-warning",
+        overallStatus === "fail" && "bg-destructive"
+      )} />
+
+      {/* Header with gradient */}
+      <div className={cn(
+        "px-4 py-3 pl-5 border-b flex items-center justify-between",
+        overallStatus === "fail" && "gradient-destructive border-destructive/30",
+        overallStatus === "warn" && "gradient-warning border-warning/30",
+        overallStatus === "pass" && "gradient-success border-success/30"
       )}>
         <div className="flex items-center gap-2">
           <ShieldCheck className={cn(

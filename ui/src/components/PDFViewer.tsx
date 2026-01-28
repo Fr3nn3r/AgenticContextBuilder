@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle, useCallback, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
@@ -33,6 +33,9 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     const [pageRendered, setPageRendered] = useState(false);
     const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(null);
 
+    // Ref to container for scoped DOM queries (avoids conflicts with multiple PDFViewer instances)
+    const containerRef = useRef<HTMLDivElement>(null);
+
     // Function to clean evidence text (strip HTML tags, normalize whitespace)
     const cleanEvidenceText = (text: string): string => {
       // Remove HTML/XML tags like <td>, </td>, etc.
@@ -51,10 +54,14 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     };
 
     // Function to highlight text in the PDF text layer
+    // Uses containerRef to scope queries to THIS PDFViewer instance (important when multiple viewers exist)
     const applyHighlight = useCallback((searchText: string) => {
+      const container = containerRef.current;
+      if (!container) return;
+
       if (!searchText) {
-        // Clear existing highlights
-        const existingHighlights = document.querySelectorAll(".pdf-text-highlight");
+        // Clear existing highlights within this container only
+        const existingHighlights = container.querySelectorAll(".pdf-text-highlight");
         existingHighlights.forEach((el) => {
           const parent = el.parentNode;
           if (parent) {
@@ -65,8 +72,8 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         return;
       }
 
-      // Find the text layer
-      const textLayer = document.querySelector(".react-pdf__Page__textContent");
+      // Find the text layer within this container only
+      const textLayer = container.querySelector(".react-pdf__Page__textContent");
       if (!textLayer) return;
 
       // Clear previous highlights first
@@ -281,9 +288,10 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
         }
       });
 
-      // Scroll to first highlight
+      // Scroll to first highlight within this container
       setTimeout(() => {
-        const firstHighlight = document.querySelector(".pdf-text-highlight");
+        const container = containerRef.current;
+        const firstHighlight = container?.querySelector(".pdf-text-highlight");
         if (firstHighlight) {
           firstHighlight.scrollIntoView({ behavior: "smooth", block: "center" });
         }
@@ -342,9 +350,8 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     // Measure container width for responsive PDF scaling
     useEffect(() => {
       const updateWidth = () => {
-        const container = document.getElementById("pdf-container");
-        if (container) {
-          setContainerWidth(container.clientWidth - 32);
+        if (containerRef.current) {
+          setContainerWidth(containerRef.current.clientWidth - 32);
         }
       };
 
@@ -368,8 +375,8 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
 
     function onPageRenderSuccess() {
       setPageRendered(true);
-      // Capture rendered page dimensions for bbox overlay
-      const pageCanvas = document.querySelector(".react-pdf__Page__canvas") as HTMLCanvasElement;
+      // Capture rendered page dimensions for bbox overlay (scoped to this container)
+      const pageCanvas = containerRef.current?.querySelector(".react-pdf__Page__canvas") as HTMLCanvasElement;
       if (pageCanvas) {
         const rect = pageCanvas.getBoundingClientRect();
         setPageDimensions({ width: rect.width, height: rect.height });
@@ -387,7 +394,7 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
     }
 
     return (
-      <div id="pdf-container" className="flex flex-col h-full bg-muted">
+      <div ref={containerRef} className="flex flex-col h-full bg-muted">
         {/* Page navigation */}
         <div className="flex items-center justify-center gap-4 p-2 bg-card border-b border-border">
           <button

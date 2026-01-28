@@ -19,7 +19,14 @@ interface ClaimWithDocs extends ClaimSummary {
 interface ClaimSummaryTabProps {
   claim: ClaimWithDocs;
   onDocumentClick?: (docId: string) => void;
-  onViewSource?: (docId: string, page: number | null, charStart: number | null, charEnd: number | null) => void;
+  onViewSource?: (
+    docId: string,
+    page: number | null,
+    charStart: number | null,
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
+  ) => void;
 }
 
 type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "history" | "data";
@@ -153,9 +160,11 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => {
-    setSelectedEvidence({ docId, page, charStart, charEnd });
+    setSelectedEvidence({ docId, page, charStart, charEnd, highlightText, highlightValue });
   };
 
   // Handle clicking a document (without specific evidence location)
@@ -315,7 +324,9 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
                   fact.selected_from.doc_id,
                   fact.selected_from.page,
                   fact.selected_from.char_start,
-                  fact.selected_from.char_end
+                  fact.selected_from.char_end,
+                  fact.selected_from.text_quote ?? undefined,
+                  typeof fact.value === 'string' ? fact.value : undefined
                 );
                 return;
               }

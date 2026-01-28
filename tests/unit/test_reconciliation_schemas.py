@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import ValidationError
 
 from context_builder.schemas.reconciliation import (
+    ConflictSource,
     FactConflict,
     FactFrequency,
     GateStatus,
@@ -49,7 +50,10 @@ class TestFactConflict:
         conflict = FactConflict(
             fact_name="vehicle_vin",
             values=["VIN-AAA", "VIN-BBB"],
-            sources=[["doc1"], ["doc2"]],
+            sources=[
+                [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+            ],
             selected_value="VIN-AAA",
             selected_confidence=0.9,
         )
@@ -63,7 +67,10 @@ class TestFactConflict:
         conflict = FactConflict(
             fact_name="test",
             values=["a", "b"],
-            sources=[["doc1"], ["doc2"]],
+            sources=[
+                [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+            ],
             selected_value="a",
             selected_confidence=0.9,
         )
@@ -75,7 +82,10 @@ class TestFactConflict:
         conflict = FactConflict(
             fact_name="test",
             values=["a", "b"],
-            sources=[["doc1"], ["doc2"]],
+            sources=[
+                [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+            ],
             selected_value="a",
             selected_confidence=0.9,
             selection_reason="most_recent",
@@ -88,7 +98,13 @@ class TestFactConflict:
         conflict = FactConflict(
             fact_name="vehicle_vin",
             values=["VIN-AAA", "VIN-BBB"],
-            sources=[["doc1", "doc2"], ["doc3"]],
+            sources=[
+                [
+                    ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf"),
+                    ConflictSource(doc_id="doc2", doc_type="police_report", filename="police.pdf"),
+                ],
+                [ConflictSource(doc_id="doc3", doc_type="cost_estimate", filename="estimate.pdf")],
+            ],
             selected_value="VIN-AAA",
             selected_confidence=0.95,
         )
@@ -97,7 +113,13 @@ class TestFactConflict:
 
         assert data["fact_name"] == "vehicle_vin"
         assert data["values"] == ["VIN-AAA", "VIN-BBB"]
-        assert data["sources"] == [["doc1", "doc2"], ["doc3"]]
+        assert data["sources"] == [
+            [
+                {"doc_id": "doc1", "doc_type": "fnol_form", "filename": "fnol.pdf"},
+                {"doc_id": "doc2", "doc_type": "police_report", "filename": "police.pdf"},
+            ],
+            [{"doc_id": "doc3", "doc_type": "cost_estimate", "filename": "estimate.pdf"}],
+        ]
         assert data["selected_confidence"] == 0.95
 
 
@@ -196,7 +218,7 @@ class TestReconciliationReport:
             gate=ReconciliationGate(status=GateStatus.PASS),
         )
 
-        assert report.schema_version == "reconciliation_v1"
+        assert report.schema_version == "reconciliation_v2"
 
     def test_default_generated_at(self):
         """Test that generated_at is set automatically."""
@@ -226,7 +248,10 @@ class TestReconciliationReport:
                 FactConflict(
                     fact_name="amount",
                     values=["100", "150"],
-                    sources=[["doc1"], ["doc2"]],
+                    sources=[
+                        [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                        [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+                    ],
                     selected_value="150",
                     selected_confidence=0.9,
                 )

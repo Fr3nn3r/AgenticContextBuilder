@@ -53,7 +53,7 @@ export function findWordsInRange(
   pageNumber: number,
   charStart: number,
   charEnd: number
-): { words: AzureDIWord[]; pageWidth: number; pageHeight: number } | null {
+): { words: AzureDIWord[]; pageWidth: number; pageHeight: number; unit: "inch" | "pixel" } | null {
   const pages = azureDI.raw_azure_di_output?.pages;
   if (!pages) return null;
 
@@ -67,10 +67,14 @@ export function findWordsInRange(
     return wordStart < charEnd && wordEnd > charStart;
   });
 
+  // Azure DI returns "pixel" for images, "inch" for PDFs
+  const unit = page.unit === "pixel" ? "pixel" : "inch";
+
   return {
     words: matchingWords,
     pageWidth: page.width,
     pageHeight: page.height,
+    unit,
   };
 }
 
@@ -94,6 +98,7 @@ export function computeBoundingBoxes(
     polygon: word.polygon,
     pageWidthInches: result.pageWidth,
     pageHeightInches: result.pageHeight,
+    unit: result.unit,
   }));
 }
 
@@ -518,13 +523,15 @@ export function computeSmartBoundingBoxes(
   // Early exit for invalid range
   if (charEnd <= charStart) return [];
 
-  // Get page dimensions (needed for all bounding boxes)
+  // Get page dimensions and unit (needed for all bounding boxes)
   const pages = azureDI.raw_azure_di_output?.pages;
   const page = pages?.find((p) => p.pageNumber === pageNumber);
   if (!page) return [];
 
   const pageWidth = page.width;
   const pageHeight = page.height;
+  // Azure DI returns "pixel" for images, "inch" for PDFs
+  const unit: "inch" | "pixel" = page.unit === "pixel" ? "pixel" : "inch";
 
   // Step 1: Try table cell detection
   if (opts.enableTableDetection) {
@@ -550,6 +557,7 @@ export function computeSmartBoundingBoxes(
                 polygon: br.polygon,
                 pageWidthInches: pageWidth,
                 pageHeightInches: pageHeight,
+                unit,
                 source: "cell" as HighlightSource,
                 cellRef: {
                   tableIndex,
@@ -583,6 +591,7 @@ export function computeSmartBoundingBoxes(
           polygon: line.polygon,
           pageWidthInches: pageWidth,
           pageHeightInches: pageHeight,
+          unit,
           source: "line" as HighlightSource,
         }));
       }
@@ -611,6 +620,7 @@ export function computeSmartBoundingBoxes(
         polygon: result.polygon,
         pageWidthInches: pageWidth,
         pageHeightInches: pageHeight,
+        unit,
         source: result.wordCount > 1 ? "merged" : "word",
         confidence: result.avgConfidence,
       });

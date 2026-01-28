@@ -10,7 +10,8 @@ export interface EvidenceLocation {
   page: number | null;
   charStart: number | null;
   charEnd: number | null;
-  highlightText?: string;
+  highlightText?: string;   // Quote/context (for banner display)
+  highlightValue?: string;  // Extracted value (for PDF text highlighting)
 }
 
 interface DocumentSlidePanelProps {
@@ -212,6 +213,7 @@ export function DocumentSlidePanel({
               highlightCharStart={evidence?.charStart ?? undefined}
               highlightCharEnd={evidence?.charEnd ?? undefined}
               highlightQuote={evidence?.highlightText}
+              highlightValue={evidence?.highlightValue}
               claimId={claimId}
               docId={currentDocId}
             />

@@ -16,6 +16,15 @@ import {
   Copy,
   Check,
   Database,
+  CreditCard,
+  Fuel,
+  Tag,
+  Building2,
+  Search,
+  Wallet,
+  Package,
+  HardHat,
+  Minus,
 } from "lucide-react";
 import type { ClaimSummary, DocSummary, ClaimFacts, AggregatedFact } from "../../types";
 import { cn } from "../../lib/utils";
@@ -36,7 +45,9 @@ interface ClaimFactsTabProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
 }
 
@@ -130,7 +141,9 @@ function FactItem({ icon: Icon, label, value, fact, mono, onViewSource }: FactIt
         fact.selected_from.doc_id,
         fact.selected_from.page,
         fact.selected_from.char_start,
-        fact.selected_from.char_end
+        fact.selected_from.char_end,
+        fact.selected_from.text_quote ?? undefined,
+        value ?? undefined
       );
     }
   };
@@ -146,7 +159,7 @@ function FactItem({ icon: Icon, label, value, fact, mono, onViewSource }: FactIt
       onClick={hasSource ? handleClick : undefined}
     >
       {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
-      <span className="text-xs text-muted-foreground flex-shrink-0 min-w-[70px]">
+      <span className="text-xs text-muted-foreground flex-shrink-0 min-w-[80px]">
         {label}
       </span>
       <span
@@ -446,6 +459,7 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={CreditCard}
                   label="Plate"
                   value={vehicle.plate.value}
                   fact={vehicle.plate.fact}
@@ -467,6 +481,7 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Fuel}
                   label="Engine"
                   value={vehicle.engine.value}
                   fact={vehicle.engine.fact}
@@ -510,12 +525,14 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Tag}
                   label="Type"
                   value={policy.type.value}
                   fact={policy.type.fact}
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Building2}
                   label="Dealer"
                   value={policy.dealer.value}
                   fact={policy.dealer.fact}
@@ -537,12 +554,14 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Wrench}
                   label="Repair"
                   value={formatDate(dates.repair.value)}
                   fact={dates.repair.fact}
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Search}
                   label="Diagnostic"
                   value={formatDate(dates.diagnostic.value)}
                   fact={dates.diagnostic.fact}
@@ -564,24 +583,28 @@ export function ClaimFactsTab({
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Wallet}
                   label="Max Cover"
                   value={formatCurrency(amounts.maxCoverage.value)}
                   fact={amounts.maxCoverage.fact}
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Package}
                   label="Parts"
                   value={formatCurrency(amounts.parts.value)}
                   fact={amounts.parts.fact}
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={HardHat}
                   label="Labor"
                   value={formatCurrency(amounts.labor.value)}
                   fact={amounts.labor.fact}
                   onViewSource={onViewSource}
                 />
                 <FactItem
+                  icon={Minus}
                   label="Deductible"
                   value={formatCurrency(amounts.deductible.value)}
                   fact={amounts.deductible.fact}
@@ -665,7 +688,9 @@ export function ClaimFactsTab({
                             fact.selected_from.doc_id,
                             fact.selected_from.page,
                             fact.selected_from.char_start,
-                            fact.selected_from.char_end
+                            fact.selected_from.char_end,
+                            fact.selected_from.text_quote ?? undefined,
+                            strValue ?? undefined
                           );
                         }
                       }}

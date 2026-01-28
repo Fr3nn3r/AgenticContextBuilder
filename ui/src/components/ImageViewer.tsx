@@ -160,12 +160,19 @@ export function ImageViewer({
   const showZoomIndicator = scale !== 1;
 
   // Filter bboxes for this page and adjust dimensions for image
-  const filteredBboxes = highlightBboxes?.filter(b => b.pageNumber === pageNumber).map(bbox => ({
-    ...bbox,
-    // Override page dimensions with actual image dimensions in inches
-    pageWidthInches: imageDimensions?.widthInches || bbox.pageWidthInches,
-    pageHeightInches: imageDimensions?.heightInches || bbox.pageHeightInches,
-  })) || [];
+  // Only override dimensions for inch-based coordinates (PDFs) - pixel coordinates already have correct scale
+  const filteredBboxes = highlightBboxes?.filter(b => b.pageNumber === pageNumber).map(bbox => {
+    // If unit is "pixel", Azure DI already provided pixel dimensions - don't override
+    if (bbox.unit === "pixel") {
+      return bbox;
+    }
+    // For inch-based coordinates (PDFs), use image's natural dimensions in inches
+    return {
+      ...bbox,
+      pageWidthInches: imageDimensions?.widthInches || bbox.pageWidthInches,
+      pageHeightInches: imageDimensions?.heightInches || bbox.pageHeightInches,
+    };
+  }) || [];
 
   return (
     <div

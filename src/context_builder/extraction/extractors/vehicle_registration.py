@@ -329,8 +329,8 @@ Be precise and extract the actual values visible in the document."""
                             method="vision_ocr",
                             text_quote=text_quote,
                             char_start=0,
-                            char_end=len(text_quote),
-                            match_quality="placeholder",  # Will be resolved later
+                            char_end=0,  # Will be resolved by evidence_resolver
+                            match_quality="placeholder",
                         )
                     )
 
@@ -398,7 +398,7 @@ Be precise and extract the actual values visible in the document."""
                         method="di_text",
                         text_quote=text_quote,
                         char_start=0,
-                        char_end=len(text_quote),
+                        char_end=0,  # Will be resolved by evidence_resolver
                         match_quality="placeholder",
                     )
                 ]

@@ -678,3 +678,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Status card gradient utilities - using color-mix() for CSS variable compatibility */
+@layer utilities {
+  .gradient-success {
+    background: linear-gradient(
+      to right,
+      color-mix(in oklch, var(--success) 20%, transparent),
+      color-mix(in oklch, var(--success) 10%, transparent),
+      transparent
+    );
+  }
+
+  .gradient-warning {
+    background: linear-gradient(
+      to right,
+      color-mix(in oklch, var(--warning) 20%, transparent),
+      color-mix(in oklch, var(--warning) 10%, transparent),
+      transparent
+    );
+  }
+
+  .gradient-destructive {
+    background: linear-gradient(
+      to right,
+      color-mix(in oklch, var(--destructive) 20%, transparent),
+      color-mix(in oklch, var(--destructive) 10%, transparent),
+      transparent
+    );
+  }
+
+  .gradient-info {
+    background: linear-gradient(
+      to right,
+      color-mix(in oklch, var(--info) 20%, transparent),
+      color-mix(in oklch, var(--info) 10%, transparent),
+      transparent
+    );
+  }
+}

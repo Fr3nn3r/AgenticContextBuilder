@@ -216,6 +216,56 @@ def discover_claims(input_path: Path) -> List[DiscoveredClaim]:
     return claims
 
 
+def discover_single_file(file_path: Path) -> DiscoveredClaim:
+    """
+    Discover a single document file and create a claim for it.
+
+    The claim_id is inferred from the parent folder name.
+
+    Args:
+        file_path: Path to a single document file (PDF, image, or text)
+
+    Returns:
+        DiscoveredClaim with a single document
+
+    Raises:
+        FileNotFoundError: If file does not exist
+        ValueError: If file is not a supported type or cannot be loaded
+    """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    if not file_path.is_file():
+        raise ValueError(f"Path is not a file: {file_path}")
+
+    # Check if file type is supported
+    source_type = _get_source_type(file_path)
+    if source_type is None:
+        supported = PDF_EXTENSIONS | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
+        raise ValueError(
+            f"Unsupported file type: {file_path.suffix}. "
+            f"Supported: {', '.join(sorted(supported))}"
+        )
+
+    # Load the document
+    doc = _load_document(file_path)
+    if doc is None:
+        raise ValueError(f"Failed to load document: {file_path}")
+
+    # Infer claim_id from parent folder name
+    claim_id = _sanitize_claim_id(file_path.parent.name)
+    if not claim_id:
+        claim_id = "single_doc"  # Fallback if parent has no name
+
+    logger.info(f"Single file mode: {file_path.name} -> claim {claim_id}")
+    return DiscoveredClaim(
+        claim_id=claim_id,
+        source_path=file_path.parent,
+        documents=[doc],
+    )
+
+
 def check_existing_ingestion(
     output_base: Path,
     claim_id: str,

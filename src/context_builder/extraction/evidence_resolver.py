@@ -246,8 +246,10 @@ def resolve_evidence_offsets(
         field_verified = False
 
         for prov in field.provenance:
-            # Skip if already has valid offsets (non-zero)
-            if prov.char_start > 0 or prov.char_end > 0:
+            # Skip if already has valid offsets (non-zero) AND not marked as placeholder
+            # Placeholder provenance needs resolution even if char_end > 0
+            # (some extractors set char_end=len(quote) as a placeholder value)
+            if (prov.char_start > 0 or prov.char_end > 0) and prov.match_quality != "placeholder":
                 prov.match_quality = prov.match_quality or "exact"
                 field_verified = True
                 continue

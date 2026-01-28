@@ -36,7 +36,9 @@ interface ClaimOverviewTabProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
   onAction?: (action: "approve" | "reject" | "refer", reason: string) => void;
 }

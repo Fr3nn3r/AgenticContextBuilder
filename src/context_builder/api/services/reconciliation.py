@@ -19,6 +19,7 @@ import yaml
 from context_builder.api.services.aggregation import AggregationError, AggregationService
 from context_builder.schemas.claim_facts import ClaimFacts
 from context_builder.schemas.reconciliation import (
+    ConflictSource,
     FactConflict,
     FactFrequency,
     GateStatus,
@@ -327,7 +328,7 @@ class ReconciliationService:
                 continue  # Need at least 2 candidates to have a conflict
 
             # Group by normalized value (or raw value if no normalized)
-            values_to_docs: Dict[str, List[str]] = defaultdict(list)
+            values_to_sources: Dict[str, List[ConflictSource]] = defaultdict(list)
             value_to_confidence: Dict[str, float] = {}
 
             for candidate in candidate_list:
@@ -338,9 +339,17 @@ class ReconciliationService:
                 # Convert to string for comparison
                 val_str = str(val)
                 doc_id = candidate.get("doc_id", "unknown")
+                doc_type = candidate.get("doc_type", "unknown")
+                filename = candidate.get("filename", f"{doc_id}.pdf")
                 confidence = candidate.get("confidence", 0.0)
 
-                values_to_docs[val_str].append(doc_id)
+                # Create ConflictSource with full provenance
+                source = ConflictSource(
+                    doc_id=doc_id,
+                    doc_type=doc_type,
+                    filename=filename,
+                )
+                values_to_sources[val_str].append(source)
 
                 # Track highest confidence per value
                 if val_str not in value_to_confidence:
@@ -351,7 +360,7 @@ class ReconciliationService:
                     )
 
             # If more than one distinct value, it's a conflict
-            if len(values_to_docs) > 1:
+            if len(values_to_sources) > 1:
                 # Find selected value (highest confidence)
                 selected_value = max(
                     value_to_confidence.keys(),
@@ -361,8 +370,8 @@ class ReconciliationService:
                 conflicts.append(
                     FactConflict(
                         fact_name=fact_name,
-                        values=list(values_to_docs.keys()),
-                        sources=list(values_to_docs.values()),
+                        values=list(values_to_sources.keys()),
+                        sources=list(values_to_sources.values()),
                         selected_value=selected_value,
                         selected_confidence=value_to_confidence[selected_value],
                         selection_reason="highest_confidence",

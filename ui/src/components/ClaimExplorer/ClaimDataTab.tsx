@@ -15,7 +15,7 @@ import type {
   ReconciliationReport,
   AggregatedFact,
 } from "../../types";
-import { cn } from "../../lib/utils";
+import { cn, formatFieldName } from "../../lib/utils";
 import {
   getClaimRunsForClaim,
   getClaimFactsByRun,
@@ -36,7 +36,9 @@ interface ClaimDataTabProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
 }
 
@@ -244,7 +246,9 @@ interface FactsPanelProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
 }
 
@@ -358,23 +362,14 @@ interface FactRowProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
 }
 
 function FactRow({ fact, onViewSource }: FactRowProps) {
   const hasSource = fact.selected_from?.doc_id;
-
-  const handleClick = () => {
-    if (onViewSource && fact.selected_from) {
-      onViewSource(
-        fact.selected_from.doc_id,
-        fact.selected_from.page,
-        fact.selected_from.char_start,
-        fact.selected_from.char_end
-      );
-    }
-  };
 
   // Format value for display
   const displayValue = Array.isArray(fact.value)
@@ -382,6 +377,19 @@ function FactRow({ fact, onViewSource }: FactRowProps) {
     : fact.value !== null && fact.value !== undefined
       ? String(fact.value)
       : "—";
+
+  const handleClick = () => {
+    if (onViewSource && fact.selected_from) {
+      onViewSource(
+        fact.selected_from.doc_id,
+        fact.selected_from.page,
+        fact.selected_from.char_start,
+        fact.selected_from.char_end,
+        fact.selected_from.text_quote ?? undefined,
+        displayValue !== "—" ? displayValue : undefined
+      );
+    }
+  };
 
   // Truncate long values
   const truncatedValue =
@@ -399,7 +407,7 @@ function FactRow({ fact, onViewSource }: FactRowProps) {
       title={displayValue}
     >
       <span className="text-xs text-muted-foreground min-w-[120px] flex-shrink-0">
-        {fact.name.replace(/_/g, " ")}
+        {formatFieldName(fact.name)}
       </span>
       <span className="text-sm text-foreground truncate flex-1">
         {truncatedValue}

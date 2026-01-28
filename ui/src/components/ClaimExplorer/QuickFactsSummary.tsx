@@ -17,7 +17,9 @@ interface QuickFactsSummaryProps {
     docId: string,
     page: number | null,
     charStart: number | null,
-    charEnd: number | null
+    charEnd: number | null,
+    highlightText?: string,
+    highlightValue?: string
   ) => void;
 }
 
@@ -33,6 +35,7 @@ interface QuickFactItem {
   page?: number | null;
   charStart?: number | null;
   charEnd?: number | null;
+  textQuote?: string | null;
 }
 
 /**
@@ -99,6 +102,7 @@ function buildFactItem(
     page: fact.selected_from?.page,
     charStart: fact.selected_from?.char_start,
     charEnd: fact.selected_from?.char_end,
+    textQuote: fact.selected_from?.text_quote,
   };
 }
 
@@ -218,7 +222,14 @@ export function QuickFactsSummary({ facts, onViewSource }: QuickFactsSummaryProp
 
   const handleClick = (item: QuickFactItem) => {
     if (onViewSource && item.docId) {
-      onViewSource(item.docId, item.page ?? null, item.charStart ?? null, item.charEnd ?? null);
+      onViewSource(
+        item.docId,
+        item.page ?? null,
+        item.charStart ?? null,
+        item.charEnd ?? null,
+        item.textQuote ?? undefined,
+        item.value ?? undefined
+      );
     }
   };
 

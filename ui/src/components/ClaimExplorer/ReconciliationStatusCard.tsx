@@ -1,6 +1,6 @@
 import { CheckCircle, AlertTriangle, XCircle, AlertCircle } from "lucide-react";
 import type { ReconciliationGate } from "../../types";
-import { cn } from "../../lib/utils";
+import { cn, formatFieldName } from "../../lib/utils";
 
 interface ReconciliationStatusCardProps {
   gate: ReconciliationGate;
@@ -18,26 +18,29 @@ export function ReconciliationStatusCard({
     pass: {
       icon: CheckCircle,
       label: "PASS",
-      bgColor: "bg-success/10",
       borderColor: "border-success/30",
       textColor: "text-success",
       badgeColor: "bg-success/20 text-success",
+      gradient: "gradient-success",
+      accentBar: "bg-success",
     },
     warn: {
       icon: AlertTriangle,
       label: "WARN",
-      bgColor: "bg-warning/10",
       borderColor: "border-warning/30",
       textColor: "text-warning",
       badgeColor: "bg-warning/20 text-warning",
+      gradient: "gradient-warning",
+      accentBar: "bg-warning",
     },
     fail: {
       icon: XCircle,
       label: "FAIL",
-      bgColor: "bg-destructive/10",
       borderColor: "border-destructive/30",
       textColor: "text-destructive",
       badgeColor: "bg-destructive/20 text-destructive",
+      gradient: "gradient-destructive",
+      accentBar: "bg-destructive",
     },
   };
 
@@ -50,13 +53,18 @@ export function ReconciliationStatusCard({
   return (
     <div
       className={cn(
-        "rounded-lg border overflow-hidden",
-        config.bgColor,
+        "rounded-lg border overflow-hidden shadow-sm relative",
         config.borderColor
       )}
     >
-      {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
+      {/* Left accent bar */}
+      <div className={cn(
+        "absolute left-0 top-0 bottom-0 w-1",
+        config.accentBar
+      )} />
+
+      {/* Header with gradient */}
+      <div className={cn("px-4 py-3 pl-5 flex items-center justify-between", config.gradient)}>
         <div className="flex items-center gap-2">
           <StatusIcon className={cn("h-5 w-5", config.textColor)} />
           <h3 className="font-semibold text-foreground">
@@ -141,7 +149,7 @@ export function ReconciliationStatusCard({
                     key={fact}
                     className="px-2 py-0.5 text-xs font-medium rounded bg-destructive/10 text-destructive"
                   >
-                    {fact.replace(/_/g, " ")}
+                    {formatFieldName(fact)}
                   </span>
                 ))}
               </div>

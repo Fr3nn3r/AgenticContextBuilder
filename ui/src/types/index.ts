@@ -896,11 +896,18 @@ export interface ReconciliationGate {
   reasons: string[];
 }
 
+/** Source document info for a conflicting value */
+export interface ConflictSource {
+  doc_id: string;
+  doc_type: string;
+  filename: string;
+}
+
 /** A conflict between values from different sources */
 export interface FactConflict {
   fact_name: string;
   values: string[];
-  sources: string[][];
+  sources: ConflictSource[][];
   selected_value: string;
   selected_confidence: number;
   selection_reason: string;

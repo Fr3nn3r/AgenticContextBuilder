@@ -39,33 +39,41 @@ const DECISION_CONFIG: Record<AssessmentDecision, {
   icon: typeof CheckCircle2;
   label: string;
   description: string;
-  bgColor: string;
+  iconBg: string;
   textColor: string;
   borderColor: string;
+  gradient: string;
+  accentBar: string;
 }> = {
   APPROVE: {
     icon: CheckCircle2,
     label: "Approved",
     description: "Claim has been approved for payment",
-    bgColor: "bg-success/10",
+    iconBg: "bg-success/20",
     textColor: "text-success",
     borderColor: "border-success/30",
+    gradient: "gradient-success",
+    accentBar: "bg-success",
   },
   REJECT: {
     icon: XCircle,
     label: "Rejected",
     description: "Claim has been rejected",
-    bgColor: "bg-destructive/10",
+    iconBg: "bg-destructive/20",
     textColor: "text-destructive",
     borderColor: "border-destructive/30",
+    gradient: "gradient-destructive",
+    accentBar: "bg-destructive",
   },
   REFER_TO_HUMAN: {
     icon: ArrowRightCircle,
     label: "Referred to Human",
     description: "Claim requires manual review",
-    bgColor: "bg-warning/10",
+    iconBg: "bg-warning/20",
     textColor: "text-warning",
     borderColor: "border-warning/30",
+    gradient: "gradient-warning",
+    accentBar: "bg-warning",
   },
 };
 
@@ -236,55 +244,63 @@ export function ClaimAssessmentTab({
 
       {/* Decision Banner */}
       <div className={cn(
-        "rounded-lg border p-6",
-        decisionConfig.bgColor,
+        "rounded-lg border overflow-hidden shadow-sm relative",
         decisionConfig.borderColor
       )}>
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
-            <div className={cn(
-              "w-12 h-12 rounded-full flex items-center justify-center",
-              decisionConfig.bgColor
-            )}>
-              <DecisionIcon className={cn("h-7 w-7", decisionConfig.textColor)} />
-            </div>
-            <div>
-              <h2 className={cn("text-xl font-bold", decisionConfig.textColor)}>
-                {decisionConfig.label}
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                {getDecisionDescription()}
-              </p>
-              {assessment.assessed_at && (
-                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Assessed {formatTimestamp(assessment.assessed_at)}
-                </p>
-              )}
-              {assessment.decision_rationale && (
-                <p className={cn(
-                  "text-sm mt-2 italic",
-                  assessment.decision === "REJECT"
-                    ? "text-destructive font-medium"
-                    : "text-muted-foreground"
-                )}>
-                  "{assessment.decision_rationale}"
-                </p>
-              )}
-            </div>
-          </div>
+        {/* Left accent bar */}
+        <div className={cn(
+          "absolute left-0 top-0 bottom-0 w-1",
+          decisionConfig.accentBar
+        )} />
 
-          {/* Confidence Score */}
-          <div className="text-right">
-            <div className="text-2xl font-bold text-foreground">
-              <ScoreBadge value={assessment.confidence_score} />
+        {/* Main content with gradient */}
+        <div className={cn("p-6 pl-5", decisionConfig.gradient)}>
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-4">
+              <div className={cn(
+                "w-12 h-12 rounded-full flex items-center justify-center",
+                decisionConfig.iconBg
+              )}>
+                <DecisionIcon className={cn("h-7 w-7", decisionConfig.textColor)} />
+              </div>
+              <div>
+                <h2 className={cn("text-xl font-bold", decisionConfig.textColor)}>
+                  {decisionConfig.label}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {getDecisionDescription()}
+                </p>
+                {assessment.assessed_at && (
+                  <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Assessed {formatTimestamp(assessment.assessed_at)}
+                  </p>
+                )}
+                {assessment.decision_rationale && (
+                  <p className={cn(
+                    "text-sm mt-2 italic",
+                    assessment.decision === "REJECT"
+                      ? "text-destructive font-medium"
+                      : "text-muted-foreground"
+                  )}>
+                    "{assessment.decision_rationale}"
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Confidence</p>
+
+            {/* Confidence Score */}
+            <div className="text-right">
+              <div className="text-2xl font-bold text-foreground">
+                <ScoreBadge value={assessment.confidence_score} />
+              </div>
+              <p className="text-xs text-muted-foreground">Confidence</p>
+            </div>
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 md:grid-cols-5 gap-4">
+        {/* Quick Stats section - neutral background */}
+        <div className="px-6 py-4 border-t border-border bg-muted/30 grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center">
             <div className="text-lg font-semibold text-success">{passCount}</div>
             <div className="text-xs text-muted-foreground">Checks Passed</div>

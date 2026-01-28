@@ -11,6 +11,7 @@ from context_builder.schemas.claim_facts import (
 )
 from context_builder.schemas.claim_run import ClaimRunManifest
 from context_builder.schemas.reconciliation import (
+    ConflictSource,
     FactConflict,
     FactFrequency,
     GateStatus,
@@ -27,6 +28,7 @@ __all__ = [
     "AggregatedFact",
     "ClaimFacts",
     "ClaimRunManifest",
+    "ConflictSource",
     "DocumentAnalysis",
     "FactConflict",
     "FactFrequency",

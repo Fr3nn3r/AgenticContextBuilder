@@ -5,7 +5,9 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import yaml
 
 from context_builder.schemas.claim_facts import (
     AggregatedFact,
@@ -20,6 +22,29 @@ from context_builder.schemas.claim_facts import (
 from context_builder.storage.filesystem import FileStorage
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# DOCUMENT-SPECIFIC FIELDS
+# =============================================================================
+# These fields are inherently tied to their source document type and should NOT
+# be reconciled across document types. Each doc type gets its own namespaced
+# version: e.g., "service_history.document_date" vs "cost_estimate.document_date"
+#
+# This prevents false "conflicts" when the same field name has different
+# (but valid) values in different document types.
+# =============================================================================
+
+DEFAULT_DOCUMENT_SPECIFIC_FIELDS: Set[str] = {
+    "document_date",
+    "document_number",
+    "document_id",
+    "issuer",
+    "issuer_name",
+    "issuer_address",
+    "recipient",
+    "recipient_name",
+    "recipient_address",
+}
 
 
 class AggregationError(Exception):
@@ -38,6 +63,43 @@ class AggregationService:
             storage: FileStorage instance for accessing claims and extractions.
         """
         self.storage = storage
+        self._document_specific_fields: Optional[Set[str]] = None
+
+    def get_document_specific_fields(self) -> Set[str]:
+        """Get the set of document-specific fields (loaded once and cached).
+
+        These fields are namespaced by doc_type during aggregation to prevent
+        false conflicts between different document types.
+
+        Returns:
+            Set of field names that are document-specific.
+        """
+        if self._document_specific_fields is not None:
+            return self._document_specific_fields
+
+        # Start with defaults
+        fields = set(DEFAULT_DOCUMENT_SPECIFIC_FIELDS)
+
+        # Try to load overrides from workspace config
+        config_path = self.storage.output_root / "config" / "aggregation.yaml"
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+
+                if config and "document_specific_fields" in config:
+                    custom_fields = config["document_specific_fields"]
+                    if isinstance(custom_fields, list):
+                        # Replace defaults with custom list
+                        fields = set(custom_fields)
+                        logger.info(
+                            f"Loaded {len(fields)} document-specific fields from config"
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to load aggregation config: {e}")
+
+        self._document_specific_fields = fields
+        return fields
 
     def find_latest_complete_run(self, claim_id: str) -> Optional[str]:
         """Find the latest complete run for a claim.
@@ -148,6 +210,9 @@ class AggregationService:
         Groups candidates by field name. Only includes fields with status="present".
         Also attaches structured_data to candidates when available.
 
+        Document-specific fields (like document_date) are namespaced by doc_type
+        to prevent false conflicts: e.g., "service_history.document_date".
+
         Args:
             extractions: List of (doc_id, doc_type, filename, extraction_data) tuples.
             run_id: Run ID for provenance.
@@ -156,6 +221,7 @@ class AggregationService:
             Dict mapping field names to list of candidate values.
         """
         candidates: Dict[str, List[dict]] = defaultdict(list)
+        doc_specific_fields = self.get_document_specific_fields()
 
         for doc_id, doc_type, filename, extraction in extractions:
             fields = extraction.get("fields", [])
@@ -183,8 +249,17 @@ class AggregationService:
                 # (e.g., covered_components, excluded_components, coverage_scale)
                 structured_value = structured_data.get(name)
 
+                # Determine the aggregation key:
+                # - Document-specific fields are namespaced: "doc_type.field_name"
+                # - Claim-level fields use just the field name
+                if name in doc_specific_fields:
+                    aggregation_key = f"{doc_type}.{name}"
+                else:
+                    aggregation_key = name
+
                 candidate = {
-                    "name": name,
+                    "name": aggregation_key,  # Use namespaced name
+                    "original_name": name,     # Keep original for reference
                     "value": value,
                     "normalized_value": normalized_value,
                     "confidence": confidence,
@@ -199,7 +274,7 @@ class AggregationService:
                     "structured_value": structured_value,
                 }
 
-                candidates[name].append(candidate)
+                candidates[aggregation_key].append(candidate)
 
         return candidates
 

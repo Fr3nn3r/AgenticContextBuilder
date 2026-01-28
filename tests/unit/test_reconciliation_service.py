@@ -12,6 +12,7 @@ from context_builder.api.services.reconciliation import (
 )
 from context_builder.schemas.claim_facts import ClaimFacts, AggregatedFact, FactProvenance
 from context_builder.schemas.reconciliation import (
+    ConflictSource,
     FactConflict,
     GateStatus,
     GateThresholds,
@@ -242,7 +243,10 @@ class TestEvaluateGate:
             FactConflict(
                 fact_name="vin",
                 values=["A", "B"],
-                sources=[["doc1"], ["doc2"]],
+                sources=[
+                    [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                    [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+                ],
                 selected_value="A",
                 selected_confidence=0.9,
             )
@@ -276,21 +280,30 @@ class TestEvaluateGate:
             FactConflict(
                 fact_name="vin",
                 values=["A", "B"],
-                sources=[["doc1"], ["doc2"]],
+                sources=[
+                    [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                    [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+                ],
                 selected_value="A",
                 selected_confidence=0.9,
             ),
             FactConflict(
                 fact_name="amount",
                 values=["100", "200"],
-                sources=[["doc1"], ["doc2"]],
+                sources=[
+                    [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                    [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+                ],
                 selected_value="200",
                 selected_confidence=0.95,
             ),
             FactConflict(
                 fact_name="date",
                 values=["2026-01-01", "2026-01-02"],
-                sources=[["doc1"], ["doc2"]],
+                sources=[
+                    [ConflictSource(doc_id="doc1", doc_type="fnol_form", filename="fnol.pdf")],
+                    [ConflictSource(doc_id="doc2", doc_type="cost_estimate", filename="estimate.pdf")],
+                ],
                 selected_value="2026-01-01",
                 selected_confidence=0.8,
             ),

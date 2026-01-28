@@ -6,6 +6,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   FileText,
+  MapPin,
 } from "lucide-react";
 import { getDoc, getDocSourceUrl } from "../../api/client";
 import { DocumentViewer } from "../DocumentViewer";
@@ -71,20 +72,39 @@ function FieldRow({
 
       {isExpanded && (
         <div className="px-4 pb-3 bg-muted/20 space-y-2">
-          {/* Full value */}
+          {/* Full value with inline source icon */}
           {field.value && (
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Full Value</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-muted-foreground">Full Value</p>
+                {provenance && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEvidenceClick?.({
+                        page: provenance.page,
+                        quote: provenance.text_quote || null,
+                        charStart: provenance.char_start ?? null,
+                        charEnd: provenance.char_end ?? null,
+                        value: field.value,
+                      });
+                    }}
+                    className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                    title={`View evidence on Page ${provenance.page}`}
+                  >
+                    <MapPin className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <code className="text-sm bg-background px-2 py-1 rounded border border-border font-mono block break-all">
                 {field.value}
               </code>
             </div>
           )}
 
-          {/* Source link */}
-          {provenance && (
+          {/* Source link - only show if no value (rare case) */}
+          {!field.value && provenance && (
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Source</p>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -96,9 +116,10 @@ function FieldRow({
                     value: field.value,
                   });
                 }}
-                className="text-sm text-primary hover:underline"
+                className="p-1 text-muted-foreground hover:text-primary rounded transition-colors"
+                title={`View evidence on Page ${provenance.page}`}
               >
-                Page {provenance.page}
+                <MapPin className="h-4 w-4" />
               </button>
             </div>
           )}
