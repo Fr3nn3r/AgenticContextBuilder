@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -85,11 +85,13 @@ class ReconciliationReport(BaseModel):
     """Full reconciliation report written to claim context directory."""
 
     schema_version: str = Field(
-        default="reconciliation_v2", description="Schema version identifier"
+        default="reconciliation_v3", description="Schema version identifier"
     )
     claim_id: str = Field(..., description="Claim identifier")
     claim_run_id: str = Field(..., description="Claim run ID that produced this reconciliation")
-    run_id: str = Field(..., description="Extraction run ID used for reconciliation")
+    run_id: Optional[str] = Field(
+        None, description="Deprecated - use extractions_used. Single run ID if only one run was used."
+    )
     generated_at: datetime = Field(
         default_factory=datetime.utcnow, description="When reconciliation was performed"
     )
@@ -106,6 +108,10 @@ class ReconciliationReport(BaseModel):
     )
     thresholds_used: GateThresholds = Field(
         default_factory=GateThresholds, description="Thresholds used for gate evaluation"
+    )
+    extractions_used: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of {doc_id, run_id, filename} showing which extraction was used per document"
     )
 
 

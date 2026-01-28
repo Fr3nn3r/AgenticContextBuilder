@@ -65,36 +65,34 @@ class ReconciliationService:
         self.storage = storage
         self.aggregation = aggregation_service
 
-    def reconcile(
-        self, claim_id: str, run_id: Optional[str] = None
-    ) -> ReconciliationResult:
-        """Run full reconciliation for a claim.
+    def reconcile(self, claim_id: str) -> ReconciliationResult:
+        """Run full reconciliation for a claim using cross-run extraction collection.
 
-        Creates a new claim run and writes all outputs to it.
+        For each document, uses the latest available extraction regardless of
+        which run produced it. This allows partial re-extractions to improve
+        claim data without re-processing all documents.
 
         Steps:
-        0. Create claim run
-        1. Aggregate facts from extractions
-        2. Load critical facts spec from extraction specs
-        3. Detect conflicts
-        4. Evaluate quality gate
-        5. Build report
-        6. Write outputs to claim run
-        7. Update manifest
+        1. Aggregate facts from latest extraction per document (cross-run)
+        2. Create claim run with actual runs used
+        3. Load critical facts spec from extraction specs
+        4. Detect conflicts
+        5. Evaluate quality gate
+        6. Build report with extractions_used
+        7. Write outputs to claim run
+        8. Update manifest
 
         Args:
             claim_id: Claim identifier.
-            run_id: Optional specific extraction run ID. If not provided, uses latest complete.
 
         Returns:
             ReconciliationResult with report (if successful) or error.
         """
         try:
-            # Step 0: Create claim run
             from context_builder.storage.claim_run import ClaimRunStorage
             from context_builder import get_version
 
-            logger.info(f"Starting reconciliation for claim {claim_id}")
+            logger.info(f"Starting reconciliation for claim {claim_id} (cross-run)")
 
             claim_folder = self.storage._find_claim_folder(claim_id)
             if not claim_folder:
@@ -106,38 +104,31 @@ class ReconciliationService:
 
             claim_run_storage = ClaimRunStorage(claim_folder)
 
-            # Find extraction run to use
-            if run_id is None:
-                run_id = self.aggregation.find_latest_complete_run(claim_id)
-                if not run_id:
-                    return ReconciliationResult(
-                        claim_id=claim_id,
-                        success=False,
-                        error=f"No complete extraction runs found for claim '{claim_id}'",
-                    )
+            # Step 1: Aggregate facts using cross-run collection
+            # This creates a temporary claim_run_id that we'll update
+            claim_facts = self.aggregation.aggregate_claim_facts(
+                claim_id, claim_run_id="pending"
+            )
 
-            # Create claim run
+            # Step 2: Create claim run with actual runs used
             manifest = claim_run_storage.create_claim_run(
-                extraction_runs=[run_id],
+                extraction_runs=claim_facts.extraction_runs_used,
                 contextbuilder_version=get_version(),
             )
             claim_run_id = manifest.claim_run_id
-            logger.info(f"Created claim run {claim_run_id} for {claim_id}")
 
-            # Step 1: Aggregate facts (pass claim_run_id)
-            claim_facts = self.aggregation.aggregate_claim_facts(
-                claim_id, claim_run_id=claim_run_id, run_id=run_id
+            # Update claim_facts with actual claim_run_id
+            claim_facts.claim_run_id = claim_run_id
+            logger.info(
+                f"Created claim run {claim_run_id} using "
+                f"{len(claim_facts.extraction_runs_used)} extraction run(s)"
             )
-            actual_run_id = claim_facts.extraction_runs_used[0] if claim_facts.extraction_runs_used else run_id
 
-            # Step 2: Load critical facts spec and thresholds
+            # Step 3: Load critical facts spec and thresholds
             critical_facts_by_doctype = self.load_critical_facts_spec()
             thresholds = self.load_gate_thresholds()
 
-            # Get doc types present in this claim
             doc_types_present = {src.doc_type for src in claim_facts.sources}
-
-            # Build union of critical facts for doc types in this claim
             critical_facts = self._build_critical_facts_set(
                 critical_facts_by_doctype, doc_types_present
             )
@@ -146,27 +137,40 @@ class ReconciliationService:
                 f"(from {len(doc_types_present)} doc types)"
             )
 
-            # Step 3: Detect conflicts
-            # We need to reload candidates to detect conflicts
-            extractions = self.aggregation.load_extractions(claim_id, actual_run_id)
-            candidates = self.aggregation.build_candidates(extractions, actual_run_id)
+            # Step 4: Detect conflicts
+            # Re-collect extractions for conflict detection
+            extractions = self.aggregation.collect_latest_extractions(claim_id)
+            candidates = self.aggregation.build_candidates(extractions)
             conflicts = self.detect_conflicts(candidates)
             logger.info(f"Detected {len(conflicts)} conflicts for claim {claim_id}")
 
-            # Step 4: Evaluate gate
+            # Step 5: Evaluate gate
             gate = self.evaluate_gate(
                 claim_facts, conflicts, list(critical_facts), thresholds
             )
             logger.info(f"Gate status for claim {claim_id}: {gate.status.value}")
 
-            # Step 5: Build report
+            # Step 6: Build report with extractions_used
             present_facts = {f.name for f in claim_facts.facts}
             critical_present = [f for f in critical_facts if f in present_facts]
 
+            # Build extractions_used list showing which extraction was used per document
+            extractions_used = [
+                {"doc_id": doc_id, "run_id": run_id, "filename": filename}
+                for doc_id, run_id, _, filename, _ in extractions
+            ]
+
+            # Backward compatibility: set run_id if only one run was used
+            single_run_id = (
+                claim_facts.extraction_runs_used[0]
+                if len(claim_facts.extraction_runs_used) == 1
+                else None
+            )
+
             report = ReconciliationReport(
                 claim_id=claim_id,
-                claim_run_id=claim_facts.claim_run_id,
-                run_id=actual_run_id,
+                claim_run_id=claim_run_id,
+                run_id=single_run_id,
                 generated_at=datetime.utcnow(),
                 gate=gate,
                 conflicts=conflicts,
@@ -174,16 +178,19 @@ class ReconciliationService:
                 critical_facts_spec=list(critical_facts),
                 critical_facts_present=critical_present,
                 thresholds_used=thresholds,
+                extractions_used=extractions_used,
             )
 
-            # Step 6: Write outputs to claim run
+            # Step 7: Write outputs to claim run
             self.aggregation.write_claim_facts(claim_id, claim_facts)
             self.write_reconciliation_report(claim_id, report)
 
-            # Step 7: Update manifest with stages_completed
+            # Step 8: Update manifest with stages_completed
             manifest.stages_completed = ["reconciliation"]
             claim_run_storage.write_manifest(manifest)
-            logger.info(f"Reconciliation complete for claim {claim_id}, claim run {claim_run_id}")
+            logger.info(
+                f"Reconciliation complete for claim {claim_id}, claim run {claim_run_id}"
+            )
 
             return ReconciliationResult(
                 claim_id=claim_id,
@@ -404,8 +411,19 @@ class ReconciliationService:
             ReconciliationGate with status and reasons.
         """
         # Check missing critical facts
+        # Handle namespaced facts: if checking for "document_date", consider it present
+        # if any namespaced version exists (e.g., "service_history.document_date")
         present_facts = {f.name for f in claim_facts.facts}
-        missing = [f for f in critical_facts if f not in present_facts]
+
+        def is_fact_present(fact_name: str) -> bool:
+            """Check if a critical fact is present, considering namespaced versions."""
+            if fact_name in present_facts:
+                return True
+            # Check for namespaced versions (e.g., "doc_type.fact_name")
+            suffix = f".{fact_name}"
+            return any(pf.endswith(suffix) for pf in present_facts)
+
+        missing = [f for f in critical_facts if not is_fact_present(f)]
 
         # Count conflicts
         conflict_count = len(conflicts)

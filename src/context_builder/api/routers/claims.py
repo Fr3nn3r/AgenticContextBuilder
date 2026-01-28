@@ -500,8 +500,12 @@ async def assessment_websocket(websocket: WebSocket, claim_id: str, run_id: str)
 
 
 class ReconciliationRunRequest(BaseModel):
-    """Request body for running reconciliation."""
-    run_id: Optional[str] = None
+    """Request body for running reconciliation.
+
+    Note: run_id is deprecated. Cross-run reconciliation now automatically
+    collects the latest extraction per document across all runs.
+    """
+    run_id: Optional[str] = None  # Deprecated, ignored
 
 
 class ReconciliationRunResponse(BaseModel):
@@ -521,26 +525,31 @@ def run_reconciliation(
     request: ReconciliationRunRequest = ReconciliationRunRequest(),
 ) -> ReconciliationRunResponse:
     """
-    Trigger reconciliation for a claim.
+    Trigger reconciliation for a claim using cross-run extraction collection.
+
+    For each document, uses the latest available extraction regardless of
+    which run produced it. This allows partial re-extractions to improve
+    claim data without re-processing all documents.
 
     Creates a new claim run and runs the reconciliation process which:
-    1. Creates claim run directory with manifest
-    2. Aggregates facts from document extractions
-    3. Detects conflicts (same fact with different values)
-    4. Evaluates quality gate (pass/warn/fail)
-    5. Writes claim_facts.json and reconciliation_report.json to claim run
+    1. Collects latest extraction per document (cross-run)
+    2. Creates claim run directory with manifest
+    3. Aggregates facts from document extractions
+    4. Detects conflicts (same fact with different values)
+    5. Evaluates quality gate (pass/warn/fail)
+    6. Writes claim_facts.json and reconciliation_report.json to claim run
 
     Args:
         claim_id: The claim ID to reconcile
-        request: Optional run_id to reconcile against specific extraction run
+        request: Deprecated - run_id is ignored, cross-run is always used
 
     Returns:
         Reconciliation result with gate status and summary
     """
     service = get_reconciliation_service()
 
-    # reconcile() now handles everything: creates claim run, aggregates, writes outputs
-    result = service.reconcile(claim_id, request.run_id)
+    # Note: request.run_id is ignored - cross-run reconciliation is always used
+    result = service.reconcile(claim_id)
 
     if not result.success:
         return ReconciliationRunResponse(

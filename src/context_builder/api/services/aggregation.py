@@ -104,12 +104,21 @@ class AggregationService:
     def find_latest_complete_run(self, claim_id: str) -> Optional[str]:
         """Find the latest complete run for a claim.
 
+        DEPRECATED: This method is deprecated. Use collect_latest_extractions()
+        for cross-run aggregation which selects the latest extraction per document.
+
         Args:
             claim_id: Claim identifier.
 
         Returns:
             Run ID of the latest complete run, or None if no complete runs exist.
         """
+        import warnings
+        warnings.warn(
+            "find_latest_complete_run is deprecated. Use collect_latest_extractions() for cross-run aggregation.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         claim_folder = self.storage._find_claim_folder(claim_id)
         if not claim_folder:
             return None
@@ -160,6 +169,9 @@ class AggregationService:
     ) -> List[Tuple[str, str, str, dict]]:
         """Load all extractions for a claim from a specific run.
 
+        DEPRECATED: This method is deprecated. Use collect_latest_extractions()
+        for cross-run aggregation which selects the latest extraction per document.
+
         Args:
             claim_id: Claim identifier.
             run_id: Run identifier.
@@ -167,6 +179,12 @@ class AggregationService:
         Returns:
             List of tuples: (doc_id, doc_type, filename, extraction_data)
         """
+        import warnings
+        warnings.warn(
+            "load_extractions is deprecated. Use collect_latest_extractions() for cross-run aggregation.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         claim_folder = self.storage._find_claim_folder(claim_id)
         if not claim_folder:
             return []
@@ -202,8 +220,92 @@ class AggregationService:
 
         return results
 
+    def collect_latest_extractions(
+        self, claim_id: str
+    ) -> List[Tuple[str, str, str, str, dict]]:
+        """Collect the latest extraction for each document across all runs.
+
+        For each document in the claim, finds the most recent extraction file
+        regardless of which run produced it. This allows partial re-extractions
+        to "patch" previous runs.
+
+        Args:
+            claim_id: Claim identifier.
+
+        Returns:
+            List of tuples: (doc_id, run_id, doc_type, filename, extraction_data)
+        """
+        claim_folder = self.storage._find_claim_folder(claim_id)
+        if not claim_folder:
+            return []
+
+        runs_dir = claim_folder / "runs"
+        if not runs_dir.exists():
+            return []
+
+        # Step 1: Find all extractions across all runs
+        # Key: doc_id, Value: list of (run_id, run_timestamp, extraction_path)
+        doc_extractions: Dict[str, List[Tuple[str, str, Path]]] = defaultdict(list)
+
+        for run_dir in runs_dir.iterdir():
+            if not run_dir.is_dir():
+                continue
+            if not (run_dir.name.startswith("run_") or run_dir.name.startswith("BATCH-")):
+                continue
+
+            extraction_dir = run_dir / "extraction"
+            if not extraction_dir.exists():
+                continue
+
+            # Extract timestamp from run_id for sorting
+            run_timestamp = self._extract_run_timestamp(run_dir.name)
+
+            for ext_file in extraction_dir.glob("*.json"):
+                doc_id = ext_file.stem
+                doc_extractions[doc_id].append((run_dir.name, run_timestamp, ext_file))
+
+        # Step 2: For each document, select the latest extraction
+        results = []
+        for doc_id, extractions in doc_extractions.items():
+            # Sort by timestamp descending, take first
+            extractions.sort(key=lambda x: x[1], reverse=True)
+            run_id, _, ext_path = extractions[0]
+
+            try:
+                with open(ext_path, "r", encoding="utf-8") as f:
+                    extraction = json.load(f)
+
+                doc_info = extraction.get("doc", {})
+                doc_type = doc_info.get("doc_type", "unknown")
+
+                doc_meta = self.storage.get_doc_metadata(doc_id, claim_id)
+                filename = (
+                    doc_meta.get("original_filename", f"{doc_id}.pdf")
+                    if doc_meta
+                    else f"{doc_id}.pdf"
+                )
+
+                results.append((doc_id, run_id, doc_type, filename, extraction))
+
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load extraction {ext_path}: {e}")
+                continue
+
+        return results
+
+    def _extract_run_timestamp(self, run_id: str) -> str:
+        """Extract sortable timestamp from run_id.
+
+        Format: run_YYYYMMDD_HHMMSS_hash -> YYYYMMDD_HHMMSS
+        """
+        parts = run_id.split("_")
+        if len(parts) >= 3 and parts[0] == "run":
+            return f"{parts[1]}_{parts[2]}"
+        # Fallback to full string for sorting
+        return run_id
+
     def build_candidates(
-        self, extractions: List[Tuple[str, str, str, dict]], run_id: str
+        self, extractions: List[Tuple[str, str, str, str, dict]]
     ) -> Dict[str, List[dict]]:
         """Build candidate list from all extractions.
 
@@ -213,9 +315,12 @@ class AggregationService:
         Document-specific fields (like document_date) are namespaced by doc_type
         to prevent false conflicts: e.g., "service_history.document_date".
 
+        IMPORTANT: Provenance fields (page, text_quote, char_start, char_end)
+        must all come from the same source extraction to ensure highlighting
+        works correctly in the UI.
+
         Args:
-            extractions: List of (doc_id, doc_type, filename, extraction_data) tuples.
-            run_id: Run ID for provenance.
+            extractions: List of (doc_id, run_id, doc_type, filename, extraction_data) tuples.
 
         Returns:
             Dict mapping field names to list of candidate values.
@@ -223,7 +328,7 @@ class AggregationService:
         candidates: Dict[str, List[dict]] = defaultdict(list)
         doc_specific_fields = self.get_document_specific_fields()
 
-        for doc_id, doc_type, filename, extraction in extractions:
+        for doc_id, run_id, doc_type, filename, extraction in extractions:
             fields = extraction.get("fields", [])
             # Get structured_data from extraction (contains full component lists, etc.)
             structured_data = extraction.get("structured_data", {}) or {}
@@ -325,13 +430,12 @@ class AggregationService:
         return facts
 
     def collect_structured_data(
-        self, extractions: List[Tuple[str, str, str, dict]], run_id: str
+        self, extractions: List[Tuple[str, str, str, str, dict]]
     ) -> Optional[StructuredClaimData]:
         """Collect line items and service entries from extractions.
 
         Args:
-            extractions: List of (doc_id, doc_type, filename, extraction_data) tuples.
-            run_id: Run ID for provenance.
+            extractions: List of (doc_id, run_id, doc_type, filename, extraction_data) tuples.
 
         Returns:
             StructuredClaimData with line items and/or service entries, or None if none found.
@@ -339,7 +443,7 @@ class AggregationService:
         all_line_items = []
         all_service_entries = []
 
-        for doc_id, doc_type, filename, extraction in extractions:
+        for doc_id, run_id, doc_type, filename, extraction in extractions:
             structured = extraction.get("structured_data")
             if not structured:
                 continue
@@ -400,64 +504,59 @@ class AggregationService:
 
         return None
 
-    def aggregate_claim_facts(
-        self, claim_id: str, claim_run_id: str, run_id: Optional[str] = None
-    ) -> ClaimFacts:
-        """Aggregate facts from all documents in a claim.
+    def aggregate_claim_facts(self, claim_id: str, claim_run_id: str) -> ClaimFacts:
+        """Aggregate facts from latest extraction per document (cross-run).
+
+        Uses cross-run collection: for each document, finds the most recent
+        extraction regardless of which run produced it. This allows partial
+        re-extractions to improve claim data without re-processing all documents.
 
         Args:
             claim_id: Claim identifier.
             claim_run_id: Claim run ID to associate with this aggregation.
-            run_id: Optional specific extraction run ID. If not provided, uses latest complete.
 
         Returns:
             ClaimFacts object with aggregated facts.
 
         Raises:
-            AggregationError: If no complete runs exist or aggregation fails.
+            AggregationError: If no extractions exist for the claim.
         """
-        # Find extraction run to use
-        if run_id is None:
-            run_id = self.find_latest_complete_run(claim_id)
-            if not run_id:
-                raise AggregationError(
-                    f"No complete runs found for claim '{claim_id}'"
-                )
+        logger.info(f"Aggregating facts for claim {claim_id} (cross-run)")
 
-        logger.info(f"Aggregating facts for claim {claim_id} from run {run_id}")
-
-        # Load extractions
-        extractions = self.load_extractions(claim_id, run_id)
+        # Collect latest extraction per document across all runs
+        extractions = self.collect_latest_extractions(claim_id)
         if not extractions:
-            raise AggregationError(
-                f"No extractions found for claim '{claim_id}' in run '{run_id}'"
-            )
+            raise AggregationError(f"No extractions found for claim '{claim_id}'")
 
-        logger.info(f"Loaded {len(extractions)} extractions")
+        # Track which runs were used
+        runs_used = sorted(set(run_id for _, run_id, _, _, _ in extractions))
+        logger.info(
+            f"Collected {len(extractions)} extractions from {len(runs_used)} run(s)"
+        )
 
-        # Build candidates
-        candidates = self.build_candidates(extractions, run_id)
+        # Build candidates (updated signature - no run_id param)
+        candidates = self.build_candidates(extractions)
         logger.info(f"Built candidates for {len(candidates)} fields")
 
         # Select primary values
         facts = self.select_primary(candidates)
         logger.info(f"Selected {len(facts)} aggregated facts")
 
-        # Collect structured data (line items from cost estimates)
-        structured_data = self.collect_structured_data(extractions, run_id)
+        # Collect structured data (updated signature - no run_id param)
+        structured_data = self.collect_structured_data(extractions)
 
-        # Build source documents list
+        # Build source documents list (5-tuple format)
         sources = [
             SourceDocument(doc_id=doc_id, filename=filename, doc_type=doc_type)
-            for doc_id, doc_type, filename, _ in extractions
+            for doc_id, _, doc_type, filename, _ in extractions
         ]
 
         return ClaimFacts(
             claim_id=claim_id,
             generated_at=datetime.utcnow(),
             claim_run_id=claim_run_id,
-            extraction_runs_used=[run_id],
-            run_policy="latest_complete",
+            extraction_runs_used=runs_used,
+            run_policy="latest_per_document",
             facts=facts,
             sources=sources,
             structured_data=structured_data,

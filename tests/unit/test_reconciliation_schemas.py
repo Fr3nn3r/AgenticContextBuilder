@@ -214,11 +214,10 @@ class TestReconciliationReport:
         report = ReconciliationReport(
             claim_id="CLM-001",
             claim_run_id="clmrun_001",
-            run_id="run_001",
             gate=ReconciliationGate(status=GateStatus.PASS),
         )
 
-        assert report.schema_version == "reconciliation_v2"
+        assert report.schema_version == "reconciliation_v3"
 
     def test_default_generated_at(self):
         """Test that generated_at is set automatically."""

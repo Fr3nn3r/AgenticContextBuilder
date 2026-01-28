@@ -353,17 +353,17 @@ class TestAggregateMultipleDocs:
 
 
 class TestMissingRunRaises:
-    """Tests for error handling when no runs exist."""
+    """Tests for error handling when no extractions exist."""
 
-    def test_no_complete_run_raises(self, claim_no_complete_run):
-        """Should raise AggregationError if no complete runs exist."""
+    def test_no_extractions_raises(self, claim_no_complete_run):
+        """Should raise AggregationError if no extractions exist."""
         storage = FileStorage(claim_no_complete_run["tmp_path"])
         service = AggregationService(storage)
 
         with pytest.raises(AggregationError) as exc_info:
             service.aggregate_claim_facts(claim_no_complete_run["claim_id"], claim_run_id="test_claim_run")
 
-        assert "No complete runs found" in str(exc_info.value)
+        assert "No extractions found" in str(exc_info.value)
 
     def test_nonexistent_claim_raises(self, tmp_path):
         """Should raise AggregationError for nonexistent claim."""
@@ -376,7 +376,7 @@ class TestMissingRunRaises:
         with pytest.raises(AggregationError) as exc_info:
             service.aggregate_claim_facts("NONEXISTENT", claim_run_id="test_claim_run")
 
-        assert "No complete runs found" in str(exc_info.value)
+        assert "No extractions found" in str(exc_info.value)
 
 
 class TestDryRunNoWrite:
@@ -1041,3 +1041,251 @@ class TestStructuredDataAggregation:
 
         # Empty service_entries should result in None structured_data
         assert facts.structured_data is None
+
+
+class TestCrossRunAggregation:
+    """Tests for cross-run extraction collection (latest per document)."""
+
+    def test_selects_latest_extraction_per_document(self, tmp_path):
+        """Should select the latest extraction for each document across runs."""
+        claims_dir = tmp_path / "claims"
+        claims_dir.mkdir()
+        claim_id = "CLM-CROSS-RUN"
+        claim_folder = claims_dir / claim_id
+        docs_dir = claim_folder / "docs"
+        doc_id = "doc_001"
+        doc_dir = docs_dir / doc_id
+        (doc_dir / "meta").mkdir(parents=True)
+
+        with open(doc_dir / "meta" / "doc.json", "w") as f:
+            json.dump({
+                "doc_id": doc_id,
+                "claim_id": claim_id,
+                "original_filename": "vehicle_reg.pdf",
+                "doc_type": "vehicle_registration",
+            }, f)
+
+        # Create OLDER run with value "Old Value"
+        old_run_id = "run_20260120_100000_old"
+        old_run_dir = claim_folder / "runs" / old_run_id
+        old_extraction_dir = old_run_dir / "extraction"
+        old_extraction_dir.mkdir(parents=True)
+
+        old_extraction = {
+            "schema_version": "extraction_result_v1",
+            "run": {"run_id": old_run_id},
+            "doc": {"doc_id": doc_id, "claim_id": claim_id, "doc_type": "vehicle_registration"},
+            "fields": [
+                {
+                    "name": "owner_name",
+                    "value": "Old Value",
+                    "confidence": 0.80,
+                    "status": "present",
+                    "provenance": [{"page": 1, "text_quote": "Old Owner", "char_start": 10, "char_end": 20}],
+                }
+            ],
+        }
+        with open(old_extraction_dir / f"{doc_id}.json", "w") as f:
+            json.dump(old_extraction, f)
+        (old_run_dir / ".complete").touch()
+
+        # Create NEWER run with value "New Value"
+        new_run_id = "run_20260125_100000_new"
+        new_run_dir = claim_folder / "runs" / new_run_id
+        new_extraction_dir = new_run_dir / "extraction"
+        new_extraction_dir.mkdir(parents=True)
+
+        new_extraction = {
+            "schema_version": "extraction_result_v1",
+            "run": {"run_id": new_run_id},
+            "doc": {"doc_id": doc_id, "claim_id": claim_id, "doc_type": "vehicle_registration"},
+            "fields": [
+                {
+                    "name": "owner_name",
+                    "value": "New Value",
+                    "confidence": 0.95,
+                    "status": "present",
+                    "provenance": [{"page": 1, "text_quote": "New Owner", "char_start": 100, "char_end": 110}],
+                }
+            ],
+        }
+        with open(new_extraction_dir / f"{doc_id}.json", "w") as f:
+            json.dump(new_extraction, f)
+        (new_run_dir / ".complete").touch()
+
+        storage = FileStorage(tmp_path)
+        service = AggregationService(storage)
+
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
+
+        # Should use the NEWER extraction value
+        owner_fact = next((f for f in facts.facts if f.name == "owner_name"), None)
+        assert owner_fact is not None
+        assert owner_fact.value == "New Value"
+        assert owner_fact.selected_from.extraction_run_id == new_run_id
+
+    def test_cross_run_tracks_multiple_runs(self, tmp_path):
+        """Should track all runs used in extraction_runs_used."""
+        claims_dir = tmp_path / "claims"
+        claims_dir.mkdir()
+        claim_id = "CLM-MULTI-RUN"
+        claim_folder = claims_dir / claim_id
+        docs_dir = claim_folder / "docs"
+
+        # Create doc 1
+        doc1_id = "doc_001"
+        doc1_dir = docs_dir / doc1_id
+        (doc1_dir / "meta").mkdir(parents=True)
+        with open(doc1_dir / "meta" / "doc.json", "w") as f:
+            json.dump({
+                "doc_id": doc1_id, "claim_id": claim_id,
+                "original_filename": "doc1.pdf", "doc_type": "insurance_policy",
+            }, f)
+
+        # Create doc 2
+        doc2_id = "doc_002"
+        doc2_dir = docs_dir / doc2_id
+        (doc2_dir / "meta").mkdir(parents=True)
+        with open(doc2_dir / "meta" / "doc.json", "w") as f:
+            json.dump({
+                "doc_id": doc2_id, "claim_id": claim_id,
+                "original_filename": "doc2.pdf", "doc_type": "loss_notice",
+            }, f)
+
+        # Run 1: extracts doc 1 only
+        run1_id = "run_20260120_100000_run1"
+        run1_dir = claim_folder / "runs" / run1_id
+        run1_extraction = run1_dir / "extraction"
+        run1_extraction.mkdir(parents=True)
+        with open(run1_extraction / f"{doc1_id}.json", "w") as f:
+            json.dump({
+                "schema_version": "extraction_result_v1",
+                "run": {"run_id": run1_id},
+                "doc": {"doc_id": doc1_id, "claim_id": claim_id, "doc_type": "insurance_policy"},
+                "fields": [{"name": "policy_number", "value": "POL-001", "confidence": 0.9, "status": "present", "provenance": []}],
+            }, f)
+        (run1_dir / ".complete").touch()
+
+        # Run 2: extracts doc 2 only
+        run2_id = "run_20260125_100000_run2"
+        run2_dir = claim_folder / "runs" / run2_id
+        run2_extraction = run2_dir / "extraction"
+        run2_extraction.mkdir(parents=True)
+        with open(run2_extraction / f"{doc2_id}.json", "w") as f:
+            json.dump({
+                "schema_version": "extraction_result_v1",
+                "run": {"run_id": run2_id},
+                "doc": {"doc_id": doc2_id, "claim_id": claim_id, "doc_type": "loss_notice"},
+                "fields": [{"name": "loss_date", "value": "2026-01-20", "confidence": 0.85, "status": "present", "provenance": []}],
+            }, f)
+        (run2_dir / ".complete").touch()
+
+        storage = FileStorage(tmp_path)
+        service = AggregationService(storage)
+
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
+
+        # Should track both runs
+        assert len(facts.extraction_runs_used) == 2
+        assert run1_id in facts.extraction_runs_used
+        assert run2_id in facts.extraction_runs_used
+
+        # Should have facts from both documents
+        fact_names = {f.name for f in facts.facts}
+        assert "policy_number" in fact_names
+        assert "loss_date" in fact_names
+
+    def test_cross_run_policy_is_latest_per_document(self, tmp_path):
+        """run_policy should be 'latest_per_document'."""
+        claims_dir = tmp_path / "claims"
+        claims_dir.mkdir()
+        claim_id = "CLM-POLICY"
+        claim_folder = claims_dir / claim_id
+        docs_dir = claim_folder / "docs"
+        doc_id = "doc_001"
+        doc_dir = docs_dir / doc_id
+        (doc_dir / "meta").mkdir(parents=True)
+
+        with open(doc_dir / "meta" / "doc.json", "w") as f:
+            json.dump({
+                "doc_id": doc_id, "claim_id": claim_id,
+                "original_filename": "doc.pdf", "doc_type": "insurance_policy",
+            }, f)
+
+        run_id = "run_20260125_100000_test"
+        run_dir = claim_folder / "runs" / run_id
+        extraction_dir = run_dir / "extraction"
+        extraction_dir.mkdir(parents=True)
+        with open(extraction_dir / f"{doc_id}.json", "w") as f:
+            json.dump({
+                "schema_version": "extraction_result_v1",
+                "run": {"run_id": run_id},
+                "doc": {"doc_id": doc_id, "claim_id": claim_id, "doc_type": "insurance_policy"},
+                "fields": [{"name": "policy_number", "value": "POL-001", "confidence": 0.9, "status": "present", "provenance": []}],
+            }, f)
+        (run_dir / ".complete").touch()
+
+        storage = FileStorage(tmp_path)
+        service = AggregationService(storage)
+
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
+
+        assert facts.run_policy == "latest_per_document"
+
+    def test_provenance_coordinates_preserved(self, tmp_path):
+        """Provenance coordinates (char_start/end) should be preserved from source."""
+        claims_dir = tmp_path / "claims"
+        claims_dir.mkdir()
+        claim_id = "CLM-PROV"
+        claim_folder = claims_dir / claim_id
+        docs_dir = claim_folder / "docs"
+        doc_id = "doc_001"
+        doc_dir = docs_dir / doc_id
+        (doc_dir / "meta").mkdir(parents=True)
+
+        with open(doc_dir / "meta" / "doc.json", "w") as f:
+            json.dump({
+                "doc_id": doc_id, "claim_id": claim_id,
+                "original_filename": "doc.pdf", "doc_type": "vehicle_registration",
+            }, f)
+
+        run_id = "run_20260125_100000_test"
+        run_dir = claim_folder / "runs" / run_id
+        extraction_dir = run_dir / "extraction"
+        extraction_dir.mkdir(parents=True)
+
+        # Extraction with specific provenance coordinates
+        extraction = {
+            "schema_version": "extraction_result_v1",
+            "run": {"run_id": run_id},
+            "doc": {"doc_id": doc_id, "claim_id": claim_id, "doc_type": "vehicle_registration"},
+            "fields": [
+                {
+                    "name": "color",
+                    "value": "schwarz metallisiert",
+                    "confidence": 0.92,
+                    "status": "present",
+                    "provenance": [{
+                        "page": 1,
+                        "text_quote": "E Farbe schwarz metallisiert",
+                        "char_start": 1234,
+                        "char_end": 1262,
+                    }],
+                }
+            ],
+        }
+        with open(extraction_dir / f"{doc_id}.json", "w") as f:
+            json.dump(extraction, f)
+        (run_dir / ".complete").touch()
+
+        storage = FileStorage(tmp_path)
+        service = AggregationService(storage)
+
+        facts = service.aggregate_claim_facts(claim_id, claim_run_id="test_claim_run")
+
+        color_fact = next((f for f in facts.facts if f.name == "color"), None)
+        assert color_fact is not None
+        assert color_fact.selected_from.page == 1
+        assert color_fact.selected_from.text_quote == "E Farbe schwarz metallisiert"
+        assert color_fact.selected_from.char_start == 1234
+        assert color_fact.selected_from.char_end == 1262

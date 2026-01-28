@@ -9,6 +9,43 @@
 
 _Currently active work. Add handoff notes inline._
 
+### 2026-01-28 - Cross-Run Reconciliation ✅ COMPLETE
+
+**Status**: Implemented and all 1331 tests passing.
+
+**Problem Solved**: Reconciliation now collects the **latest extraction per document** across all runs (cross-run aggregation), instead of picking a single run for the entire claim.
+
+**Changes Made**:
+- `api/services/aggregation.py`:
+  - Added `collect_latest_extractions()` - collects latest extraction per doc across runs
+  - Added `_extract_run_timestamp()` - extracts sortable timestamp from run_id
+  - Updated `build_candidates()` - new 5-tuple signature (doc_id, run_id, doc_type, filename, extraction)
+  - Updated `collect_structured_data()` - new 5-tuple signature
+  - Updated `aggregate_claim_facts()` - uses cross-run collection, sets `run_policy="latest_per_document"`
+  - Deprecated `find_latest_complete_run()` and `load_extractions()`
+- `api/services/reconciliation.py`:
+  - Updated `reconcile()` - removed run_id param, uses cross-run aggregation
+  - Added `extractions_used` to report showing which extraction per document
+- `api/routers/claims.py`:
+  - Updated reconciliation endpoint - run_id param deprecated and ignored
+- `schemas/reconciliation.py`:
+  - Added `extractions_used` field
+  - Made `run_id` optional (backward compat: set if single run used)
+  - Bumped schema version to v3
+
+**Tests Added**:
+- `TestCrossRunAggregation::test_selects_latest_extraction_per_document`
+- `TestCrossRunAggregation::test_cross_run_tracks_multiple_runs`
+- `TestCrossRunAggregation::test_cross_run_policy_is_latest_per_document`
+- `TestCrossRunAggregation::test_provenance_coordinates_preserved`
+
+**Verification**:
+1. Re-reconcile claim 65258 via `POST /api/claims/65258/reconcile`
+2. Verify `owner_name` now appears (was previously missing from latest run)
+3. Click "Color" in Data tab - highlight should show correct location
+
+---
+
 ### 2026-01-26 - Claim-Level Runs Architecture (Pending Decision)
 
 **Status**: Architecture designed, awaiting confirmation before implementation.
