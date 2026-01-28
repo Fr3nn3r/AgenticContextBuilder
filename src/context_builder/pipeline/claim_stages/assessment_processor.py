@@ -173,13 +173,11 @@ Provide your assessment as a JSON object with the following structure:
       "evidence_refs": ["ref1", "ref2"]
     }}
   ],
-  "assumptions": [
+  "data_gaps": [
     {{
-      "check_number": 1,
       "field": "field_name",
-      "assumed_value": "value",
-      "reason": "Why this was assumed",
-      "confidence_impact": "high" | "medium" | "low"
+      "impact": "LOW" | "MEDIUM" | "HIGH",
+      "action_taken": "How you handled this gap"
     }}
   ],
   "fraud_indicators": [

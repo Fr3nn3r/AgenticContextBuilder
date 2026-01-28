@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutDashboard, FileText, ClipboardCheck, History, AlertTriangle, Database } from "lucide-react";
+import { LayoutDashboard, FileText, ClipboardCheck, AlertTriangle, Database } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { ClaimSummary, DocSummary, ClaimFacts, ClaimAssessment } from "../../types";
-import { getClaimFacts, getClaimAssessment, getAssessmentHistory } from "../../api/client";
+import { getClaimFacts, getClaimAssessment } from "../../api/client";
 import { ClaimContextBar } from "./ClaimContextBar";
 import { ClaimOverviewTab } from "./ClaimOverviewTab";
 import { ClaimFactsTab } from "./ClaimFactsTab";
 import { ClaimAssessmentTab } from "./ClaimAssessmentTab";
 import { ClaimAssumptionsTab } from "./ClaimAssumptionsTab";
-import { ClaimHistoryTab, type AssessmentHistoryEntry } from "./ClaimHistoryTab";
 import { ClaimDataTab } from "./ClaimDataTab";
 import { DocumentSlidePanel, type EvidenceLocation } from "./DocumentSlidePanel";
 
@@ -29,14 +28,13 @@ interface ClaimSummaryTabProps {
   ) => void;
 }
 
-type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "history" | "data";
+type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "data";
 
 const SUB_TABS: { id: SubTab; label: string; icon: typeof FileText }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "facts", label: "Facts", icon: FileText },
   { id: "assessment", label: "Assessment", icon: ClipboardCheck },
   { id: "assumptions", label: "Assumptions", icon: AlertTriangle },
-  { id: "history", label: "History", icon: History },
   { id: "data", label: "Data", icon: Database },
 ];
 
@@ -50,7 +48,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
   // Data state
   const [claimFacts, setClaimFacts] = useState<ClaimFacts | null>(null);
   const [assessment, setAssessment] = useState<ClaimAssessment | null>(null);
-  const [history, setHistory] = useState<AssessmentHistoryEntry[]>([]);
 
   // Document slide panel state
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceLocation | null>(null);
@@ -58,12 +55,10 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
   // Loading state
   const [factsLoading, setFactsLoading] = useState(true);
   const [assessmentLoading, setAssessmentLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(true);
 
   // Error state
   const [factsError, setFactsError] = useState<string | null>(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Load facts
   useEffect(() => {
@@ -101,28 +96,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
     loadAssessment();
   }, [claim.claim_id]);
 
-  // Load history from real backend API
-  useEffect(() => {
-    async function loadHistory() {
-      setHistoryLoading(true);
-      setHistoryError(null);
-      try {
-        const data = await getAssessmentHistory(claim.claim_id);
-        setHistory(data);
-      } catch (err) {
-        console.warn("History API error:", err);
-        setHistoryError(err instanceof Error ? err.message : "Failed to load history");
-        setHistory([]);
-      } finally {
-        setHistoryLoading(false);
-      }
-    }
-    // Wait for assessment to load first
-    if (!assessmentLoading) {
-      loadHistory();
-    }
-  }, [claim.claim_id, assessmentLoading]);
-
   // Refresh assessment data (for re-run callback)
   const handleRefreshAssessment = useCallback(async () => {
     setAssessmentLoading(true);
@@ -136,22 +109,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
       setAssessment(null);
     } finally {
       setAssessmentLoading(false);
-    }
-  }, [claim.claim_id]);
-
-  // Refresh history data (for re-run callback)
-  const handleRefreshHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const data = await getAssessmentHistory(claim.claim_id);
-      setHistory(data);
-    } catch (err) {
-      console.warn("History refresh error:", err);
-      setHistoryError(err instanceof Error ? err.message : "Failed to load history");
-      setHistory([]);
-    } finally {
-      setHistoryLoading(false);
     }
   }, [claim.claim_id]);
 
@@ -202,11 +159,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
     // TODO: Implement export action
   };
 
-  // Badge counts for tabs
-  const assumptionCount = assessment?.assumptions.length || 0;
-  const criticalAssumptions = assessment?.assumptions.filter((a) => a.impact === "high").length || 0;
-  const failedChecks = assessment?.checks.filter((c) => c.result === "FAIL").length || 0;
-
   return (
     <div className="h-full overflow-hidden bg-muted/50 flex flex-col">
       {/* Sticky Context Bar */}
@@ -224,28 +176,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
 
-            // Badge logic
-            let badge: React.ReactNode = null;
-            if (tab.id === "assessment" && failedChecks > 0) {
-              badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-destructive/10 text-destructive">
-                  {failedChecks}
-                </span>
-              );
-            } else if (tab.id === "assumptions" && criticalAssumptions > 0) {
-              badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-destructive/10 text-destructive">
-                  {criticalAssumptions}
-                </span>
-              );
-            } else if (tab.id === "assumptions" && assumptionCount > 0) {
-              badge = (
-                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-warning/10 text-warning">
-                  {assumptionCount}
-                </span>
-              );
-            }
-
             return (
               <button
                 key={tab.id}
@@ -259,7 +189,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
               >
                 <Icon className="h-4 w-4" />
                 {tab.label}
-                {badge}
               </button>
             );
           })}
@@ -305,8 +234,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
             error={assessmentError}
             onRunAssessment={handleRunAssessment}
             onRefreshAssessment={handleRefreshAssessment}
-            onRefreshHistory={handleRefreshHistory}
-            onViewHistory={() => setActiveSubTab("history")}
             onEvidenceClick={(ref) => {
               // Synthetic refs (computed lookups) - no navigation
               if (ref.startsWith("_")) {
@@ -346,19 +273,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
             checks={assessment?.checks}
             loading={assessmentLoading}
             error={assessmentError}
-          />
-        )}
-
-        {activeSubTab === "history" && (
-          <ClaimHistoryTab
-            claimId={claim.claim_id}
-            history={history}
-            loading={historyLoading}
-            error={historyError}
-            onViewRun={(runId) => {
-              console.log("View run:", runId);
-              // TODO: Load and display historical assessment
-            }}
           />
         )}
 

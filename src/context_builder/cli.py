@@ -766,6 +766,7 @@ Output:
 Examples:
   %(prog)s assess --claim-id 65196              # Assess single claim
   %(prog)s assess --all                          # Assess all claims
+  %(prog)s assess --input-folder data/claims    # Assess claims from folder
   %(prog)s assess --claim-id 65196 --force-reconcile  # Force re-reconcile
   %(prog)s assess --claim-id 65196 --dry-run    # Preview only
         """,
@@ -783,6 +784,11 @@ Examples:
         help="Assess all claims in workspace",
     )
     assess_parser.add_argument(
+        "--input-folder",
+        metavar="PATH",
+        help="Folder containing claim subfolders to assess (extracts claim IDs from folder names)",
+    )
+    assess_parser.add_argument(
         "--force-reconcile",
         action="store_true",
         help="Force re-reconciliation even if recent reconciliation exists",
@@ -796,6 +802,76 @@ Examples:
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     assess_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
+    # ========== COVERAGE SUBCOMMAND ==========
+    coverage_parser = subparsers.add_parser(
+        "coverage",
+        help="Analyze line item coverage against policy",
+        epilog="""
+Analyzes line items from cost estimates against policy coverage to determine
+which items are covered, not covered, or need review.
+
+The analysis runs through three matching stages:
+1. Rules - Fast, deterministic matching (fees, exclusions, consumables)
+2. Keywords - German automotive term mapping to policy categories
+3. LLM - Fallback for ambiguous items (optional, can be disabled)
+
+Output:
+  claims/{claim_id}/claim_runs/{claim_run_id}/coverage_analysis.json
+
+The coverage analysis includes:
+- Per-item coverage status (covered, not_covered, review_needed)
+- Matched policy category and component
+- Match method and confidence score
+- Coverage amounts (considering coverage percentage)
+- Summary totals and payable amount
+
+Examples:
+  %(prog)s coverage analyze --claim-id 65196           # Analyze single claim
+  %(prog)s coverage analyze --all                       # Analyze all claims
+  %(prog)s coverage analyze --claim-id 65196 --force   # Rerun analysis
+  %(prog)s coverage analyze --claim-id 65196 --dry-run # Preview output
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    coverage_subparsers = coverage_parser.add_subparsers(
+        dest="coverage_command", help="Coverage analysis commands"
+    )
+    coverage_subparsers.required = True
+
+    # Analyze subcommand
+    coverage_analyze_parser = coverage_subparsers.add_parser(
+        "analyze",
+        help="Analyze line item coverage for a claim",
+    )
+    coverage_analyze_parser.add_argument(
+        "--claim-id",
+        metavar="ID",
+        help="Claim ID to analyze (required unless --all)",
+    )
+    coverage_analyze_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_claims",
+        help="Analyze all claims in workspace",
+    )
+    coverage_analyze_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Rerun analysis even if coverage_analysis.json exists",
+    )
+    coverage_analyze_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print analysis output without writing to file",
+    )
+    coverage_analyze_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    coverage_analyze_parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
@@ -1946,11 +2022,13 @@ def main():
             from context_builder.storage.filesystem import FileStorage
 
             # Validate args
-            if not args.claim_id and not args.all_claims:
-                print("[X] Error: Either --claim-id or --all is required")
+            input_folder = getattr(args, "input_folder", None)
+            options_count = sum([bool(args.claim_id), args.all_claims, bool(input_folder)])
+            if options_count == 0:
+                print("[X] Error: One of --claim-id, --all, or --input-folder is required")
                 sys.exit(1)
-            if args.claim_id and args.all_claims:
-                print("[X] Error: Cannot use both --claim-id and --all")
+            if options_count > 1:
+                print("[X] Error: Cannot combine --claim-id, --all, and --input-folder")
                 sys.exit(1)
 
             if args.verbose:
@@ -1993,6 +2071,25 @@ def main():
                 claim_ids.sort()
                 if not args.quiet:
                     print(f"\n[*] Found {len(claim_ids)} claims to assess")
+            elif input_folder:
+                # Extract claim IDs from input folder (folder names are claim IDs)
+                input_path = Path(input_folder)
+                if not input_path.exists():
+                    print(f"[X] Input folder not found: {input_folder}")
+                    sys.exit(1)
+                if not input_path.is_dir():
+                    print(f"[X] Input path is not a directory: {input_folder}")
+                    sys.exit(1)
+                claim_ids = [
+                    folder.name for folder in input_path.iterdir()
+                    if folder.is_dir() and not folder.name.startswith(".")
+                ]
+                if not claim_ids:
+                    print(f"[X] No claim folders found in {input_folder}")
+                    sys.exit(1)
+                claim_ids.sort()
+                if not args.quiet:
+                    print(f"\n[*] Found {len(claim_ids)} claims from input folder to assess")
             else:
                 claim_ids = [args.claim_id]
 
@@ -2035,6 +2132,113 @@ def main():
             if args.all_claims and not args.quiet and not args.dry_run:
                 print(f"\n{'='*50}")
                 print("ASSESSMENT SUMMARY")
+                print(f"{'='*50}")
+                print(f"  Successful: {len(results['success'])}")
+                print(f"  Failed: {len(results['failed'])}")
+                if results["failed"]:
+                    for cid in results["failed"]:
+                        print(f"    - {cid}")
+
+        elif args.command == "coverage":
+            # ========== COVERAGE COMMAND ==========
+            from context_builder.api.services.coverage_analysis import (
+                CoverageAnalysisError,
+                CoverageAnalysisService,
+            )
+            from context_builder.storage.filesystem import FileStorage
+
+            # Validate args
+            if not args.claim_id and not args.all_claims:
+                print("[X] Error: Either --claim-id or --all is required")
+                sys.exit(1)
+            if args.claim_id and args.all_claims:
+                print("[X] Error: Cannot use both --claim-id and --all")
+                sys.exit(1)
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Initialize service
+            storage = FileStorage(workspace_root)
+            coverage_service = CoverageAnalysisService(storage)
+
+            # Determine which claims to process
+            if args.all_claims:
+                claim_ids = coverage_service.list_claims_for_analysis()
+                if not claim_ids:
+                    print("[X] No claims with claim_facts.json found in workspace")
+                    sys.exit(1)
+                if not args.quiet:
+                    print(f"\n[*] Found {len(claim_ids)} claims to analyze")
+            else:
+                claim_ids = [args.claim_id]
+
+            # Track results for summary
+            results = {"success": [], "failed": [], "skipped": []}
+
+            for claim_id in claim_ids:
+                try:
+                    if args.dry_run:
+                        # Preview mode - run but don't write
+                        # (still writes temporarily, but shows output)
+                        result = coverage_service.analyze_claim(
+                            claim_id=claim_id,
+                            force=True,  # Force to see fresh results
+                        )
+                        print(f"\n--- {claim_id} (DRY RUN) ---")
+                        print(result.model_dump_json(indent=2))
+                        results["success"].append(claim_id)
+                        continue
+
+                    result = coverage_service.analyze_claim(
+                        claim_id=claim_id,
+                        force=args.force,
+                    )
+
+                    results["success"].append(claim_id)
+                    if not args.quiet:
+                        summary = result.summary
+                        # Color-coded output
+                        green = "\033[92m"
+                        yellow = "\033[93m"
+                        red = "\033[91m"
+                        reset = "\033[0m"
+
+                        print(f"\n[OK] {claim_id}: Coverage analysis complete")
+                        print(f"     {green}Covered:{reset} {summary.items_covered} items (CHF {summary.total_covered_before_excess:,.2f})")
+                        print(f"     {red}Not Covered:{reset} {summary.items_not_covered} items (CHF {summary.total_not_covered:,.2f})")
+                        if summary.items_review_needed > 0:
+                            print(f"     {yellow}Review Needed:{reset} {summary.items_review_needed} items")
+                        if summary.coverage_percent is not None:
+                            print(f"     Coverage %: {summary.coverage_percent}%")
+                        print(f"     Excess: CHF {summary.excess_amount:,.2f}")
+                        print(f"     Payable: CHF {summary.total_payable:,.2f}")
+                        print(f"     Claim Run: {result.claim_run_id}")
+
+                except CoverageAnalysisError as e:
+                    results["failed"].append(claim_id)
+                    if not args.quiet:
+                        print(f"[X] {claim_id}: {e}")
+
+            # Print summary if processing multiple claims
+            if args.all_claims and not args.quiet and not args.dry_run:
+                print(f"\n{'='*50}")
+                print("COVERAGE ANALYSIS SUMMARY")
                 print(f"{'='*50}")
                 print(f"  Successful: {len(results['success'])}")
                 print(f"  Failed: {len(results['failed'])}")

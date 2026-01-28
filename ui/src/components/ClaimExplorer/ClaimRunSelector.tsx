@@ -1,6 +1,9 @@
-import { ChevronDown, Clock, Check } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Clock, Check, Copy, CheckCircle } from "lucide-react";
 import type { ClaimRunManifest } from "../../types";
 import { cn } from "../../lib/utils";
+
+const MAX_RUNS_DISPLAY = 5;
 
 interface ClaimRunSelectorProps {
   runs: ClaimRunManifest[];
@@ -19,7 +22,22 @@ export function ClaimRunSelector({
   onSelect,
   loading,
 }: ClaimRunSelectorProps) {
+  const [copied, setCopied] = useState(false);
   const selectedRun = runs.find((r) => r.claim_run_id === selectedRunId);
+
+  // Limit to MAX_RUNS_DISPLAY most recent runs
+  const displayedRuns = runs.slice(0, MAX_RUNS_DISPLAY);
+
+  const handleCopy = async () => {
+    if (!selectedRunId) return;
+    try {
+      await navigator.clipboard.writeText(selectedRunId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
 
   // Format timestamp for display
   const formatDate = (dateStr: string) => {
@@ -70,7 +88,7 @@ export function ClaimRunSelector({
             "cursor-pointer"
           )}
         >
-          {runs.map((run, index) => (
+          {displayedRuns.map((run, index) => (
             <option key={run.claim_run_id} value={run.claim_run_id}>
               {shortenRunId(run.claim_run_id)}
               {index === 0 ? " (latest)" : ""}
@@ -79,6 +97,22 @@ export function ClaimRunSelector({
         </select>
         <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
       </div>
+      <button
+        onClick={handleCopy}
+        disabled={!selectedRunId}
+        className={cn(
+          "p-1.5 rounded-md transition-colors",
+          "hover:bg-muted text-muted-foreground hover:text-foreground",
+          "disabled:opacity-50 disabled:cursor-not-allowed"
+        )}
+        title={copied ? "Copied!" : "Copy claim run ID"}
+      >
+        {copied ? (
+          <CheckCircle className="h-4 w-4 text-success" />
+        ) : (
+          <Copy className="h-4 w-4" />
+        )}
+      </button>
       {selectedRun && (
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">

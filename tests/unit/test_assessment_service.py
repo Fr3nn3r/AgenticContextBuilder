@@ -640,6 +640,422 @@ class TestAssessmentServiceVersioning:
         assert history[1]["is_current"] is False
 
 
+class TestAssessmentServiceClaimRuns:
+    """Tests for AssessmentService reading from claim_runs directory.
+
+    These tests verify that assessments are correctly read from
+    claim_runs/{run_id}/assessment.json, which is where the pipeline
+    writes assessments.
+    """
+
+    @pytest.fixture
+    def temp_claims_dir(self, tmp_path):
+        """Create a temporary claims directory."""
+        return tmp_path
+
+    @pytest.fixture
+    def service(self, temp_claims_dir):
+        """Create an AssessmentService instance."""
+        return AssessmentService(temp_claims_dir)
+
+    def create_claim_run_assessment(
+        self, claims_dir: Path, claim_id: str, run_id: str, data: dict
+    ):
+        """Helper to create an assessment in a claim_run folder."""
+        run_dir = claims_dir / claim_id / "claim_runs" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        assessment_path = run_dir / "assessment.json"
+        with open(assessment_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def test_get_assessment_history_reads_from_claim_runs(
+        self, service, temp_claims_dir
+    ):
+        """Test that get_assessment_history reads from claim_runs directory."""
+        # Create two assessments in claim_runs
+        assessment1 = {
+            "claim_id": "CLM-100",
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 1000,
+        }
+        assessment2 = {
+            "claim_id": "CLM-100",
+            "assessment_timestamp": "2026-01-28T11:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.85,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 0,
+        }
+
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-100", "run_20260128_100000", assessment1
+        )
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-100", "run_20260128_110000", assessment2
+        )
+
+        history = service.get_assessment_history("CLM-100")
+
+        assert len(history) == 2
+        # Newest first
+        assert history[0]["decision"] == "REJECT"
+        assert history[0]["run_id"] == "run_20260128_110000"
+        assert history[0]["is_current"] is True
+        assert history[1]["decision"] == "APPROVE"
+        assert history[1]["run_id"] == "run_20260128_100000"
+        assert history[1]["is_current"] is False
+
+    def test_get_assessment_history_ignores_runs_without_assessment(
+        self, service, temp_claims_dir
+    ):
+        """Test that claim_runs without assessment.json are skipped."""
+        # Create one run with assessment
+        assessment = {
+            "claim_id": "CLM-101",
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 1000,
+        }
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-101", "run_with_assessment", assessment
+        )
+
+        # Create another run without assessment (just manifest)
+        run_dir = temp_claims_dir / "CLM-101" / "claim_runs" / "run_without_assessment"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "manifest.json").write_text('{"stages_completed": ["reconciliation"]}')
+
+        history = service.get_assessment_history("CLM-101")
+
+        assert len(history) == 1
+        assert history[0]["run_id"] == "run_with_assessment"
+
+    def test_get_assessment_by_id_reads_from_claim_runs(
+        self, service, temp_claims_dir
+    ):
+        """Test that get_assessment_by_id reads from claim_runs directory."""
+        assessment = {
+            "claim_id": "CLM-102",
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [
+                {"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}
+            ],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": {"final_payout": 1500, "currency": "CHF"},
+        }
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-102", "run_abc123", assessment
+        )
+
+        result = service.get_assessment_by_id("CLM-102", "run_abc123")
+
+        assert result is not None
+        assert result["decision"] == "APPROVE"
+        assert result["confidence_score"] == 95.0  # Converted to percentage
+        assert result["payout"] == 1500
+
+    def test_get_assessment_by_id_not_found_in_claim_runs(
+        self, service, temp_claims_dir
+    ):
+        """Test that non-existent run_id returns None."""
+        # Create claim_runs directory but not the specific run
+        runs_dir = temp_claims_dir / "CLM-103" / "claim_runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+
+        result = service.get_assessment_by_id("CLM-103", "nonexistent_run")
+
+        assert result is None
+
+    def test_get_assessment_returns_latest_from_claim_runs(
+        self, service, temp_claims_dir
+    ):
+        """Test that get_assessment returns the most recent assessment from claim_runs."""
+        # Create older assessment
+        assessment_old = {
+            "claim_id": "CLM-104",
+            "assessment_timestamp": "2026-01-28T09:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.7,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 0,
+        }
+        # Create newer assessment
+        assessment_new = {
+            "claim_id": "CLM-104",
+            "assessment_timestamp": "2026-01-28T12:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 2000,
+        }
+
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-104", "run_old", assessment_old
+        )
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-104", "run_new", assessment_new
+        )
+
+        result = service.get_assessment("CLM-104")
+
+        # Should return the newer one (based on timestamp)
+        assert result["decision"] == "APPROVE"
+        assert result["payout"] == 2000
+
+    def test_get_assessment_history_fallback_to_legacy(
+        self, service, temp_claims_dir
+    ):
+        """Test fallback to context/assessments when no claim_runs exist."""
+        # Create legacy assessment in context/assessments
+        assessments_dir = temp_claims_dir / "CLM-105" / "context" / "assessments"
+        assessments_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create index
+        index = {
+            "assessments": [
+                {
+                    "id": "2026-01-26T10-00-00_v1.0.0",
+                    "filename": "2026-01-26T10-00-00_v1.0.0.json",
+                    "timestamp": "2026-01-26T10:00:00",
+                    "decision": "APPROVE",
+                    "confidence_score": 0.9,
+                    "is_current": True,
+                }
+            ]
+        }
+        with open(assessments_dir / "index.json", "w") as f:
+            json.dump(index, f)
+
+        # Create the versioned file
+        assessment = {
+            "claim_id": "CLM-105",
+            "assessment_timestamp": "2026-01-26T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 500,
+        }
+        with open(assessments_dir / "2026-01-26T10-00-00_v1.0.0.json", "w") as f:
+            json.dump(assessment, f)
+
+        history = service.get_assessment_history("CLM-105")
+
+        assert len(history) == 1
+        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["run_id"] == "2026-01-26T10-00-00_v1.0.0"
+
+    def test_get_assessment_by_id_fallback_to_legacy(
+        self, service, temp_claims_dir
+    ):
+        """Test get_assessment_by_id falls back to context/assessments."""
+        # Create legacy assessment
+        assessments_dir = temp_claims_dir / "CLM-106" / "context" / "assessments"
+        assessments_dir.mkdir(parents=True, exist_ok=True)
+
+        index = {
+            "assessments": [
+                {
+                    "id": "legacy_id_123",
+                    "filename": "legacy_id_123.json",
+                    "timestamp": "2026-01-26T10:00:00",
+                    "decision": "REJECT",
+                    "confidence_score": 0.8,
+                    "is_current": True,
+                }
+            ]
+        }
+        with open(assessments_dir / "index.json", "w") as f:
+            json.dump(index, f)
+
+        assessment = {
+            "claim_id": "CLM-106",
+            "assessment_timestamp": "2026-01-26T10:00:00",
+            "decision": "REJECT",
+            "confidence_score": 0.8,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 0,
+        }
+        with open(assessments_dir / "legacy_id_123.json", "w") as f:
+            json.dump(assessment, f)
+
+        result = service.get_assessment_by_id("CLM-106", "legacy_id_123")
+
+        assert result is not None
+        assert result["decision"] == "REJECT"
+
+    def test_get_assessment_fallback_to_context_assessment_json(
+        self, service, temp_claims_dir
+    ):
+        """Test get_assessment falls back to context/assessment.json when no claim_runs."""
+        # Create legacy assessment.json
+        context_dir = temp_claims_dir / "CLM-107" / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+
+        assessment = {
+            "claim_id": "CLM-107",
+            "assessment_timestamp": "2026-01-26T10:00:00",
+            "decision": "REFER_TO_HUMAN",
+            "confidence_score": 0.6,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 0,
+        }
+        with open(context_dir / "assessment.json", "w") as f:
+            json.dump(assessment, f)
+
+        result = service.get_assessment("CLM-107")
+
+        assert result is not None
+        assert result["decision"] == "REFER_TO_HUMAN"
+
+    def test_get_assessment_history_handles_invalid_json(
+        self, service, temp_claims_dir
+    ):
+        """Test that invalid JSON in claim_runs is skipped gracefully."""
+        # Create valid assessment
+        assessment = {
+            "claim_id": "CLM-108",
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.9,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 1000,
+        }
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-108", "run_valid", assessment
+        )
+
+        # Create invalid assessment
+        run_dir = temp_claims_dir / "CLM-108" / "claim_runs" / "run_invalid"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "assessment.json").write_text("not valid json {{{")
+
+        history = service.get_assessment_history("CLM-108")
+
+        # Should only return the valid one
+        assert len(history) == 1
+        assert history[0]["run_id"] == "run_valid"
+
+    def test_get_assessment_history_correct_check_counts(
+        self, service, temp_claims_dir
+    ):
+        """Test that check counts are computed correctly from claim_runs."""
+        assessment = {
+            "claim_id": "CLM-109",
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "REFER_TO_HUMAN",
+            "confidence_score": 0.7,
+            "checks": [
+                {"check_number": 1, "check_name": "test1", "result": "PASS", "details": "", "evidence_refs": []},
+                {"check_number": 2, "check_name": "test2", "result": "PASS", "details": "", "evidence_refs": []},
+                {"check_number": 3, "check_name": "test3", "result": "FAIL", "details": "", "evidence_refs": []},
+                {"check_number": 4, "check_name": "test4", "result": "INCONCLUSIVE", "details": "", "evidence_refs": []},
+            ],
+            "assumptions": [
+                {"check_number": 3, "field": "test", "assumed_value": "x", "reason": "y", "impact": "high"}
+            ],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 0,
+        }
+        self.create_claim_run_assessment(
+            temp_claims_dir, "CLM-109", "run_checks", assessment
+        )
+
+        history = service.get_assessment_history("CLM-109")
+
+        assert len(history) == 1
+        entry = history[0]
+        assert entry["check_count"] == 4
+        assert entry["pass_count"] == 2
+        assert entry["fail_count"] == 2  # 4 - 2 = 2 (FAIL + INCONCLUSIVE)
+        assert entry["assumption_count"] == 1
+
+    def test_claim_runs_takes_precedence_over_legacy(
+        self, service, temp_claims_dir
+    ):
+        """Test that claim_runs data takes precedence over legacy context/assessments."""
+        claim_id = "CLM-110"
+
+        # Create legacy assessment in context/assessments
+        assessments_dir = temp_claims_dir / claim_id / "context" / "assessments"
+        assessments_dir.mkdir(parents=True, exist_ok=True)
+        legacy_index = {
+            "assessments": [
+                {
+                    "id": "legacy_old",
+                    "filename": "legacy_old.json",
+                    "timestamp": "2026-01-25T10:00:00",
+                    "decision": "REJECT",
+                    "confidence_score": 0.5,
+                    "is_current": True,
+                }
+            ]
+        }
+        with open(assessments_dir / "index.json", "w") as f:
+            json.dump(legacy_index, f)
+        with open(assessments_dir / "legacy_old.json", "w") as f:
+            json.dump({"decision": "REJECT", "confidence_score": 0.5, "checks": [], "assumptions": [], "fraud_indicators": [], "recommendations": []}, f)
+
+        # Create newer assessment in claim_runs
+        new_assessment = {
+            "claim_id": claim_id,
+            "assessment_timestamp": "2026-01-28T10:00:00",
+            "decision": "APPROVE",
+            "confidence_score": 0.95,
+            "checks": [],
+            "assumptions": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+            "payout": 5000,
+        }
+        self.create_claim_run_assessment(
+            temp_claims_dir, claim_id, "run_new", new_assessment
+        )
+
+        # claim_runs should take precedence
+        history = service.get_assessment_history(claim_id)
+
+        assert len(history) == 1
+        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["run_id"] == "run_new"
+
+
 class TestAssessmentServiceEvaluation:
     """Tests for AssessmentService evaluation features."""
 

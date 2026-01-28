@@ -87,17 +87,8 @@ export function DocumentViewer({
 
   // Compute bounding boxes when Azure DI or highlight changes
   // Uses smart highlighting: table cells > lines > merged words > individual words
-  // NOTE: Skip bbox highlighting when highlightValue is provided - use text search instead
-  // for a cleaner, more consistent visual experience across all views
   useEffect(() => {
     if (!azureDI || highlightPage === undefined) {
-      setHighlightBboxes([]);
-      return;
-    }
-
-    // When we have highlightValue, prioritize text search highlighting (looks nicer)
-    // Only use bbox highlighting as fallback when no searchable value is available
-    if (highlightValue) {
       setHighlightBboxes([]);
       return;
     }
@@ -113,7 +104,7 @@ export function DocumentViewer({
     } else {
       setHighlightBboxes([]);
     }
-  }, [azureDI, highlightPage, highlightCharStart, highlightCharEnd, highlightValue]);
+  }, [azureDI, highlightPage, highlightCharStart, highlightCharEnd]);
 
   // When highlight changes (evidence clicked), navigate PDF to that page and highlight text
   useEffect(() => {

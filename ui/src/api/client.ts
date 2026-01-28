@@ -1312,6 +1312,23 @@ export async function getAssessmentHistory(
   return fetchJson(`${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/history`);
 }
 
+/**
+ * Get a specific historical assessment by run ID.
+ * Returns null if the assessment doesn't exist.
+ */
+export async function getHistoricalAssessment(
+  claimId: string,
+  assessmentId: string
+): Promise<ClaimAssessment | null> {
+  try {
+    return await fetchJson<ClaimAssessment>(
+      `${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/${encodeURIComponent(assessmentId)}`
+    );
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // CUSTOMER COMMUNICATION
 // =============================================================================

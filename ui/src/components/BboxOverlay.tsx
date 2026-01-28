@@ -8,10 +8,11 @@ import type { BoundingBox, SmartBoundingBox, HighlightSource } from "../types";
 import { transformPolygonToPixels } from "../lib/bboxUtils";
 
 // Style configuration by highlight source type
+// Updated to match text highlight style (yellow with subtle outline) for visual consistency
 const HIGHLIGHT_STYLES: Record<HighlightSource, { fill: string; stroke: string }> = {
-  word: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
-  line: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
-  merged: { fill: "rgba(250, 204, 21, 0.5)", stroke: "rgba(250, 150, 0, 1)" },
+  word: { fill: "rgba(250, 204, 21, 0.4)", stroke: "rgba(250, 204, 21, 0.8)" },
+  line: { fill: "rgba(250, 204, 21, 0.4)", stroke: "rgba(250, 204, 21, 0.8)" },
+  merged: { fill: "rgba(250, 204, 21, 0.4)", stroke: "rgba(250, 204, 21, 0.8)" },
   cell: { fill: "rgba(167, 243, 208, 0.4)", stroke: "rgba(16, 185, 129, 0.8)" },  // Green for table cells
 };
 

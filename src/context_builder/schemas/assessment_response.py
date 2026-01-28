@@ -102,20 +102,15 @@ class AssistanceItems(BaseModel):
     )
 
 
-class AssumptionMade(BaseModel):
-    """Assumption made during assessment due to missing data."""
+class DataGap(BaseModel):
+    """Data gap identified during assessment where information was missing or unclear."""
 
-    field_missing: str = Field(description="Name of the field that was missing")
-    assumed_value: Optional[str] = Field(
-        default=None, description="Value that was assumed (null if no assumption made)"
-    )
-    reasoning: str = Field(description="Reasoning for making this assumption")
-    confidence_impact: Literal["LOW", "MEDIUM", "HIGH"] = Field(
+    field: str = Field(description="Field that was missing or unclear")
+    impact: Literal["LOW", "MEDIUM", "HIGH"] = Field(
         description="Impact on confidence score"
     )
-    # Allow check_number for backwards compatibility
-    check_number: Optional[str] = Field(
-        default=None, description="Check number where assumption was made"
+    action_taken: str = Field(
+        description="How the gap was handled (e.g., inferred value X, flagged for review)"
     )
 
 
@@ -161,8 +156,8 @@ class AssessmentResponse(BaseModel):
         default_factory=lambda: AssistanceItems(detected=False),
         description="Assistance package items if detected",
     )
-    assumptions: List[AssumptionMade] = Field(
-        default_factory=list, description="Assumptions made during assessment"
+    data_gaps: List[DataGap] = Field(
+        default_factory=list, description="Data gaps identified during assessment"
     )
     fraud_indicators: List[FraudIndicator] = Field(
         default_factory=list, description="Potential fraud indicators detected"
@@ -213,7 +208,7 @@ class AssessmentResponse(BaseModel):
                     "total_amount": 0.0,
                     "note": "Verify separately under assistance package",
                 },
-                "assumptions": [],
+                "data_gaps": [],
                 "fraud_indicators": [],
                 "recommendations": [],
             }

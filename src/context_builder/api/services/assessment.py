@@ -34,6 +34,10 @@ class AssessmentService:
         """Get the path to a claim's assessments index file."""
         return self._get_assessments_dir(claim_id) / "index.json"
 
+    def _get_claim_runs_dir(self, claim_id: str) -> Path:
+        """Get the path to a claim's claim_runs directory."""
+        return self.claims_dir / claim_id / "claim_runs"
+
     def _load_assessments_index(self, claim_id: str) -> Dict[str, Any]:
         """Load the assessments index, creating empty structure if missing."""
         index_path = self._get_assessments_index_path(claim_id)
@@ -134,24 +138,35 @@ class AssessmentService:
     ) -> Optional[Dict[str, Any]]:
         """Load a specific assessment by its ID.
 
+        Checks claim_runs/{assessment_id}/assessment.json first, then falls
+        back to context/assessments/ for legacy data.
+
         Args:
             claim_id: The claim ID
-            assessment_id: The assessment ID (timestamp_version format)
+            assessment_id: The assessment ID (claim run ID or timestamp_version format)
 
         Returns:
             Transformed assessment, or None if not found
         """
-        index = self._load_assessments_index(claim_id)
+        # Primary: try claim_runs/{assessment_id}/assessment.json
+        claim_run_path = self._get_claim_runs_dir(claim_id) / assessment_id / "assessment.json"
+        if claim_run_path.exists():
+            try:
+                with open(claim_run_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return self._transform_assessment(data)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load assessment from claim_run {assessment_id}: {e}")
 
-        # Find entry in index
+        # Fallback: try context/assessments/ (legacy)
+        index = self._load_assessments_index(claim_id)
         entry = next(
             (a for a in index["assessments"] if a["id"] == assessment_id), None
         )
         if not entry:
-            logger.debug(f"Assessment {assessment_id} not found in index")
+            logger.debug(f"Assessment {assessment_id} not found in index or claim_runs")
             return None
 
-        # Load from file
         assessment_path = self._get_assessments_dir(claim_id) / entry["filename"]
         if not assessment_path.exists():
             logger.warning(f"Assessment file missing: {assessment_path}")
@@ -323,17 +338,46 @@ class AssessmentService:
         }
 
     def get_assessment(self, claim_id: str) -> Optional[Dict[str, Any]]:
-        """Load and transform assessment.json to frontend format.
+        """Load and transform the latest assessment to frontend format.
+
+        Checks claim_runs/ for the most recent assessment first, then falls
+        back to context/assessment.json for legacy data.
 
         Args:
             claim_id: The claim ID to load assessment for
 
         Returns:
             Transformed assessment matching frontend ClaimAssessment type,
-            or None if file doesn't exist or can't be parsed
+            or None if no assessment exists
         """
-        assessment_path = self._get_assessment_path(claim_id)
+        # Primary: find latest assessment from claim_runs/
+        claim_runs_dir = self._get_claim_runs_dir(claim_id)
+        if claim_runs_dir.exists():
+            latest_assessment = None
+            latest_timestamp = ""
 
+            for run_dir in claim_runs_dir.iterdir():
+                if not run_dir.is_dir():
+                    continue
+                assessment_file = run_dir / "assessment.json"
+                if not assessment_file.exists():
+                    continue
+
+                try:
+                    with open(assessment_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    timestamp = data.get("assessment_timestamp", "")
+                    if timestamp > latest_timestamp:
+                        latest_timestamp = timestamp
+                        latest_assessment = data
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+            if latest_assessment:
+                return self._transform_assessment(latest_assessment)
+
+        # Fallback: read from context/assessment.json (legacy)
+        assessment_path = self._get_assessment_path(claim_id)
         if not assessment_path.exists():
             logger.debug(f"Assessment file not found: {assessment_path}")
             return None
@@ -352,8 +396,9 @@ class AssessmentService:
     def get_assessment_history(self, claim_id: str) -> List[Dict[str, Any]]:
         """Return all assessment history entries for a claim.
 
-        Reads from assessments/index.json if available, falling back to
-        wrapping the current assessment as a single entry.
+        Reads from claim_runs/ directories, finding all runs that have an
+        assessment.json file. Falls back to context/assessments/ index if
+        no claim_runs exist.
 
         Args:
             claim_id: The claim ID to load assessment history for
@@ -361,13 +406,71 @@ class AssessmentService:
         Returns:
             List of AssessmentHistoryEntry dicts, newest first, or empty list
         """
-        index = self._load_assessments_index(claim_id)
+        # Primary: read from claim_runs/ directory
+        claim_runs_dir = self._get_claim_runs_dir(claim_id)
+        if claim_runs_dir.exists():
+            history = []
+            for run_dir in claim_runs_dir.iterdir():
+                if not run_dir.is_dir():
+                    continue
+                assessment_file = run_dir / "assessment.json"
+                if not assessment_file.exists():
+                    continue
 
-        # If we have versioned history, use it
+                try:
+                    with open(assessment_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    # Transform the assessment for counts
+                    transformed = self._transform_assessment(data)
+                    checks = transformed.get("checks", [])
+                    checks_total = len(checks)
+                    checks_passed = sum(1 for c in checks if c.get("result") == "PASS")
+
+                    # Convert confidence_score to percentage if needed
+                    confidence = data.get("confidence_score", 0)
+                    if isinstance(confidence, (int, float)) and confidence <= 1.0:
+                        confidence = confidence * 100
+
+                    # Extract payout value
+                    payout = None
+                    if isinstance(data.get("payout"), dict):
+                        payout = data["payout"].get("final_payout")
+                    elif isinstance(data.get("payout"), (int, float)):
+                        payout = data["payout"]
+
+                    history.append({
+                        "run_id": run_dir.name,
+                        "timestamp": data.get("assessment_timestamp"),
+                        "decision": data.get("decision"),
+                        "confidence_score": confidence,
+                        "payout": payout,
+                        "prompt_version": data.get("prompt_version"),
+                        "extraction_bundle_id": data.get("extraction_bundle_id"),
+                        "is_current": False,  # Will mark newest below
+                        "check_count": checks_total,
+                        "pass_count": checks_passed,
+                        "fail_count": checks_total - checks_passed,
+                        "assumption_count": len(transformed.get("assumptions", [])),
+                    })
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Failed to load assessment from {run_dir.name}: {e}")
+                    continue
+
+            # Sort by timestamp (newest first) and mark first as current
+            if history:
+                history.sort(
+                    key=lambda x: x.get("timestamp") or "",
+                    reverse=True
+                )
+                history[0]["is_current"] = True
+                return history
+
+        # Fallback: read from context/assessments/index.json (legacy)
+        index = self._load_assessments_index(claim_id)
         if index["assessments"]:
             history = []
             for entry in reversed(index["assessments"]):  # Newest first
-                # Load full assessment to get check counts
                 assessment = self.get_assessment_by_id(claim_id, entry["id"])
                 checks_passed = 0
                 checks_total = 0
@@ -382,7 +485,6 @@ class AssessmentService:
                     checks_total = len(assessment.get("checks", []))
                     assumption_count = len(assessment.get("assumptions", []))
 
-                # Convert confidence_score to percentage if needed
                 confidence = entry.get("confidence_score", 0)
                 if isinstance(confidence, (int, float)) and confidence <= 1.0:
                     confidence = confidence * 100
@@ -403,7 +505,7 @@ class AssessmentService:
                 })
             return history
 
-        # Fallback: wrap current assessment as single entry
+        # Final fallback: wrap current assessment as single entry
         assessment = self.get_assessment(claim_id)
         if assessment is None:
             return []

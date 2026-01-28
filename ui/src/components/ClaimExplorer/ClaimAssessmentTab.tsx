@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Loader2,
   Play,
@@ -8,9 +8,12 @@ import {
   ArrowRightCircle,
   ShieldAlert,
   Clock,
-  History,
   Mail,
+  ChevronDown,
+  Copy,
+  CheckCircle,
 } from "lucide-react";
+import { getAssessmentHistory, getHistoricalAssessment } from "../../api/client";
 import { cn } from "../../lib/utils";
 import type { ClaimAssessment, AssessmentDecision } from "../../types";
 import { formatTimestamp } from "../../lib/formatters";
@@ -30,9 +33,7 @@ interface ClaimAssessmentTabProps {
   error: string | null;
   onRunAssessment?: () => Promise<void>;
   onRefreshAssessment?: () => Promise<void>;
-  onRefreshHistory?: () => Promise<void>;
   onEvidenceClick?: (ref: string) => void;
-  onViewHistory?: () => void;
 }
 
 const DECISION_CONFIG: Record<AssessmentDecision, {
@@ -87,12 +88,72 @@ export function ClaimAssessmentTab({
   error,
   onRunAssessment,
   onRefreshAssessment,
-  onRefreshHistory,
   onEvidenceClick,
-  onViewHistory,
 }: ClaimAssessmentTabProps) {
   const { progress, startAssessment, isRunning, reset } = useAssessmentWebSocket();
   const [showDraftModal, setShowDraftModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Assessment history state
+  type AssessmentHistoryEntry = {
+    run_id: string;
+    timestamp: string;
+    decision: "APPROVE" | "REJECT" | "REFER_TO_HUMAN";
+    confidence_score: number;
+    is_current: boolean;
+  };
+  const [assessmentHistory, setAssessmentHistory] = useState<AssessmentHistoryEntry[]>([]);
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
+  const [displayedAssessment, setDisplayedAssessment] = useState<ClaimAssessment | null>(assessment);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Reusable function to load assessment history
+  const loadHistory = useCallback(async () => {
+    if (!claimId) return;
+    try {
+      const history = await getAssessmentHistory(claimId);
+      setAssessmentHistory(history);
+    } catch (err) {
+      console.warn("Failed to load assessment history:", err);
+    }
+  }, [claimId]);
+
+  // Sync displayedAssessment with prop when assessment changes
+  useEffect(() => {
+    setDisplayedAssessment(assessment);
+    // Reset to current when assessment prop changes
+    if (assessment) {
+      setSelectedAssessmentId(null);
+    }
+  }, [assessment]);
+
+  // Fetch assessment history on mount AND when assessment prop changes
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory, assessment]);
+
+  // Handle selecting a historical assessment
+  const handleSelectAssessment = useCallback(async (runId: string | null) => {
+    if (runId === null) {
+      // Selecting "current" - use prop assessment
+      setSelectedAssessmentId(null);
+      setDisplayedAssessment(assessment);
+      return;
+    }
+
+    setSelectedAssessmentId(runId);
+    setHistoryLoading(true);
+    try {
+      const historicalAssessment = await getHistoricalAssessment(claimId, runId);
+      if (historicalAssessment) {
+        setDisplayedAssessment(historicalAssessment);
+      }
+    } catch (err) {
+      console.warn("Failed to load historical assessment:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [claimId, assessment]);
 
   const handleRunAssessment = useCallback(async () => {
     const runId = await startAssessment(claimId);
@@ -106,10 +167,9 @@ export function ClaimAssessmentTab({
     if (onRefreshAssessment) {
       onRefreshAssessment();
     }
-    if (onRefreshHistory) {
-      onRefreshHistory();
-    }
-  }, [reset, onRefreshAssessment, onRefreshHistory]);
+    // Also refresh history to show the new assessment
+    loadHistory();
+  }, [reset, onRefreshAssessment, loadHistory]);
 
   const handleDismissProgress = useCallback(() => {
     reset();
@@ -117,11 +177,23 @@ export function ClaimAssessmentTab({
       if (onRefreshAssessment) {
         onRefreshAssessment();
       }
-      if (onRefreshHistory) {
-        onRefreshHistory();
-      }
+      // Also refresh history to show the new assessment
+      loadHistory();
     }
-  }, [reset, progress.status, onRefreshAssessment, onRefreshHistory]);
+  }, [reset, progress.status, onRefreshAssessment, loadHistory]);
+
+  // Copy assessment ID to clipboard
+  const handleCopyId = useCallback(async () => {
+    const currentId = selectedAssessmentId || assessmentHistory.find(h => h.is_current)?.run_id;
+    if (!currentId) return;
+    try {
+      await navigator.clipboard.writeText(currentId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, [selectedAssessmentId, assessmentHistory]);
 
   if (loading) {
     return (
@@ -145,7 +217,7 @@ export function ClaimAssessmentTab({
   }
 
   // No assessment yet
-  if (!assessment) {
+  if (!displayedAssessment) {
     return (
       <div className="p-4">
         <div className="bg-card rounded-lg border border-border p-8 text-center">
@@ -186,21 +258,21 @@ export function ClaimAssessmentTab({
     );
   }
 
-  const decisionConfig = DECISION_CONFIG[assessment.decision];
+  const decisionConfig = DECISION_CONFIG[displayedAssessment.decision];
   const DecisionIcon = decisionConfig.icon;
 
   // Count check results
-  const passCount = assessment.checks.filter((c) => c.result === "PASS").length;
-  const failedChecks = assessment.checks.filter((c) => c.result === "FAIL");
+  const passCount = displayedAssessment.checks.filter((c) => c.result === "PASS").length;
+  const failedChecks = displayedAssessment.checks.filter((c) => c.result === "FAIL");
   const failCount = failedChecks.length;
-  const inconclusiveCount = assessment.checks.filter((c) => c.result === "INCONCLUSIVE").length;
+  const inconclusiveCount = displayedAssessment.checks.filter((c) => c.result === "INCONCLUSIVE").length;
 
   // Count high-impact assumptions
-  const criticalAssumptions = assessment.assumptions.filter((a) => a.impact === "high").length;
+  const criticalAssumptions = displayedAssessment.assumptions.filter((a) => a.impact === "high").length;
 
   // Generate decision description - include rejection reason for REJECT
   const getDecisionDescription = () => {
-    if (assessment.decision === "REJECT" && failedChecks.length > 0) {
+    if (displayedAssessment.decision === "REJECT" && failedChecks.length > 0) {
       const reasons = failedChecks.map((c) => c.details).filter(Boolean);
       if (reasons.length === 1) {
         return `Claim rejected: ${reasons[0]}`;
@@ -212,34 +284,87 @@ export function ClaimAssessmentTab({
     return decisionConfig.description;
   };
 
+  // Shorten run ID for display (matching ClaimRunSelector)
+  const shortenRunId = (runId: string) => {
+    if (runId.length <= 24) return runId;
+    return `${runId.slice(0, 16)}...${runId.slice(-6)}`;
+  };
+
+  // Get current assessment entry for timestamp display
+  const currentEntry = assessmentHistory.find(h =>
+    selectedAssessmentId ? h.run_id === selectedAssessmentId : h.is_current
+  );
+
   return (
     <div className="p-4 space-y-4">
-      {/* Action Bar */}
+      {/* Header Bar - Assessment selector and actions on one line */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-foreground">
-          Assessment
-        </h2>
         <div className="flex items-center gap-2">
-          {onViewHistory && (
-            <button
-              onClick={onViewHistory}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-            >
-              <History className="h-4 w-4" />
-              History
-            </button>
+          <span className="text-sm text-muted-foreground">Assessment:</span>
+          {assessmentHistory.length > 0 ? (
+            <>
+              <div className="relative">
+                <select
+                  value={selectedAssessmentId ?? ""}
+                  onChange={(e) => handleSelectAssessment(e.target.value || null)}
+                  disabled={historyLoading}
+                  className={cn(
+                    "appearance-none bg-card border border-border",
+                    "rounded-md pl-3 pr-8 py-1.5 text-sm font-mono",
+                    "text-foreground",
+                    "focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                    "cursor-pointer"
+                  )}
+                >
+                  {assessmentHistory.map((entry, index) => (
+                    <option key={entry.run_id} value={entry.is_current ? "" : entry.run_id}>
+                      {shortenRunId(entry.run_id)}{index === 0 ? " (latest)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+              <button
+                onClick={handleCopyId}
+                disabled={!currentEntry}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  "hover:bg-muted text-muted-foreground hover:text-foreground",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+                title={copied ? "Copied!" : "Copy assessment ID"}
+              >
+                {copied ? (
+                  <CheckCircle className="h-4 w-4 text-success" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </button>
+              {historyLoading && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+              {currentEntry && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  {formatTimestamp(currentEntry.timestamp)}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">No assessments</span>
           )}
-          <button
-            onClick={() => setShowDraftModal(true)}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-              "bg-primary text-primary-foreground hover:bg-primary/90"
-            )}
-          >
-            <Mail className="h-4 w-4" />
-            View Customer Draft
-          </button>
         </div>
+        <button
+          onClick={() => setShowDraftModal(true)}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+            "bg-primary text-primary-foreground hover:bg-primary/90"
+          )}
+        >
+          <Mail className="h-4 w-4" />
+          View Customer Draft
+        </button>
       </div>
 
       {/* Decision Banner */}
@@ -270,20 +395,20 @@ export function ClaimAssessmentTab({
                 <p className="text-sm text-muted-foreground mt-1">
                   {getDecisionDescription()}
                 </p>
-                {assessment.assessed_at && (
+                {displayedAssessment.assessed_at && (
                   <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    Assessed {formatTimestamp(assessment.assessed_at)}
+                    Assessed {formatTimestamp(displayedAssessment.assessed_at)}
                   </p>
                 )}
-                {assessment.decision_rationale && (
+                {displayedAssessment.decision_rationale && (
                   <p className={cn(
                     "text-sm mt-2 italic",
-                    assessment.decision === "REJECT"
+                    displayedAssessment.decision === "REJECT"
                       ? "text-destructive font-medium"
                       : "text-muted-foreground"
                   )}>
-                    "{assessment.decision_rationale}"
+                    "{displayedAssessment.decision_rationale}"
                   </p>
                 )}
               </div>
@@ -292,7 +417,7 @@ export function ClaimAssessmentTab({
             {/* Confidence Score */}
             <div className="text-right">
               <div className="text-2xl font-bold text-foreground">
-                <ScoreBadge value={assessment.confidence_score} />
+                <ScoreBadge value={displayedAssessment.confidence_score} />
               </div>
               <p className="text-xs text-muted-foreground">Confidence</p>
             </div>
@@ -318,15 +443,15 @@ export function ClaimAssessmentTab({
               "text-lg font-semibold",
               criticalAssumptions > 0 ? "text-warning" : "text-muted-foreground"
             )}>
-              {assessment.assumptions.length}
+              {displayedAssessment.assumptions.length}
             </div>
             <div className="text-xs text-muted-foreground">Assumptions</div>
           </div>
-          {assessment.payout !== undefined && (
+          {displayedAssessment.payout !== undefined && (
             <div className="text-center">
               <div className="text-lg font-semibold text-foreground">
-                {assessment.currency || assessment.payout_breakdown?.currency || "CHF"}{" "}
-                {assessment.payout.toLocaleString()}
+                {displayedAssessment.currency || displayedAssessment.payout_breakdown?.currency || "CHF"}{" "}
+                {displayedAssessment.payout.toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">Payout</div>
             </div>
@@ -335,21 +460,21 @@ export function ClaimAssessmentTab({
       </div>
 
       {/* Payout Breakdown */}
-      {assessment.payout_breakdown && (
-        <PayoutBreakdownCard breakdown={assessment.payout_breakdown} />
+      {displayedAssessment.payout_breakdown && displayedAssessment.decision !== "REJECT" && (
+        <PayoutBreakdownCard breakdown={displayedAssessment.payout_breakdown} />
       )}
 
       {/* Fraud Indicators (if any) */}
-      {assessment.fraud_indicators.length > 0 && (
+      {displayedAssessment.fraud_indicators.length > 0 && (
         <div className="bg-destructive/10 rounded-lg border border-destructive/30 p-4">
           <div className="flex items-center gap-2 mb-3">
             <ShieldAlert className="h-5 w-5 text-destructive" />
             <h3 className="font-semibold text-destructive">
-              Fraud Indicators ({assessment.fraud_indicators.length})
+              Fraud Indicators ({displayedAssessment.fraud_indicators.length})
             </h3>
           </div>
           <div className="space-y-2">
-            {assessment.fraud_indicators.map((indicator, idx) => (
+            {displayedAssessment.fraud_indicators.map((indicator, idx) => (
               <div key={idx} className="flex items-start gap-2 text-sm">
                 <StatusBadge
                   variant={indicator.severity === "high" ? "error" : indicator.severity === "medium" ? "warning" : "neutral"}
@@ -370,11 +495,11 @@ export function ClaimAssessmentTab({
       )}
 
       {/* Recommendations (if any) */}
-      {assessment.recommendations.length > 0 && (
+      {displayedAssessment.recommendations.length > 0 && displayedAssessment.decision !== "APPROVE" && (
         <div className="bg-info/10 rounded-lg border border-info/30 p-4">
           <h3 className="font-semibold text-info mb-2">Recommendations</h3>
           <ul className="list-disc list-inside space-y-1">
-            {assessment.recommendations.map((rec, idx) => (
+            {displayedAssessment.recommendations.map((rec, idx) => (
               <li key={idx} className="text-sm text-info">{rec}</li>
             ))}
           </ul>
@@ -382,22 +507,22 @@ export function ClaimAssessmentTab({
       )}
 
       {/* Checks Panel */}
-      {assessment.checks.length > 0 && (
+      {displayedAssessment.checks.length > 0 && (
         <ChecksReviewPanel
-          checks={assessment.checks}
+          checks={displayedAssessment.checks}
           onEvidenceClick={onEvidenceClick}
         />
       )}
 
       {/* Assumptions Panel */}
-      {assessment.assumptions.length > 0 && (
-        <AssumptionsPane assumptions={assessment.assumptions} />
+      {displayedAssessment.assumptions.length > 0 && (
+        <AssumptionsPane assumptions={displayedAssessment.assumptions} />
       )}
 
       {/* Assessment Feedback */}
       <WorkflowActionsPanel
         readiness={{ readinessPct: 0, blockingIssues: [], criticalAssumptions: 0, canAutoApprove: false, canAutoReject: false }}
-        currentDecision={assessment.decision}
+        currentDecision={displayedAssessment.decision}
       />
 
       {/* Progress Card (floating) */}
