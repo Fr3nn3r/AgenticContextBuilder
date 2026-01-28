@@ -65,7 +65,7 @@ class ReconciliationService:
         self.storage = storage
         self.aggregation = aggregation_service
 
-    def reconcile(self, claim_id: str) -> ReconciliationResult:
+    def reconcile(self, claim_id: str, run_context=None) -> ReconciliationResult:
         """Run full reconciliation for a claim using cross-run extraction collection.
 
         For each document, uses the latest available extraction regardless of
@@ -84,6 +84,7 @@ class ReconciliationService:
 
         Args:
             claim_id: Claim identifier.
+            run_context: Optional ClaimRunContext with shared ID and metadata.
 
         Returns:
             ReconciliationResult with report (if successful) or error.
@@ -114,6 +115,7 @@ class ReconciliationService:
             manifest = claim_run_storage.create_claim_run(
                 extraction_runs=claim_facts.extraction_runs_used,
                 contextbuilder_version=get_version(),
+                run_context=run_context,
             )
             claim_run_id = manifest.claim_run_id
 

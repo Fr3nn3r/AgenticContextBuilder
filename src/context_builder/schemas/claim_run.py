@@ -1,7 +1,7 @@
 """Pydantic schemas for claim-level run tracking."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,3 +35,20 @@ class ClaimRunManifest(BaseModel):
     previous_claim_run_id: Optional[str] = Field(
         None, description="Previous claim run ID if this is a re-run"
     )
+
+    # Enriched metadata fields (all Optional for backward compatibility)
+    started_at: Optional[str] = Field(
+        None, description="ISO 8601 run start timestamp"
+    )
+    ended_at: Optional[str] = Field(
+        None, description="ISO 8601 run end timestamp"
+    )
+    hostname: Optional[str] = Field(None, description="Machine hostname")
+    python_version: Optional[str] = Field(None, description="Python version")
+    git: Optional[Dict[str, Any]] = Field(
+        None, description="Git info (commit_sha, is_dirty)"
+    )
+    workspace_config_hash: Optional[str] = Field(
+        None, description="SHA-256 of workspace config"
+    )
+    command: Optional[str] = Field(None, description="CLI command string")

@@ -65,6 +65,81 @@ class TestClaimRunManifest:
         assert data["extraction_runs_considered"] == ["run_001"]
 
 
+    def test_manifest_with_enriched_fields(self):
+        """Test manifest with all new enriched metadata fields populated."""
+        manifest = ClaimRunManifest(
+            claim_run_id="clmrun_003",
+            claim_id="CLM-003",
+            contextbuilder_version="0.5.0",
+            started_at="2026-01-28T12:00:00Z",
+            ended_at="2026-01-28T12:05:00Z",
+            hostname="BUILDSERVER",
+            python_version="3.11.5",
+            git={"commit_sha": "abc123def456", "is_dirty": False},
+            workspace_config_hash="deadbeef1234",
+            command="python -m context_builder.cli assess --all",
+        )
+
+        assert manifest.started_at == "2026-01-28T12:00:00Z"
+        assert manifest.ended_at == "2026-01-28T12:05:00Z"
+        assert manifest.hostname == "BUILDSERVER"
+        assert manifest.python_version == "3.11.5"
+        assert manifest.git["commit_sha"] == "abc123def456"
+        assert manifest.git["is_dirty"] is False
+        assert manifest.workspace_config_hash == "deadbeef1234"
+        assert manifest.command == "python -m context_builder.cli assess --all"
+
+    def test_manifest_backward_compat(self):
+        """Test that omitting new fields defaults to None (backward compat)."""
+        manifest = ClaimRunManifest(
+            claim_run_id="clmrun_004",
+            claim_id="CLM-004",
+            contextbuilder_version="0.3.0",
+        )
+
+        assert manifest.started_at is None
+        assert manifest.ended_at is None
+        assert manifest.hostname is None
+        assert manifest.python_version is None
+        assert manifest.git is None
+        assert manifest.workspace_config_hash is None
+        assert manifest.command is None
+
+    def test_manifest_deserialization_old_json(self):
+        """Test that old JSON without new fields deserializes cleanly."""
+        old_json = {
+            "schema_version": "claim_run_v1",
+            "claim_run_id": "clmrun_old",
+            "claim_id": "CLM-OLD",
+            "contextbuilder_version": "0.2.0",
+            "extraction_runs_considered": ["run_1"],
+            "stages_completed": ["reconciliation"],
+            "created_at": "2025-06-01T10:00:00",
+        }
+        manifest = ClaimRunManifest(**old_json)
+        assert manifest.claim_run_id == "clmrun_old"
+        assert manifest.started_at is None
+        assert manifest.git is None
+        assert manifest.hostname is None
+
+    def test_manifest_enriched_serialization_roundtrip(self):
+        """Test that enriched fields survive serialization roundtrip."""
+        manifest = ClaimRunManifest(
+            claim_run_id="clmrun_rt",
+            claim_id="CLM-RT",
+            contextbuilder_version="0.5.0",
+            started_at="2026-01-28T12:00:00Z",
+            git={"commit_sha": "abc123", "is_dirty": True},
+            hostname="MY-PC",
+        )
+        data = manifest.model_dump(mode="json")
+        restored = ClaimRunManifest(**data)
+        assert restored.started_at == "2026-01-28T12:00:00Z"
+        assert restored.git == {"commit_sha": "abc123", "is_dirty": True}
+        assert restored.hostname == "MY-PC"
+        assert restored.ended_at is None
+
+
 class TestFactProvenanceExtractionRunId:
     """Tests for FactProvenance with extraction_run_id field."""
 

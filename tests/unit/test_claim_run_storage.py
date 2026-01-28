@@ -6,7 +6,11 @@ import time
 import pytest
 from pathlib import Path
 
-from context_builder.storage.claim_run import ClaimRunStorage
+from context_builder.storage.claim_run import (
+    ClaimRunContext,
+    ClaimRunStorage,
+    generate_claim_run_id,
+)
 
 
 @pytest.fixture
@@ -256,3 +260,99 @@ class TestGetClaimRunPath:
         run_id = "clm_20260126_120000_abc123"
         path = storage.get_claim_run_path(run_id)
         assert path == storage.claim_runs_dir / run_id
+
+
+class TestModuleLevelGenerateId:
+    """Tests for module-level generate_claim_run_id function."""
+
+    def test_module_level_generate_id_format(self):
+        """Test module-level ID has correct format: clm_YYYYMMDD_HHMMSS_hash6."""
+        run_id = generate_claim_run_id()
+        assert run_id.startswith("clm_")
+        parts = run_id.split("_")
+        assert len(parts) == 4
+        assert len(parts[3]) == 6
+
+    def test_module_level_generate_id_with_salt(self):
+        """Test that salt is accepted and IDs are still valid."""
+        run_id = generate_claim_run_id(salt="my_salt")
+        assert run_id.startswith("clm_")
+        parts = run_id.split("_")
+        assert len(parts) == 4
+
+    def test_module_level_generate_id_unique(self):
+        """Test multiple module-level IDs are unique."""
+        ids = set()
+        for i in range(10):
+            ids.add(generate_claim_run_id(salt=str(i)))
+        assert len(ids) == 10
+
+
+class TestCreateWithExternalId:
+    """Tests for creating claim runs with externally-provided IDs."""
+
+    def test_create_with_external_id(self, storage):
+        """Test that provided claim_run_id is used."""
+        external_id = "clm_20260128_120000_shared"
+        ctx = ClaimRunContext(claim_run_id=external_id)
+
+        manifest = storage.create_claim_run(
+            extraction_runs=["run_1"],
+            contextbuilder_version="0.5.0",
+            run_context=ctx,
+        )
+        assert manifest.claim_run_id == external_id
+
+    def test_create_without_context_generates_id(self, storage):
+        """Test that omitting context auto-generates an ID."""
+        manifest = storage.create_claim_run(
+            extraction_runs=["run_1"],
+            contextbuilder_version="0.5.0",
+        )
+        assert manifest.claim_run_id.startswith("clm_")
+
+    def test_create_with_run_context_metadata(self, storage):
+        """Test that metadata fields from context appear in manifest."""
+        ctx = ClaimRunContext(
+            claim_run_id="clm_20260128_120000_meta01",
+            started_at="2026-01-28T12:00:00Z",
+            hostname="TEST-HOST",
+            python_version="3.11.5",
+            git={"commit_sha": "abc123", "is_dirty": False},
+            workspace_config_hash="hash123",
+            command="python -m context_builder.cli assess --all",
+        )
+
+        manifest = storage.create_claim_run(
+            extraction_runs=["run_1"],
+            contextbuilder_version="0.5.0",
+            run_context=ctx,
+        )
+
+        assert manifest.started_at == "2026-01-28T12:00:00Z"
+        assert manifest.hostname == "TEST-HOST"
+        assert manifest.python_version == "3.11.5"
+        assert manifest.git == {"commit_sha": "abc123", "is_dirty": False}
+        assert manifest.workspace_config_hash == "hash123"
+        assert manifest.command == "python -m context_builder.cli assess --all"
+
+    def test_two_claims_shared_id(self, tmp_path):
+        """Test two ClaimRunStorage instances share the same external ID."""
+        shared_id = "clm_20260128_120000_shared"
+        ctx = ClaimRunContext(claim_run_id=shared_id)
+
+        folder_a = tmp_path / "CLM-A"
+        folder_a.mkdir()
+        folder_b = tmp_path / "CLM-B"
+        folder_b.mkdir()
+
+        storage_a = ClaimRunStorage(folder_a)
+        storage_b = ClaimRunStorage(folder_b)
+
+        manifest_a = storage_a.create_claim_run(["run_1"], "0.5.0", run_context=ctx)
+        manifest_b = storage_b.create_claim_run(["run_2"], "0.5.0", run_context=ctx)
+
+        assert manifest_a.claim_run_id == shared_id
+        assert manifest_b.claim_run_id == shared_id
+        assert manifest_a.claim_id == "CLM-A"
+        assert manifest_b.claim_id == "CLM-B"

@@ -65,6 +65,21 @@ class WorkspaceRunPaths:
     complete_marker: Path  # run_root/.complete
 
 
+@dataclass
+class WorkspaceClaimRunPaths:
+    """Paths for workspace-scoped claim run outputs.
+
+    Lives at {workspace}/claim_runs/{clm_run_id}/.
+    """
+
+    run_root: Path
+    manifest_json: Path
+    summary_json: Path
+    logs_dir: Path
+    run_log: Path
+    complete_marker: Path
+
+
 def get_claim_paths(output_base: Path, claim_id: str) -> ClaimPaths:
     """Get paths for a claim (does not create directories)."""
     claim_root = output_base / claim_id
@@ -150,6 +165,48 @@ def create_workspace_run_structure(output_base: Path, run_id: str) -> WorkspaceR
         WorkspaceRunPaths with all directories created
     """
     paths = get_workspace_run_paths(output_base, run_id)
+    paths.run_root.mkdir(parents=True, exist_ok=True)
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    return paths
+
+
+def get_workspace_claim_run_paths(
+    workspace_root: Path, claim_run_id: str
+) -> WorkspaceClaimRunPaths:
+    """Get paths for a workspace-scoped claim run (does not create directories).
+
+    Args:
+        workspace_root: Workspace directory (e.g., workspaces/nsa/).
+        claim_run_id: Claim run identifier.
+
+    Returns:
+        WorkspaceClaimRunPaths with paths under workspace_root/claim_runs/{clm_run_id}/.
+    """
+    run_root = workspace_root / "claim_runs" / claim_run_id
+    logs_dir = run_root / "logs"
+    return WorkspaceClaimRunPaths(
+        run_root=run_root,
+        manifest_json=run_root / "manifest.json",
+        summary_json=run_root / "summary.json",
+        logs_dir=logs_dir,
+        run_log=logs_dir / "run.log",
+        complete_marker=run_root / ".complete",
+    )
+
+
+def create_workspace_claim_run_structure(
+    workspace_root: Path, claim_run_id: str
+) -> WorkspaceClaimRunPaths:
+    """Create workspace-scoped claim run directory structure.
+
+    Args:
+        workspace_root: Workspace directory (e.g., workspaces/nsa/).
+        claim_run_id: Claim run identifier.
+
+    Returns:
+        WorkspaceClaimRunPaths with all directories created.
+    """
+    paths = get_workspace_claim_run_paths(workspace_root, claim_run_id)
     paths.run_root.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     return paths

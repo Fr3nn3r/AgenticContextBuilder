@@ -58,6 +58,7 @@ class ClaimAssessmentService:
         claim_id: str,
         force_reconcile: bool = False,
         on_token_update: Optional[Callable[[int, int], None]] = None,
+        run_context=None,
     ) -> ClaimAssessmentResult:
         """Run full assessment for a claim.
 
@@ -73,6 +74,7 @@ class ClaimAssessmentService:
             claim_id: Claim to assess.
             force_reconcile: Force re-reconciliation even if recent exists.
             on_token_update: Callback for token usage updates (input, output).
+            run_context: Optional ClaimRunContext with shared ID and metadata.
 
         Returns:
             ClaimAssessmentResult with decision, payout, reconciliation report, etc.
@@ -80,7 +82,7 @@ class ClaimAssessmentService:
         logger.info(f"Starting assessment for claim {claim_id}")
 
         # Step 1: Run reconciliation
-        reconcile_result = self.reconciliation.reconcile(claim_id)
+        reconcile_result = self.reconciliation.reconcile(claim_id, run_context=run_context)
         if not reconcile_result.success:
             logger.error(f"Reconciliation failed for {claim_id}: {reconcile_result.error}")
             return ClaimAssessmentResult(
@@ -200,9 +202,15 @@ class ClaimAssessmentService:
             )
             logger.info(f"Wrote assessment.json to claim_run {claim_run_id}")
         except Exception as e:
-            logger.error(f"Failed to write assessment: {e}")
-            # Still return success since assessment completed
-            pass
+            logger.error(f"Failed to write assessment: {e}", exc_info=True)
+            return ClaimAssessmentResult(
+                claim_id=claim_id,
+                claim_run_id=claim_run_id,
+                success=False,
+                error=f"Assessment completed but file write failed: {e}",
+                reconciliation=reconcile_result.report,
+                assessment=assessment_response,
+            )
 
         # Step 6: Update manifest with stages_completed
         try:
@@ -219,7 +227,15 @@ class ClaimAssessmentService:
                     f"Updated manifest stages_completed: {manifest.stages_completed}"
                 )
         except Exception as e:
-            logger.warning(f"Failed to update manifest: {e}")
+            logger.error(f"Failed to update manifest: {e}", exc_info=True)
+            return ClaimAssessmentResult(
+                claim_id=claim_id,
+                claim_run_id=claim_run_id,
+                success=False,
+                error=f"Assessment completed but manifest update failed: {e}",
+                reconciliation=reconcile_result.report,
+                assessment=assessment_response,
+            )
 
         logger.info(
             f"Assessment complete for {claim_id}: "

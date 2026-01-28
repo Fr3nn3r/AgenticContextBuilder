@@ -26,7 +26,12 @@ from context_builder.ingestion import (
 from typing import List
 
 # Import pipeline components for the new pipeline command
-from context_builder.pipeline.discovery import discover_claims, discover_single_file
+from context_builder.pipeline.discovery import (
+    discover_claims,
+    discover_single_file,
+    discover_files,
+    discover_claim_folders,
+)
 from context_builder.pipeline.run import process_claim, StageConfig
 from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
 from context_builder.schemas.run_errors import PipelineStage
@@ -482,6 +487,9 @@ Examples:
   %(prog)s claims_folder/ -o output/claims --dry-run   # Preview only
   %(prog)s claims_folder/ -o output/claims --force     # Overwrite existing run
   %(prog)s --file claims/CLM-001/problem_doc.pdf      # Process single document
+  %(prog)s --files doc1.pdf doc2.pdf                   # Multiple files
+  %(prog)s --claims CLM-001/ CLM-002/                  # Multiple claim folders
+  %(prog)s --files a.pdf b.pdf --claim-id CLM-X        # Force into one claim
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -499,6 +507,26 @@ Examples:
         metavar="FILE",
         dest="single_file",
         help="Process a single document file. Claim ID is inferred from parent folder name.",
+    )
+    pipeline_parser.add_argument(
+        "--files",
+        metavar="FILE",
+        nargs="+",
+        dest="multi_files",
+        help="Process multiple document files. Grouped into claims by parent folder.",
+    )
+    pipeline_parser.add_argument(
+        "--claims",
+        metavar="DIR",
+        nargs="+",
+        dest="multi_claims",
+        help="Process multiple claim folders (each folder is one claim).",
+    )
+    pipeline_parser.add_argument(
+        "--claim-id",
+        metavar="ID",
+        dest="force_claim_id",
+        help="Force all files into a single claim with this ID (only with --files).",
     )
 
     # Output options for pipeline
@@ -777,6 +805,7 @@ Output:
 
 Examples:
   %(prog)s assess --claim-id 65196              # Assess single claim
+  %(prog)s assess --claim-id 64358 64393 64792  # Assess specific claims
   %(prog)s assess --all                          # Assess all claims
   %(prog)s assess --input-folder data/claims    # Assess claims from folder
   %(prog)s assess --claim-id 65196 --force-reconcile  # Force re-reconcile
@@ -786,8 +815,9 @@ Examples:
     )
     assess_parser.add_argument(
         "--claim-id",
+        nargs="+",
         metavar="ID",
-        help="Claim ID to assess (required unless --all)",
+        help="One or more claim IDs to assess",
     )
     assess_parser.add_argument(
         "--all",
@@ -1429,16 +1459,31 @@ def main():
                 print(f"\nUsage: --doc-types {','.join(available_types[:3])}")
                 sys.exit(0)
 
-            # Validate input: either input_path or --file required, but not both
+            # Validate input: exactly one input mode required
             single_file = getattr(args, 'single_file', None)
-            if not args.input_path and not single_file:
-                logger.error("Either input_path or --file is required")
-                print("[X] Error: Either provide a claims folder path or use --file <path>")
+            multi_files = getattr(args, 'multi_files', None)
+            multi_claims = getattr(args, 'multi_claims', None)
+            force_claim_id = getattr(args, 'force_claim_id', None)
+
+            input_modes = sum([
+                bool(args.input_path),
+                bool(single_file),
+                bool(multi_files),
+                bool(multi_claims),
+            ])
+            if input_modes == 0:
+                logger.error("No input mode specified")
+                print("[X] Error: Provide input_path, --file, --files, or --claims")
+                sys.exit(1)
+            if input_modes > 1:
+                logger.error("Multiple input modes specified")
+                print("[X] Error: Only one input mode allowed at a time (input_path, --file, --files, or --claims)")
                 sys.exit(1)
 
-            if args.input_path and single_file:
-                logger.error("Cannot specify both input_path and --file")
-                print("[X] Error: Cannot specify both input_path and --file")
+            # Validate --claim-id only with --files
+            if force_claim_id and not multi_files:
+                logger.error("--claim-id can only be used with --files")
+                print("[X] Error: --claim-id can only be used with --files")
                 sys.exit(1)
 
             # Resolve output directory from workspace config or default
@@ -1457,45 +1502,48 @@ def main():
                     logger.error(f"Failed to create output directory: {e}")
                     sys.exit(1)
 
-            # Discover claims: either from folder or single file
-            if single_file:
-                # Single file mode: process just one document
-                file_path = Path(single_file)
-                logger.info(f"Single file mode: {file_path}")
-                try:
-                    claim = discover_single_file(file_path)
-                    claims = [claim]
-                except FileNotFoundError as e:
-                    logger.error(str(e))
-                    print(f"[X] {e}")
-                    sys.exit(1)
-                except ValueError as e:
-                    logger.error(str(e))
-                    print(f"[X] {e}")
-                    sys.exit(1)
-            else:
-                # Folder mode: discover all claims
-                input_path = Path(args.input_path)
-                if not input_path.exists():
-                    logger.error(f"Path not found: {input_path}")
-                    sys.exit(1)
-
-                if not input_path.is_dir():
-                    logger.error(f"Input path is not a directory: {input_path}")
-                    sys.exit(1)
-
-                logger.info(f"Discovering claims in: {input_path}")
-                try:
+            # Discover claims based on input mode
+            try:
+                if single_file:
+                    # Single file mode
+                    file_path = Path(single_file)
+                    logger.info(f"Single file mode: {file_path}")
+                    claims = [discover_single_file(file_path)]
+                elif multi_files:
+                    # Multi-file mode
+                    logger.info(f"Multi-file mode: {len(multi_files)} files")
+                    claims = discover_files(
+                        [Path(f) for f in multi_files],
+                        claim_id=force_claim_id,
+                    )
+                elif multi_claims:
+                    # Multi-claim folder mode
+                    logger.info(f"Multi-claim mode: {len(multi_claims)} folders")
+                    claims = discover_claim_folders([Path(d) for d in multi_claims])
+                else:
+                    # Folder mode: discover all claims
+                    input_path = Path(args.input_path)
+                    if not input_path.exists():
+                        logger.error(f"Path not found: {input_path}")
+                        sys.exit(1)
+                    if not input_path.is_dir():
+                        logger.error(f"Input path is not a directory: {input_path}")
+                        sys.exit(1)
+                    logger.info(f"Discovering claims in: {input_path}")
                     claims = discover_claims(input_path)
-                except Exception as e:
-                    logger.error(f"Failed to discover claims: {e}")
-                    sys.exit(1)
+            except (FileNotFoundError, ValueError, NotADirectoryError) as e:
+                logger.error(str(e))
+                print(f"[X] {e}")
+                sys.exit(1)
+            except Exception as e:
+                logger.error(f"Failed to discover claims: {e}")
+                sys.exit(1)
 
-                if not claims:
-                    logger.warning("No claims found in input path")
-                    if not args.quiet:
-                        print(f"[!] No claims found in {input_path}")
-                    sys.exit(1)
+            if not claims:
+                logger.warning("No claims found")
+                if not args.quiet:
+                    print("[!] No claims found in the provided input")
+                sys.exit(1)
 
             logger.info(f"Discovered {len(claims)} claim(s)")
 
@@ -2032,9 +2080,14 @@ def main():
 
         elif args.command == "assess":
             # ========== ASSESS COMMAND ==========
+            import os
+
             from context_builder.api.services.claim_assessment import ClaimAssessmentService
             from context_builder.api.services.aggregation import AggregationService
             from context_builder.api.services.reconciliation import ReconciliationService
+            from context_builder.pipeline.helpers.metadata import get_git_info, compute_workspace_config_hash
+            from context_builder.pipeline.paths import create_workspace_claim_run_structure
+            from context_builder.storage.claim_run import generate_claim_run_id, ClaimRunContext
             from context_builder.storage.filesystem import FileStorage
 
             # Validate args
@@ -2107,19 +2160,36 @@ def main():
                 if not args.quiet:
                     print(f"\n[*] Found {len(claim_ids)} claims from input folder to assess")
             else:
-                claim_ids = [args.claim_id]
+                claim_ids = args.claim_id
+
+            # Generate shared claim run ID and context for this CLI invocation
+            shared_id = generate_claim_run_id()
+            run_start = datetime.utcnow().isoformat() + "Z"
+            run_context = ClaimRunContext(
+                claim_run_id=shared_id,
+                started_at=run_start,
+                hostname=os.environ.get("COMPUTERNAME", os.environ.get("HOSTNAME", "unknown")),
+                python_version=sys.version.split()[0],
+                git=get_git_info(),
+                workspace_config_hash=compute_workspace_config_hash(),
+                command=" ".join(sys.argv),
+            )
+
+            if not args.quiet and not args.dry_run:
+                print(f"[*] Claim run ID: {shared_id}")
 
             # Track results for summary
             results = {"success": [], "failed": []}
 
             for claim_id in claim_ids:
                 if args.dry_run:
-                    print(f"[DRY RUN] Would assess claim: {claim_id}")
+                    print(f"[DRY RUN] Would assess claim: {claim_id} (run: {shared_id})")
                     continue
 
                 result = assessment_service.assess(
                     claim_id=claim_id,
                     force_reconcile=getattr(args, "force_reconcile", False),
+                    run_context=run_context,
                 )
 
                 if result.success:
@@ -2144,16 +2214,67 @@ def main():
                     results["failed"].append(claim_id)
                     print(f"[X] {claim_id}: {result.error}")
 
+            # Create workspace-level claim run (after loop)
+            if not args.dry_run:
+                from context_builder.pipeline.helpers.io import write_json_atomic
+
+                run_end = datetime.utcnow().isoformat() + "Z"
+                ws_paths = create_workspace_claim_run_structure(workspace_root, shared_id)
+
+                # Write workspace-level manifest
+                ws_manifest = {
+                    "claim_run_id": shared_id,
+                    "started_at": run_start,
+                    "ended_at": run_end,
+                    "command": " ".join(sys.argv),
+                    "hostname": run_context.hostname,
+                    "python_version": run_context.python_version,
+                    "git": run_context.git,
+                    "workspace_config_hash": run_context.workspace_config_hash,
+                    "claims_assessed": list(claim_ids),
+                    "claims_succeeded": results["success"],
+                    "claims_failed": results["failed"],
+                }
+                write_json_atomic(ws_paths.manifest_json, ws_manifest)
+
+                # Write summary
+                decision_counts: dict = {}
+                for cid in results["success"]:
+                    # Read per-claim assessment to tally decisions
+                    claim_folder = storage._find_claim_folder(cid)
+                    if claim_folder:
+                        from context_builder.storage.claim_run import ClaimRunStorage
+                        crs = ClaimRunStorage(claim_folder)
+                        assessment_data = crs.read_from_claim_run(shared_id, "assessment.json")
+                        if assessment_data:
+                            dec = assessment_data.get("decision", "UNKNOWN")
+                            decision_counts[dec] = decision_counts.get(dec, 0) + 1
+
+                ws_summary = {
+                    "claim_run_id": shared_id,
+                    "total_claims": len(claim_ids),
+                    "succeeded": len(results["success"]),
+                    "failed": len(results["failed"]),
+                    "decision_distribution": decision_counts,
+                }
+                write_json_atomic(ws_paths.summary_json, ws_summary)
+
+                # Mark complete
+                ws_paths.complete_marker.touch()
+                logger.info(f"Workspace claim run complete: {ws_paths.run_root}")
+
             # Print summary if processing multiple claims
-            if args.all_claims and not args.quiet and not args.dry_run:
+            if len(claim_ids) > 1 and not args.quiet and not args.dry_run:
                 print(f"\n{'='*50}")
                 print("ASSESSMENT SUMMARY")
                 print(f"{'='*50}")
+                print(f"  Claim Run: {shared_id}")
                 print(f"  Successful: {len(results['success'])}")
                 print(f"  Failed: {len(results['failed'])}")
                 if results["failed"]:
                     for cid in results["failed"]:
                         print(f"    - {cid}")
+                print(f"  Workspace run: {ws_paths.run_root}")
 
         elif args.command == "coverage":
             # ========== COVERAGE COMMAND ==========

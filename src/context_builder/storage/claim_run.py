@@ -3,13 +3,45 @@
 import hashlib
 import json
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from context_builder.schemas.claim_run import ClaimRunManifest
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ClaimRunContext:
+    """Metadata context for a claim run, passed from CLI to storage."""
+
+    claim_run_id: Optional[str] = None
+    started_at: Optional[str] = None
+    hostname: Optional[str] = None
+    python_version: Optional[str] = None
+    git: Optional[Dict[str, Any]] = None
+    workspace_config_hash: Optional[str] = None
+    command: Optional[str] = None
+
+
+def generate_claim_run_id(salt: str = "") -> str:
+    """Generate a unique claim run ID (module-level, no storage instance needed).
+
+    Format: clm_{YYYYMMDD}_{HHMMSS}_{hash6}
+
+    Args:
+        salt: Optional salt for extra uniqueness.
+
+    Returns:
+        Unique claim run ID string.
+    """
+    now = datetime.utcnow()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+    hash_input = f"{timestamp}_{salt}_{now.microsecond}"
+    hash_suffix = hashlib.sha256(hash_input.encode()).hexdigest()[:6]
+    return f"clm_{timestamp}_{hash_suffix}"
 
 
 class ClaimRunStorage:
@@ -43,26 +75,49 @@ class ClaimRunStorage:
         self,
         extraction_runs: List[str],
         contextbuilder_version: str,
+        run_context: Optional[ClaimRunContext] = None,
     ) -> ClaimRunManifest:
         """Create a new claim run directory and manifest.
 
         Args:
             extraction_runs: Extraction run IDs being considered.
             contextbuilder_version: Version of ContextBuilder.
+            run_context: Optional metadata context (shared ID, git, timing, etc.).
 
         Returns:
             ClaimRunManifest for the new run.
         """
-        claim_run_id = self.generate_claim_run_id()
+        # Use provided ID from context, or auto-generate
+        if run_context and run_context.claim_run_id:
+            claim_run_id = run_context.claim_run_id
+        else:
+            claim_run_id = self.generate_claim_run_id()
+
         run_dir = self.claim_runs_dir / claim_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        manifest = ClaimRunManifest(
+        # Build manifest with optional enriched metadata
+        manifest_kwargs = dict(
             claim_run_id=claim_run_id,
             claim_id=self.claim_folder.name,
             extraction_runs_considered=extraction_runs,
             contextbuilder_version=contextbuilder_version,
         )
+        if run_context:
+            if run_context.started_at:
+                manifest_kwargs["started_at"] = run_context.started_at
+            if run_context.hostname:
+                manifest_kwargs["hostname"] = run_context.hostname
+            if run_context.python_version:
+                manifest_kwargs["python_version"] = run_context.python_version
+            if run_context.git is not None:
+                manifest_kwargs["git"] = run_context.git
+            if run_context.workspace_config_hash:
+                manifest_kwargs["workspace_config_hash"] = run_context.workspace_config_hash
+            if run_context.command:
+                manifest_kwargs["command"] = run_context.command
+
+        manifest = ClaimRunManifest(**manifest_kwargs)
 
         self.write_manifest(manifest)
         logger.info(f"Created claim run {claim_run_id} for {self.claim_folder.name}")
