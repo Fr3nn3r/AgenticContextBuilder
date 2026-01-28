@@ -162,7 +162,7 @@ class ScreeningResult(BaseModel):
         self.hard_fails = [
             c.check_id
             for c in self.checks
-            if c.verdict == CheckVerdict.FAIL and c.check_id in HARD_FAIL_CHECK_IDS
+            if c.verdict == CheckVerdict.FAIL and c.is_hard_fail
         ]
         self.auto_reject = len(self.hard_fails) > 0
         if self.auto_reject:

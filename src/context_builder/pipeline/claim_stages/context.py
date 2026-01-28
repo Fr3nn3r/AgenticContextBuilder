@@ -17,6 +17,7 @@ class ClaimStageTimings:
 
     reconciliation_ms: int = 0
     enrichment_ms: int = 0
+    screening_ms: int = 0
     processing_ms: int = 0
     total_ms: int = 0
 
@@ -27,6 +28,7 @@ class ClaimStageConfig:
 
     run_reconciliation: bool = True
     run_enrichment: bool = True  # Run enrichment stage (if enricher configured)
+    run_screening: bool = True  # Run screening stage (if screener configured)
     run_processing: bool = True
     processing_type: str = "assessment"  # Type of processing to run
 
@@ -65,6 +67,9 @@ class ClaimContext:
     # Loaded by reconciliation stage
     aggregated_facts: Optional[Dict[str, Any]] = None
     facts_run_id: Optional[str] = None  # Run ID the facts came from
+
+    # Set by screening stage
+    screening_result: Optional[Dict[str, Any]] = None
 
     # Set by processing stage
     processing_type: str = "assessment"

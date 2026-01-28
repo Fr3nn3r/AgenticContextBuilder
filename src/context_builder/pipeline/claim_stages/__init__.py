@@ -5,7 +5,7 @@ as opposed to the document-level stages in pipeline/stages/.
 
 Pipeline flow:
     Document Pipeline (per doc):  Ingestion -> Classification -> Extraction
-    Claim Pipeline (per claim):   Reconciliation -> Enrichment -> Processing
+    Claim Pipeline (per claim):   Reconciliation -> Enrichment -> Screening -> Processing
 
 The claim pipeline runs after all documents have been processed by the document pipeline.
 
@@ -29,6 +29,12 @@ from context_builder.pipeline.claim_stages.enrichment import (
     Enricher,
     DefaultEnricher,
     load_enricher_from_workspace,
+)
+from context_builder.pipeline.claim_stages.screening import (
+    ScreeningStage,
+    Screener,
+    DefaultScreener,
+    load_screener_from_workspace,
 )
 from context_builder.pipeline.claim_stages.processing import (
     ProcessingStage,
@@ -145,11 +151,16 @@ __all__ = [
     # Stage implementations
     "ReconciliationStage",
     "EnrichmentStage",
+    "ScreeningStage",
     "ProcessingStage",
     # Enrichment utilities
     "Enricher",
     "DefaultEnricher",
     "load_enricher_from_workspace",
+    # Screening utilities
+    "Screener",
+    "DefaultScreener",
+    "load_screener_from_workspace",
     # Processing utilities
     "ProcessorConfig",
     "Processor",
