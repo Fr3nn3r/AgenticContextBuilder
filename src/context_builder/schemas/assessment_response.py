@@ -135,6 +135,14 @@ class AssessmentResponse(BaseModel):
         default="claims_assessment_v2",
         description="Schema version for compatibility tracking",
     )
+    assessment_method: Literal["llm", "auto_reject"] = Field(
+        default="llm",
+        description=(
+            "How this assessment was produced: "
+            "'llm' for standard LLM assessment, "
+            "'auto_reject' for screening auto-rejection (no LLM called)"
+        ),
+    )
     claim_id: str = Field(description="Identifier of the assessed claim")
     assessment_timestamp: str = Field(
         description="ISO timestamp of when assessment was performed"
@@ -172,6 +180,7 @@ class AssessmentResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "schema_version": "claims_assessment_v2",
+                "assessment_method": "llm",
                 "claim_id": "CLM-12345",
                 "assessment_timestamp": "2026-01-28T10:30:00Z",
                 "decision": "APPROVE",

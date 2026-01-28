@@ -9,7 +9,7 @@ Environment variables:
     AZURE_OPENAI_API_KEY      - Azure OpenAI API key
     AZURE_OPENAI_BASE_URL     - Azure OpenAI endpoint (e.g., https://xxx.openai.azure.com/openai/v1/)
     AZURE_OPENAI_ENDPOINT     - Alternative to BASE_URL (e.g., https://xxx.openai.azure.com/)
-    AZURE_OPENAI_API_VERSION  - API version (default: 2024-02-15-preview)
+    AZURE_OPENAI_API_VERSION  - API version (default: 2024-08-01-preview)
     AZURE_OPENAI_DEPLOYMENT   - Default deployment name (default: gpt-4o)
 
     # Standard OpenAI (fallback)
@@ -23,7 +23,7 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Default values
-DEFAULT_API_VERSION = "2024-02-15-preview"
+DEFAULT_API_VERSION = "2024-08-01-preview"
 DEFAULT_DEPLOYMENT = "gpt-4o"
 
 

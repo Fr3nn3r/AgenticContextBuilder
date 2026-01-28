@@ -220,6 +220,10 @@ Provide your assessment as a JSON object with the following structure:
         # Get JSON schema from Pydantic model
         schema = AssessmentResponse.model_json_schema()
 
+        # OpenAI strict mode requires additionalProperties: false on all objects
+        # and all properties must be required
+        schema = self._prepare_schema_for_strict_mode(schema)
+
         # Use json_schema mode for strict enforcement
         return {
             "type": "json_schema",
@@ -229,6 +233,97 @@ Provide your assessment as a JSON object with the following structure:
                 "schema": schema,
             },
         }
+
+    def _prepare_schema_for_strict_mode(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare a JSON schema for OpenAI strict mode.
+
+        OpenAI strict mode requires:
+        - additionalProperties: false on all objects
+        - All properties listed in required
+        - No sibling keywords alongside $ref
+        - $ref references must be resolved
+        """
+        import copy
+        schema = copy.deepcopy(schema)
+        defs = schema.get("$defs", {})
+
+        # Recursively resolve $ref and fix all objects
+        schema = self._resolve_and_fix(schema, defs)
+
+        # Remove $defs since we've inlined everything
+        schema.pop("$defs", None)
+        return schema
+
+    def _resolve_and_fix(self, schema: Dict[str, Any], defs: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively resolve $ref references and fix for strict mode."""
+        import copy
+
+        if not isinstance(schema, dict):
+            return schema
+
+        # Resolve $ref by inlining the definition
+        if "$ref" in schema:
+            ref_path = schema["$ref"]  # e.g. "#/$defs/CheckResult"
+            def_name = ref_path.split("/")[-1]
+            if def_name in defs:
+                resolved = copy.deepcopy(defs[def_name])
+                resolved = self._resolve_and_fix(resolved, defs)
+                return resolved
+            return schema
+
+        # Fix object types
+        if schema.get("type") == "object":
+            schema["additionalProperties"] = False
+            if "properties" in schema:
+                schema["required"] = list(schema["properties"].keys())
+                for key, prop_schema in schema["properties"].items():
+                    schema["properties"][key] = self._resolve_and_fix(prop_schema, defs)
+
+        # Fix array items
+        if schema.get("type") == "array" and "items" in schema:
+            schema["items"] = self._resolve_and_fix(schema["items"], defs)
+
+        # Fix anyOf/oneOf variants
+        for key in ("anyOf", "oneOf"):
+            if key in schema:
+                schema[key] = [self._resolve_and_fix(v, defs) for v in schema[key]]
+
+        # Fix allOf (merge into single schema)
+        if "allOf" in schema:
+            merged = {}
+            for sub in schema["allOf"]:
+                resolved = self._resolve_and_fix(sub, defs)
+                merged.update(resolved)
+            schema.pop("allOf")
+            schema.update(merged)
+
+        # Remove 'default' - not allowed in strict mode
+        schema.pop("default", None)
+
+        # Remove examples
+        schema.pop("examples", None)
+
+        return schema
+
+    def _normalize_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize LLM response to match expected schema.
+
+        Fixes common LLM non-compliance issues like using values
+        that are valid for one field but not another.
+        """
+        # Valid check result values
+        valid_check_results = {"PASS", "FAIL", "INCONCLUSIVE", "NOT_CHECKED"}
+
+        for check in result.get("checks", []):
+            if isinstance(check, dict) and check.get("result") not in valid_check_results:
+                original = check["result"]
+                check["result"] = "INCONCLUSIVE"
+                logger.debug(
+                    f"Normalized check result '{original}' -> 'INCONCLUSIVE' "
+                    f"for check {check.get('check_name', '?')}"
+                )
+
+        return result
 
     def _call_with_retry(
         self,
@@ -286,10 +381,10 @@ Provide your assessment as a JSON object with the following structure:
                     if on_token_update:
                         on_token_update(total_input_tokens, total_output_tokens)
 
-                    logger.debug(
-                        f"Token usage: {total_input_tokens} input + "
-                        f"{total_output_tokens} output = "
-                        f"{response.usage.total_tokens} total"
+                    logger.info(
+                        f"Assessment tokens: {total_input_tokens:,} input + "
+                        f"{total_output_tokens:,} output = "
+                        f"{response.usage.total_tokens:,} total"
                     )
 
                 # Extract and parse response
@@ -298,6 +393,9 @@ Provide your assessment as a JSON object with the following structure:
                     raise ValueError("Empty response from API")
 
                 result = json.loads(content)
+
+                # Normalize LLM output before validation
+                result = self._normalize_response(result)
 
                 # Validate with Pydantic
                 validated = AssessmentResponse.model_validate(result)
@@ -329,7 +427,7 @@ Provide your assessment as a JSON object with the following structure:
                 error_msg = str(e).lower()
                 if "json_schema" in error_msg or "response_format" in error_msg:
                     logger.warning(
-                        f"json_schema mode not supported, falling back to json_object"
+                        f"json_schema mode not supported, falling back to json_object: {e}"
                     )
                     use_strict_schema = False
                     # Don't count this as an attempt, retry immediately
@@ -343,7 +441,7 @@ Provide your assessment as a JSON object with the following structure:
                 error_msg = str(e).lower()
                 if "json_schema" in error_msg or "response_format" in error_msg:
                     logger.warning(
-                        f"json_schema mode not supported, falling back to json_object"
+                        f"json_schema mode not supported, falling back to json_object: {e}"
                     )
                     use_strict_schema = False
                     # Don't count this as an attempt, retry immediately

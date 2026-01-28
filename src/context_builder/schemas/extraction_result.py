@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 class CellReference(BaseModel):
@@ -41,10 +41,21 @@ class FieldProvenance(BaseModel):
 class ExtractedField(BaseModel):
     """A single extracted field with value, confidence, and provenance."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", coerce_numbers_to_str=True)
 
     name: str = Field(..., description="Field name (e.g., 'claim_number')")
     value: Union[str, List[str], None] = Field(None, description="Raw extracted value (string or list for multi-value fields)")
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def coerce_numeric_value(cls, v: Any) -> Any:
+        """Coerce numeric values to strings. LLMs sometimes return ints/floats for fields like mileage."""
+        if isinstance(v, (int, float)):
+            return str(v)
+        if isinstance(v, list):
+            return [str(item) if isinstance(item, (int, float)) else item for item in v]
+        return v
+
     normalized_value: Optional[str] = Field(None, description="Value after normalization")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence")
     status: Literal["present", "missing", "uncertain"] = Field(

@@ -266,6 +266,156 @@ def discover_single_file(file_path: Path) -> DiscoveredClaim:
     )
 
 
+def discover_files(
+    file_paths: List[Path],
+    claim_id: Optional[str] = None,
+) -> List[DiscoveredClaim]:
+    """
+    Discover multiple document files and group them into claims.
+
+    Files are grouped by parent folder — each unique parent becomes one claim.
+    If claim_id is provided, all files are forced into a single claim.
+
+    Args:
+        file_paths: List of paths to document files
+        claim_id: If provided, forces all files into one claim with this ID
+
+    Returns:
+        List of DiscoveredClaim objects
+
+    Raises:
+        FileNotFoundError: If any file does not exist
+        ValueError: If any file is not a supported type or cannot be loaded
+    """
+    if not file_paths:
+        raise ValueError("No file paths provided")
+
+    # Deduplicate by resolved path
+    seen_resolved: Dict[Path, Path] = {}  # resolved -> original
+    unique_paths: List[Path] = []
+    for fp in file_paths:
+        fp = Path(fp)
+        resolved = fp.resolve()
+        if resolved in seen_resolved:
+            logger.warning(
+                f"Duplicate path skipped: {fp} (same as {seen_resolved[resolved]})"
+            )
+            continue
+        seen_resolved[resolved] = fp
+        unique_paths.append(fp)
+
+    # Validate all files exist and are supported types
+    supported = PDF_EXTENSIONS | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
+    for fp in unique_paths:
+        if not fp.exists():
+            raise FileNotFoundError(f"File not found: {fp}")
+        if not fp.is_file():
+            raise ValueError(f"Path is not a file: {fp}")
+        source_type = _get_source_type(fp)
+        if source_type is None:
+            raise ValueError(
+                f"Unsupported file type: {fp.suffix}. "
+                f"Supported: {', '.join(sorted(supported))}"
+            )
+
+    # Load all documents
+    docs_by_file: Dict[Path, DiscoveredDocument] = {}
+    for fp in unique_paths:
+        doc = _load_document(fp)
+        if doc is None:
+            raise ValueError(f"Failed to load document: {fp}")
+        docs_by_file[fp] = doc
+
+    # Group by parent folder (or single claim if claim_id forced)
+    if claim_id:
+        # All files into one claim
+        all_docs = [docs_by_file[fp] for fp in unique_paths]
+        source_path = unique_paths[0].parent
+        logger.info(
+            f"Multi-file mode (forced claim_id={claim_id}): "
+            f"{len(all_docs)} documents"
+        )
+        return [DiscoveredClaim(claim_id=claim_id, source_path=source_path, documents=all_docs)]
+
+    # Group by parent folder
+    groups: Dict[Path, List[DiscoveredDocument]] = {}
+    for fp in unique_paths:
+        parent = fp.parent.resolve()
+        if parent not in groups:
+            groups[parent] = []
+        groups[parent].append(docs_by_file[fp])
+
+    claims = []
+    for parent, docs in sorted(groups.items()):
+        cid = _sanitize_claim_id(parent.name)
+        if not cid:
+            cid = "unknown_claim"
+        claims.append(DiscoveredClaim(claim_id=cid, source_path=parent, documents=docs))
+        logger.debug(f"Grouped {len(docs)} files under claim {cid}")
+
+    logger.info(f"Multi-file mode: {len(claims)} claim(s) from {len(unique_paths)} files")
+    return claims
+
+
+def discover_claim_folders(folder_paths: List[Path]) -> List[DiscoveredClaim]:
+    """
+    Discover claims from explicit list of claim folders.
+
+    Each folder is treated as a single claim (unlike discover_claims which
+    scans a root directory for subdirectories).
+
+    Args:
+        folder_paths: List of paths to claim folders
+
+    Returns:
+        List of DiscoveredClaim objects
+
+    Raises:
+        FileNotFoundError: If any folder does not exist
+        NotADirectoryError: If any path is not a directory
+        ValueError: If duplicate claim IDs are detected
+    """
+    if not folder_paths:
+        raise ValueError("No folder paths provided")
+
+    # Validate all paths exist and are directories
+    for fp in folder_paths:
+        fp = Path(fp)
+        if not fp.exists():
+            raise FileNotFoundError(f"Folder not found: {fp}")
+        if not fp.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: {fp}")
+
+    # Discover documents in each folder
+    claims = []
+    seen_ids: Dict[str, Path] = {}  # claim_id -> first folder path
+
+    for fp in folder_paths:
+        fp = Path(fp)
+        claim_id = _sanitize_claim_id(fp.name)
+        if not claim_id:
+            claim_id = "unknown_claim"
+
+        # Check for duplicate claim IDs from different paths
+        if claim_id in seen_ids:
+            raise ValueError(
+                f"Duplicate claim ID '{claim_id}' from folders: "
+                f"{seen_ids[claim_id]} and {fp}"
+            )
+
+        docs = discover_documents(fp)
+        if not docs:
+            logger.warning(f"Skipping empty folder: {fp}")
+            continue
+
+        seen_ids[claim_id] = fp
+        claims.append(DiscoveredClaim(claim_id=claim_id, source_path=fp, documents=docs))
+        logger.debug(f"Discovered claim: {claim_id} ({len(docs)} docs)")
+
+    logger.info(f"Multi-claim mode: {len(claims)} claim(s) from {len(folder_paths)} folders")
+    return claims
+
+
 def check_existing_ingestion(
     output_base: Path,
     claim_id: str,

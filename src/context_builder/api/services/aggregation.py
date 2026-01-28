@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
+from context_builder.extraction.normalizers import safe_float
 from context_builder.schemas.claim_facts import (
     AggregatedFact,
     AggregatedLineItem,
@@ -548,10 +549,10 @@ class AggregationService:
                         AggregatedLineItem(
                             item_code=item.get("item_code"),
                             description=item.get("description", ""),
-                            quantity=item.get("quantity"),
+                            quantity=safe_float(item.get("quantity"), default=None),
                             unit=item.get("unit"),
-                            unit_price=item.get("unit_price"),
-                            total_price=item.get("total_price"),
+                            unit_price=safe_float(item.get("unit_price"), default=None),
+                            total_price=safe_float(item.get("total_price"), default=None),
                             item_type=item.get("item_type"),
                             page_number=item.get("page_number"),
                             source=provenance,

@@ -7,15 +7,17 @@ Raw values from LLM are preserved as-is without transformation.
 from typing import Any, Callable
 
 
-def safe_float(value: Any, default: float = 0.0) -> float:
+def safe_float(value: Any, default: float = 0.0) -> float | None:
     """
     Convert any value to float safely.
 
-    Handles the common case where LLM returns a string instead of a number.
+    Handles the common case where LLM returns a string instead of a number,
+    including European decimal formats (comma as decimal separator) and
+    values with trailing unit suffixes (e.g., '0,2 h', '3 m²').
 
     Args:
         value: Any value from LLM extraction (str, int, float, None, etc.)
-        default: Default value if conversion fails
+        default: Default value if conversion fails (pass None for optional fields)
 
     Returns:
         Float representation of the value, or default if conversion fails
@@ -25,14 +27,40 @@ def safe_float(value: Any, default: float = 0.0) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
-        # Remove currency symbols, spaces, and handle European decimals
-        cleaned = value.strip().replace(" ", "").replace("'", "")
-        # Handle CHF prefix/suffix
+        # Remove currency symbols, spaces around currency, and thousand separators
+        cleaned = value.strip()
+        # Strip trailing unit suffixes (e.g., "0,2 h", "3 m²", "15 Stk")
+        import re
+        cleaned = re.sub(r'\s+[a-zA-Z²³µ%°]+\.?$', '', cleaned)
+        # Remove thousand-separator apostrophes (Swiss: 1'234.50)
+        cleaned = cleaned.replace("'", "")
+        # Remove currency symbols
         for currency in ["CHF", "EUR", "USD", "Fr.", "Fr"]:
             cleaned = cleaned.replace(currency, "")
         cleaned = cleaned.strip()
         if not cleaned:
             return default
+        # Handle European number formats:
+        # "1.234,50" → 1234.50 (dot=thousands, comma=decimal)
+        # "249,77"   → 249.77  (comma=decimal)
+        # "1,234.50" → 1234.50 (comma=thousands, dot=decimal) - US format
+        has_dot = '.' in cleaned
+        has_comma = ',' in cleaned
+        if has_dot and has_comma:
+            # Both present: last separator is the decimal
+            last_dot = cleaned.rfind('.')
+            last_comma = cleaned.rfind(',')
+            if last_comma > last_dot:
+                # European: 1.234,50 → remove dots, replace comma with dot
+                cleaned = cleaned.replace('.', '').replace(',', '.')
+            else:
+                # US: 1,234.50 → remove commas
+                cleaned = cleaned.replace(',', '')
+        elif has_comma:
+            # Only comma: treat as decimal separator
+            # "249,77" → "249.77"
+            cleaned = cleaned.replace(',', '.')
+        # else: only dot or no separator → standard float format
         try:
             return float(cleaned)
         except ValueError:
