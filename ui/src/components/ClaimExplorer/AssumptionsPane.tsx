@@ -29,28 +29,28 @@ export function AssumptionsPane({ assumptions, className }: AssumptionsPaneProps
 
   if (assumptions.length === 0) {
     return (
-      <div className={cn("bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700", className)}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <Info className="h-4 w-4 text-slate-400" />
-          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Assumptions</h3>
+      <div className={cn("bg-card rounded-lg border border-border", className)}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Info className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-medium text-foreground">Assumptions</h3>
         </div>
         <div className="p-4 text-center">
-          <p className="text-sm text-slate-500 dark:text-slate-400">No assumptions made</p>
+          <p className="text-sm text-muted-foreground">No assumptions made</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cn("bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700", className)}>
+    <div className={cn("bg-card rounded-lg border border-border", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <h3 className="text-sm font-medium text-foreground">
             Assumptions
           </h3>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-muted-foreground">
             ({assumptions.length})
           </span>
         </div>
@@ -65,12 +65,12 @@ export function AssumptionsPane({ assumptions, className }: AssumptionsPaneProps
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-              <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300 w-10">#</th>
-              <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Field</th>
-              <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Assumed Value</th>
-              <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Impact</th>
-              <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Reason</th>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="text-left px-4 py-2 font-medium text-foreground w-10">#</th>
+              <th className="text-left px-4 py-2 font-medium text-foreground">Field</th>
+              <th className="text-left px-4 py-2 font-medium text-foreground">Assumed Value</th>
+              <th className="text-center px-4 py-2 font-medium text-foreground">Impact</th>
+              <th className="text-left px-4 py-2 font-medium text-foreground">Reason</th>
             </tr>
           </thead>
           <tbody>
@@ -80,25 +80,25 @@ export function AssumptionsPane({ assumptions, className }: AssumptionsPaneProps
                 <tr
                   key={`${assumption.check_number}-${assumption.field}-${idx}`}
                   className={cn(
-                    "border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                    assumption.impact === "high" && "bg-red-50/50 dark:bg-red-900/10"
+                    "border-b border-border hover:bg-muted/50",
+                    assumption.impact === "high" && "bg-destructive/5"
                   )}
                 >
-                  <td className="px-4 py-2 text-slate-500 dark:text-slate-400 font-mono text-xs">
+                  <td className="px-4 py-2 text-muted-foreground font-mono text-xs">
                     {assumption.check_number}
                   </td>
-                  <td className="px-4 py-2 font-medium text-slate-700 dark:text-slate-200">
+                  <td className="px-4 py-2 font-medium text-foreground">
                     {formatFieldName(assumption.field)}
                   </td>
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300 font-mono text-xs">
-                    {assumption.assumed_value || <span className="text-slate-400 italic">empty</span>}
+                  <td className="px-4 py-2 text-muted-foreground font-mono text-xs">
+                    {assumption.assumed_value || <span className="opacity-60 italic">empty</span>}
                   </td>
                   <td className="px-4 py-2 text-center">
                     <StatusBadge variant={config.variant} size="sm">
                       {config.label}
                     </StatusBadge>
                   </td>
-                  <td className="px-4 py-2 text-slate-500 dark:text-slate-400 text-xs max-w-[200px] truncate" title={assumption.reason}>
+                  <td className="px-4 py-2 text-muted-foreground text-xs max-w-[200px] truncate" title={assumption.reason}>
                     {assumption.reason}
                   </td>
                 </tr>

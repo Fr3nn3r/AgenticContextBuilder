@@ -252,11 +252,11 @@ export function ClaimAssessmentTab({
               <h2 className={cn("text-xl font-bold", decisionConfig.textColor)}>
                 {decisionConfig.label}
               </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {getDecisionDescription()}
               </p>
               {assessment.assessed_at && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1">
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   Assessed {formatTimestamp(assessment.assessed_at)}
                 </p>
@@ -265,8 +265,8 @@ export function ClaimAssessmentTab({
                 <p className={cn(
                   "text-sm mt-2 italic",
                   assessment.decision === "REJECT"
-                    ? "text-red-600 dark:text-red-400 font-medium"
-                    : "text-slate-600 dark:text-slate-400"
+                    ? "text-destructive font-medium"
+                    : "text-muted-foreground"
                 )}>
                   "{assessment.decision_rationale}"
                 </p>

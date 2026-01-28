@@ -76,19 +76,19 @@ function DataField({
     <div
       className={cn(
         "flex items-start gap-2 py-2 px-3 rounded-lg transition-colors",
-        "bg-slate-50 dark:bg-slate-800/50",
-        onClick && "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        "bg-muted/50",
+        onClick && "cursor-pointer hover:bg-muted"
       )}
       onClick={onClick}
     >
-      {Icon && <Icon className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />}
+      {Icon && <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />}
       <div className="min-w-0 flex-1">
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
           {label}
         </span>
         <span
           className={cn(
-            "text-sm font-medium text-slate-700 dark:text-slate-200 block truncate",
+            "text-sm font-medium text-foreground block truncate",
             mono && "font-mono"
           )}
           title={value}
@@ -144,20 +144,20 @@ export function FactsSummaryCard({ facts, onViewSource }: FactsSummaryCardProps)
 
   if (!hasVehicleData && !hasPolicyData && !hasIncidentData) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-2">
           Claim Facts
         </h3>
-        <p className="text-sm text-slate-500">No facts extracted</p>
+        <p className="text-sm text-muted-foreground">No facts extracted</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-semibold text-foreground">
           Key Facts
         </h3>
       </div>
@@ -166,7 +166,7 @@ export function FactsSummaryCard({ facts, onViewSource }: FactsSummaryCardProps)
         {/* Vehicle section */}
         {hasVehicleData && (
           <div className="space-y-2">
-            <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
+            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               <Car className="h-3 w-3" />
               Vehicle
             </h4>
@@ -220,7 +220,7 @@ export function FactsSummaryCard({ facts, onViewSource }: FactsSummaryCardProps)
         {/* Policy section */}
         {hasPolicyData && (
           <div className="space-y-2">
-            <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
+            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               <Shield className="h-3 w-3" />
               Policy
             </h4>
@@ -267,7 +267,7 @@ export function FactsSummaryCard({ facts, onViewSource }: FactsSummaryCardProps)
         {/* Incident section */}
         {hasIncidentData && (
           <div className="space-y-2">
-            <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
+            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               <Calendar className="h-3 w-3" />
               Incident
             </h4>

@@ -41,37 +41,37 @@ export function AssessmentProgressCard({
       className={cn(
         "fixed bottom-4 right-4 z-50",
         "w-80 rounded-lg shadow-lg border",
-        "bg-white dark:bg-slate-900",
-        isComplete && "border-green-300 dark:border-green-700",
-        isError && "border-red-300 dark:border-red-700",
-        isRunning && "border-blue-300 dark:border-blue-700"
+        "bg-card",
+        isComplete && "border-success/50",
+        isError && "border-destructive/50",
+        isRunning && "border-info/50"
       )}
     >
       {/* Header */}
       <div
         className={cn(
           "px-4 py-3 rounded-t-lg flex items-center justify-between",
-          isComplete && "bg-green-50 dark:bg-green-900/30",
-          isError && "bg-red-50 dark:bg-red-900/30",
-          isRunning && "bg-blue-50 dark:bg-blue-900/30"
+          isComplete && "bg-success/10",
+          isError && "bg-destructive/10",
+          isRunning && "bg-info/10"
         )}
       >
         <div className="flex items-center gap-2">
           {isRunning && (
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
+            <Loader2 className="h-4 w-4 animate-spin text-info" />
           )}
           {isComplete && (
-            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <CheckCircle2 className="h-4 w-4 text-success" />
           )}
           {isError && (
-            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            <XCircle className="h-4 w-4 text-destructive" />
           )}
           <span
             className={cn(
               "font-medium text-sm",
-              isComplete && "text-green-700 dark:text-green-300",
-              isError && "text-red-700 dark:text-red-300",
-              isRunning && "text-blue-700 dark:text-blue-300"
+              isComplete && "text-success",
+              isError && "text-destructive",
+              isRunning && "text-info"
             )}
           >
             {isRunning && "Running Assessment..."}
@@ -82,7 +82,7 @@ export function AssessmentProgressCard({
         {(isComplete || isError) && onDismiss && (
           <button
             onClick={onDismiss}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            className="text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -94,23 +94,23 @@ export function AssessmentProgressCard({
         {/* Stage progress */}
         {isRunning && (
           <div>
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
               <span>Stage</span>
               <span
                 className={cn(
                   progress.stageStatus === "running"
-                    ? "text-blue-600 dark:text-blue-400"
-                    : "text-slate-600 dark:text-slate-300"
+                    ? "text-info"
+                    : "text-foreground"
                 )}
               >
                 {stageLabel}
               </span>
             </div>
-            <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className={cn(
                   "h-full rounded-full transition-all duration-500",
-                  "bg-blue-500 animate-pulse"
+                  "bg-info animate-pulse"
                 )}
                 style={{
                   width: progress.stage === "processing" ? "60%" : "30%",
@@ -122,42 +122,39 @@ export function AssessmentProgressCard({
 
         {/* Token counts */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 rounded">
-            <ArrowUp className="h-4 w-4 text-green-500" />
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded">
+            <ArrowUp className="h-4 w-4 text-success" />
             <div>
-              <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <div className="text-sm font-medium text-foreground">
                 {progress.inputTokens.toLocaleString()}
               </div>
-              <div className="text-xs text-slate-500">Input tokens</div>
+              <div className="text-xs text-muted-foreground">Input tokens</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 rounded">
-            <ArrowDown className="h-4 w-4 text-blue-500" />
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded">
+            <ArrowDown className="h-4 w-4 text-info" />
             <div>
-              <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <div className="text-sm font-medium text-foreground">
                 {progress.outputTokens.toLocaleString()}
               </div>
-              <div className="text-xs text-slate-500">Output tokens</div>
+              <div className="text-xs text-muted-foreground">Output tokens</div>
             </div>
           </div>
         </div>
 
         {/* Completion info */}
         {isComplete && progress.decision && (
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+          <div className="pt-2 border-t border-border">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600 dark:text-slate-400">
+              <span className="text-sm text-muted-foreground">
                 Decision:
               </span>
               <span
                 className={cn(
                   "text-sm font-medium",
-                  progress.decision === "APPROVE" &&
-                    "text-green-600 dark:text-green-400",
-                  progress.decision === "REJECT" &&
-                    "text-red-600 dark:text-red-400",
-                  progress.decision === "REFER_TO_HUMAN" &&
-                    "text-amber-600 dark:text-amber-400"
+                  progress.decision === "APPROVE" && "text-success",
+                  progress.decision === "REJECT" && "text-destructive",
+                  progress.decision === "REFER_TO_HUMAN" && "text-warning"
                 )}
               >
                 {progress.decision}
@@ -166,7 +163,7 @@ export function AssessmentProgressCard({
             {onViewResult && (
               <button
                 onClick={onViewResult}
-                className="mt-2 w-full py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                className="mt-2 w-full py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded transition-colors"
               >
                 View Result
               </button>
@@ -176,7 +173,7 @@ export function AssessmentProgressCard({
 
         {/* Error message */}
         {isError && progress.error && (
-          <div className="p-2 bg-red-50 dark:bg-red-900/30 rounded text-sm text-red-600 dark:text-red-400">
+          <div className="p-2 bg-destructive/10 rounded text-sm text-destructive">
             {progress.error}
           </div>
         )}

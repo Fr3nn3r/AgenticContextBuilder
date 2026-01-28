@@ -39,11 +39,11 @@ function StatusIcon({
 
   switch (status) {
     case "pass":
-      return <CheckCircle2 className={cn(sizeClass, "text-green-600 dark:text-green-400")} />;
+      return <CheckCircle2 className={cn(sizeClass, "text-success")} />;
     case "warn":
-      return <AlertTriangle className={cn(sizeClass, "text-amber-500")} />;
+      return <AlertTriangle className={cn(sizeClass, "text-warning")} />;
     case "fail":
-      return <XCircle className={cn(sizeClass, "text-red-600 dark:text-red-400")} />;
+      return <XCircle className={cn(sizeClass, "text-destructive")} />;
   }
 }
 
@@ -56,9 +56,9 @@ function CounterBadge({
   status: "pass" | "warn" | "fail";
 }) {
   const colors = {
-    pass: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400",
-    warn: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
-    fail: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400",
+    pass: "bg-success/10 text-success",
+    warn: "bg-warning/10 text-warning",
+    fail: "bg-destructive/10 text-destructive",
   };
 
   return (
@@ -77,20 +77,20 @@ function GateRow({ gate }: { gate: GateResult }) {
   return (
     <div className={cn(
       "flex items-center gap-2 py-1.5 px-2 rounded text-sm",
-      gate.status === "fail" && "bg-red-50 dark:bg-red-900/10",
-      gate.status === "warn" && "bg-amber-50 dark:bg-amber-900/10"
+      gate.status === "fail" && "bg-destructive/10",
+      gate.status === "warn" && "bg-warning/10"
     )}>
       <StatusIcon status={gate.status} />
       <span className={cn(
         "flex-1 truncate",
-        gate.status === "pass" && "text-slate-600 dark:text-slate-400",
-        gate.status === "warn" && "text-amber-700 dark:text-amber-300",
-        gate.status === "fail" && "text-red-700 dark:text-red-300"
+        gate.status === "pass" && "text-muted-foreground",
+        gate.status === "warn" && "text-warning",
+        gate.status === "fail" && "text-destructive"
       )}>
         {gate.field}
       </span>
       {gate.message && (
-        <span className="text-xs text-slate-400 truncate max-w-[120px]" title={gate.message}>
+        <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={gate.message}>
           {gate.message}
         </span>
       )}
@@ -169,27 +169,27 @@ export function QualityGateSummary({ claim, facts, className }: QualityGateSumma
 
   return (
     <div className={cn(
-      "bg-white dark:bg-slate-900 rounded-lg border overflow-hidden",
-      overallStatus === "fail" && "border-red-200 dark:border-red-900",
-      overallStatus === "warn" && "border-amber-200 dark:border-amber-900",
-      overallStatus === "pass" && "border-slate-200 dark:border-slate-700",
+      "bg-card rounded-lg border overflow-hidden",
+      overallStatus === "fail" && "border-destructive/30",
+      overallStatus === "warn" && "border-warning/30",
+      overallStatus === "pass" && "border-border",
       className
     )}>
       {/* Header */}
       <div className={cn(
         "px-4 py-3 border-b flex items-center justify-between",
-        overallStatus === "fail" && "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900",
-        overallStatus === "warn" && "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900",
-        overallStatus === "pass" && "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700"
+        overallStatus === "fail" && "bg-destructive/10 border-destructive/30",
+        overallStatus === "warn" && "bg-warning/10 border-warning/30",
+        overallStatus === "pass" && "bg-muted/50 border-border"
       )}>
         <div className="flex items-center gap-2">
           <ShieldCheck className={cn(
             "h-4 w-4",
-            overallStatus === "pass" && "text-green-600 dark:text-green-400",
-            overallStatus === "warn" && "text-amber-500",
-            overallStatus === "fail" && "text-red-600 dark:text-red-400"
+            overallStatus === "pass" && "text-success",
+            overallStatus === "warn" && "text-warning",
+            overallStatus === "fail" && "text-destructive"
           )} />
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <span className="text-sm font-semibold text-foreground">
             Quality Gate
           </span>
         </div>
@@ -206,8 +206,8 @@ export function QualityGateSummary({ claim, facts, className }: QualityGateSumma
       <div className="p-3">
         {totalCount === 0 ? (
           <div className="text-center py-4">
-            <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto mb-2" />
-            <p className="text-sm text-slate-600 dark:text-slate-400">
+            <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">
               All quality checks passed
             </p>
           </div>
@@ -218,7 +218,7 @@ export function QualityGateSummary({ claim, facts, className }: QualityGateSumma
             ))}
           </div>
         ) : (
-          <div className="text-center py-4 text-sm text-slate-500">
+          <div className="text-center py-4 text-sm text-muted-foreground">
             No gate details available
           </div>
         )}

@@ -112,9 +112,9 @@ function CoverageBadge({
         "border hover:scale-105 active:scale-100",
         onClick && "cursor-pointer",
         !onClick && "cursor-default",
-        value === true && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-        value === false && "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
-        value === null && "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700"
+        value === true && "bg-success/10 text-success border-success/30",
+        value === false && "bg-destructive/10 text-destructive border-destructive/30",
+        value === null && "bg-muted text-muted-foreground border-border"
       )}
       title={`${label}: ${value === true ? "Covered" : value === false ? "Not Covered" : "N/A"}`}
     >
@@ -143,15 +143,15 @@ function ValueBadge({
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-all",
-        "border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800",
-        "hover:bg-slate-100 dark:hover:bg-slate-700",
+        "border border-border bg-muted/50",
+        "hover:bg-muted",
         onClick && "cursor-pointer",
         !onClick && "cursor-default"
       )}
       title={`${label}: ${value}`}
     >
-      <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</span>
-      <span className="font-mono font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+      <span className="text-muted-foreground uppercase tracking-wide">{label}</span>
+      <span className="font-mono font-semibold text-foreground tabular-nums">
         {value}
       </span>
     </button>
@@ -202,17 +202,17 @@ function CategoryCard({
   return (
     <div className={cn(
       "rounded-lg border p-3 transition-all",
-      "bg-white dark:bg-slate-900",
+      "bg-card",
       hasExclusions
-        ? "border-red-200 dark:border-red-900 ring-1 ring-red-100 dark:ring-red-900/50"
-        : "border-slate-200 dark:border-slate-700"
+        ? "border-destructive/30 ring-1 ring-destructive/10"
+        : "border-border"
     )}>
       {/* Category header */}
       <div className="flex items-center gap-2 mb-2">
         {hasExclusions && (
-          <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
         )}
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           {label}
         </h4>
       </div>
@@ -275,35 +275,35 @@ export function CoverageMatrix({ facts, onViewSource }: CoverageMatrixProps) {
 
   if (coverageFacts.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
           Warranty & Coverage
         </h3>
-        <p className="text-sm text-slate-500">No coverage data available</p>
+        <p className="text-sm text-muted-foreground">No coverage data available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header with summary */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Warranty & Coverage
         </h3>
         <div className="flex items-center gap-3">
           {coveredCount > 0 && (
             <div className="flex items-center gap-1 text-xs">
-              <Check className="h-3 w-3 text-emerald-500" />
-              <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              <Check className="h-3 w-3 text-success" />
+              <span className="font-medium text-success">
                 {coveredCount}
               </span>
             </div>
           )}
           {exclusionCount > 0 && (
             <div className="flex items-center gap-1 text-xs">
-              <X className="h-3 w-3 text-red-500" />
-              <span className="font-medium text-red-600 dark:text-red-400">
+              <X className="h-3 w-3 text-destructive" />
+              <span className="font-medium text-destructive">
                 {exclusionCount}
               </span>
             </div>

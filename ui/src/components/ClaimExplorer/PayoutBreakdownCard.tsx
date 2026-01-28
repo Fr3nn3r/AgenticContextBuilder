@@ -42,21 +42,23 @@ export function PayoutBreakdownCard({ breakdown }: PayoutBreakdownCardProps) {
   // For rejected claims (final_payout = 0), show collapsed version
   if (finalPayout === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+      <div className="bg-card rounded-lg border border-border p-4">
         <div className="flex items-center gap-2 mb-3">
-          <DollarSign className="h-5 w-5 text-slate-400" />
-          <h3 className="font-semibold text-slate-700 dark:text-slate-200">
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <h3 className="font-semibold text-foreground">
             Payout Calculation
           </h3>
         </div>
-        <div className="flex items-center justify-between py-2">
-          <span className="text-sm text-slate-600 dark:text-slate-400">Final Payout</span>
-          <span className="text-lg font-bold text-slate-700 dark:text-slate-200">
+        <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+          <span className="text-sm text-muted-foreground">Final Payout</span>
+          <span className="text-lg font-bold text-foreground">
             {formatCurrency(0, currency)}
           </span>
         </div>
         {breakdown.total_claimed !== null && breakdown.total_claimed > 0 && (
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-muted-foreground mt-3">
             Claimed amount of {formatCurrency(breakdown.total_claimed, currency)} was not covered
           </p>
         )}
@@ -127,15 +129,17 @@ export function PayoutBreakdownCard({ breakdown }: PayoutBreakdownCardProps) {
   });
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+    <div className="bg-card rounded-lg border border-border p-4">
       <div className="flex items-center gap-2 mb-4">
-        <DollarSign className="h-5 w-5 text-slate-400" />
-        <h3 className="font-semibold text-slate-700 dark:text-slate-200">
+        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+          <DollarSign className="h-4 w-4 text-primary" />
+        </div>
+        <h3 className="font-semibold text-foreground">
           Payout Calculation
         </h3>
       </div>
 
-      <div className="space-y-0 font-mono text-sm">
+      <div className="space-y-0 font-mono text-sm bg-muted/30 rounded-lg p-3">
         {rows.map((row, idx) => {
           const isLast = idx === rows.length - 1;
           const showDividerBefore = row.isSubtotal && idx > 0;
@@ -144,23 +148,23 @@ export function PayoutBreakdownCard({ breakdown }: PayoutBreakdownCardProps) {
           return (
             <div key={idx}>
               {showDividerBefore && !showDoubleDividerBefore && (
-                <div className="border-t border-slate-200 dark:border-slate-600 my-2" />
+                <div className="border-t border-border my-2" />
               )}
               {showDoubleDividerBefore && (
-                <div className="border-t-2 border-slate-300 dark:border-slate-500 my-2" />
+                <div className="border-t-2 border-primary/30 my-2" />
               )}
               <div
                 className={cn(
                   "flex items-center justify-between py-1",
-                  row.isDeduction && "text-red-600 dark:text-red-400",
-                  row.isBold && "text-green-700 dark:text-green-400 font-bold text-base",
+                  row.isDeduction && "text-destructive",
+                  row.isBold && "text-success font-bold text-base",
                   isLast && "pt-2"
                 )}
               >
-                <span className={cn(row.isBold ? "font-bold" : "")}>
+                <span className={cn(row.isBold ? "font-bold" : "text-muted-foreground")}>
                   {row.label}
                 </span>
-                <span className={cn(row.isBold ? "font-bold" : "")}>
+                <span className={cn(row.isBold ? "font-bold" : "text-foreground")}>
                   {row.value}
                 </span>
               </div>

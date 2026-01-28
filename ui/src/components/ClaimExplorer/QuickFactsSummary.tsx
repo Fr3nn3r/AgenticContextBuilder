@@ -141,20 +141,20 @@ const STATUS_CONFIG: Record<
 > = {
   present: {
     icon: CheckCircle2,
-    color: "text-green-500",
-    bg: "bg-green-100 dark:bg-green-900/30",
+    color: "text-success",
+    bg: "bg-success/10",
     label: "Sourced",
   },
   assumed: {
     icon: AlertTriangle,
-    color: "text-amber-500",
-    bg: "bg-amber-100 dark:bg-amber-900/30",
-    label: "Assumed",
+    color: "text-warning",
+    bg: "bg-warning/10",
+    label: "Low conf.",
   },
   missing: {
     icon: XCircle,
-    color: "text-red-400",
-    bg: "bg-red-100 dark:bg-red-900/30",
+    color: "text-destructive/70",
+    bg: "bg-destructive/10",
     label: "Missing",
   },
 };
@@ -223,26 +223,26 @@ export function QuickFactsSummary({ facts, onViewSource }: QuickFactsSummaryProp
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">
           Key Facts
         </h3>
-        <div className="flex items-center gap-2 text-[10px]">
-          <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+        <div className="flex items-center gap-3 text-[10px]">
+          <span className="flex items-center gap-1 text-success">
             <CheckCircle2 className="h-3 w-3" /> Sourced
           </span>
-          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+          <span className="flex items-center gap-1 text-warning">
             <AlertTriangle className="h-3 w-3" /> Low conf.
           </span>
-          <span className="flex items-center gap-1 text-red-400">
+          <span className="flex items-center gap-1 text-destructive/70">
             <XCircle className="h-3 w-3" /> Missing
           </span>
         </div>
       </div>
 
-      <div className="p-4 grid grid-cols-2 gap-3">
+      <div className="p-4 grid grid-cols-2 gap-4">
         {/* Vehicle */}
         <FactGroup
           icon={Car}
@@ -305,9 +305,9 @@ interface FactGroupProps {
 
 function FactGroup({ icon: Icon, title, items, onItemClick }: FactGroupProps) {
   return (
-    <div className="space-y-1.5">
-      <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
-        <Icon className="h-3 w-3" />
+    <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-border/50">
+      <h4 className="text-[10px] uppercase tracking-wider text-primary font-semibold flex items-center gap-1.5 mb-2">
+        <Icon className="h-3.5 w-3.5" />
         {title}
       </h4>
       {items.map((item, idx) => {
@@ -319,24 +319,24 @@ function FactGroup({ icon: Icon, title, items, onItemClick }: FactGroupProps) {
           <div
             key={idx}
             className={cn(
-              "flex items-center justify-between py-1 px-2 rounded transition-colors",
+              "flex items-center justify-between py-1.5 px-2 rounded-md transition-colors",
               hasSource && onItemClick
-                ? "hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
+                ? "hover:bg-muted cursor-pointer"
                 : ""
             )}
             onClick={() => hasSource && onItemClick?.(item)}
           >
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <StatusIcon className={cn("h-3 w-3 flex-shrink-0", statusConfig.color)} />
-              <span className="text-xs text-slate-500 dark:text-slate-400 flex-shrink-0">
+              <StatusIcon className={cn("h-3.5 w-3.5 flex-shrink-0", statusConfig.color)} />
+              <span className="text-xs text-muted-foreground flex-shrink-0">
                 {item.label}:
               </span>
               <span
                 className={cn(
                   "text-xs font-medium truncate",
                   item.status === "missing"
-                    ? "text-slate-400 dark:text-slate-500 italic"
-                    : "text-slate-700 dark:text-slate-200"
+                    ? "text-muted-foreground/60 italic"
+                    : "text-foreground"
                 )}
                 title={item.value || undefined}
               >
@@ -344,7 +344,7 @@ function FactGroup({ icon: Icon, title, items, onItemClick }: FactGroupProps) {
               </span>
             </div>
             {hasSource && onItemClick && (
-              <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 flex-shrink-0 ml-1" />
+              <ExternalLink className="h-3 w-3 text-muted-foreground/50 flex-shrink-0 ml-1" />
             )}
           </div>
         );

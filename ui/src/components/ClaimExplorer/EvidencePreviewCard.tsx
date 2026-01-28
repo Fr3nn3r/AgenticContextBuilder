@@ -31,15 +31,15 @@ export function EvidencePreviewCard({
   if (!document) {
     return (
       <div className={cn(
-        "bg-white dark:bg-slate-900 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 overflow-hidden",
+        "bg-card rounded-lg border border-dashed border-border overflow-hidden",
         className
       )}>
         <div className="p-6 text-center">
-          <FileText className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <FileText className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">
             Select evidence to preview
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground/70 mt-1">
             Click an evidence link to see the source
           </p>
         </div>
@@ -49,18 +49,18 @@ export function EvidencePreviewCard({
 
   return (
     <div className={cn(
-      "bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden",
+      "bg-card rounded-lg border border-border overflow-hidden",
       className
     )}>
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <FileText className="h-4 w-4 text-slate-500 flex-shrink-0" />
+          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate block">
+            <span className="text-sm font-semibold text-foreground truncate block">
               {document.filename}
             </span>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted-foreground">
               {formatDocType(document.doc_type)}
               {document.page_count > 0 && ` · ${document.page_count} pages`}
             </span>
@@ -70,7 +70,7 @@ export function EvidencePreviewCard({
           {onViewFull && (
             <button
               onClick={onViewFull}
-              className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
               title="View full document"
             >
               <ExternalLink className="h-4 w-4" />
@@ -79,7 +79,7 @@ export function EvidencePreviewCard({
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
               title="Close preview"
             >
               <X className="h-4 w-4" />
@@ -91,10 +91,10 @@ export function EvidencePreviewCard({
       {/* Preview area */}
       <div className="p-4">
         {/* Document thumbnail placeholder */}
-        <div className="aspect-[4/3] bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center mb-3">
+        <div className="aspect-[4/3] bg-muted rounded-lg flex items-center justify-center mb-3">
           <div className="text-center">
-            <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-            <span className="text-xs text-slate-400 dark:text-slate-500">
+            <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-2" />
+            <span className="text-xs text-muted-foreground">
               Document Preview
             </span>
           </div>
@@ -102,11 +102,11 @@ export function EvidencePreviewCard({
 
         {/* Highlighted text (if any) */}
         {highlightText && (
-          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold block mb-1">
+          <div className="mt-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+            <span className="text-[10px] uppercase tracking-wider text-warning font-semibold block mb-1">
               Highlighted Evidence
             </span>
-            <p className="text-sm text-amber-800 dark:text-amber-200 line-clamp-3">
+            <p className="text-sm text-foreground line-clamp-3">
               "{highlightText}"
             </p>
           </div>
@@ -118,8 +118,8 @@ export function EvidencePreviewCard({
             onClick={onViewFull}
             className={cn(
               "w-full mt-3 py-2 px-4 rounded-lg text-sm font-medium transition-colors",
-              "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700",
-              "text-slate-700 dark:text-slate-200"
+              "bg-muted hover:bg-muted/80",
+              "text-foreground"
             )}
           >
             Open Full Document

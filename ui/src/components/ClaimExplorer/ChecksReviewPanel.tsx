@@ -40,25 +40,25 @@ export function ChecksReviewPanel({ checks, onEvidenceClick, className }: Checks
 
   if (checks.length === 0) {
     return (
-      <div className={cn("bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700", className)}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <ClipboardCheck className="h-4 w-4 text-slate-400" />
-          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Assessment Checks</h3>
+      <div className={cn("bg-card rounded-lg border border-border", className)}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-medium text-foreground">Assessment Checks</h3>
         </div>
         <div className="p-4 text-center">
-          <p className="text-sm text-slate-500 dark:text-slate-400">No checks performed</p>
+          <p className="text-sm text-muted-foreground">No checks performed</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cn("bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700", className)}>
+    <div className={cn("bg-card rounded-lg border border-border", className)}>
       {/* Header with summary badges */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="h-4 w-4 text-slate-500" />
-          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">
+          <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-medium text-foreground">
             Assessment Checks
           </h3>
         </div>
@@ -80,9 +80,9 @@ export function ChecksReviewPanel({ checks, onEvidenceClick, className }: Checks
       </div>
 
       {/* Filter chips */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-        <Filter className="h-3.5 w-3.5 text-slate-400" />
-        <span className="text-xs text-slate-500 dark:text-slate-400">Filter:</span>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/50">
+        <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Filter:</span>
         <div className="flex gap-1">
           <FilterChip
             label="All"
@@ -124,7 +124,7 @@ export function ChecksReviewPanel({ checks, onEvidenceClick, className }: Checks
             );
           })
         ) : (
-          <p className="text-center text-sm text-slate-500 dark:text-slate-400 py-4">
+          <p className="text-center text-sm text-muted-foreground py-4">
             No {filter} checks found
           </p>
         )}
@@ -149,11 +149,11 @@ function FilterChip({ label, count, isActive, onClick, variant = "default" }: Fi
         "px-2 py-1 rounded text-xs font-medium transition-all",
         isActive
           ? variant === "error"
-            ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-300 dark:ring-red-700"
+            ? "bg-destructive/10 text-destructive ring-1 ring-destructive/30"
             : variant === "warning"
-            ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-700"
-            : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 ring-1 ring-slate-400 dark:ring-slate-600"
-          : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+            ? "bg-warning/10 text-warning ring-1 ring-warning/30"
+            : "bg-primary/10 text-primary ring-1 ring-primary/30"
+          : "bg-muted text-muted-foreground hover:bg-muted/80"
       )}
     >
       {label} ({count})

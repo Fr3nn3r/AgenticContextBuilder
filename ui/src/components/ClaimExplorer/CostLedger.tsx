@@ -93,8 +93,8 @@ function ApprovalToggle({
         "w-7 h-4 rounded-full transition-all relative flex-shrink-0",
         "focus:outline-none focus:ring-2 focus:ring-offset-1",
         isApproved
-          ? "bg-emerald-500 focus:ring-emerald-400"
-          : "bg-slate-300 dark:bg-slate-600 focus:ring-slate-400",
+          ? "bg-success focus:ring-success/50"
+          : "bg-muted focus:ring-muted-foreground/50",
         disabled && "opacity-50 cursor-not-allowed"
       )}
     >
@@ -125,9 +125,9 @@ function LedgerRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-slate-100 dark:border-slate-800 transition-all",
-        "hover:bg-slate-50 dark:hover:bg-slate-800/50",
-        !item.isApproved && "opacity-50 bg-slate-50 dark:bg-slate-900/50",
+        "grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 border-b border-border transition-all",
+        "hover:bg-muted/50",
+        !item.isApproved && "opacity-50 bg-muted/50",
         onClick && "cursor-pointer"
       )}
       onClick={onClick}
@@ -137,13 +137,13 @@ function LedgerRow({
         <span className={cn(
           "text-sm truncate block",
           item.isApproved
-            ? "text-slate-700 dark:text-slate-200"
-            : "text-slate-500 dark:text-slate-500 line-through"
+            ? "text-foreground"
+            : "text-muted-foreground line-through"
         )}>
           {item.description}
         </span>
         {item.partNumber && (
-          <span className="text-xs text-slate-400 font-mono">
+          <span className="text-xs text-muted-foreground font-mono">
             #{item.partNumber}
           </span>
         )}
@@ -153,10 +153,10 @@ function LedgerRow({
       <div className={cn(
         "text-right font-mono tabular-nums text-sm font-medium",
         isDiscount
-          ? "text-red-600 dark:text-red-400"
+          ? "text-destructive"
           : item.isApproved
-            ? "text-slate-700 dark:text-slate-200"
-            : "text-slate-400 line-through"
+            ? "text-foreground"
+            : "text-muted-foreground line-through"
       )}>
         {isDiscount && "-"}{formatCurrency(Math.abs(item.total))}
       </div>
@@ -271,22 +271,22 @@ export function CostLedger({ facts, onViewSource, onApprovedAmountChange }: Cost
 
   if (lineItems.length === 0 && !grandTotalFact) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
           Cost Estimate
         </h3>
-        <p className="text-sm text-slate-500">No cost data available</p>
+        <p className="text-sm text-muted-foreground">No cost data available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border-2 border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border-2 border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <DollarSign className="h-4 w-4 text-slate-500" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Cost Ledger
           </h3>
         </div>
@@ -294,7 +294,7 @@ export function CostLedger({ facts, onViewSource, onApprovedAmountChange }: Cost
         {!allApproved && (
           <button
             onClick={resetAll}
-            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <RotateCcw className="h-3 w-3" />
             Reset
@@ -303,9 +303,9 @@ export function CostLedger({ facts, onViewSource, onApprovedAmountChange }: Cost
       </div>
 
       {/* Line items */}
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+      <div className="divide-y divide-border">
         {/* Column headers */}
-        <div className="grid grid-cols-[1fr,auto,auto] gap-3 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/30 text-[10px] uppercase tracking-wider text-slate-500">
+        <div className="grid grid-cols-[1fr,auto,auto] gap-3 px-3 py-1.5 bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
           <span>Description</span>
           <span className="text-right">Amount</span>
           <span className="w-7 text-center">OK</span>
@@ -322,11 +322,11 @@ export function CostLedger({ facts, onViewSource, onApprovedAmountChange }: Cost
 
         {/* Tax row */}
         {taxAmount > 0 && (
-          <div className="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 bg-slate-50/50 dark:bg-slate-800/30">
-            <span className="text-sm text-slate-500 dark:text-slate-400">
+          <div className="grid grid-cols-[1fr,auto,auto] gap-3 items-center px-3 py-2 bg-muted/30">
+            <span className="text-sm text-muted-foreground">
               VAT ({(taxRate * 100).toFixed(1)}%)
             </span>
-            <span className="text-right font-mono tabular-nums text-sm text-slate-500 dark:text-slate-400">
+            <span className="text-right font-mono tabular-nums text-sm text-muted-foreground">
               {formatCurrency(approvedTax)}
             </span>
             <div className="w-7" />
@@ -337,39 +337,39 @@ export function CostLedger({ facts, onViewSource, onApprovedAmountChange }: Cost
       {/* Total */}
       <div className={cn(
         "px-4 py-3 flex items-center justify-between",
-        "bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-800/50",
-        "border-t-2 border-slate-200 dark:border-slate-700"
+        "bg-muted/50",
+        "border-t-2 border-border"
       )}>
         <div className="flex items-center gap-2">
           {allApproved ? (
-            <Check className="h-4 w-4 text-emerald-500" />
+            <Check className="h-4 w-4 text-success" />
           ) : noneApproved ? (
-            <Minus className="h-4 w-4 text-slate-400" />
+            <Minus className="h-4 w-4 text-muted-foreground" />
           ) : (
-            <div className="w-4 h-4 rounded-full border-2 border-amber-400 bg-amber-100" />
+            <div className="w-4 h-4 rounded-full border-2 border-warning bg-warning/20" />
           )}
-          <span className="text-sm font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">
+          <span className="text-sm font-bold uppercase tracking-wide text-foreground">
             {allApproved ? "Approved Total" : "Adjusted Total"}
           </span>
         </div>
 
         <div className="text-right">
           <div className="flex items-baseline gap-2">
-            <span className="text-xs text-slate-500 dark:text-slate-400">CHF</span>
+            <span className="text-xs text-muted-foreground">CHF</span>
             <span className={cn(
               "text-xl font-bold font-mono tabular-nums",
               allApproved
-                ? "text-slate-800 dark:text-slate-100"
-                : "text-amber-600 dark:text-amber-400"
+                ? "text-foreground"
+                : "text-warning"
             )}>
               {formatCurrency(approvedTotal)}
             </span>
           </div>
 
           {!allApproved && (
-            <div className="flex items-center justify-end gap-1 text-xs text-slate-500">
+            <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
               <span className="line-through">{formatCurrency(originalTotal)}</span>
-              <span className="text-red-500">
+              <span className="text-destructive">
                 (-{formatCurrency(originalTotal - approvedTotal)})
               </span>
             </div>

@@ -30,24 +30,24 @@ const TYPE_CONFIG: Record<
 > = {
   error: {
     icon: XCircle,
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-    borderColor: "border-red-200 dark:border-red-800",
-    iconColor: "text-red-500",
-    textColor: "text-red-700 dark:text-red-300",
+    bgColor: "bg-destructive/10",
+    borderColor: "border-destructive/30",
+    iconColor: "text-destructive",
+    textColor: "text-destructive",
   },
   warning: {
     icon: AlertTriangle,
-    bgColor: "bg-amber-50 dark:bg-amber-900/20",
-    borderColor: "border-amber-200 dark:border-amber-800",
-    iconColor: "text-amber-500",
-    textColor: "text-amber-700 dark:text-amber-300",
+    bgColor: "bg-warning/10",
+    borderColor: "border-warning/30",
+    iconColor: "text-warning",
+    textColor: "text-warning",
   },
   info: {
     icon: Info,
-    bgColor: "bg-blue-50 dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-800",
-    iconColor: "text-blue-500",
-    textColor: "text-blue-700 dark:text-blue-300",
+    bgColor: "bg-info/10",
+    borderColor: "border-info/30",
+    iconColor: "text-info",
+    textColor: "text-info",
   },
 };
 
@@ -70,16 +70,16 @@ export function AttentionItemsList({
 
   if (items.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-semibold text-foreground">
             Attention Items
           </h3>
         </div>
         <div className="p-6 text-center">
-          <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-3">
+          <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-3">
             <svg
-              className="h-6 w-6 text-green-500"
+              className="h-6 w-6 text-success"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -92,10 +92,10 @@ export function AttentionItemsList({
               />
             </svg>
           </div>
-          <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+          <p className="text-sm font-medium text-foreground">
             No items need attention
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             All checks passed with no critical issues
           </p>
         </div>
@@ -104,25 +104,25 @@ export function AttentionItemsList({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header with counts */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">
           Attention Items
         </h3>
         <div className="flex items-center gap-2">
           {errorCount > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-destructive/10 text-destructive">
               {errorCount} error{errorCount > 1 ? "s" : ""}
             </span>
           )}
           {warningCount > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-warning/10 text-warning">
               {warningCount} warning{warningCount > 1 ? "s" : ""}
             </span>
           )}
           {infoCount > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-info/10 text-info">
               {infoCount} info
             </span>
           )}
@@ -130,7 +130,7 @@ export function AttentionItemsList({
       </div>
 
       {/* Items List */}
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+      <div className="divide-y divide-border">
         {displayItems.map((item) => {
           const config = TYPE_CONFIG[item.type];
           const Icon = config.icon;
@@ -141,7 +141,7 @@ export function AttentionItemsList({
               className={cn(
                 "px-4 py-3 flex items-start gap-3 transition-colors",
                 item.docId && onDocumentClick
-                  ? "hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
+                  ? "hover:bg-muted/50 cursor-pointer"
                   : ""
               )}
               onClick={() => {
@@ -167,20 +167,20 @@ export function AttentionItemsList({
                     {item.title}
                   </h4>
                   {item.checkNumber !== undefined && (
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono flex-shrink-0">
+                    <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
                       Check #{item.checkNumber}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                   {item.description}
                 </p>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
                     {item.action}
                   </span>
                   {item.docId && onDocumentClick && (
-                    <span className="flex items-center gap-0.5 text-[10px] text-blue-500 dark:text-blue-400">
+                    <span className="flex items-center gap-0.5 text-[10px] text-info">
                       <Eye className="h-3 w-3" />
                       View document
                     </span>
@@ -189,7 +189,7 @@ export function AttentionItemsList({
               </div>
 
               {/* Arrow */}
-              <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 flex-shrink-0 mt-2" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground/30 flex-shrink-0 mt-2" />
             </div>
           );
         })}
@@ -197,8 +197,8 @@ export function AttentionItemsList({
 
       {/* Show more */}
       {hasMore && (
-        <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
-          <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+        <div className="px-4 py-2 border-t border-border bg-muted/30">
+          <button className="text-xs text-info hover:underline flex items-center gap-1">
             View all {items.length} items
             <ExternalLink className="h-3 w-3" />
           </button>

@@ -50,33 +50,33 @@ function CopyableField({
 
   return (
     <div className="flex items-center gap-1.5 group">
-      <span className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <span className={cn(
-        "text-sm font-semibold text-slate-800 dark:text-slate-100",
+        "text-sm font-semibold text-foreground",
         mono && "font-mono tracking-tight"
       )}>
         {value}
       </span>
       <button
         onClick={handleCopy}
-        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-all"
         title="Copy"
       >
         {copied ? (
-          <Check className="h-3 w-3 text-emerald-500" />
+          <Check className="h-3 w-3 text-success" />
         ) : (
-          <Copy className="h-3 w-3 text-slate-400" />
+          <Copy className="h-3 w-3 text-muted-foreground" />
         )}
       </button>
       {onSearch && (
         <button
           onClick={onSearch}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-all"
           title="Search history"
         >
-          <Search className="h-3 w-3 text-slate-400" />
+          <Search className="h-3 w-3 text-muted-foreground" />
         </button>
       )}
     </div>
@@ -105,9 +105,9 @@ function ClaimThermometer({ currentStage }: { currentStage: string }) {
                 "h-1.5 w-8 rounded-full transition-colors",
                 isActive
                   ? isCurrent
-                    ? "bg-amber-400 dark:bg-amber-500"
-                    : "bg-emerald-400 dark:bg-emerald-500"
-                  : "bg-slate-200 dark:bg-slate-700"
+                    ? "bg-warning"
+                    : "bg-success"
+                  : "bg-muted"
               )}
               title={stage}
             />
@@ -117,7 +117,7 @@ function ClaimThermometer({ currentStage }: { currentStage: string }) {
           </div>
         );
       })}
-      <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground">
         {CLAIM_STAGES[activeIndex]}
       </span>
     </div>
@@ -144,14 +144,14 @@ function CostIndicator({
   return (
     <div className="flex flex-col items-end">
       <div className="flex items-baseline gap-1.5">
-        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+        <span className="text-xs text-muted-foreground font-medium">
           {currency}
         </span>
         <span className={cn(
           "text-2xl font-bold tabular-nums tracking-tight font-mono",
           isOverLimit
-            ? "text-red-600 dark:text-red-400"
-            : "text-slate-800 dark:text-slate-100"
+            ? "text-destructive"
+            : "text-foreground"
         )}>
           {formattedAmount}
         </span>
@@ -159,15 +159,15 @@ function CostIndicator({
 
       {maxCoverage && (
         <div className="flex items-center gap-2 mt-1">
-          <div className="w-20 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+          <div className="w-20 h-1 bg-muted rounded-full overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full transition-all",
                 isOverLimit
-                  ? "bg-red-500"
+                  ? "bg-destructive"
                   : percentage && percentage > 80
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
+                    ? "bg-warning"
+                    : "bg-success"
               )}
               style={{ width: `${percentage}%` }}
             />
@@ -175,8 +175,8 @@ function CostIndicator({
           <span className={cn(
             "text-[10px] uppercase tracking-wider",
             isOverLimit
-              ? "text-red-600 dark:text-red-400 font-semibold"
-              : "text-slate-500 dark:text-slate-400"
+              ? "text-destructive font-semibold"
+              : "text-muted-foreground"
           )}>
             {isOverLimit ? "Over Limit" : "Within Limits"}
           </span>
@@ -207,22 +207,21 @@ export function ClaimHUD({ facts, claim, maxCoverage = 5000, onVinSearch }: Clai
   return (
     <div className={cn(
       "relative border-b-2 px-5 py-3",
-      "bg-gradient-to-r from-slate-50 via-slate-50 to-slate-100",
-      "dark:from-slate-900 dark:via-slate-900 dark:to-slate-800",
+      "bg-gradient-to-r from-muted/50 via-muted/50 to-muted",
       hasErrors
-        ? "border-b-red-500"
+        ? "border-b-destructive"
         : hasWarnings
-          ? "border-b-amber-500"
-          : "border-b-emerald-500"
+          ? "border-b-warning"
+          : "border-b-success"
     )}>
       {/* Status indicator strip */}
       <div className={cn(
         "absolute left-0 top-0 bottom-0 w-1",
         hasErrors
-          ? "bg-red-500"
+          ? "bg-destructive"
           : hasWarnings
-            ? "bg-amber-500"
-            : "bg-emerald-500"
+            ? "bg-warning"
+            : "bg-success"
       )} />
 
       <div className="flex items-start justify-between gap-6">
@@ -231,13 +230,13 @@ export function ClaimHUD({ facts, claim, maxCoverage = 5000, onVinSearch }: Clai
           {/* Vehicle name with status icon */}
           <div className="flex items-center gap-2 mb-1">
             {hasErrors ? (
-              <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+              <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />
             ) : hasWarnings ? (
-              <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              <Clock className="h-4 w-4 text-warning flex-shrink-0" />
             ) : (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
             )}
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate">
+            <h1 className="text-lg font-bold text-foreground truncate">
               {vehicleTitle}
             </h1>
           </div>
@@ -255,10 +254,10 @@ export function ClaimHUD({ facts, claim, maxCoverage = 5000, onVinSearch }: Clai
               />
             )}
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Claim
               </span>
-              <span className="text-sm font-mono font-medium text-slate-600 dark:text-slate-300">
+              <span className="text-sm font-mono font-medium text-foreground">
                 {claim.claim_id}
               </span>
             </div>

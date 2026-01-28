@@ -50,17 +50,17 @@ function DataField({
     <div
       className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded transition-colors",
-        onClick && "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        onClick && "cursor-pointer hover:bg-muted"
       )}
       onClick={onClick}
     >
-      {Icon && <Icon className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
+      {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
       <div className="min-w-0 flex-1">
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
           {label}
         </span>
         <span className={cn(
-          "text-sm font-medium text-slate-700 dark:text-slate-200 block truncate",
+          "text-sm font-medium text-foreground block truncate",
           mono && "font-mono"
         )} title={value}>
           {value}
@@ -100,21 +100,21 @@ export function VehicleCard({ facts, onViewSource }: VehicleCardProps) {
 
   if (!hasData) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
           Vehicle Information
         </h3>
-        <p className="text-sm text-slate-500">No vehicle data available</p>
+        <p className="text-sm text-muted-foreground">No vehicle data available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
-        <Car className="h-4 w-4 text-slate-500" />
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <Car className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Vehicle
         </h3>
       </div>

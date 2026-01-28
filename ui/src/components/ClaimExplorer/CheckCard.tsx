@@ -32,9 +32,9 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
     <div
       className={cn(
         "border rounded-lg overflow-hidden transition-colors",
-        check.result === "FAIL" && "border-red-200 dark:border-red-900",
-        check.result === "INCONCLUSIVE" && "border-amber-200 dark:border-amber-900",
-        check.result === "PASS" && "border-slate-200 dark:border-slate-700"
+        check.result === "FAIL" && "border-destructive/30 bg-destructive/5",
+        check.result === "INCONCLUSIVE" && "border-warning/30 bg-warning/5",
+        check.result === "PASS" && "border-border"
       )}
     >
       {/* Header */}
@@ -42,21 +42,24 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
         onClick={onToggle}
         className={cn(
           "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
-          "hover:bg-slate-50 dark:hover:bg-slate-800/50",
-          isExpanded && "bg-slate-50 dark:bg-slate-800/50"
+          "hover:bg-muted/50",
+          isExpanded && "bg-muted/50"
         )}
       >
         <Icon className={cn(
           "h-5 w-5 flex-shrink-0",
-          config.variant === "success" && "text-green-500",
-          config.variant === "error" && "text-red-500",
-          config.variant === "warning" && "text-amber-500"
+          config.variant === "success" && "text-success",
+          config.variant === "error" && "text-destructive",
+          config.variant === "warning" && "text-warning"
         )} />
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-mono">#{check.check_number}</span>
-            <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
+            <span className="text-xs text-muted-foreground font-mono">#{check.check_number}</span>
+            <span className={cn(
+              "font-medium truncate",
+              check.result === "FAIL" ? "text-destructive" : "text-foreground"
+            )}>
               {check.check_name}
             </span>
           </div>
@@ -64,7 +67,7 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {hasNoEvidence && (
-            <AlertTriangle className="h-4 w-4 text-amber-500" title="No evidence linked" />
+            <AlertTriangle className="h-4 w-4 text-warning" title="No evidence linked" />
           )}
           <StatusBadge variant={config.variant} size="sm">
             {config.label}
@@ -74,15 +77,15 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div className="px-4 pb-4 pt-2 border-t border-border">
           {/* Details */}
-          <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+          <p className="text-sm text-muted-foreground mb-3">
             {check.details}
           </p>
 
           {/* Evidence References */}
           <div className="space-y-1">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-medium text-muted-foreground">
               Evidence ({check.evidence_refs.length})
             </span>
             {check.evidence_refs.length > 0 ? (
@@ -93,8 +96,8 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
                     onClick={() => onEvidenceClick?.(ref)}
                     className={cn(
                       "inline-flex items-center gap-1 px-2 py-1 rounded text-xs",
-                      "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400",
-                      "hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                      "bg-info/10 text-info",
+                      "hover:bg-info/20 transition-colors"
                     )}
                   >
                     <ExternalLink className="h-3 w-3" />
@@ -103,7 +106,7 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <p className="text-xs text-warning flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 No evidence linked to this check
               </p>

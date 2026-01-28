@@ -101,28 +101,28 @@ export function DocumentSlidePanel({
       {/* Slide Panel */}
       <div
         className={cn(
-          "fixed top-0 right-0 h-full w-full max-w-3xl bg-white dark:bg-slate-900 shadow-2xl z-50",
+          "fixed top-0 right-0 h-full w-full max-w-3xl bg-card shadow-2xl z-50",
           "transform transition-transform duration-300 ease-out",
           "flex flex-col",
           isOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onClose}
-              className="p-2 -ml-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+              className="p-2 -ml-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
             >
               <X className="h-5 w-5" />
             </button>
 
             {currentDocSummary && (
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">
+                <h2 className="text-sm font-semibold text-foreground truncate">
                   {currentDocSummary.filename}
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-muted-foreground">
                   {formatDocType(currentDocSummary.doc_type)}
                   {currentDocSummary.page_count > 0 && ` · ${currentDocSummary.page_count} pages`}
                 </p>
@@ -138,14 +138,14 @@ export function DocumentSlidePanel({
               className={cn(
                 "p-2 rounded-lg transition-colors",
                 canGoPrev
-                  ? "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
-                  : "text-slate-300 dark:text-slate-600 cursor-not-allowed"
+                  ? "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground/30 cursor-not-allowed"
               )}
               title="Previous document"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
-            <span className="text-xs text-slate-500 dark:text-slate-400 min-w-[60px] text-center">
+            <span className="text-xs text-muted-foreground min-w-[60px] text-center">
               {currentDocIndex >= 0 ? `${currentDocIndex + 1} / ${documents.length}` : "—"}
             </span>
             <button
@@ -154,8 +154,8 @@ export function DocumentSlidePanel({
               className={cn(
                 "p-2 rounded-lg transition-colors",
                 canGoNext
-                  ? "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
-                  : "text-slate-300 dark:text-slate-600 cursor-not-allowed"
+                  ? "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground/30 cursor-not-allowed"
               )}
               title="Next document"
             >
@@ -166,13 +166,13 @@ export function DocumentSlidePanel({
 
         {/* Evidence highlight banner */}
         {evidence && (evidence.page || evidence.highlightText) && (
-          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
-            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+          <div className="px-4 py-2 bg-warning/10 border-b border-warning/30">
+            <div className="flex items-center gap-2 text-sm text-warning">
               <FileText className="h-4 w-4 flex-shrink-0" />
               <span>
                 {evidence.page && `Page ${evidence.page}`}
                 {evidence.highlightText && (
-                  <span className="ml-2 text-amber-600 dark:text-amber-400">
+                  <span className="ml-2 text-warning/80">
                     "{evidence.highlightText.slice(0, 50)}
                     {evidence.highlightText.length > 50 ? "..." : ""}"
                   </span>
@@ -187,16 +187,16 @@ export function DocumentSlidePanel({
           {loading && (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
-                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-                <p className="text-sm text-slate-500">Loading document...</p>
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Loading document...</p>
               </div>
             </div>
           )}
 
           {error && (
             <div className="flex items-center justify-center h-full p-4">
-              <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 p-6 text-center max-w-md">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className="bg-destructive/10 rounded-lg border border-destructive/30 p-6 text-center max-w-md">
+                <p className="text-sm text-destructive">{error}</p>
               </div>
             </div>
           )}
@@ -220,8 +220,8 @@ export function DocumentSlidePanel({
           {!loading && !error && !docData && !currentDocId && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <FileText className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">
                   Select a document or evidence to view
                 </p>
               </div>

@@ -41,28 +41,28 @@ const IMPACT_CONFIG: Record<
   high: {
     icon: AlertOctagon,
     label: "High Impact",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-    borderColor: "border-red-200 dark:border-red-800",
-    textColor: "text-red-700 dark:text-red-300",
-    badgeColor: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300",
+    bgColor: "bg-destructive/10",
+    borderColor: "border-destructive/30",
+    textColor: "text-destructive",
+    badgeColor: "bg-destructive/10 text-destructive",
     description: "This assumption significantly affects the claim decision. Manual verification required.",
   },
   medium: {
     icon: AlertTriangle,
     label: "Medium Impact",
-    bgColor: "bg-amber-50 dark:bg-amber-900/20",
-    borderColor: "border-amber-200 dark:border-amber-800",
-    textColor: "text-amber-700 dark:text-amber-300",
-    badgeColor: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
+    bgColor: "bg-warning/10",
+    borderColor: "border-warning/30",
+    textColor: "text-warning",
+    badgeColor: "bg-warning/10 text-warning",
     description: "This assumption may affect the claim outcome. Review if possible.",
   },
   low: {
     icon: Info,
     label: "Low Impact",
-    bgColor: "bg-slate-50 dark:bg-slate-800/50",
-    borderColor: "border-slate-200 dark:border-slate-700",
-    textColor: "text-slate-600 dark:text-slate-400",
-    badgeColor: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
+    bgColor: "bg-muted/50",
+    borderColor: "border-border",
+    textColor: "text-muted-foreground",
+    badgeColor: "bg-muted text-muted-foreground",
     description: "This assumption has minimal impact on the decision.",
   },
 };
@@ -150,7 +150,7 @@ function AssumptionCard({ assumption, checks, index }: AssumptionCardProps) {
             <h4 className={cn("font-semibold", config.textColor)}>
               {title}
             </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-muted-foreground">
               Assumed "{assumption.assumed_value || "unknown"}"
             </p>
           </div>
@@ -166,14 +166,14 @@ function AssumptionCard({ assumption, checks, index }: AssumptionCardProps) {
       </div>
 
       {/* Reason / Explanation */}
-      <div className="bg-white dark:bg-slate-900/50 rounded-lg p-3 mb-3 border border-slate-200 dark:border-slate-700">
+      <div className="bg-card rounded-lg p-3 mb-3 border border-border">
         <div className="flex items-center gap-2 mb-1">
-          <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground uppercase tracking-wider">
             Why was this assumed?
           </span>
         </div>
-        <p className="text-sm text-slate-600 dark:text-slate-300">
+        <p className="text-sm text-foreground">
           {reason}
         </p>
       </div>
@@ -213,8 +213,8 @@ export function ClaimAssumptionsTab({
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-          <p className="text-sm text-slate-500">Loading assumptions...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading assumptions...</p>
         </div>
       </div>
     );
@@ -223,8 +223,8 @@ export function ClaimAssumptionsTab({
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-red-200 dark:border-red-900 p-6 text-center">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="bg-card rounded-lg border border-destructive/30 p-6 text-center">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       </div>
     );
@@ -233,14 +233,14 @@ export function ClaimAssumptionsTab({
   if (assumptions.length === 0) {
     return (
       <div className="p-4">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="h-8 w-8 text-green-500" />
+        <div className="bg-card rounded-lg border border-border p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="h-8 w-8 text-success" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-2">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
             No Assumptions Made
           </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
             All required data was extracted from the documents.
             No values needed to be assumed during the assessment.
           </p>
@@ -256,10 +256,10 @@ export function ClaimAssumptionsTab({
         className={cn(
           "rounded-lg border p-4",
           counts.high > 0
-            ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+            ? "bg-destructive/10 border-destructive/30"
             : counts.medium > 0
-            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
-            : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700"
+            ? "bg-warning/10 border-warning/30"
+            : "bg-muted/50 border-border"
         )}
       >
         <div className="flex items-start gap-4">
@@ -267,31 +267,31 @@ export function ClaimAssumptionsTab({
             className={cn(
               "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
               counts.high > 0
-                ? "bg-red-100 dark:bg-red-900/40"
+                ? "bg-destructive/20"
                 : counts.medium > 0
-                ? "bg-amber-100 dark:bg-amber-900/40"
-                : "bg-slate-100 dark:bg-slate-800"
+                ? "bg-warning/20"
+                : "bg-muted"
             )}
           >
             <AlertTriangle
               className={cn(
                 "h-6 w-6",
                 counts.high > 0
-                  ? "text-red-500"
+                  ? "text-destructive"
                   : counts.medium > 0
-                  ? "text-amber-500"
-                  : "text-slate-400"
+                  ? "text-warning"
+                  : "text-muted-foreground"
               )}
             />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-1">
+            <h3 className="text-lg font-semibold text-foreground mb-1">
               {assumptions.length} Assumption{assumptions.length > 1 ? "s" : ""} Made
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            <p className="text-sm text-muted-foreground mb-3">
               {counts.high > 0 ? (
                 <>
-                  <strong className="text-red-600 dark:text-red-400">
+                  <strong className="text-destructive">
                     {counts.high} high-impact
                   </strong>{" "}
                   assumption{counts.high > 1 ? "s" : ""} require manual verification
@@ -314,24 +314,24 @@ export function ClaimAssumptionsTab({
             <div className="flex items-center gap-4">
               {counts.high > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <AlertOctagon className="h-4 w-4 text-red-500" />
-                  <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                  <AlertOctagon className="h-4 w-4 text-destructive" />
+                  <span className="text-sm font-medium text-destructive">
                     {counts.high} High
                   </span>
                 </div>
               )}
               {counts.medium > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <span className="text-sm font-medium text-warning">
                     {counts.medium} Medium
                   </span>
                 </div>
               )}
               {counts.low > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <Info className="h-4 w-4 text-slate-400" />
-                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium text-muted-foreground">
                     {counts.low} Low
                   </span>
                 </div>
@@ -342,14 +342,14 @@ export function ClaimAssumptionsTab({
       </div>
 
       {/* What are assumptions? */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+      <div className="bg-info/10 rounded-lg border border-info/30 p-4">
         <div className="flex items-start gap-3">
-          <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+          <Info className="h-5 w-5 text-info flex-shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-medium text-blue-700 dark:text-blue-300 mb-1">
+            <h4 className="font-medium text-info mb-1">
               What are assumptions?
             </h4>
-            <p className="text-sm text-blue-600 dark:text-blue-400">
+            <p className="text-sm text-info/80">
               When critical data is missing from documents, the system makes reasonable
               assumptions based on available context. High-impact assumptions prevent
               auto-approval and require human review. You can verify or override these
@@ -373,14 +373,14 @@ export function ClaimAssumptionsTab({
 
       {/* Next Steps */}
       {counts.high > 0 && (
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-          <h4 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+        <div className="bg-card rounded-lg border border-border p-4">
+          <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
             <ChevronRight className="h-4 w-4" />
             Recommended Next Steps
           </h4>
-          <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+          <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 text-xs font-medium">
+              <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-xs font-medium text-foreground">
                 1
               </span>
               <span>
@@ -388,7 +388,7 @@ export function ClaimAssumptionsTab({
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 text-xs font-medium">
+              <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-xs font-medium text-foreground">
                 2
               </span>
               <span>
@@ -396,7 +396,7 @@ export function ClaimAssumptionsTab({
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 text-xs font-medium">
+              <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-xs font-medium text-foreground">
                 3
               </span>
               <span>

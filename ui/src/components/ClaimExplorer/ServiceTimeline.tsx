@@ -134,8 +134,8 @@ function TimelineNode({
           <div className={cn(
             "w-0.5 h-4 -mt-1",
             hasGap
-              ? "bg-gradient-to-b from-slate-300 via-amber-400 to-amber-400 dark:from-slate-600 dark:via-amber-500 dark:to-amber-500"
-              : "bg-slate-300 dark:bg-slate-600"
+              ? "bg-gradient-to-b from-border via-warning to-warning"
+              : "bg-border"
           )} />
         )}
 
@@ -143,17 +143,17 @@ function TimelineNode({
         <div className={cn(
           "relative z-10 w-3 h-3 rounded-full border-2 flex-shrink-0",
           hasGap
-            ? "bg-amber-100 border-amber-400 dark:bg-amber-900 dark:border-amber-500"
-            : "bg-white border-slate-400 dark:bg-slate-800 dark:border-slate-500"
+            ? "bg-warning/20 border-warning"
+            : "bg-card border-muted-foreground"
         )}>
           {hasGap && (
-            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-warning rounded-full animate-pulse" />
           )}
         </div>
 
         {/* Bottom connector */}
         {!isLast && (
-          <div className="w-0.5 flex-1 min-h-[24px] bg-slate-300 dark:bg-slate-600" />
+          <div className="w-0.5 flex-1 min-h-[24px] bg-border" />
         )}
       </div>
 
@@ -164,7 +164,7 @@ function TimelineNode({
       )}>
         {/* Gap warning banner */}
         {hasGap && !isFirst && (
-          <div className="flex items-center gap-1.5 mb-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <div className="flex items-center gap-1.5 mb-1.5 text-xs text-warning">
             <AlertTriangle className="h-3 w-3" />
             <span className="font-medium">
               Service Gap:
@@ -180,8 +180,8 @@ function TimelineNode({
           className={cn(
             "rounded-lg border p-2.5 transition-all",
             hasGap
-              ? "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30"
-              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50",
+              ? "border-warning/30 bg-warning/5"
+              : "border-border bg-card",
             hasRowProvenance && onViewSource
               ? "cursor-pointer hover:shadow-md hover:border-primary/50"
               : "hover:shadow-sm"
@@ -193,12 +193,12 @@ function TimelineNode({
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="flex items-center gap-2">
               {entry.parsedDate && (
-                <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-200">
+                <span className="text-xs font-mono font-semibold text-foreground">
                   {formatDate(entry.parsedDate)}
                 </span>
               )}
               {!entry.parsedDate && entry.date && (
-                <span className="text-xs font-mono text-slate-500">
+                <span className="text-xs font-mono text-muted-foreground">
                   {entry.date}
                 </span>
               )}
@@ -206,13 +206,13 @@ function TimelineNode({
 
             <div className="flex items-center gap-2">
               {entry.parsedMileage && (
-                <span className="text-xs font-mono text-slate-500 dark:text-slate-400 tabular-nums">
+                <span className="text-xs font-mono text-muted-foreground tabular-nums">
                   {formatMileage(entry.parsedMileage)}
                 </span>
               )}
               {/* P0.1: Show indicator when row has provenance */}
               {hasRowProvenance && onViewSource && (
-                <ExternalLink className="h-3 w-3 text-slate-400" />
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
               )}
             </div>
           </div>
@@ -220,15 +220,15 @@ function TimelineNode({
           {/* Service details */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {entry.service_type && (
-              <div className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-300">
-                <Wrench className="h-3 w-3 text-slate-400" />
+              <div className="flex items-center gap-1 text-sm text-foreground">
+                <Wrench className="h-3 w-3 text-muted-foreground" />
                 <span className="truncate max-w-[150px]" title={entry.service_type}>
                   {entry.service_type}
                 </span>
               </div>
             )}
             {entry.provider && (
-              <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[120px]" title={entry.provider}>
+              <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={entry.provider}>
                 @ {entry.provider}
               </span>
             )}
@@ -292,11 +292,11 @@ export function ServiceTimeline({ facts, onViewSource }: ServiceTimelineProps) {
 
   if (serviceEntries.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+      <div className="bg-card rounded-lg border border-border p-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
           Service History
         </h3>
-        <p className="text-sm text-slate-500">No service records available</p>
+        <p className="text-sm text-muted-foreground">No service records available</p>
       </div>
     );
   }
@@ -315,31 +315,31 @@ export function ServiceTimeline({ facts, onViewSource }: ServiceTimelineProps) {
   return (
     <div
       className={cn(
-        "bg-white dark:bg-slate-900 rounded-lg border overflow-hidden transition-all",
+        "bg-card rounded-lg border overflow-hidden transition-all",
         gapCount > 0
-          ? "border-amber-200 dark:border-amber-800"
-          : "border-slate-200 dark:border-slate-700",
+          ? "border-warning/30"
+          : "border-border",
         onViewSource && "cursor-pointer hover:shadow-md"
       )}
       onClick={handleViewSource}
     >
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-slate-400" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Service History
           </h3>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-muted-foreground">
             {serviceEntries.length} records
           </span>
           {gapCount > 0 && (
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50">
-              <AlertTriangle className="h-3 w-3 text-amber-500" />
-              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning/10">
+              <AlertTriangle className="h-3 w-3 text-warning" />
+              <span className="text-xs font-medium text-warning">
                 {gapCount} gap{gapCount > 1 ? "s" : ""}
               </span>
             </div>

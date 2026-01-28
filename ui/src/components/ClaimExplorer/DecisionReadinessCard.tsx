@@ -45,27 +45,27 @@ const ISSUE_TYPE_CONFIG: Record<
 > = {
   missing_evidence: {
     icon: FileWarning,
-    color: "text-amber-500",
+    color: "text-warning",
     label: "Missing",
   },
   failed_check: {
     icon: XCircle,
-    color: "text-red-500",
+    color: "text-destructive",
     label: "Failed",
   },
   inconclusive_check: {
     icon: HelpCircle,
-    color: "text-amber-500",
+    color: "text-warning",
     label: "Inconclusive",
   },
   conflict: {
     icon: AlertOctagon,
-    color: "text-orange-500",
+    color: "text-warning",
     label: "Conflict",
   },
   quality_gate: {
     icon: AlertTriangle,
-    color: "text-red-500",
+    color: "text-destructive",
     label: "Quality",
   },
 };
@@ -83,9 +83,9 @@ export function DecisionReadinessCard({
 
   // Determine status color based on readiness
   const getProgressColor = () => {
-    if (readinessPct >= 90) return "bg-green-500";
-    if (readinessPct >= 70) return "bg-amber-500";
-    return "bg-red-500";
+    if (readinessPct >= 90) return "bg-success";
+    if (readinessPct >= 70) return "bg-warning";
+    return "bg-destructive";
   };
 
   // Determine status text
@@ -98,10 +98,10 @@ export function DecisionReadinessCard({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-semibold text-foreground">
           Decision Readiness
         </h3>
       </div>
@@ -110,23 +110,23 @@ export function DecisionReadinessCard({
         {/* Progress Bar */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-2xl font-bold text-slate-700 dark:text-slate-200">
+            <span className="text-2xl font-bold text-foreground">
               {readinessPct}%
             </span>
             <span
               className={cn(
                 "text-sm font-medium px-2 py-1 rounded-full",
                 readiness.canAutoApprove
-                  ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                  ? "bg-success/10 text-success"
                   : readiness.canAutoReject
-                  ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                  : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-warning/10 text-warning"
               )}
             >
               {getStatusText()}
             </span>
           </div>
-          <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div
               className={cn("h-full transition-all duration-500", getProgressColor())}
               style={{ width: `${readinessPct}%` }}
@@ -140,27 +140,27 @@ export function DecisionReadinessCard({
             label="Checks"
             value={metrics.totalChecks}
             subValue={null}
-            color="text-slate-600 dark:text-slate-300"
+            color="text-foreground"
           />
           <MetricBox
             label="Passed"
             value={metrics.passedChecks}
             subValue={null}
-            color="text-green-600 dark:text-green-400"
+            color="text-success"
             icon={<CheckCircle2 className="h-3.5 w-3.5" />}
           />
           <MetricBox
             label="Failed"
             value={metrics.failedChecks}
             subValue={null}
-            color="text-red-600 dark:text-red-400"
+            color="text-destructive"
             icon={<XCircle className="h-3.5 w-3.5" />}
           />
           <MetricBox
             label="Unknown"
             value={metrics.inconclusiveChecks}
             subValue={null}
-            color="text-amber-600 dark:text-amber-400"
+            color="text-warning"
             icon={<HelpCircle className="h-3.5 w-3.5" />}
           />
           <MetricBox
@@ -171,8 +171,8 @@ export function DecisionReadinessCard({
             }
             color={
               criticalAssumptions > 0
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-slate-600 dark:text-slate-400"
+                ? "text-warning"
+                : "text-muted-foreground"
             }
             icon={<AlertTriangle className="h-3.5 w-3.5" />}
           />
@@ -180,8 +180,8 @@ export function DecisionReadinessCard({
 
         {/* Blocking Issues */}
         {blockingIssues.length > 0 && (
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-            <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+          <div className="pt-2 border-t border-border">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Blocking Issues ({blockingIssues.length})
             </h4>
             <div className="space-y-1.5 max-h-32 overflow-y-auto">
@@ -194,14 +194,14 @@ export function DecisionReadinessCard({
                     className="flex items-start gap-2 text-sm"
                   >
                     <Icon className={cn("h-4 w-4 flex-shrink-0 mt-0.5", config.color)} />
-                    <span className="text-slate-600 dark:text-slate-300 line-clamp-1">
+                    <span className="text-foreground line-clamp-1">
                       {issue.description}
                     </span>
                   </div>
                 );
               })}
               {blockingIssues.length > 5 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6">
+                <p className="text-xs text-muted-foreground pl-6">
                   +{blockingIssues.length - 5} more issues
                 </p>
               )}
@@ -211,15 +211,15 @@ export function DecisionReadinessCard({
 
         {/* Critical Assumptions Warning */}
         {criticalAssumptions > 0 && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
+          <div className="bg-warning/10 rounded-lg p-3 border border-warning/30">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                <p className="text-sm font-medium text-warning">
                   {criticalAssumptions} high-impact assumption
                   {criticalAssumptions > 1 ? "s" : ""}
                 </p>
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                <p className="text-xs text-warning/80 mt-0.5">
                   This claim cannot be auto-approved. Verify assumptions or refer to
                   human reviewer.
                 </p>
@@ -230,14 +230,14 @@ export function DecisionReadinessCard({
 
         {/* No Assessment State */}
         {!hasAssessment && (
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+          <div className="bg-muted/50 rounded-lg p-3 border border-border">
             <div className="flex items-start gap-2">
-              <HelpCircle className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
+              <HelpCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                <p className="text-sm font-medium text-foreground">
                   No assessment available
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Run an assessment to evaluate this claim against policy rules.
                 </p>
               </div>
@@ -264,11 +264,11 @@ function MetricBox({ label, value, subValue, color, icon }: MetricBoxProps) {
         {icon}
         {value}
       </div>
-      <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase">
+      <div className="text-[10px] text-muted-foreground uppercase">
         {label}
       </div>
       {subValue && (
-        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+        <div className="text-[10px] text-warning font-medium">
           {subValue}
         </div>
       )}
