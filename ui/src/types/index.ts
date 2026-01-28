@@ -300,9 +300,10 @@ export interface AzureDIOutput {
 
 export interface BoundingBox {
   pageNumber: number;
-  polygon: number[];  // 8 elements in inches
-  pageWidthInches: number;
-  pageHeightInches: number;
+  polygon: number[];  // 8 elements (in inches for PDFs, pixels for images)
+  pageWidthInches: number;   // Page width (inches for PDFs, pixels for images)
+  pageHeightInches: number;  // Page height (inches for PDFs, pixels for images)
+  unit?: "inch" | "pixel";   // Coordinate unit from Azure DI (defaults to "inch")
 }
 
 // =============================================================================
@@ -864,8 +865,58 @@ export interface ClaimFacts {
   schema_version: string;
   claim_id: string;
   generated_at: string;
+  /** Claim run ID that produced these facts (e.g., clm_20260127_154350_b84503) */
+  claim_run_id?: string;
+  /** Extraction runs used to aggregate these facts */
+  extraction_runs_used?: string[];
   facts: AggregatedFact[];
   sources: ClaimFactSource[];
+}
+
+// =============================================================================
+// CLAIM RUN & RECONCILIATION TYPES
+// =============================================================================
+
+/** Manifest for a claim run (reconciliation version) */
+export interface ClaimRunManifest {
+  claim_run_id: string;
+  created_at: string;
+  stages_completed: string[];
+  extraction_runs_considered: string[];
+  contextbuilder_version?: string;
+}
+
+/** Gate status from reconciliation */
+export interface ReconciliationGate {
+  status: "pass" | "warn" | "fail";
+  missing_critical_facts: string[];
+  conflict_count: number;
+  provenance_coverage: number;
+  estimated_tokens: number;
+  reasons: string[];
+}
+
+/** A conflict between values from different sources */
+export interface FactConflict {
+  fact_name: string;
+  values: string[];
+  sources: string[][];
+  selected_value: string;
+  selected_confidence: number;
+  selection_reason: string;
+}
+
+/** Full reconciliation report for a claim run */
+export interface ReconciliationReport {
+  schema_version: string;
+  claim_id: string;
+  claim_run_id: string;
+  generated_at: string;
+  gate: ReconciliationGate;
+  conflicts: FactConflict[];
+  fact_count: number;
+  critical_facts_spec: string[];
+  critical_facts_present: string[];
 }
 
 /** Provenance for a service entry with row-level positioning (P0.1) */

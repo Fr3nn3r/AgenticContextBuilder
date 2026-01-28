@@ -105,6 +105,21 @@ _All P0 bugs fixed! See Done section._
   - Add filter functionality for batches list on left panel
   - Currently will be difficult to scale with many batches
 
+### P2 - Reconciliation & Pipeline Improvements
+
+- [ ] **FEAT-39: Cross-run reconciliation (best-per-doc policy)**
+  - Currently reconciliation only uses the latest extraction run
+  - Need: Aggregate across ALL extraction runs, picking most recent extraction per document
+  - Use case: Retry failed docs in a new run without re-running entire batch
+  - Industry standard for compliance: Immutable runs + smart reconciliation
+  - CLI flag exists: `--policy best-per-doc` (returns "not yet implemented")
+  - Implementation scope:
+    1. Scan all extraction runs for the claim
+    2. For each document, pick the most recent extraction
+    3. Aggregate facts from best version of each document
+    4. Track which run each fact came from (audit provenance)
+  - See: `docs/CLAIM_LEVEL_RUNS_DESIGN.md` for architecture context
+
 ### P2 - Pipeline Screen Improvements
 
 - [ ] **FEAT-17: Three-level config display**

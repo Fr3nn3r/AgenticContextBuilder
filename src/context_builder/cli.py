@@ -26,7 +26,7 @@ from context_builder.ingestion import (
 from typing import List
 
 # Import pipeline components for the new pipeline command
-from context_builder.pipeline.discovery import discover_claims
+from context_builder.pipeline.discovery import discover_claims, discover_single_file
 from context_builder.pipeline.run import process_claim, StageConfig
 from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
 from context_builder.schemas.run_errors import PipelineStage
@@ -469,15 +469,24 @@ Examples:
   %(prog)s claims_folder/ -o output/claims    # Process all claims
   %(prog)s claims_folder/ -o output/claims --dry-run   # Preview only
   %(prog)s claims_folder/ -o output/claims --force     # Overwrite existing run
+  %(prog)s --file claims/CLM-001/problem_doc.pdf      # Process single document
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Required arguments for pipeline
+    # Input arguments for pipeline (either input_path OR --file required)
     pipeline_parser.add_argument(
         "input_path",
         metavar="PATH",
+        nargs="?",
+        default=None,
         help="Path to claims folder (each subfolder is a claim with documents)",
+    )
+    pipeline_parser.add_argument(
+        "--file",
+        metavar="FILE",
+        dest="single_file",
+        help="Process a single document file. Claim ID is inferred from parent folder name.",
     )
 
     # Output options for pipeline
@@ -634,6 +643,16 @@ Runs claim-level reconciliation which:
 
 The gate is advisory - it does not block downstream processing.
 
+Reconciliation Policies (--policy):
+  latest-run    Use only the latest extraction run (default).
+                Simple but requires complete runs - if you retry failed docs
+                in a new run, only the retry run's docs are considered.
+
+  best-per-doc  [NOT YET IMPLEMENTED] Aggregate across ALL extraction runs,
+                picking the most recent extraction for each document.
+                Ideal for retry workflows where failed docs are re-processed
+                in separate runs. See BACKLOG.md for status.
+
 Output:
   claims/{claim_id}/claim_runs/{claim_run_id}/
     ├── manifest.json              # Claim run metadata
@@ -641,22 +660,37 @@ Output:
     └── reconciliation_report.json # Gate status & conflicts
 
 Examples:
-  %(prog)s reconcile --claim-id 65196              # Reconcile a claim
-  %(prog)s reconcile --claim-id 65196 --dry-run   # Preview without writing
+  %(prog)s reconcile --claim-id 65196              # Reconcile a single claim
+  %(prog)s reconcile --all                         # Reconcile all claims in workspace
+  %(prog)s reconcile --all --dry-run               # Preview all without writing
   %(prog)s reconcile --claim-id 65196 --run-id run_20260124_153000  # Specific run
+  %(prog)s reconcile --claim-id 65196 --policy latest-run           # Explicit policy
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     reconcile_parser.add_argument(
         "--claim-id",
-        required=True,
         metavar="ID",
-        help="Claim ID to reconcile",
+        help="Claim ID to reconcile (required unless --all is used)",
+    )
+    reconcile_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_claims",
+        help="Reconcile all claims in the workspace",
     )
     reconcile_parser.add_argument(
         "--run-id",
         metavar="ID",
-        help="Specific run ID to use (default: latest complete run)",
+        help="Specific extraction run ID to use (default: latest complete run). "
+             "Only applies when --policy=latest-run.",
+    )
+    reconcile_parser.add_argument(
+        "--policy",
+        choices=["latest-run", "best-per-doc"],
+        default="latest-run",
+        help="Reconciliation policy: 'latest-run' uses single run (default), "
+             "'best-per-doc' aggregates across all runs (NOT YET IMPLEMENTED).",
     )
     reconcile_parser.add_argument(
         "--dry-run",
@@ -1251,14 +1285,16 @@ def main():
                 print(f"\nUsage: --doc-types {','.join(available_types[:3])}")
                 sys.exit(0)
 
-            # Validate input path
-            input_path = Path(args.input_path)
-            if not input_path.exists():
-                logger.error(f"Path not found: {input_path}")
+            # Validate input: either input_path or --file required, but not both
+            single_file = getattr(args, 'single_file', None)
+            if not args.input_path and not single_file:
+                logger.error("Either input_path or --file is required")
+                print("[X] Error: Either provide a claims folder path or use --file <path>")
                 sys.exit(1)
 
-            if not input_path.is_dir():
-                logger.error(f"Input path is not a directory: {input_path}")
+            if args.input_path and single_file:
+                logger.error("Cannot specify both input_path and --file")
+                print("[X] Error: Cannot specify both input_path and --file")
                 sys.exit(1)
 
             # Resolve output directory from workspace config or default
@@ -1277,19 +1313,45 @@ def main():
                     logger.error(f"Failed to create output directory: {e}")
                     sys.exit(1)
 
-            # Discover claims
-            logger.info(f"Discovering claims in: {input_path}")
-            try:
-                claims = discover_claims(input_path)
-            except Exception as e:
-                logger.error(f"Failed to discover claims: {e}")
-                sys.exit(1)
+            # Discover claims: either from folder or single file
+            if single_file:
+                # Single file mode: process just one document
+                file_path = Path(single_file)
+                logger.info(f"Single file mode: {file_path}")
+                try:
+                    claim = discover_single_file(file_path)
+                    claims = [claim]
+                except FileNotFoundError as e:
+                    logger.error(str(e))
+                    print(f"[X] {e}")
+                    sys.exit(1)
+                except ValueError as e:
+                    logger.error(str(e))
+                    print(f"[X] {e}")
+                    sys.exit(1)
+            else:
+                # Folder mode: discover all claims
+                input_path = Path(args.input_path)
+                if not input_path.exists():
+                    logger.error(f"Path not found: {input_path}")
+                    sys.exit(1)
 
-            if not claims:
-                logger.warning("No claims found in input path")
-                if not args.quiet:
-                    print(f"[!] No claims found in {input_path}")
-                sys.exit(1)
+                if not input_path.is_dir():
+                    logger.error(f"Input path is not a directory: {input_path}")
+                    sys.exit(1)
+
+                logger.info(f"Discovering claims in: {input_path}")
+                try:
+                    claims = discover_claims(input_path)
+                except Exception as e:
+                    logger.error(f"Failed to discover claims: {e}")
+                    sys.exit(1)
+
+                if not claims:
+                    logger.warning("No claims found in input path")
+                    if not args.quiet:
+                        print(f"[!] No claims found in {input_path}")
+                    sys.exit(1)
 
             logger.info(f"Discovered {len(claims)} claim(s)")
 
@@ -1626,6 +1688,26 @@ def main():
             )
             from context_builder.storage.filesystem import FileStorage
 
+            # Validate arguments: need either --claim-id or --all
+            if not args.claim_id and not args.all_claims:
+                print("[X] Error: Either --claim-id or --all is required")
+                sys.exit(1)
+            if args.claim_id and args.all_claims:
+                print("[X] Error: Cannot use both --claim-id and --all")
+                sys.exit(1)
+
+            # Check reconciliation policy
+            policy = getattr(args, "policy", "latest-run")
+            if policy == "best-per-doc":
+                print("[X] Error: --policy=best-per-doc is not yet implemented.")
+                print("    This feature will aggregate across all extraction runs,")
+                print("    picking the most recent extraction for each document.")
+                print("    See BACKLOG.md for implementation status.")
+                print("")
+                print("    For now, use --policy=latest-run (default) with --run-id")
+                print("    to specify which extraction run to use.")
+                sys.exit(1)
+
             if args.verbose:
                 logging.getLogger().setLevel(logging.DEBUG)
             elif args.quiet:
@@ -1649,53 +1731,88 @@ def main():
             aggregation = AggregationService(storage)
             reconciliation = ReconciliationService(storage, aggregation)
 
-            try:
-                # Run reconciliation
-                result = reconciliation.reconcile(
-                    claim_id=args.claim_id,
-                    run_id=getattr(args, "run_id", None),
-                )
-
-                if not result.success:
-                    logger.error(f"Reconciliation failed: {result.error}")
-                    print(f"[X] Reconciliation failed: {result.error}")
+            # Determine which claims to process
+            if args.all_claims:
+                # Discover all claim folders in the workspace
+                claims_dir = workspace_root / "claims"
+                if not claims_dir.exists():
+                    print(f"[X] No claims directory found at {claims_dir}")
                     sys.exit(1)
+                claim_ids = [
+                    folder.name for folder in claims_dir.iterdir()
+                    if folder.is_dir() and not folder.name.startswith(".")
+                ]
+                if not claim_ids:
+                    print("[X] No claims found in workspace")
+                    sys.exit(1)
+                claim_ids.sort()
+                if not args.quiet:
+                    print(f"\n[*] Found {len(claim_ids)} claims to reconcile")
+            else:
+                claim_ids = [args.claim_id]
 
-                report = result.report
+            # Track results for summary
+            results_summary = {"pass": [], "warn": [], "fail": [], "error": []}
 
-                if args.dry_run:
-                    # Print JSON output to stdout
-                    print(report.model_dump_json(indent=2))
-                elif not args.quiet:
-                    # reconcile() already wrote all files, just print summary
-                    gate = report.gate
-                    status_color = {
-                        "pass": "\033[92m",  # Green
-                        "warn": "\033[93m",  # Yellow
-                        "fail": "\033[91m",  # Red
-                    }.get(gate.status.value, "")
-                    reset = "\033[0m"
+            for claim_id in claim_ids:
+                try:
+                    # Run reconciliation
+                    result = reconciliation.reconcile(
+                        claim_id=claim_id,
+                        run_id=getattr(args, "run_id", None),
+                    )
 
-                    print(f"\n[OK] Reconciliation complete for {args.claim_id}")
-                    print(f"    Claim Run: {report.claim_run_id}")
-                    print(f"    Gate: {status_color}{gate.status.value.upper()}{reset}")
-                    print(f"    Facts: {report.fact_count}")
-                    print(f"    Conflicts: {gate.conflict_count}")
-                    print(f"    Missing critical: {len(gate.missing_critical_facts)}")
-                    if gate.missing_critical_facts:
-                        print(f"      {', '.join(gate.missing_critical_facts[:5])}")
-                    if report.conflicts:
-                        print(f"    Conflict details:")
-                        for c in report.conflicts[:3]:
-                            print(f"      - {c.fact_name}: {c.values}")
-                    print(f"    Reasons: {', '.join(gate.reasons)}")
-                    print(f"    Extraction Run: {report.run_id}")
-                    print(f"    Output: claim_runs/{report.claim_run_id}/")
+                    if not result.success:
+                        logger.error(f"Reconciliation failed for {claim_id}: {result.error}")
+                        if not args.quiet:
+                            print(f"[X] {claim_id}: Failed - {result.error}")
+                        results_summary["error"].append(claim_id)
+                        continue
 
-            except ReconciliationError as e:
-                logger.error(f"Reconciliation failed: {e}")
-                print(f"[X] Reconciliation failed: {e}")
-                sys.exit(1)
+                    report = result.report
+                    gate_status = report.gate.status.value
+                    results_summary[gate_status].append(claim_id)
+
+                    if args.dry_run:
+                        # Print JSON output to stdout
+                        print(f"\n--- {claim_id} ---")
+                        print(report.model_dump_json(indent=2))
+                    elif not args.quiet:
+                        # Print summary for this claim
+                        gate = report.gate
+                        status_color = {
+                            "pass": "\033[92m",  # Green
+                            "warn": "\033[93m",  # Yellow
+                            "fail": "\033[91m",  # Red
+                        }.get(gate.status.value, "")
+                        reset = "\033[0m"
+
+                        print(f"\n[OK] {claim_id}: {status_color}{gate.status.value.upper()}{reset} "
+                              f"({report.fact_count} facts, {gate.conflict_count} conflicts)")
+                        if gate.missing_critical_facts:
+                            print(f"     Missing: {', '.join(gate.missing_critical_facts[:3])}")
+
+                except ReconciliationError as e:
+                    logger.error(f"Reconciliation failed for {claim_id}: {e}")
+                    if not args.quiet:
+                        print(f"[X] {claim_id}: Error - {e}")
+                    results_summary["error"].append(claim_id)
+
+            # Print summary if processing multiple claims
+            if args.all_claims and not args.quiet and not args.dry_run:
+                print("\n" + "=" * 50)
+                print("RECONCILIATION SUMMARY")
+                print("=" * 50)
+                total = len(claim_ids)
+                print(f"  Total claims: {total}")
+                print(f"  \033[92mPASS\033[0m:  {len(results_summary['pass'])}")
+                print(f"  \033[93mWARN\033[0m:  {len(results_summary['warn'])}")
+                print(f"  \033[91mFAIL\033[0m:  {len(results_summary['fail'])}")
+                if results_summary["error"]:
+                    print(f"  \033[91mERROR\033[0m: {len(results_summary['error'])}")
+                    for cid in results_summary["error"]:
+                        print(f"         - {cid}")
+                print("=" * 50)
 
         elif args.command == "reconcile-eval":
             # ========== RECONCILE-EVAL COMMAND ==========
