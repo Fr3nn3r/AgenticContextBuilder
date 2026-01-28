@@ -16,6 +16,8 @@ from context_builder.schemas.claim_facts import (
     ClaimFacts,
     FactProvenance,
     LineItemProvenance,
+    LineItemsSummary,
+    PrimaryRepair,
     SourceDocument,
     StructuredClaimData,
 )
@@ -429,13 +431,96 @@ class AggregationService:
 
         return facts
 
+    def _summarize_line_items(
+        self,
+        line_items: List[AggregatedLineItem],
+        primary_threshold: float = 500.0,
+    ) -> Tuple[LineItemsSummary, List[PrimaryRepair]]:
+        """Summarize line items for token reduction.
+
+        Args:
+            line_items: List of aggregated line items.
+            primary_threshold: Minimum price to be considered a primary repair.
+
+        Returns:
+            Tuple of (summary, primary_repairs).
+        """
+        # Initialize counters
+        by_type: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "total": 0.0, "items": []}
+        )
+        covered_total = 0.0
+        not_covered_total = 0.0
+        unknown_coverage_total = 0.0
+        total_amount = 0.0
+
+        primary_repairs = []
+
+        for item in line_items:
+            price = item.total_price or 0.0
+            total_amount += price
+            item_type = item.item_type or "unknown"
+
+            # Track by type
+            by_type[item_type]["count"] += 1
+            by_type[item_type]["total"] += price
+            # Only store first 5 descriptions per type to limit size
+            if len(by_type[item_type]["items"]) < 5:
+                by_type[item_type]["items"].append(item.description[:50])
+
+            # Check coverage (from _coverage_lookup if present)
+            # The coverage lookup is attached during enrichment, not aggregation
+            # For now, track as unknown - will be updated by enrichment
+            unknown_coverage_total += price
+
+            # Identify primary repairs (high-value items)
+            if price >= primary_threshold:
+                primary_repairs.append(
+                    PrimaryRepair(
+                        description=item.description,
+                        item_code=item.item_code,
+                        total_price=price,
+                        item_type=item.item_type,
+                        covered=None,  # Will be set by enrichment
+                        coverage_reason=None,
+                    )
+                )
+
+        # Sort primary repairs by price descending
+        primary_repairs.sort(key=lambda x: x.total_price, reverse=True)
+
+        # Convert defaultdict to regular dict for serialization
+        by_type_dict = {k: dict(v) for k, v in by_type.items()}
+
+        summary = LineItemsSummary(
+            total_items=len(line_items),
+            total_amount=round(total_amount, 2),
+            by_type=by_type_dict,
+            covered_total=round(covered_total, 2),
+            not_covered_total=round(not_covered_total, 2),
+            unknown_coverage_total=round(unknown_coverage_total, 2),
+        )
+
+        return summary, primary_repairs
+
     def collect_structured_data(
-        self, extractions: List[Tuple[str, str, str, str, dict]]
+        self,
+        extractions: List[Tuple[str, str, str, str, dict]],
+        max_line_items: int = 30,
     ) -> Optional[StructuredClaimData]:
         """Collect line items and service entries from extractions.
 
+        Also computes summary statistics and identifies primary repairs
+        to reduce token usage for large claims.
+
+        For claims with many line items (>max_line_items), only the top items
+        by value are kept in the line_items array. The full summary is always
+        computed from ALL items before filtering.
+
         Args:
             extractions: List of (doc_id, run_id, doc_type, filename, extraction_data) tuples.
+            max_line_items: Maximum number of line items to keep (default 30).
+                Items are sorted by total_price descending, top N kept.
 
         Returns:
             StructuredClaimData with line items and/or service entries, or None if none found.
@@ -497,9 +582,42 @@ class AggregationService:
                 logger.info(f"Collected {len(all_line_items)} line items from cost estimates")
             if all_service_entries:
                 logger.info(f"Collected {len(all_service_entries)} service entries from service history")
+
+            # Compute summary and primary repairs for line items
+            # Summary is computed from ALL items before any filtering
+            line_items_summary = None
+            primary_repairs = None
+            filtered_line_items = all_line_items
+
+            if all_line_items:
+                line_items_summary, primary_repairs = self._summarize_line_items(all_line_items)
+
+                # Filter to top N items by value if exceeds limit
+                if len(all_line_items) > max_line_items:
+                    # Sort by total_price descending
+                    sorted_items = sorted(
+                        all_line_items,
+                        key=lambda x: x.total_price or 0.0,
+                        reverse=True,
+                    )
+                    filtered_line_items = sorted_items[:max_line_items]
+                    logger.info(
+                        f"Filtered line items from {len(all_line_items)} to {max_line_items} "
+                        f"(top by value)"
+                    )
+
+                logger.info(
+                    f"Line items summary: {line_items_summary.total_items} items total, "
+                    f"CHF {line_items_summary.total_amount:.2f}, "
+                    f"{len(primary_repairs)} primary repairs (>500 CHF), "
+                    f"{len(filtered_line_items)} items in output"
+                )
+
             return StructuredClaimData(
-                line_items=all_line_items if all_line_items else None,
+                line_items=filtered_line_items if filtered_line_items else None,
                 service_entries=all_service_entries if all_service_entries else None,
+                line_items_summary=line_items_summary,
+                primary_repairs=primary_repairs if primary_repairs else None,
             )
 
         return None

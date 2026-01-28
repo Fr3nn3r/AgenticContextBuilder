@@ -94,6 +94,31 @@ class AggregatedServiceEntry(BaseModel):
     source: LineItemProvenance = Field(..., description="Provenance of this service entry")
 
 
+class LineItemsSummary(BaseModel):
+    """Summary statistics for line items to reduce token usage."""
+
+    total_items: int = Field(0, description="Total number of line items")
+    total_amount: float = Field(0.0, description="Sum of all line item amounts")
+    by_type: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Breakdown by item_type: {type: {count, total, items: [descriptions]}}",
+    )
+    covered_total: float = Field(0.0, description="Total of covered items")
+    not_covered_total: float = Field(0.0, description="Total of not-covered items")
+    unknown_coverage_total: float = Field(0.0, description="Total of items with unknown coverage")
+
+
+class PrimaryRepair(BaseModel):
+    """High-value repair item for LLM focus."""
+
+    description: str = Field(..., description="Item description")
+    item_code: Optional[str] = Field(None, description="Part/labor code")
+    total_price: float = Field(..., description="Total price")
+    item_type: Optional[str] = Field(None, description="Item type (labor, parts, fee)")
+    covered: Optional[bool] = Field(None, description="Whether item is covered")
+    coverage_reason: Optional[str] = Field(None, description="Coverage lookup reason")
+
+
 class StructuredClaimData(BaseModel):
     """Complex data that cannot be represented as simple facts."""
 
@@ -102,6 +127,13 @@ class StructuredClaimData(BaseModel):
     )
     service_entries: Optional[List[AggregatedServiceEntry]] = Field(
         None, description="Service history entries from service books"
+    )
+    # Summary fields for token reduction (prefixed for LLM visibility)
+    line_items_summary: Optional[LineItemsSummary] = Field(
+        None, description="Summary statistics for line items"
+    )
+    primary_repairs: Optional[List[PrimaryRepair]] = Field(
+        None, description="High-value items (>500 CHF) for LLM focus"
     )
 
 
