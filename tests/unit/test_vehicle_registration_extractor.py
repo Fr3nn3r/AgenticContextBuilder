@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch, MagicMock
 import json
 from pathlib import Path
 import tempfile
+from PIL import Image
 
 from context_builder.extraction.spec_loader import get_spec, list_available_specs
 from context_builder.extraction.base import ExtractorFactory, FieldExtractor
@@ -151,10 +152,10 @@ class TestVehicleRegistrationVisionExtraction:
         ]
         mock_client.chat.completions.create.return_value = mock_response
 
-        # Create a temporary image file
+        # Create a temporary valid image file
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(b"fake image content")
             temp_path = f.name
+        Image.new("RGB", (200, 200), color="white").save(temp_path, format="JPEG")
 
         try:
             extractor = ExtractorFactory.create("vehicle_registration")
@@ -226,8 +227,8 @@ class TestVehicleRegistrationVisionExtraction:
         mock_client.chat.completions.create.return_value = mock_response
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            f.write(b"fake image")
             temp_path = f.name
+        Image.new("RGB", (200, 200), color="white").save(temp_path, format="PNG")
 
         try:
             extractor = ExtractorFactory.create("vehicle_registration")
@@ -267,8 +268,8 @@ class TestVehicleRegistrationVisionExtraction:
         mock_client.chat.completions.create.return_value = mock_response
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            f.write(b"fake image")
             temp_path = f.name
+        Image.new("RGB", (200, 200), color="white").save(temp_path, format="PNG")
 
         try:
             extractor = ExtractorFactory.create("vehicle_registration")
@@ -346,8 +347,8 @@ class TestVehicleRegistrationImageEncoding:
         extractor = ExtractorFactory.create("vehicle_registration")
 
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(b"fake jpeg content")
             temp_path = Path(f.name)
+        Image.new("RGB", (100, 100), color="red").save(temp_path, format="JPEG")
 
         try:
             base64_data, mime_type = extractor._encode_image(temp_path)
@@ -360,21 +361,22 @@ class TestVehicleRegistrationImageEncoding:
     @patch("context_builder.extraction.extractors.vehicle_registration.get_openai_client")
     @patch("context_builder.extraction.extractors.vehicle_registration.get_llm_audit_service")
     def test_encode_image_png(self, mock_audit_service, mock_openai):
-        """Test encoding PNG image."""
+        """Test encoding PNG image returns JPEG after preprocessing."""
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
 
         extractor = ExtractorFactory.create("vehicle_registration")
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            f.write(b"fake png content")
             temp_path = Path(f.name)
+        Image.new("RGB", (100, 100), color="blue").save(temp_path, format="PNG")
 
         try:
             base64_data, mime_type = extractor._encode_image(temp_path)
 
             assert base64_data is not None
-            assert mime_type == "image/png"
+            # After preprocessing, all images are JPEG
+            assert mime_type == "image/jpeg"
         finally:
             temp_path.unlink(missing_ok=True)
 

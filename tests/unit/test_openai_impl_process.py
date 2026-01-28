@@ -28,7 +28,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file.write_bytes(b"fake image")
 
         # Mock encoding
-        mock_ingestion._encode_image = Mock(return_value="base64data")
+        mock_ingestion._encode_image = Mock(return_value=("base64data", "image/jpeg"))
 
         # Mock API response
         mock_response = Mock()
@@ -86,7 +86,7 @@ class TestOpenAIVisionIngestionProcess:
         """Test processing various image formats."""
         formats = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif"]
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "content"}'))]
         mock_ingestion._call_api_with_retry = Mock(return_value=mock_response)
@@ -105,7 +105,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
 
         # Response without usage
         mock_response = Mock(spec=['choices'])
@@ -122,7 +122,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_ingestion._call_api_with_retry = Mock(side_effect=Exception("Invalid api_key provided"))
 
         with pytest.raises(ConfigurationError, match="Invalid API key"):
@@ -133,7 +133,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_ingestion._call_api_with_retry = Mock(side_effect=Exception("Rate limit exceeded"))
 
         with pytest.raises(APIError, match="Rate limit exceeded"):
@@ -144,7 +144,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_ingestion._call_api_with_retry = Mock(side_effect=Exception("Request timeout"))
 
         with pytest.raises(APIError, match="Request timed out"):
@@ -155,7 +155,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_ingestion._call_api_with_retry = Mock(side_effect=Exception("Unknown error"))
 
         with pytest.raises(APIError, match="Failed to process file"):
@@ -166,7 +166,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "content"}'))]
         mock_ingestion._call_api_with_retry = Mock(return_value=mock_response)
@@ -181,7 +181,7 @@ class TestOpenAIVisionIngestionProcess:
         test_file = tmp_path / "test.jpg"
         test_file.write_bytes(b"data")
 
-        mock_ingestion._encode_image = Mock(return_value="base64")
+        mock_ingestion._encode_image = Mock(return_value=("base64", "image/jpeg"))
         mock_ingestion._call_api_with_retry = Mock(side_effect=Exception("Test error"))
 
         with caplog.at_level(logging.ERROR):

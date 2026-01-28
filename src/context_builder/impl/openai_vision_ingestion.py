@@ -24,6 +24,7 @@ from context_builder.ingestion import (
     IngestionFactory,
 )
 from context_builder.utils.file_utils import get_file_metadata
+from context_builder.utils.image_prep import prepare_file_for_vision, prepare_pil_for_vision
 from context_builder.utils.prompt_loader import load_prompt
 from context_builder.schemas.document_analysis import DocumentAnalysis
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
@@ -98,45 +99,54 @@ class OpenAIVisionIngestion(DataIngestion):
         # Additional configuration
         self.max_pages = 20  # Limit pages to prevent excessive API calls
         self.render_scale = 2.0  # Higher quality rendering for PDFs
+        self.max_dimension = 2048  # Cap longest side before sending to Vision API
+        self.jpeg_quality = 85  # JPEG quality for Vision API payloads
 
         logger.debug(
             f"Using model: {self.model}, max_tokens: {self.max_tokens}, max_pages: {self.max_pages}"
         )
 
-    def _encode_image(self, image_path: Path) -> str:
+    def _encode_image(self, image_path: Path) -> tuple[str, str]:
         """
-        Encode image file to base64 string.
+        Encode image file to base64 string with resolution capping and JPEG compression.
 
         Args:
             image_path: Path to image file
 
         Returns:
-            Base64 encoded string
+            Tuple of (base64 encoded string, mime type)
 
         Raises:
             IOError: If file cannot be read
         """
         try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode("utf-8")
+            raw_bytes, mime_type = prepare_file_for_vision(
+                image_path,
+                max_dimension=self.max_dimension,
+                jpeg_quality=self.jpeg_quality,
+            )
+            return base64.b64encode(raw_bytes).decode("utf-8"), mime_type
         except Exception as e:
             logger.error(f"Failed to encode image {image_path}: {e}")
             raise IOError(f"Cannot read image file: {e}")
 
-    def _encode_image_from_pil(self, pil_image) -> str:
+    def _encode_image_from_pil(self, pil_image) -> tuple[str, str]:
         """
-        Encode PIL image to base64 string.
+        Encode PIL image to base64 string with resolution capping and JPEG compression.
 
         Args:
             pil_image: PIL Image object
 
         Returns:
-            Base64 encoded string
+            Tuple of (base64 encoded string, mime type)
         """
         try:
-            buffer = BytesIO()
-            pil_image.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
+            raw_bytes, mime_type = prepare_pil_for_vision(
+                pil_image,
+                max_dimension=self.max_dimension,
+                jpeg_quality=self.jpeg_quality,
+            )
+            return base64.b64encode(raw_bytes).decode("utf-8"), mime_type
         except Exception as e:
             logger.error(f"Failed to encode PIL image: {e}")
             raise IOError(f"Cannot encode image: {e}")
@@ -322,7 +332,7 @@ class OpenAIVisionIngestion(DataIngestion):
                     img = mat.to_pil()
 
                     # Encode and prepare messages
-                    base64_image = self._encode_image_from_pil(img)
+                    base64_image, mime_type = self._encode_image_from_pil(img)
 
                     # Free the image memory immediately
                     del img
@@ -331,7 +341,7 @@ class OpenAIVisionIngestion(DataIngestion):
                     # Build messages with page context
                     page_messages = self._build_vision_messages(
                         base64_image=base64_image,
-                        mime_type="image/png",
+                        mime_type=mime_type,
                         page_number=page_index + 1,
                         total_pages=pages_to_process
                     )
@@ -379,23 +389,8 @@ class OpenAIVisionIngestion(DataIngestion):
         Returns:
             List of message dictionaries
         """
-        extension = file_path.suffix.lower()
-
-        # Encode image
-        base64_image = self._encode_image(file_path)
-
-        # Determine MIME type
-        mime_types = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".gif": "image/gif",
-            ".bmp": "image/bmp",
-            ".tiff": "image/tiff",
-            ".tif": "image/tiff",
-            ".webp": "image/webp",
-        }
-        mime_type = mime_types.get(extension, "image/jpeg")
+        # Encode image (always returns JPEG after preprocessing)
+        base64_image, mime_type = self._encode_image(file_path)
 
         # Build messages with image
         return self._build_vision_messages(

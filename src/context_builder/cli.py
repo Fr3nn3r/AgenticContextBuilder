@@ -391,6 +391,18 @@ Examples:
         metavar="FLOAT",
         help="Render scale for PDF to image conversion (default: 2.0)",
     )
+    pdf_group.add_argument(
+        "--max-dimension",
+        type=int,
+        metavar="PX",
+        help="Cap longest image side to PX before sending to Vision API (default: 2048, 0=disable)",
+    )
+    pdf_group.add_argument(
+        "--jpeg-quality",
+        type=int,
+        metavar="N",
+        help="JPEG quality for Vision API payloads, 1-100 (default: 85)",
+    )
 
     # API options for acquire
     api_group = acquire_parser.add_argument_group("API Options")
@@ -1333,6 +1345,10 @@ def main():
                 config["max_pages"] = args.max_pages
             if args.render_scale is not None:
                 config["render_scale"] = args.render_scale
+            if args.max_dimension is not None:
+                config["max_dimension"] = args.max_dimension
+            if args.jpeg_quality is not None:
+                config["jpeg_quality"] = args.jpeg_quality
             if args.timeout is not None:
                 config["timeout"] = args.timeout
             if args.retries is not None:

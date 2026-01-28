@@ -6,8 +6,16 @@ from pathlib import Path
 from io import BytesIO
 from unittest.mock import Mock, patch, MagicMock, mock_open
 import pytest
+from PIL import Image
 
 from context_builder.ingestion import ConfigurationError
+
+
+def _write_real_image(path: Path, size=(100, 100), mode="RGB") -> None:
+    """Write a valid image file to *path* so PIL can open it."""
+    img = Image.new(mode, size, color="red")
+    fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "bmp": "BMP"}
+    img.save(path, format=fmt.get(path.suffix.lstrip(".").lower(), "JPEG"))
 
 
 class TestOpenAIVisionIngestionEncoding:
@@ -22,42 +30,39 @@ class TestOpenAIVisionIngestionEncoding:
                 return OpenAIVisionIngestion()
 
     def test_encode_image_valid_file(self, mock_ingestion, tmp_path):
-        """Test encoding a valid image file."""
-        # Create a test image file with some content
+        """Test encoding a valid image file returns base64 and mime type."""
         test_file = tmp_path / "test.jpg"
-        test_content = b"fake image data"
-        test_file.write_bytes(test_content)
+        _write_real_image(test_file)
 
-        result = mock_ingestion._encode_image(test_file)
+        b64, mime = mock_ingestion._encode_image(test_file)
 
-        # Verify it's base64 encoded
-        expected = base64.b64encode(test_content).decode("utf-8")
-        assert result == expected
+        assert len(b64) > 0
+        assert mime == "image/jpeg"
+        # Verify it can be decoded back to valid bytes
+        decoded = base64.b64decode(b64)
+        assert len(decoded) > 0
 
     def test_encode_image_empty_file(self, mock_ingestion, tmp_path):
-        """Test encoding an empty image file."""
+        """Test encoding an empty image file raises IOError."""
         test_file = tmp_path / "empty.jpg"
         test_file.write_bytes(b"")
 
-        result = mock_ingestion._encode_image(test_file)
-
-        # Empty file should encode to empty base64 string
-        assert result == ""
+        with pytest.raises(IOError, match="Cannot read image file"):
+            mock_ingestion._encode_image(test_file)
 
     def test_encode_image_large_file(self, mock_ingestion, tmp_path):
-        """Test encoding a large image file."""
+        """Test encoding a large image file succeeds and produces JPEG."""
         test_file = tmp_path / "large.jpg"
-        # Create 1MB of data
-        test_content = b"x" * (1024 * 1024)
-        test_file.write_bytes(test_content)
+        _write_real_image(test_file, size=(4000, 3000))
 
-        result = mock_ingestion._encode_image(test_file)
+        b64, mime = mock_ingestion._encode_image(test_file)
 
-        # Should encode successfully
-        assert len(result) > 0
-        # Verify it can be decoded back
-        decoded = base64.b64decode(result)
-        assert decoded == test_content
+        assert len(b64) > 0
+        assert mime == "image/jpeg"
+        # Should be capped to max_dimension (2048 default)
+        decoded = base64.b64decode(b64)
+        result_img = Image.open(BytesIO(decoded))
+        assert max(result_img.size) <= 2048
 
     def test_encode_image_io_error(self, mock_ingestion, tmp_path):
         """Test encoding with IO error."""
@@ -70,10 +75,10 @@ class TestOpenAIVisionIngestionEncoding:
     def test_encode_image_permission_error(self, mock_ingestion, tmp_path, monkeypatch):
         """Test encoding with permission error."""
         test_file = tmp_path / "test.jpg"
-        test_file.write_bytes(b"data")
+        _write_real_image(test_file)
 
-        # Mock open to raise PermissionError
-        with patch('builtins.open', side_effect=PermissionError("Access denied")):
+        # Mock PIL.Image.open to raise PermissionError
+        with patch('context_builder.utils.image_prep.Image.open', side_effect=PermissionError("Access denied")):
             with pytest.raises(IOError, match="Cannot read image file"):
                 mock_ingestion._encode_image(test_file)
 
@@ -99,42 +104,30 @@ class TestOpenAIVisionIngestionPILEncoding:
                 from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
                 return OpenAIVisionIngestion()
 
-    @pytest.fixture
-    def mock_pil_image(self):
-        """Create a mock PIL Image."""
-        mock_img = Mock()
-        mock_img.save = Mock()
-        return mock_img
-
-    def test_encode_pil_image_success(self, mock_ingestion, mock_pil_image):
+    def test_encode_pil_image_success(self, mock_ingestion):
         """Test encoding a PIL image successfully."""
-        # Mock the save method to write test data
-        def save_side_effect(buffer, format=None):
-            buffer.write(b"fake png data")
+        pil_image = Image.new("RGB", (200, 150), color="blue")
 
-        mock_pil_image.save.side_effect = save_side_effect
+        b64, mime = mock_ingestion._encode_image_from_pil(pil_image)
 
-        result = mock_ingestion._encode_image_from_pil(mock_pil_image)
+        assert mime == "image/jpeg"
+        assert len(b64) > 0
+        # Verify result is valid base64 decodable to JPEG
+        decoded = base64.b64decode(b64)
+        assert decoded[:2] == b"\xff\xd8"
 
-        # Verify save was called with PNG format
-        assert mock_pil_image.save.call_count == 1
-        save_args = mock_pil_image.save.call_args
-        assert save_args[1]['format'] == "PNG"
-
-        # Verify result is base64 encoded
-        expected = base64.b64encode(b"fake png data").decode("utf-8")
-        assert result == expected
-
-    def test_encode_pil_image_save_error(self, mock_ingestion, mock_pil_image):
+    def test_encode_pil_image_save_error(self, mock_ingestion):
         """Test encoding PIL image with save error."""
-        mock_pil_image.save.side_effect = Exception("Save failed")
+        mock_pil_image = Mock()
+        mock_pil_image.save = Mock(side_effect=Exception("Save failed"))
 
         with pytest.raises(IOError, match="Cannot encode image"):
             mock_ingestion._encode_image_from_pil(mock_pil_image)
 
-    def test_encode_pil_image_logs_error(self, mock_ingestion, mock_pil_image, caplog):
+    def test_encode_pil_image_logs_error(self, mock_ingestion, caplog):
         """Test PIL encoding logs error on failure."""
-        mock_pil_image.save.side_effect = RuntimeError("PIL error")
+        mock_pil_image = Mock()
+        mock_pil_image.save = Mock(side_effect=RuntimeError("PIL error"))
 
         with caplog.at_level(logging.ERROR):
             with pytest.raises(IOError):
@@ -142,18 +135,16 @@ class TestOpenAIVisionIngestionPILEncoding:
 
         assert "Failed to encode PIL image" in caplog.text
 
-    def test_encode_pil_image_empty(self, mock_ingestion, mock_pil_image):
-        """Test encoding PIL image that produces empty data."""
-        def save_empty(buffer, format=None):
-            # Don't write anything to buffer
-            pass
+    def test_encode_pil_image_rgba(self, mock_ingestion):
+        """Test encoding RGBA PIL image converts to RGB JPEG."""
+        pil_image = Image.new("RGBA", (100, 100), color=(255, 0, 0, 128))
 
-        mock_pil_image.save.side_effect = save_empty
+        b64, mime = mock_ingestion._encode_image_from_pil(pil_image)
 
-        result = mock_ingestion._encode_image_from_pil(mock_pil_image)
-
-        # Empty data should encode to empty string
-        assert result == ""
+        assert mime == "image/jpeg"
+        decoded = base64.b64decode(b64)
+        result_img = Image.open(BytesIO(decoded))
+        assert result_img.mode == "RGB"
 
 
 class TestOpenAIVisionIngestionFileMetadata:

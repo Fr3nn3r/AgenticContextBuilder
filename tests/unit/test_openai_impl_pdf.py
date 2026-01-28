@@ -51,7 +51,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
 
         # Mock _encode_image_from_pil
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64data")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64data", "image/jpeg"))
 
         # Mock API responses
         mock_responses = []
@@ -102,7 +102,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         # Mock API response
         mock_response = Mock()
@@ -130,7 +130,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "page"}'))]
@@ -160,7 +160,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
 
         mock_doc.__getitem__ = Mock(side_effect=lambda idx: mock_pages[idx])
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "page"}'))]
@@ -225,7 +225,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         # API call fails
         mock_ingestion._call_api_with_retry.side_effect = Exception("API error")
@@ -247,7 +247,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "page"}'))]
@@ -276,7 +276,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content='{"text": "page"}'))]
@@ -299,7 +299,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         mock_doc.__getitem__ = Mock(return_value=mock_page)
 
         mock_pdfium.PdfDocument = Mock(return_value=mock_doc)
-        mock_ingestion._encode_image_from_pil = Mock(return_value="base64")
+        mock_ingestion._encode_image_from_pil = Mock(return_value=("base64", "image/jpeg"))
 
         # Response without usage attribute
         mock_response = Mock(spec=['choices'])

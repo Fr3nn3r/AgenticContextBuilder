@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from context_builder.services.openai_client import get_openai_client, get_default_model
+from context_builder.utils.image_prep import prepare_file_for_vision, prepare_pil_for_vision
 
 from context_builder.extraction.base import FieldExtractor, ExtractorFactory
 from context_builder.extraction.spec_loader import DocTypeSpec, get_spec
@@ -173,31 +174,17 @@ class VehicleRegistrationExtractor(FieldExtractor):
             return self._text_extract(pages)
 
     def _encode_image(self, image_path: Path) -> tuple[Optional[str], str]:
-        """Encode image file to base64."""
+        """Encode image file to base64 with resolution capping and JPEG compression."""
         try:
-            with open(image_path, "rb") as f:
-                base64_data = base64.b64encode(f.read()).decode("utf-8")
-
-            # Determine MIME type
-            mime_types = {
-                ".jpg": "image/jpeg",
-                ".jpeg": "image/jpeg",
-                ".png": "image/png",
-                ".gif": "image/gif",
-                ".bmp": "image/bmp",
-                ".tiff": "image/tiff",
-                ".tif": "image/tiff",
-                ".webp": "image/webp",
-            }
-            mime_type = mime_types.get(image_path.suffix.lower(), "image/jpeg")
-
+            raw_bytes, mime_type = prepare_file_for_vision(image_path)
+            base64_data = base64.b64encode(raw_bytes).decode("utf-8")
             return base64_data, mime_type
         except Exception as e:
             logger.error(f"Failed to encode image {image_path}: {e}")
             return None, "image/jpeg"
 
     def _encode_pdf_page(self, pdf_path: Path, page_index: int = 0) -> tuple[Optional[str], str]:
-        """Render PDF page to image and encode to base64."""
+        """Render PDF page to image and encode to base64 with JPEG compression."""
         try:
             import pypdfium2 as pdfium
 
@@ -210,21 +197,19 @@ class VehicleRegistrationExtractor(FieldExtractor):
                 mat = page.render(scale=self.render_scale)
                 img = mat.to_pil()
 
-                # Encode to PNG
-                buffer = BytesIO()
-                img.save(buffer, format="PNG")
-                base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                raw_bytes, mime_type = prepare_pil_for_vision(img)
+                base64_data = base64.b64encode(raw_bytes).decode("utf-8")
 
-                return base64_data, "image/png"
+                return base64_data, mime_type
             finally:
                 pdf_doc.close()
 
         except ImportError:
             logger.warning("pypdfium2 not installed, cannot process PDF")
-            return None, "image/png"
+            return None, "image/jpeg"
         except Exception as e:
             logger.error(f"Failed to render PDF page: {e}")
-            return None, "image/png"
+            return None, "image/jpeg"
 
     def _build_vision_messages(self, base64_image: str, mime_type: str) -> List[Dict[str, Any]]:
         """Build OpenAI API messages with image and extraction prompt."""
