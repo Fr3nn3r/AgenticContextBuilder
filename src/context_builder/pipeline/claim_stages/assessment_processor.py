@@ -23,6 +23,11 @@ from context_builder.pipeline.claim_stages.processing import (
 )
 from context_builder.services.llm_audit import AuditedOpenAIClient, get_llm_audit_service
 from context_builder.storage.workspace_paths import get_workspace_logs_dir
+from context_builder.schemas.assessment_response import (
+    AssessmentResponse,
+    MIN_EXPECTED_CHECKS,
+    validate_assessment_completeness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +195,13 @@ Provide your assessment as a JSON object with the following structure:
     "covered_subtotal": 0,
     "coverage_percent": 0,
     "after_coverage": 0,
+    "max_coverage_applied": false,
+    "capped_amount": null,
     "deductible": 0,
+    "after_deductible": 0,
+    "vat_adjusted": false,
+    "vat_deduction": 0,
+    "policyholder_type": "individual",
     "final_payout": 0,
     "currency": "CHF"
   }},
@@ -198,6 +209,28 @@ Provide your assessment as a JSON object with the following structure:
 }}"""
 
         return system_prompt, user_prompt
+
+    def _build_response_format(self) -> Dict[str, Any]:
+        """Build the response_format parameter for structured JSON output.
+
+        Attempts to use json_schema mode for strict enforcement.
+        Falls back to json_object if schema mode is not supported.
+
+        Returns:
+            Response format dict for OpenAI API.
+        """
+        # Get JSON schema from Pydantic model
+        schema = AssessmentResponse.model_json_schema()
+
+        # Use json_schema mode for strict enforcement
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "assessment_response",
+                "strict": True,
+                "schema": schema,
+            },
+        }
 
     def _call_with_retry(
         self,
@@ -208,7 +241,7 @@ Provide your assessment as a JSON object with the following structure:
         on_token_update: Optional[Callable[[int, int], None]] = None,
         retries: int = 3,
     ) -> Dict[str, Any]:
-        """Call OpenAI API with retry logic.
+        """Call OpenAI API with retry logic and structured output validation.
 
         Args:
             messages: List of message dicts.
@@ -219,25 +252,32 @@ Provide your assessment as a JSON object with the following structure:
             retries: Number of retry attempts.
 
         Returns:
-            Parsed JSON response.
+            Validated JSON response as dict.
 
         Raises:
-            ValueError: If all retries fail.
+            ValueError: If all retries fail or validation fails.
         """
         last_error = None
         total_input_tokens = 0
         total_output_tokens = 0
+        use_strict_schema = True
 
         for attempt in range(retries):
             try:
                 logger.debug(f"Assessment API call attempt {attempt + 1}/{retries}")
+
+                # Build response format (try strict schema first, fall back to json_object)
+                if use_strict_schema:
+                    response_format = self._build_response_format()
+                else:
+                    response_format = {"type": "json_object"}
 
                 response = self._audited_client.chat_completions_create(
                     model=model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
+                    response_format=response_format,
                 )
 
                 # Track token usage
@@ -260,13 +300,57 @@ Provide your assessment as a JSON object with the following structure:
                     raise ValueError("Empty response from API")
 
                 result = json.loads(content)
-                return result
+
+                # Validate with Pydantic
+                validated = AssessmentResponse.model_validate(result)
+
+                # Check completeness
+                warnings = validate_assessment_completeness(validated)
+                if warnings:
+                    for warning in warnings:
+                        logger.warning(f"Assessment validation warning: {warning}")
+
+                # Ensure minimum checks
+                if len(validated.checks) < MIN_EXPECTED_CHECKS:
+                    raise ValueError(
+                        f"Incomplete assessment: only {len(validated.checks)} checks, "
+                        f"expected at least {MIN_EXPECTED_CHECKS}"
+                    )
+
+                logger.info(
+                    f"Assessment validated successfully with {len(validated.checks)} checks"
+                )
+                return validated.model_dump()
 
             except json.JSONDecodeError as e:
                 last_error = ValueError(f"Failed to parse JSON response: {e}")
                 logger.warning(f"JSON parse error on attempt {attempt + 1}: {e}")
 
+            except ValueError as e:
+                # Check if it's a schema mode not supported error
+                error_msg = str(e).lower()
+                if "json_schema" in error_msg or "response_format" in error_msg:
+                    logger.warning(
+                        f"json_schema mode not supported, falling back to json_object"
+                    )
+                    use_strict_schema = False
+                    # Don't count this as an attempt, retry immediately
+                    continue
+
+                last_error = e
+                logger.warning(f"Validation error on attempt {attempt + 1}: {e}")
+
             except Exception as e:
+                # Check if it's a schema mode not supported error
+                error_msg = str(e).lower()
+                if "json_schema" in error_msg or "response_format" in error_msg:
+                    logger.warning(
+                        f"json_schema mode not supported, falling back to json_object"
+                    )
+                    use_strict_schema = False
+                    # Don't count this as an attempt, retry immediately
+                    continue
+
                 last_error = ValueError(f"API call failed: {e}")
                 logger.warning(f"API error on attempt {attempt + 1}: {e}")
 
