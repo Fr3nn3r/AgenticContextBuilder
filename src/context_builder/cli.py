@@ -747,6 +747,58 @@ Examples:
         "-q", "--quiet", action="store_true", help="Minimal console output"
     )
 
+    # ========== ASSESS SUBCOMMAND ==========
+    assess_parser = subparsers.add_parser(
+        "assess",
+        help="Run full claim assessment (reconciliation + assessment)",
+        epilog="""
+Runs the complete claim processing pipeline:
+1. Reconciliation - Aggregate facts, detect conflicts, quality gate
+2. Assessment - Run checks, calculate payout, produce decision
+
+Output:
+  claims/{claim_id}/claim_runs/{claim_run_id}/
+    ├── manifest.json              # Updated with stages_completed
+    ├── claim_facts.json           # Aggregated facts
+    ├── reconciliation_report.json # Quality gate & conflicts
+    └── assessment.json            # Decision & payout
+
+Examples:
+  %(prog)s assess --claim-id 65196              # Assess single claim
+  %(prog)s assess --all                          # Assess all claims
+  %(prog)s assess --claim-id 65196 --force-reconcile  # Force re-reconcile
+  %(prog)s assess --claim-id 65196 --dry-run    # Preview only
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    assess_parser.add_argument(
+        "--claim-id",
+        metavar="ID",
+        help="Claim ID to assess (required unless --all)",
+    )
+    assess_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_claims",
+        help="Assess all claims in workspace",
+    )
+    assess_parser.add_argument(
+        "--force-reconcile",
+        action="store_true",
+        help="Force re-reconciliation even if recent reconciliation exists",
+    )
+    assess_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview assessment without running LLM calls",
+    )
+    assess_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    assess_parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+
     # ========== BACKFILL-EVIDENCE SUBCOMMAND ==========
     backfill_parser = subparsers.add_parser(
         "backfill-evidence",
@@ -1757,10 +1809,7 @@ def main():
             for claim_id in claim_ids:
                 try:
                     # Run reconciliation
-                    result = reconciliation.reconcile(
-                        claim_id=claim_id,
-                        run_id=getattr(args, "run_id", None),
-                    )
+                    result = reconciliation.reconcile(claim_id=claim_id)
 
                     if not result.success:
                         logger.error(f"Reconciliation failed for {claim_id}: {result.error}")
@@ -1888,6 +1937,110 @@ def main():
                 logger.error(f"Reconciliation evaluation failed: {e}")
                 print(f"[X] Reconciliation evaluation failed: {e}")
                 sys.exit(1)
+
+        elif args.command == "assess":
+            # ========== ASSESS COMMAND ==========
+            from context_builder.api.services.claim_assessment import ClaimAssessmentService
+            from context_builder.api.services.aggregation import AggregationService
+            from context_builder.api.services.reconciliation import ReconciliationService
+            from context_builder.storage.filesystem import FileStorage
+
+            # Validate args
+            if not args.claim_id and not args.all_claims:
+                print("[X] Error: Either --claim-id or --all is required")
+                sys.exit(1)
+            if args.claim_id and args.all_claims:
+                print("[X] Error: Cannot use both --claim-id and --all")
+                sys.exit(1)
+
+            if args.verbose:
+                logging.getLogger().setLevel(logging.DEBUG)
+            elif args.quiet:
+                logging.getLogger().setLevel(logging.WARNING)
+
+            # Use active workspace
+            workspace = get_active_workspace()
+            if workspace and workspace.get("path"):
+                workspace_root = Path(workspace["path"])
+                if not args.quiet:
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {workspace_root}")
+            else:
+                workspace_root = Path("output")
+
+            if not workspace_root.exists():
+                logger.error(f"Workspace not found: {workspace_root}")
+                sys.exit(1)
+
+            # Initialize services
+            storage = FileStorage(workspace_root)
+            aggregation = AggregationService(storage)
+            reconciliation = ReconciliationService(storage, aggregation)
+            assessment_service = ClaimAssessmentService(storage, reconciliation)
+
+            # Determine which claims to process
+            if args.all_claims:
+                claims_dir = workspace_root / "claims"
+                if not claims_dir.exists():
+                    print(f"[X] No claims directory found at {claims_dir}")
+                    sys.exit(1)
+                claim_ids = [
+                    folder.name for folder in claims_dir.iterdir()
+                    if folder.is_dir() and not folder.name.startswith(".")
+                ]
+                if not claim_ids:
+                    print("[X] No claims found in workspace")
+                    sys.exit(1)
+                claim_ids.sort()
+                if not args.quiet:
+                    print(f"\n[*] Found {len(claim_ids)} claims to assess")
+            else:
+                claim_ids = [args.claim_id]
+
+            # Track results for summary
+            results = {"success": [], "failed": []}
+
+            for claim_id in claim_ids:
+                if args.dry_run:
+                    print(f"[DRY RUN] Would assess claim: {claim_id}")
+                    continue
+
+                result = assessment_service.assess(
+                    claim_id=claim_id,
+                    force_reconcile=getattr(args, "force_reconcile", False),
+                )
+
+                if result.success:
+                    results["success"].append(claim_id)
+                    if not args.quiet:
+                        # Color-coded output based on decision
+                        decision_color = {
+                            "APPROVE": "\033[92m",  # Green
+                            "REJECT": "\033[91m",   # Red
+                            "REFER_TO_HUMAN": "\033[93m",  # Yellow
+                        }
+                        reset = "\033[0m"
+                        color = decision_color.get(result.decision, "")
+
+                        print(f"\n[OK] {claim_id}: {color}{result.decision}{reset}")
+                        print(f"     Confidence: {result.confidence_score:.0%}")
+                        if result.final_payout is not None:
+                            print(f"     Payout: CHF {result.final_payout:,.2f}")
+                        print(f"     Gate: {result.gate_status}")
+                        print(f"     Claim Run: {result.claim_run_id}")
+                else:
+                    results["failed"].append(claim_id)
+                    print(f"[X] {claim_id}: {result.error}")
+
+            # Print summary if processing multiple claims
+            if args.all_claims and not args.quiet and not args.dry_run:
+                print(f"\n{'='*50}")
+                print("ASSESSMENT SUMMARY")
+                print(f"{'='*50}")
+                print(f"  Successful: {len(results['success'])}")
+                print(f"  Failed: {len(results['failed'])}")
+                if results["failed"]:
+                    for cid in results["failed"]:
+                        print(f"    - {cid}")
 
         elif args.command == "backfill-evidence":
             # ========== BACKFILL-EVIDENCE COMMAND ==========

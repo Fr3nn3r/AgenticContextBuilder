@@ -215,3 +215,30 @@ class ClaimRunStorage:
                 return json.load(f)
 
         return None
+
+    # =========================================================================
+    # CONVENIENCE METHODS
+    # =========================================================================
+
+    def read_claim_facts(self, claim_run_id: str) -> Optional[dict]:
+        """Read claim_facts.json from claim run.
+
+        Args:
+            claim_run_id: Claim run ID.
+
+        Returns:
+            Parsed claim facts data or None if not found.
+        """
+        return self.read_from_claim_run(claim_run_id, "claim_facts.json")
+
+    def write_assessment(self, claim_run_id: str, assessment: dict) -> Path:
+        """Write assessment.json to claim run.
+
+        Args:
+            claim_run_id: Claim run ID.
+            assessment: Assessment data to write.
+
+        Returns:
+            Path to written file.
+        """
+        return self.write_to_claim_run(claim_run_id, "assessment.json", assessment)
