@@ -144,18 +144,31 @@ Use these prefixes to indicate the type of change:
 - **Use `--tb=short`** for concise error output
 - **Known issues**: 4 encryption tests require `pycryptodome` package (skip with `--ignore`)
 
-## Customer Configuration
+## Customer Configuration (CRITICAL)
 
 Customer-specific extractors, prompts, and specs are stored in **separate git repos** (not in the main codebase).
 
+> **WARNING**: Files in `workspaces/nsa/config/` are **GITIGNORED** in this repo.
+> You MUST commit customer config changes to the **customer repo**, not here.
+
+**Customer repo location:** `C:\Users\fbrun\Documents\GitHub\context-builder-nsa`
+
 **Workflow:**
 1. Edit in workspace: `workspaces/nsa/config/extractors/`, `extraction_specs/`, `prompts/`
-2. Test: `python -m context_builder.cli pipeline <input_claims_folder>`
-3. Copy to customer repo: `cd ../context-builder-nsa && .\copy-from-workspace.ps1`
-4. Commit in customer repo: `git add -A && git commit -m "message" && git push`
+2. Test: `python -m context_builder.cli pipeline --file "path/to/doc.pdf" --force`
+3. Copy to customer repo:
+   ```bash
+   powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"
+   ```
+4. Check status and commit in customer repo:
+   ```bash
+   git -C "C:\Users\fbrun\Documents\GitHub\context-builder-nsa" status
+   git -C "C:\Users\fbrun\Documents\GitHub\context-builder-nsa" add <files>
+   git -C "C:\Users\fbrun\Documents\GitHub\context-builder-nsa" commit -m "feat: description"
+   ```
 
 **Customer repos:**
-- NSA: [context-builder-nsa](https://github.com/Fr3nn3r/context-builder-nsa) (private)
+- NSA: `C:\Users\fbrun\Documents\GitHub\context-builder-nsa` ([GitHub](https://github.com/Fr3nn3r/context-builder-nsa), private)
 
 **Full documentation:** `.claude/docs/customer-config.md`
 
