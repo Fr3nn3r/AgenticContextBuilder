@@ -2131,6 +2131,11 @@ def main():
             # ========== ASSESS COMMAND ==========
             import os
 
+            # Handle --no-llm-logging flag (set before any LLM calls)
+            if getattr(args, "no_llm_logging", False):
+                os.environ["COMPLIANCE_LLM_LOGGING_ENABLED"] = "false"
+                logger.info("LLM call logging disabled via --no-llm-logging")
+
             from context_builder.api.services.claim_assessment import ClaimAssessmentService
             from context_builder.api.services.aggregation import AggregationService
             from context_builder.api.services.reconciliation import ReconciliationService

@@ -13,6 +13,7 @@ For new code, prefer using FileLLMCallStorage directly via dependency injection:
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from datetime import datetime
@@ -24,7 +25,7 @@ from context_builder.schemas.llm_call_record import (
     InjectedContext,
     LLMCallRecord,
 )
-from context_builder.services.compliance.file import FileLLMCallStorage
+from context_builder.services.compliance.file import FileLLMCallStorage, NullLLMCallStorage
 from context_builder.storage.workspace_paths import get_workspace_logs_dir
 
 if TYPE_CHECKING:
@@ -43,16 +44,22 @@ class LLMAuditService:
         service.log_call(record)
     """
 
-    def __init__(self, storage_dir: Path):
+    def __init__(self, storage_dir: Path, storage: Optional["LLMCallSink"] = None):
         """Initialize the LLM audit service.
 
         Args:
             storage_dir: Directory for storing the audit log (e.g., output/logs/)
+            storage: Optional storage implementation to use. If None, uses FileLLMCallStorage.
         """
         self.storage_dir = Path(storage_dir)
-        self._storage = FileLLMCallStorage(storage_dir)
-        # Expose log_file for backwards compatibility
-        self.log_file = self._storage.storage_path
+        if storage is not None:
+            self._storage = storage
+            # For NullLLMCallStorage, log_file won't exist
+            self.log_file = getattr(storage, 'storage_path', None)
+        else:
+            self._storage = FileLLMCallStorage(storage_dir)
+            # Expose log_file for backwards compatibility
+            self.log_file = self._storage.storage_path
 
     def log_call(self, record: LLMCallRecord) -> LLMCallRecord:
         """Log an LLM call record.
@@ -92,12 +99,26 @@ class LLMAuditService:
 _default_service: Optional[LLMAuditService] = None
 
 
+def _is_llm_logging_enabled() -> bool:
+    """Check if LLM call logging is enabled via environment variable.
+
+    Returns:
+        True if logging is enabled (default), False if disabled.
+    """
+    value = os.environ.get("COMPLIANCE_LLM_LOGGING_ENABLED", "true")
+    return value.lower() in ("true", "1", "yes")
+
+
 def get_llm_audit_service(storage_dir: Optional[Path] = None) -> LLMAuditService:
     """Get or create the default LLM audit service.
 
     When no storage_dir is provided, uses the active workspace's logs directory
     from .contextbuilder/workspaces.json. Falls back to output/logs only if
     no workspace is configured.
+
+    Respects COMPLIANCE_LLM_LOGGING_ENABLED environment variable:
+    - If set to "false", "0", or "no": uses NullLLMCallStorage (no file writes)
+    - Otherwise: uses FileLLMCallStorage (default behavior)
 
     Args:
         storage_dir: Optional directory override
@@ -107,13 +128,22 @@ def get_llm_audit_service(storage_dir: Optional[Path] = None) -> LLMAuditService
     """
     global _default_service
 
+    # Determine storage based on environment variable
+    logging_enabled = _is_llm_logging_enabled()
+
     if storage_dir:
-        return LLMAuditService(storage_dir)
+        if logging_enabled:
+            return LLMAuditService(storage_dir)
+        else:
+            return LLMAuditService(storage_dir, storage=NullLLMCallStorage())
 
     if _default_service is None:
         # Use workspace-aware path instead of hardcoded output/logs
         default_dir = get_workspace_logs_dir()
-        _default_service = LLMAuditService(default_dir)
+        if logging_enabled:
+            _default_service = LLMAuditService(default_dir)
+        else:
+            _default_service = LLMAuditService(default_dir, storage=NullLLMCallStorage())
 
     return _default_service
 
