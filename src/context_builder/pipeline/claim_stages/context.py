@@ -78,6 +78,8 @@ class ClaimContext:
     # Streaming callbacks for live progress
     on_token_update: Optional[Callable[[int, int], None]] = None  # (input_tokens, output_tokens)
     on_stage_update: Optional[Callable[[str, str], None]] = None  # (stage_name, status)
+    on_llm_start: Optional[Callable[[int], None]] = None  # (total_llm_calls)
+    on_llm_progress: Optional[Callable[[int], None]] = None  # (increment)
 
     # Token tracking
     input_tokens: int = 0

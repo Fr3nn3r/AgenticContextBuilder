@@ -58,6 +58,9 @@ class ClaimAssessmentService:
         claim_id: str,
         force_reconcile: bool = False,
         on_token_update: Optional[Callable[[int, int], None]] = None,
+        on_stage_update: Optional[Callable[[str, str], None]] = None,
+        on_llm_start: Optional[Callable[[int], None]] = None,
+        on_llm_progress: Optional[Callable[[int], None]] = None,
         run_context=None,
     ) -> ClaimAssessmentResult:
         """Run full assessment for a claim.
@@ -74,6 +77,9 @@ class ClaimAssessmentService:
             claim_id: Claim to assess.
             force_reconcile: Force re-reconciliation even if recent exists.
             on_token_update: Callback for token usage updates (input, output).
+            on_stage_update: Callback for stage status updates (stage_name, status).
+            on_llm_start: Callback when LLM batch processing starts (total count).
+            on_llm_progress: Callback for LLM progress updates (increment).
             run_context: Optional ClaimRunContext with shared ID and metadata.
 
         Returns:
@@ -125,6 +131,9 @@ class ClaimAssessmentService:
             workspace_path=self.storage.output_root,
             run_id=claim_run_id,
             aggregated_facts=claim_facts_data,
+            on_stage_update=on_stage_update,
+            on_llm_start=on_llm_start,
+            on_llm_progress=on_llm_progress,
         )
 
         try:
@@ -163,6 +172,9 @@ class ClaimAssessmentService:
             aggregated_facts=claim_facts_data,
             screening_result=screening_result,
             on_token_update=on_token_update,
+            on_stage_update=on_stage_update,
+            on_llm_start=on_llm_start,
+            on_llm_progress=on_llm_progress,
         )
 
         try:
