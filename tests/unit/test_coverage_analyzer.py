@@ -435,13 +435,13 @@ class TestIsComponentInPolicyList:
         assert found is False
         assert "not found in policy" in reason
 
-    def test_unknown_component_assumes_covered(self, analyzer, covered_components):
-        """Unknown component (no synonym entry) falls back to True."""
+    def test_unknown_component_returns_none(self, analyzer, covered_components):
+        """Unknown component (no synonym entry) returns None (needs LLM verification)."""
         found, reason = analyzer._is_component_in_policy_list(
             "flux_capacitor", "engine", covered_components,
         )
-        assert found is True
-        assert "assuming covered" in reason
+        assert found is None
+        assert "needs LLM verification" in reason
 
     def test_unknown_component_strict_returns_false(self, analyzer, covered_components):
         """Unknown component in strict mode returns False."""
@@ -466,23 +466,24 @@ class TestIsComponentInPolicyList:
         )
         assert found is True
 
-    def test_category_not_in_policy_returns_true(self, analyzer, covered_components):
-        """Category missing from policy → no parts list → True."""
+    def test_category_not_in_policy_returns_none(self, analyzer, covered_components):
+        """Category missing from policy → no parts list → None (needs verification)."""
         found, reason = analyzer._is_component_in_policy_list(
             "timing_belt", "turbo_supercharger", covered_components,
         )
-        assert found is True
+        assert found is None
         assert "No specific parts list" in reason
 
-    def test_description_fallback_match(self, analyzer, covered_components):
-        """Description containing a policy part name should match."""
+    def test_description_fallback_no_synonyms_returns_none(self, analyzer, covered_components):
+        """Unknown component with description returns None (no synonyms to check)."""
         found, reason = analyzer._is_component_in_policy_list(
             "some_widget", "engine", covered_components,
             description="Ersatz Zahnriemen inkl. Montage",
         )
-        # "some_widget" has no synonyms → fallback assumes covered
-        # But if it did have synonyms that failed, description would catch it
-        assert found is True
+        # "some_widget" has no synonyms → returns None (needs LLM verification)
+        # Description fallback only applies after synonym lookup succeeds
+        assert found is None
+        assert "needs LLM verification" in reason
 
     def test_space_vs_underscore_key_variants(self, analyzer, covered_components):
         """Component given with spaces should resolve to underscore key."""
@@ -575,14 +576,14 @@ class TestValidateLLMCoverageDecision:
         )
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_unknown_llm_component_assumes_covered(self, analyzer, covered_components, excluded_components):
-        """LLM item with unknown component type → fallback assumes covered."""
+    def test_unknown_llm_component_becomes_review_needed(self, analyzer, covered_components, excluded_components):
+        """LLM item with unknown component type → flagged for review."""
         item = self._make_item(matched_component="quantum_inverter")
         result = analyzer._validate_llm_coverage_decision(
             item, covered_components, excluded_components,
         )
-        # No synonyms for "quantum_inverter", fallback assumes covered
-        assert result.coverage_status == CoverageStatus.COVERED
+        # No synonyms for "quantum_inverter" → can't verify → REVIEW_NEEDED
+        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
 
 
 class TestLLMMatcherPromptBuilding:
