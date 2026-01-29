@@ -38,14 +38,14 @@ logger = logging.getLogger(__name__)
 # Used to verify if a detected component is actually in the policy's covered parts list
 COMPONENT_SYNONYMS = {
     "oil_cooler": ["ölkühler", "oelkuehler", "refroidisseur d'huile", "oil cooler"],
-    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen"],
-    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit"],
-    "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette"],
-    "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner"],
+    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen", "ensemble de distribution"],
+    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit", "ensemble de distribution"],
+    "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette", "ensemble de distribution"],
+    "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner", "ensemble de distribution"],
     "chain_guide": ["kettenführung", "guide de chaîne", "führung", "guide"],
     "belt_tensioner": ["riemenspanner", "tendeur de courroie"],
-    "idler_pulley": ["umlenkrolle", "poulie de renvoi", "spannrolle"],
-    "tensioner_pulley": ["spannrolle", "poulie tendeur"],
+    "idler_pulley": ["umlenkrolle", "poulie de renvoi", "spannrolle", "ensemble de distribution"],
+    "tensioner_pulley": ["spannrolle", "poulie tendeur", "ensemble de distribution"],
     "turbocharger": ["turbolader", "turbo", "turbocompresseur"],
     "water_pump": ["wasserpumpe", "pompe à eau", "kühlmittelpumpe"],
     "oil_pump": ["ölpumpe", "pompe à huile"],
@@ -68,7 +68,7 @@ COMPONENT_SYNONYMS = {
     "shock_absorber": ["stossdämpfer", "amortisseur"],
     "air_suspension": ["luftfederung", "suspension pneumatique"],
     # --- Added to close synonym gaps ---
-    "throttle_body": ["drosselklappe", "corps de papillon", "drosselklappenstutzen"],
+    "throttle_body": ["drosselklappe", "corps de papillon", "drosselklappenstutzen", "carburateur"],
     "injector": ["einspritzdüse", "injektor", "injecteur"],
     "maf_sensor": ["luftmassenmesser", "débitmètre", "lmm"],
     "high_pressure_pump": ["hochdruckpumpe", "pompe haute pression"],
@@ -76,8 +76,8 @@ COMPONENT_SYNONYMS = {
     "cylinder_liner": ["zylinderlaufbuchse", "chemise de cylindre"],
     "valve_cover": ["ventildeckel", "couvre-culasse", "cache culbuteur"],
     "egr_cooler": ["agr-kühler", "refroidisseur egr", "agrkühler"],
-    "timing_gear": ["steuerrad", "pignon de distribution"],
-    "pulley": ["riemenscheibe", "poulie"],
+    "timing_gear": ["steuerrad", "pignon de distribution", "pignon d'arbre à cames", "pignon d'arbre à came", "ensemble de distribution"],
+    "pulley": ["riemenscheibe", "poulie", "ensemble de distribution"],
     "serpentine_belt": ["keilrippenriemen", "courroie d'accessoires", "courroie poly-v"],
     "radiator": ["kühler", "radiateur", "wasserkühler"],
     "control_unit": ["steuergerät", "calculateur", "ecu"],
@@ -101,7 +101,7 @@ COMPONENT_SYNONYMS = {
     "injection_pump_outlet": ["ausgangsstutzen", "sortie pompe injection"],
     "injector_kit": ["einspritzkit", "kit injecteur", "kit de repose"],
     "connecting_rod_bolt": ["pleuelschraube", "boulon de bielle"],
-    "timing_bolt": ["steuerkettenbolzen", "boulon distribution"],
+    "timing_bolt": ["steuerkettenbolzen", "boulon distribution", "ensemble de distribution"],
     "pressure_accumulator": ["druckspeicher", "accumulateur de pression"],
     "pressure_line": ["druckleitung", "conduite de pression"],
     "fuel_supply_line": ["kraftstoffzulaufleitung", "conduite d'alimentation"],
@@ -109,7 +109,31 @@ COMPONENT_SYNONYMS = {
     "fuel_delivery_unit": ["fördereinheit", "unité d'alimentation"],
     "cv_joint_boot": ["gelenkmanschette", "gaine étanchéité", "soufflet"],
     "gasket": ["dichtung", "joint d'étanchéité"],
+    "power_supply_module": [
+        "alimentation",
+        "module d'alimentation",
+        "électronique de puissance",
+        "electronique de puissance",
+        "stromversorgungsmodul",
+        "stromversorgung",
+        "netzteil",
+        "power supply",
+    ],
 }
+
+# Components implicitly covered by "Ensemble de distribution" (distribution assembly)
+# catch-all entries in French/German policies.
+DISTRIBUTION_CATCH_ALL_COMPONENTS = {
+    "timing_belt", "timing_chain", "timing_gear",
+    "chain_tensioner", "chain_guide", "belt_tensioner",
+    "idler_pulley", "tensioner_pulley", "pulley",
+    "timing_bolt", "timing_belt_kit",
+}
+
+DISTRIBUTION_CATCH_ALL_KEYWORDS = [
+    "ensemble de distribution",
+    "distribution",
+]
 
 # Aliases between equivalent coverage category names.
 # When checking if a system is covered, these aliases are also tested.
@@ -140,9 +164,15 @@ REPAIR_CONTEXT_KEYWORDS = {
     # Timing chain/belt
     "steuerkette": ("timing_chain", "engine"),
     "zahnriemen": ("timing_belt", "engine"),
+    "chaîne de distribution": ("timing_chain", "engine"),
+    "chaine de distribution": ("timing_chain", "engine"),
+    "distribution": ("timing_chain", "engine"),
     # Turbo
     "turbolader": ("turbocharger", "turbo_supercharger"),
     "turbo": ("turbocharger", "turbo_supercharger"),
+    # Oil jet (piston cooling)
+    "gicleur": ("oil_jet", "engine"),
+    "injecteur d'huile": ("oil_jet", "engine"),
 }
 
 
@@ -529,18 +559,54 @@ class CoverageAnalyzer:
             # No specific parts list for this category - can't determine, needs verification
             return None, f"No specific parts list for category '{system}' - needs verification"
 
-        # Get synonyms for this component type
-        # Try multiple key variants: "egr valve" → "egr_valve", "egr valve"
         component_lower = component.lower()
         underscore_key = component_lower.replace(" ", "_")
         space_key = component_lower.replace("_", " ")
+
+        # Build lowered policy parts list for matching
+        policy_parts_lower = [p.lower() for p in policy_parts_list]
+
+        # First: check if the component name itself directly matches a policy part.
+        # This catches cases where the LLM returns the German name (e.g., "Ölpumpe")
+        # that appears verbatim in the policy's covered parts list.
+        for variant in (component_lower, underscore_key, space_key):
+            for policy_part in policy_parts_lower:
+                if variant in policy_part or policy_part in variant:
+                    return True, f"Component '{component}' found in policy list as '{policy_part}'"
+
+        # Look up synonyms for this component type
+        # Try multiple key variants: "egr valve" → "egr_valve", "egr valve"
         synonyms = (
             COMPONENT_SYNONYMS.get(component_lower)
             or COMPONENT_SYNONYMS.get(underscore_key)
             or COMPONENT_SYNONYMS.get(space_key)
         )
 
-        # If no synonyms defined for this component
+        # If synonyms exist, check them against the policy parts list
+        if synonyms:
+            for term in synonyms:
+                for policy_part in policy_parts_lower:
+                    if term in policy_part or policy_part in term:
+                        return True, f"Component '{component}' found in policy list as '{policy_part}'"
+
+        # Check distribution catch-all: if policy lists "Ensemble de distribution",
+        # all timing/distribution components are implicitly covered
+        if component_lower in DISTRIBUTION_CATCH_ALL_COMPONENTS:
+            for policy_part in policy_parts_lower:
+                for keyword in DISTRIBUTION_CATCH_ALL_KEYWORDS:
+                    if keyword in policy_part:
+                        return True, (
+                            f"Component '{component}' covered by distribution "
+                            f"catch-all '{policy_part}'"
+                        )
+
+        # Also check if the original description contains any policy part name
+        desc_lower = description.lower()
+        for policy_part in policy_parts_lower:
+            if policy_part in desc_lower:
+                return True, f"Description contains policy part '{policy_part}'"
+
+        # No match found through any method
         if not synonyms:
             if strict:
                 return False, f"No synonym mapping for component '{component}' - strict mode"
@@ -552,30 +618,9 @@ class CoverageAnalyzer:
             )
             return None, f"No synonym mapping for component '{component}' - needs LLM verification"
 
-        # Build search terms from synonyms + component name variants
-        search_terms = set(synonyms)
-        search_terms.add(component_lower)
-        search_terms.add(underscore_key)
-        search_terms.add(space_key)
-
-        # Check if any synonym matches any part in the policy list
-        policy_parts_lower = [p.lower() for p in policy_parts_list]
-
-        for term in search_terms:
-            for policy_part in policy_parts_lower:
-                # Check for substring match in either direction
-                if term in policy_part or policy_part in term:
-                    return True, f"Component '{component}' found in policy list as '{policy_part}'"
-
-        # Also check if the original description contains any policy part name
-        desc_lower = description.lower()
-        for policy_part in policy_parts_lower:
-            if policy_part in desc_lower:
-                return True, f"Description contains policy part '{policy_part}'"
-
-        # Component not found in policy list
+        # Component not found in policy list (synonyms exist but none matched)
         return False, (
-            f"Component '{component}' (synonyms: {list(search_terms)[:3]}) "
+            f"Component '{component}' (synonyms: {list(synonyms)[:3]}) "
             f"not found in policy's {matching_category} parts list "
             f"({len(policy_parts_list)} parts)"
         )
@@ -822,11 +867,13 @@ class CoverageAnalyzer:
     }
 
     def _apply_labor_follows_parts(
-        self, items: List[LineItemCoverage]
+        self,
+        items: List[LineItemCoverage],
+        repair_context: Optional[RepairContext] = None,
     ) -> List[LineItemCoverage]:
         """Promote labor items to COVERED if they reference covered parts.
 
-        Two strategies are applied in order:
+        Three strategies are applied in order:
 
         1. **Part-number matching**: If a labor description contains a covered
            part's item_code as a substring, the labor is linked to that part.
@@ -835,8 +882,13 @@ class CoverageAnalyzer:
            labor item (e.g. "Main d'œuvre") and at least 1 covered part, the
            labor is automatically linked to the first covered part's category.
 
+        3. **Repair-context matching**: If a labor description matches a
+           REPAIR_CONTEXT_KEYWORDS entry and covered parts exist in the same
+           category, the labor is linked to that category's covered parts.
+
         Args:
             items: List of analyzed line items
+            repair_context: Detected repair context from labor descriptions
 
         Returns:
             Updated list with labor items potentially promoted
@@ -909,6 +961,103 @@ class CoverageAnalyzer:
                     f"via simple invoice rule (linked to '{linked_part.description}')"
                 )
 
+        # Strategy 3: Repair-context keyword matching
+        # If labor description matches REPAIR_CONTEXT_KEYWORDS and covered parts
+        # exist in the same category, promote the labor.
+        if covered_parts:
+            for item in items:
+                if item.item_type not in labor_types:
+                    continue
+                if item.coverage_status == CoverageStatus.COVERED:
+                    continue
+
+                desc_lower = item.description.lower()
+                for keyword, (component, category) in REPAIR_CONTEXT_KEYWORDS.items():
+                    if keyword in desc_lower:
+                        matching_covered = [
+                            p for p in covered_parts
+                            if p.coverage_category
+                            and p.coverage_category.lower() == category.lower()
+                        ]
+                        if matching_covered:
+                            item.coverage_status = CoverageStatus.COVERED
+                            item.coverage_category = category
+                            item.matched_component = component
+                            item.match_confidence = 0.80
+                            item.match_reasoning = (
+                                f"Labor for covered repair: '{keyword}' matches "
+                                f"{len(matching_covered)} covered {category} parts"
+                            )
+                            logger.debug(
+                                f"Promoted labor '{item.description}' to COVERED "
+                                f"via repair context (keyword: '{keyword}')"
+                            )
+                            break
+
+        return items
+
+    # Ancillary part keywords promoted when they support a covered repair
+    _ANCILLARY_KEYWORDS = {
+        "vis", "boulon", "écrou", "schraube",       # fasteners
+        "joint", "dichtung",                         # gaskets
+        "bague", "o-ring", "o ring",                 # seals
+        "bouchon",                                   # plugs
+        "jeu mont", "jeu de mont",                   # mounting kits
+        "kit de repose",                             # install kits
+    }
+
+    def _promote_ancillary_parts(
+        self,
+        items: List[LineItemCoverage],
+        repair_context: Optional[RepairContext] = None,
+    ) -> List[LineItemCoverage]:
+        """Promote ancillary parts to COVERED when supporting a covered repair.
+
+        NSA treats repairs as grouped jobs: gaskets, screws, and seals used
+        alongside covered parts are included in coverage. This replicates
+        that behavior when a covered repair context is detected.
+
+        Args:
+            items: List of analyzed line items
+            repair_context: Detected repair context
+
+        Returns:
+            Updated list with ancillary parts potentially promoted
+        """
+        if not repair_context or not repair_context.is_covered:
+            return items
+
+        has_covered_parts = any(
+            item.coverage_status == CoverageStatus.COVERED
+            and item.item_type in ("parts", "part", "piece")
+            for item in items
+        )
+        if not has_covered_parts:
+            return items
+
+        for item in items:
+            if item.coverage_status == CoverageStatus.COVERED:
+                continue
+            if item.item_type not in ("parts", "part", "piece"):
+                continue
+
+            desc_lower = item.description.lower()
+            for pattern in self._ANCILLARY_KEYWORDS:
+                if pattern in desc_lower:
+                    item.coverage_status = CoverageStatus.COVERED
+                    item.coverage_category = repair_context.primary_category
+                    item.matched_component = repair_context.primary_component
+                    item.match_confidence = 0.70
+                    item.match_reasoning = (
+                        f"Ancillary part for covered repair: "
+                        f"'{pattern}' linked to {repair_context.primary_component}"
+                    )
+                    logger.debug(
+                        f"Promoted ancillary '{item.description}' to COVERED "
+                        f"(pattern: '{pattern}', repair: {repair_context.primary_component})"
+                    )
+                    break
+
         return items
 
     def _is_in_excluded_list(
@@ -948,6 +1097,7 @@ class CoverageAnalyzer:
         item: LineItemCoverage,
         covered_components: Dict[str, List[str]],
         excluded_components: Dict[str, List[str]],
+        repair_context: Optional[RepairContext] = None,
     ) -> LineItemCoverage:
         """Validate and potentially override LLM coverage decision.
 
@@ -955,10 +1105,15 @@ class CoverageAnalyzer:
         If the LLM approved a part based on category membership rather than
         explicit list matching, this validation will catch it.
 
+        When a covered repair context is active, exclusion overrides are
+        skipped for ancillary parts (gaskets, plugs, etc.) that support
+        the covered repair.
+
         Args:
             item: Line item coverage result from LLM
             covered_components: Dict of category -> list of covered parts
             excluded_components: Dict of category -> list of excluded parts
+            repair_context: Detected repair context (if any)
 
         Returns:
             Validated/corrected LineItemCoverage
@@ -967,15 +1122,25 @@ class CoverageAnalyzer:
             return item
 
         # Check if item is in excluded list -> force NOT_COVERED
+        # BUT skip exclusion when the item is ancillary to a covered repair
         if self._is_in_excluded_list(item, excluded_components):
-            original_status = item.coverage_status
-            item.coverage_status = CoverageStatus.NOT_COVERED
-            item.match_reasoning += " [OVERRIDE: Component is in excluded list]"
-            logger.info(
-                f"LLM validation override: '{item.description}' changed from "
-                f"{original_status.value} to NOT_COVERED (in excluded list)"
+            is_ancillary = repair_context and repair_context.is_covered and any(
+                kw in item.description.lower() for kw in self._ANCILLARY_KEYWORDS
             )
-            return item
+            if is_ancillary:
+                logger.info(
+                    f"Skipping exclusion for '{item.description}': "
+                    f"ancillary to covered repair '{repair_context.primary_component}'"
+                )
+            else:
+                original_status = item.coverage_status
+                item.coverage_status = CoverageStatus.NOT_COVERED
+                item.match_reasoning += " [OVERRIDE: Component is in excluded list]"
+                logger.info(
+                    f"LLM validation override: '{item.description}' changed from "
+                    f"{original_status.value} to NOT_COVERED (in excluded list)"
+                )
+                return item
 
         # If LLM said COVERED, verify the component is in the explicit policy list
         if item.coverage_status == CoverageStatus.COVERED:
@@ -1154,7 +1319,8 @@ class CoverageAnalyzer:
                 # Validate LLM decisions against explicit policy lists
                 llm_matched = [
                     self._validate_llm_coverage_decision(
-                        item, covered_components, excluded_components
+                        item, covered_components, excluded_components,
+                        repair_context=repair_context,
                     )
                     for item in llm_matched
                 ]
@@ -1201,7 +1367,10 @@ class CoverageAnalyzer:
         all_items = rule_matched + part_matched + keyword_matched + llm_matched
 
         # Apply labor-follows-parts linking
-        all_items = self._apply_labor_follows_parts(all_items)
+        all_items = self._apply_labor_follows_parts(all_items, repair_context=repair_context)
+
+        # Promote ancillary parts for covered repairs
+        all_items = self._promote_ancillary_parts(all_items, repair_context=repair_context)
 
         # Calculate summary using effective (age-adjusted) coverage percent
         summary = self._calculate_summary(

@@ -474,16 +474,16 @@ class TestIsComponentInPolicyList:
         assert found is None
         assert "No specific parts list" in reason
 
-    def test_description_fallback_no_synonyms_returns_none(self, analyzer, covered_components):
-        """Unknown component with description returns None (no synonyms to check)."""
+    def test_description_fallback_no_synonyms_matches_policy_part(self, analyzer, covered_components):
+        """Unknown component with description matching a policy part returns True."""
         found, reason = analyzer._is_component_in_policy_list(
             "some_widget", "engine", covered_components,
             description="Ersatz Zahnriemen inkl. Montage",
         )
-        # "some_widget" has no synonyms → returns None (needs LLM verification)
-        # Description fallback only applies after synonym lookup succeeds
-        assert found is None
-        assert "needs LLM verification" in reason
+        # "some_widget" has no synonyms, but "Zahnriemen" in description
+        # matches a policy part directly → returns True
+        assert found is True
+        assert "Description contains policy part" in reason
 
     def test_space_vs_underscore_key_variants(self, analyzer, covered_components):
         """Component given with spaces should resolve to underscore key."""
@@ -763,3 +763,93 @@ class TestDeferToLLM:
         # With Change 1, axle_drive + four_wd in covered → covered directly.
         assert len(matched) == 1
         assert matched[0].coverage_status == CoverageStatus.COVERED
+
+
+class TestNormalizeComponentName:
+    """Tests for CoverageAnalysisService._normalize_component_name."""
+
+    def test_nbsp_replaced_with_a_grave(self):
+        """NBSP (\\xa0) in component names should be replaced with 'à'."""
+        from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+        assert CoverageAnalysisService._normalize_component_name("pompe \xa0 huile") == "pompe à huile"
+
+    def test_multiple_nbsp_replaced(self):
+        """Multiple NBSP occurrences should all be replaced."""
+        from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+        assert CoverageAnalysisService._normalize_component_name(
+            "pignon d'arbre \xa0 cames"
+        ) == "pignon d'arbre à cames"
+
+    def test_normal_string_unchanged(self):
+        """Normal strings without NBSP pass through unchanged."""
+        from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+        assert CoverageAnalysisService._normalize_component_name("pompe à huile") == "pompe à huile"
+
+    def test_non_string_passthrough(self):
+        """Non-string values pass through unchanged."""
+        from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+        assert CoverageAnalysisService._normalize_component_name(42) == 42
+
+    def test_empty_string(self):
+        """Empty string passes through unchanged."""
+        from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+        assert CoverageAnalysisService._normalize_component_name("") == ""
+
+
+class TestDistributionCatchAll:
+    """Tests for distribution catch-all matching in _is_component_in_policy_list."""
+
+    @pytest.fixture
+    def analyzer(self):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+
+    def test_timing_gear_matches_distribution_catchall(self, analyzer):
+        """timing_gear should match when policy has 'Ensemble de distribution'."""
+        policy = {"engine": ["Ensemble de distribution (y compris courroie et chaîne)"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing_gear", "engine", policy,
+        )
+        assert found is True
+        assert "distribution" in reason.lower()
+
+    def test_timing_belt_matches_distribution_catchall(self, analyzer):
+        """timing_belt should match via the distribution catch-all."""
+        policy = {"engine": ["Ensemble de distribution"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing_belt", "engine", policy,
+        )
+        assert found is True
+
+    def test_chain_tensioner_matches_distribution_catchall(self, analyzer):
+        """chain_tensioner should match via the distribution catch-all."""
+        policy = {"engine": ["Ensemble de distribution (y compris courroie et chaîne)"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "chain_tensioner", "engine", policy,
+        )
+        assert found is True
+
+    def test_pulley_matches_distribution_catchall(self, analyzer):
+        """pulley should match via the distribution catch-all."""
+        policy = {"engine": ["Ensemble de distribution"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "pulley", "engine", policy,
+        )
+        assert found is True
+
+    def test_valve_body_not_matched_by_distribution(self, analyzer):
+        """Non-distribution component should NOT match via catch-all."""
+        policy = {"engine": ["Ensemble de distribution (y compris courroie et chaîne)"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "valve_body", "engine", policy,
+        )
+        # valve_body has synonyms but none match "distribution"
+        assert found is not True  # Either False or None
+
+    def test_oil_pump_not_matched_by_distribution(self, analyzer):
+        """oil_pump is NOT a distribution component, shouldn't match catch-all."""
+        policy = {"engine": ["Ensemble de distribution"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "oil_pump", "engine", policy,
+        )
+        # oil_pump has synonyms ("ölpumpe", "pompe à huile") but none are distribution parts
+        assert found is not True

@@ -50,11 +50,22 @@ def load_ground_truth() -> dict:
     return {claim["claim_id"]: claim for claim in data["claims"]}
 
 
-def find_latest_assessment(claim_id: str) -> Optional[dict]:
-    """Find the most recent assessment for a claim."""
+def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None) -> Optional[dict]:
+    """Find the most recent assessment for a claim, or a specific run."""
     claim_runs_path = WORKSPACE_PATH / "claims" / claim_id / "claim_runs"
 
     if not claim_runs_path.exists():
+        return None
+
+    if target_run_id:
+        # Look for the specific run
+        run_folder = claim_runs_path / target_run_id
+        assessment_file = run_folder / "assessment.json"
+        if assessment_file.exists():
+            with open(assessment_file, "r", encoding="utf-8") as f:
+                assessment = json.load(f)
+            assessment["_run_id"] = run_folder.name
+            return assessment
         return None
 
     # Get all run folders, sorted by name (timestamp-based)
@@ -139,14 +150,14 @@ def categorize_error(gt: dict, pred: dict, decision_match: bool) -> str:
     return "unknown"
 
 
-def run_evaluation() -> dict:
+def run_evaluation(target_run_id: Optional[str] = None) -> dict:
     """Run the full evaluation and return results."""
     ground_truth = load_ground_truth()
 
     results = []
 
     for claim_id, gt in ground_truth.items():
-        assessment = find_latest_assessment(claim_id)
+        assessment = find_latest_assessment(claim_id, target_run_id=target_run_id)
 
         row = {
             "claim_id": claim_id,
@@ -395,11 +406,18 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Pipeline Evaluation")
+    parser.add_argument("--run-id", default=None, help="Evaluate a specific run ID (e.g., clm_20260129_201912_e04f1c)")
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Pipeline Evaluation")
     print("=" * 60)
     print(f"Ground Truth: {GROUND_TRUTH_PATH}")
     print(f"Workspace: {WORKSPACE_PATH}")
+    if args.run_id:
+        print(f"Target Run:  {args.run_id}")
     print()
 
     # Check paths exist
@@ -413,7 +431,7 @@ def main():
 
     # Run evaluation
     print("Running evaluation...")
-    results = run_evaluation()
+    results = run_evaluation(target_run_id=args.run_id)
 
     # Calculate summary
     summary = calculate_summary(results)
