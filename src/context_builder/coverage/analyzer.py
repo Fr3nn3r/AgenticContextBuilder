@@ -34,6 +34,39 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Mapping of component types to their German/French equivalents for policy matching
+# Used to verify if a detected component is actually in the policy's covered parts list
+COMPONENT_SYNONYMS = {
+    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen"],
+    "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette"],
+    "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner"],
+    "chain_guide": ["kettenführung", "guide de chaîne", "führung", "guide"],
+    "belt_tensioner": ["riemenspanner", "tendeur de courroie"],
+    "idler_pulley": ["umlenkrolle", "poulie de renvoi", "spannrolle"],
+    "tensioner_pulley": ["spannrolle", "poulie tendeur"],
+    "turbocharger": ["turbolader", "turbo", "turbocompresseur"],
+    "water_pump": ["wasserpumpe", "pompe à eau", "kühlmittelpumpe"],
+    "oil_pump": ["ölpumpe", "pompe à huile"],
+    "fuel_pump": ["kraftstoffpumpe", "benzinpumpe", "pompe à carburant"],
+    "cylinder_head": ["zylinderkopf", "culasse"],
+    "cylinder_head_gasket": ["zylinderkopfdichtung", "joint de culasse"],
+    "crankshaft": ["kurbelwelle", "vilebrequin"],
+    "camshaft": ["nockenwelle", "arbre à cames"],
+    "piston": ["kolben", "piston"],
+    "connecting_rod": ["pleuelstange", "pleuel", "bielle"],
+    "valve": ["ventil", "ventile", "soupape"],
+    "egr_valve": ["agr-ventil", "egr", "abgasrückführung", "vanne egr", "recirculation"],
+    "headlight": ["scheinwerfer", "phare", "frontscheinwerfer"],
+    "sensor": ["sensor", "capteur", "fühler"],
+    "particle_filter_sensor": ["partikelfilter", "partikelsensor", "dpf", "fap"],
+    "transmission": ["getriebe", "boîte de vitesses", "transmission"],
+    "clutch": ["kupplung", "embrayage"],
+    "differential": ["differenzial", "differential", "différentiel"],
+    "drive_shaft": ["antriebswelle", "gelenkwelle", "arbre de transmission"],
+    "shock_absorber": ["stossdämpfer", "amortisseur"],
+    "air_suspension": ["luftfederung", "suspension pneumatique"],
+}
+
 
 @dataclass
 class AnalyzerConfig:
@@ -222,10 +255,86 @@ class CoverageAnalyzer:
                 return True
         return False
 
+    def _is_component_in_policy_list(
+        self,
+        component: Optional[str],
+        system: Optional[str],
+        covered_components: Dict[str, List[str]],
+        description: str = "",
+    ) -> Tuple[bool, str]:
+        """Check if a specific component is in the policy's covered parts list.
+
+        This prevents false approvals where a category (e.g., "engine") is covered
+        but the specific component (e.g., "timing_belt") is not in the policy's
+        list of covered parts for that category.
+
+        Args:
+            component: Component type from lookup (e.g., "timing_belt")
+            system: System/category name (e.g., "engine")
+            covered_components: Dict mapping category to list of covered parts
+            description: Original item description for fallback matching
+
+        Returns:
+            Tuple of (is_in_list, reason)
+        """
+        if not component or not system:
+            return True, "No component to verify"
+
+        # Find the matching category in covered_components
+        system_lower = system.lower()
+        matching_category = None
+        policy_parts_list = None
+
+        for cat, parts in covered_components.items():
+            cat_lower = cat.lower()
+            if (
+                system_lower == cat_lower
+                or system_lower in cat_lower
+                or cat_lower in system_lower
+            ):
+                matching_category = cat
+                policy_parts_list = parts
+                break
+
+        if not matching_category or not policy_parts_list:
+            # No specific parts list for this category - assume covered if category matches
+            return True, f"No specific parts list for category '{system}'"
+
+        # Get synonyms for this component type
+        component_lower = component.lower()
+        synonyms = COMPONENT_SYNONYMS.get(component_lower, [component_lower])
+        # Also add the component name itself and description terms
+        search_terms = set(synonyms)
+        search_terms.add(component_lower)
+        search_terms.add(component.replace("_", " ").lower())
+
+        # Check if any synonym matches any part in the policy list
+        policy_parts_lower = [p.lower() for p in policy_parts_list]
+
+        for term in search_terms:
+            for policy_part in policy_parts_lower:
+                # Check for substring match in either direction
+                if term in policy_part or policy_part in term:
+                    return True, f"Component '{component}' found in policy list as '{policy_part}'"
+
+        # Also check if the original description contains any policy part name
+        desc_lower = description.lower()
+        for policy_part in policy_parts_lower:
+            if policy_part in desc_lower:
+                return True, f"Description contains policy part '{policy_part}'"
+
+        # Component not found in policy list
+        return False, (
+            f"Component '{component}' (synonyms: {list(search_terms)[:3]}) "
+            f"not found in policy's {matching_category} parts list "
+            f"({len(policy_parts_list)} parts)"
+        )
+
     def _match_by_part_number(
         self,
         items: List[Dict[str, Any]],
         covered_categories: List[str],
+        covered_components: Optional[Dict[str, List[str]]] = None,
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match items by part number lookup.
 
@@ -235,12 +344,15 @@ class CoverageAnalyzer:
         Args:
             items: Line items to match
             covered_categories: Categories covered by the policy
+            covered_components: Dict mapping category to list of covered parts
+                               (used to verify specific components are covered)
 
         Returns:
             Tuple of (matched items, unmatched items)
         """
         matched = []
         unmatched = []
+        covered_components = covered_components or {}
 
         for item in items:
             item_code = item.get("item_code")
@@ -260,7 +372,15 @@ class CoverageAnalyzer:
                 continue
 
             # Check if the part's system matches a covered category
-            is_covered = self._is_system_covered(result.system, covered_categories)
+            is_category_covered = self._is_system_covered(result.system, covered_categories)
+
+            # NEW: Check if the specific component is in the policy's parts list
+            is_in_policy_list, policy_check_reason = self._is_component_in_policy_list(
+                component=result.component,
+                system=result.system,
+                covered_components=covered_components,
+                description=description,
+            )
 
             # Use part_number from result (could be item_code or keyword match)
             part_ref = item_code or result.part_number
@@ -272,12 +392,26 @@ class CoverageAnalyzer:
                     f"Part {part_ref} is excluded: "
                     f"{result.note or result.component}"
                 )
-            elif is_covered:
+            elif is_category_covered and is_in_policy_list:
+                # Category is covered AND component is in policy's specific list
                 status = CoverageStatus.COVERED
                 reasoning = (
                     f"Part {part_ref} identified as "
                     f"'{result.component_description or result.component}' "
-                    f"in category '{result.system}' (lookup: {result.lookup_source})"
+                    f"in category '{result.system}' (lookup: {result.lookup_source}). "
+                    f"Policy check: {policy_check_reason}"
+                )
+            elif is_category_covered and not is_in_policy_list:
+                # Category is covered BUT component is NOT in policy's specific list
+                status = CoverageStatus.NOT_COVERED
+                reasoning = (
+                    f"Part {part_ref} is '{result.component}' in category "
+                    f"'{result.system}' which is covered, but this specific component "
+                    f"is not in the policy's covered parts list. {policy_check_reason}"
+                )
+                logger.info(
+                    f"Component exclusion: {part_ref} ({result.component}) - "
+                    f"category '{result.system}' is covered but component not in policy list"
                 )
             else:
                 status = CoverageStatus.NOT_COVERED
@@ -313,7 +447,7 @@ class CoverageAnalyzer:
 
             logger.debug(
                 f"Part lookup match: {part_ref} -> {result.system}/{result.component} "
-                f"({status.value}, source={result.lookup_source})"
+                f"({status.value}, source={result.lookup_source}, in_policy={is_in_policy_list})"
             )
 
         return matched, unmatched
@@ -512,7 +646,7 @@ class CoverageAnalyzer:
         part_matched = []
         if self.part_lookup and remaining:
             part_matched, remaining = self._match_by_part_number(
-                remaining, covered_categories
+                remaining, covered_categories, covered_components
             )
             logger.debug(f"Part numbers matched: {len(part_matched)}/{len(line_items)}")
 

@@ -29,6 +29,7 @@ Cost Estimate / Quote from Swiss automotive dealers (AMAG, Kestenholz, etc.)
 - chassis_number: VIN/Chassis number (17+ chars, e.g., "VSSZZZKMZMR025337")
 - vehicle_description: Vehicle description (e.g., "CUPRA FORMENTOR 4DRIVE", "VW Golf 2.0 TSI GTI")
 - garage_name: Garage/dealer name (e.g., "AMAG", "Kestenholz Automobil AG")
+- odometer_km: Current vehicle mileage/odometer reading (e.g., "39491", "125000"). Look for "Kilométrage", "km-Stand", "Kilometerstand"
 
 ### On Every Page: Extract Line Items
 Extract ALL line items visible on THIS PAGE. Each item needs:
@@ -87,7 +88,8 @@ Return JSON:
     "license_plate": "ZH 293885",
     "chassis_number": "WVWZZZCD5RW127448",
     "vehicle_description": "VW Golf 2.0 TSI GTI Club DSG",
-    "garage_name": "Kestenholz Automobil AG"
+    "garage_name": "Kestenholz Automobil AG",
+    "odometer_km": 39491
   },
   "carry_forward_amount": null,
   "line_items": [

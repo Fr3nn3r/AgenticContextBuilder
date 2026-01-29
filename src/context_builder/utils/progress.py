@@ -114,21 +114,34 @@ class ProgressReporter:
         self._configure_logging()
 
     def _configure_logging(self) -> None:
-        """Configure logging level based on mode."""
-        cb_logger = logging.getLogger("context_builder")
+        """Configure logging level based on mode.
+
+        Note: We configure both the main 'context_builder' logger and the
+        'workspace_screener' logger (which is dynamically loaded from workspace
+        config with a different module name).
+        """
+        # Loggers to configure - includes dynamically loaded workspace modules
+        loggers = [
+            logging.getLogger("context_builder"),
+            logging.getLogger("workspace_screener"),
+        ]
 
         if self.mode == ProgressMode.PROGRESS:
             # Suppress INFO logs, only show WARNING and above
-            cb_logger.setLevel(logging.WARNING)
+            for logger in loggers:
+                logger.setLevel(logging.WARNING)
         elif self.mode == ProgressMode.QUIET:
             # Only show errors
-            cb_logger.setLevel(logging.ERROR)
+            for logger in loggers:
+                logger.setLevel(logging.ERROR)
         elif self.mode == ProgressMode.VERBOSE:
             # Show everything including debug
-            cb_logger.setLevel(logging.DEBUG)
+            for logger in loggers:
+                logger.setLevel(logging.DEBUG)
         else:  # LOGS mode
             # Normal logging (INFO and above)
-            cb_logger.setLevel(logging.INFO)
+            for logger in loggers:
+                logger.setLevel(logging.INFO)
 
     def _create_bar(self, **kwargs) -> Any:
         """Create a progress bar or no-op fallback."""
