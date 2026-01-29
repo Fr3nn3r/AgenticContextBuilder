@@ -152,10 +152,23 @@ Keep 10 claims (20%) as holdout - don't look at them during development:
 
 | File | Purpose |
 |------|---------|
-| `workspaces/nsa/eval/baseline_results.json` | First run results |
-| `workspaces/nsa/eval/iteration_N_results.json` | Each iteration |
-| `workspaces/nsa/eval/error_analysis.csv` | Categorized errors |
-| `workspaces/nsa/eval/metrics_history.json` | Track accuracy over time |
+| `workspaces/nsa/eval/EVAL_LOG.md` | Human-readable log of all iterations with findings |
+| `workspaces/nsa/eval/metrics_history.json` | Machine-readable metrics history (auto-updated) |
+| `workspaces/nsa/eval/eval_YYYYMMDD_HHMMSS/` | Per-run output folder |
+| `workspaces/nsa/eval/eval_*/summary.json` | Run metrics |
+| `workspaces/nsa/eval/eval_*/details.xlsx` | Per-claim breakdown |
+| `workspaces/nsa/eval/eval_*/errors.xlsx` | Only mismatches |
+
+## Tracking Workflow
+
+After each evaluation run:
+
+1. **Automatic**: `metrics_history.json` is updated with metrics
+2. **Manual**: Update `EVAL_LOG.md` with:
+   - What you changed
+   - What improved
+   - New issues discovered
+   - Next steps
 
 ## Evaluation Script
 

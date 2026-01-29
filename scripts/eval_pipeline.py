@@ -337,6 +337,63 @@ def save_results(results: list, summary: dict):
     return output_dir
 
 
+def update_metrics_history(output_dir: Path, summary: dict, description: str = ""):
+    """Append this run to metrics_history.json for tracking over time."""
+    history_path = WORKSPACE_PATH / "eval" / "metrics_history.json"
+
+    # Load existing history or create new
+    if history_path.exists():
+        with open(history_path, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    else:
+        history = {
+            "schema_version": "metrics_history_v1",
+            "ground_truth_path": str(GROUND_TRUTH_PATH),
+            "ground_truth_claims": summary["total_claims"],
+            "runs": []
+        }
+
+    # Build top errors list
+    top_errors = [
+        {"category": cat, "count": count}
+        for cat, count in sorted(
+            summary.get("error_categories", {}).items(),
+            key=lambda x: -x[1]
+        )[:5]
+    ]
+
+    # Create new run entry
+    run_entry = {
+        "run_id": output_dir.name,
+        "timestamp": datetime.now().isoformat(),
+        "description": description or "Evaluation run",
+        "git_commit": None,
+        "pipeline_version": None,
+        "metrics": {
+            "decision_accuracy": round(summary["decision_accuracy"], 3),
+            "decision_correct": summary["decision_correct"],
+            "decision_wrong": summary["decision_wrong"],
+            "approved_correct": summary["gt_approved_correct"],
+            "approved_total": summary["gt_approved_total"],
+            "denied_correct": summary["gt_denied_correct"],
+            "denied_total": summary["gt_denied_total"],
+            "false_reject_rate": round(summary["false_reject_rate"], 3),
+            "false_approve_rate": round(summary["false_approve_rate"], 3)
+        },
+        "top_errors": top_errors,
+        "notes": ""
+    }
+
+    # Append to history
+    history["runs"].append(run_entry)
+
+    # Save updated history
+    with open(history_path, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+
+    print(f"Updated: {history_path}")
+
+
 def main():
     print("=" * 60)
     print("Pipeline Evaluation")
@@ -389,9 +446,15 @@ def main():
     # Save results
     output_dir = save_results(results, summary)
 
+    # Update metrics history for tracking
+    update_metrics_history(output_dir, summary)
+
     print()
     print(f"Results saved to: {output_dir}")
     print("=" * 60)
+    print()
+    print("Remember to update EVAL_LOG.md with your findings!")
+    print(f"  {WORKSPACE_PATH / 'eval' / 'EVAL_LOG.md'}")
 
 
 if __name__ == "__main__":
