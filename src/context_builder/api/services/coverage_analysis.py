@@ -293,6 +293,104 @@ class CoverageAnalysisService:
 
         return excess_percent, excess_minimum
 
+    def _extract_vehicle_age(
+        self, claim_facts: Dict[str, Any]
+    ) -> Optional[float]:
+        """Extract vehicle age in years from claim facts.
+
+        Calculates age based on vehicle_first_registration and claim/document date.
+        NSA policies use "Dès 8 ans 40%" rule for reduced coverage.
+
+        Args:
+            claim_facts: Claim facts dictionary
+
+        Returns:
+            Vehicle age in years or None if dates not available
+        """
+        from datetime import datetime
+
+        facts = claim_facts.get("facts", [])
+
+        # Get registration date (first registration)
+        reg_date_str = self._extract_fact_value(
+            facts, "vehicle_first_registration"
+        ) or self._extract_fact_value(facts, "registration_date")
+
+        if not reg_date_str:
+            return None
+
+        # Parse registration date (format: DD.MM.YYYY or DD.MM.YYYY XX)
+        reg_date = None
+        if isinstance(reg_date_str, str):
+            # Remove any trailing text (like canton codes)
+            date_part = reg_date_str.split()[0]
+            for fmt in ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"]:
+                try:
+                    reg_date = datetime.strptime(date_part, fmt)
+                    break
+                except ValueError:
+                    continue
+
+        if not reg_date:
+            logger.warning(f"Could not parse registration date: {reg_date_str}")
+            return None
+
+        # Get claim/document date for age calculation
+        claim_date_str = self._extract_fact_value(
+            facts, "cost_estimate.document_date"
+        ) or self._extract_fact_value(facts, "document_date")
+
+        claim_date = datetime.now()  # Default to current date
+        if claim_date_str:
+            if isinstance(claim_date_str, str):
+                date_part = claim_date_str.split()[0]
+                for fmt in ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"]:
+                    try:
+                        claim_date = datetime.strptime(date_part, fmt)
+                        break
+                    except ValueError:
+                        continue
+
+        # Calculate age in years
+        age_days = (claim_date - reg_date).days
+        age_years = age_days / 365.25
+
+        return age_years
+
+    def _get_age_coverage_params(
+        self,
+    ) -> Tuple[Optional[int], Optional[float]]:
+        """Get age-based coverage parameters from workspace assumptions.
+
+        NSA policies typically use "Dès 8 ans 40%" rule.
+
+        Returns:
+            Tuple of (age_threshold_years, age_coverage_percent)
+        """
+        # Default NSA values: "Dès 8 ans 40%"
+        age_threshold_years = 8
+        age_coverage_percent = 40.0
+
+        # Try to load from workspace assumptions
+        assumptions_path = self.storage.output_root / "config" / "assumptions.json"
+        if assumptions_path.exists():
+            try:
+                import json
+
+                with open(assumptions_path, "r", encoding="utf-8") as f:
+                    assumptions = json.load(f)
+                coverage_config = assumptions.get("coverage", {})
+                age_threshold_years = coverage_config.get(
+                    "age_threshold_years", age_threshold_years
+                )
+                age_coverage_percent = coverage_config.get(
+                    "age_coverage_percent", age_coverage_percent
+                )
+            except (json.JSONDecodeError, IOError) as e:
+                logger.debug(f"Could not load age params from assumptions: {e}")
+
+        return age_threshold_years, age_coverage_percent
+
     def _write_coverage_analysis(
         self, claim_run_path: Path, result: CoverageAnalysisResult
     ) -> Path:
@@ -375,9 +473,16 @@ class CoverageAnalysisService:
         coverage_scale = self._extract_coverage_scale(claim_facts)
         excess_percent, excess_minimum = self._extract_excess_info(claim_facts)
 
+        # Extract vehicle age for age-based coverage reduction
+        vehicle_age_years = self._extract_vehicle_age(claim_facts)
+        age_threshold_years, age_coverage_percent = self._get_age_coverage_params()
+
+        age_info = ""
+        if vehicle_age_years is not None:
+            age_info = f", age={vehicle_age_years:.1f}y"
         logger.info(
             f"Analyzing claim {claim_id}: {len(line_items)} items, "
-            f"km={vehicle_km}, {len(covered_components)} categories"
+            f"km={vehicle_km}{age_info}, {len(covered_components)} categories"
         )
 
         # Run analysis
@@ -391,6 +496,9 @@ class CoverageAnalysisService:
             excess_percent=excess_percent,
             excess_minimum=excess_minimum,
             claim_run_id=claim_run_id,
+            vehicle_age_years=vehicle_age_years,
+            age_threshold_years=age_threshold_years,
+            age_coverage_percent=age_coverage_percent,
         )
 
         # Write results
