@@ -10,8 +10,9 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from context_builder.services.openai_client import get_openai_client
 
@@ -54,6 +55,187 @@ class AssessmentProcessor:
             audit_service = get_llm_audit_service(get_workspace_logs_dir())
             self._audited_client = AuditedOpenAIClient(self._client, audit_service)
 
+    # ── Screening → Assessment mapping helpers ──────────────────────
+
+    @staticmethod
+    def _map_screening_checks(screening_checks: List[Dict]) -> List[Dict]:
+        """Map ScreeningCheck dicts to CheckResult dicts.
+
+        Field renames:
+            check_id → check_number
+            verdict  → result  (SKIPPED → NOT_CHECKED)
+            reason   → details
+            evidence dict keys → evidence_refs list
+        """
+        verdict_map = {
+            "PASS": "PASS",
+            "FAIL": "FAIL",
+            "INCONCLUSIVE": "INCONCLUSIVE",
+            "SKIPPED": "NOT_CHECKED",
+        }
+        mapped = []
+        for sc in screening_checks:
+            mapped.append({
+                "check_number": sc["check_id"],
+                "check_name": sc["check_name"],
+                "result": verdict_map.get(sc["verdict"], "INCONCLUSIVE"),
+                "details": sc.get("reason", ""),
+                "evidence_refs": list(sc.get("evidence", {}).keys()),
+            })
+        return mapped
+
+    @staticmethod
+    def _map_screening_payout(payout_data: Dict) -> Dict:
+        """Map ScreeningPayoutCalculation dict to PayoutCalculation dict.
+
+        Key renames:
+            covered_total     → covered_subtotal
+            not_covered_total → non_covered_deductions
+            deductible_amount → deductible
+        Computed:
+            total_claimed = covered_total + not_covered_total
+            coverage_percent: float → int
+            after_coverage = capped_amount (coverage % already applied)
+            capped_amount = capped_amount when max_coverage_applied else None
+        """
+        covered = payout_data.get("covered_total", 0.0)
+        not_covered = payout_data.get("not_covered_total", 0.0)
+        coverage_pct = payout_data.get("coverage_percent")
+        max_cov_applied = payout_data.get("max_coverage_applied", False)
+        capped = payout_data.get("capped_amount", 0.0)
+
+        return {
+            "total_claimed": covered + not_covered,
+            "non_covered_deductions": not_covered,
+            "covered_subtotal": covered,
+            "coverage_percent": int(coverage_pct) if coverage_pct is not None else 0,
+            "after_coverage": capped,
+            "max_coverage_applied": max_cov_applied,
+            "capped_amount": capped if max_cov_applied else None,
+            "deductible": payout_data.get("deductible_amount", 0.0),
+            "after_deductible": payout_data.get("after_deductible", 0.0),
+            "vat_adjusted": payout_data.get("vat_adjusted", False),
+            "vat_deduction": payout_data.get("vat_deduction", 0.0),
+            "policyholder_type": payout_data.get("policyholder_type", "individual"),
+            "final_payout": payout_data.get("final_payout", 0.0),
+            "currency": payout_data.get("currency", "CHF"),
+        }
+
+    @staticmethod
+    def _zero_payout() -> Dict:
+        """Return a zeroed PayoutCalculation dict for auto-rejects without payout data."""
+        return {
+            "total_claimed": 0.0,
+            "non_covered_deductions": 0.0,
+            "covered_subtotal": 0.0,
+            "coverage_percent": 0,
+            "after_coverage": 0.0,
+            "max_coverage_applied": False,
+            "capped_amount": None,
+            "deductible": 0.0,
+            "after_deductible": 0.0,
+            "vat_adjusted": False,
+            "vat_deduction": 0.0,
+            "policyholder_type": "individual",
+            "final_payout": 0.0,
+            "currency": "CHF",
+        }
+
+    @staticmethod
+    def _extract_fraud_indicators(screening_checks: List[Dict]) -> List[Dict]:
+        """Extract fraud indicators from hard-fail screening checks.
+
+        Checks with verdict=FAIL and is_hard_fail=True become
+        FraudIndicator dicts with severity="high".
+        """
+        indicators = []
+        for sc in screening_checks:
+            if sc.get("verdict") == "FAIL" and sc.get("is_hard_fail"):
+                indicators.append({
+                    "indicator": f"Hard fail: {sc['check_name']}",
+                    "severity": "high",
+                    "details": sc.get("reason", ""),
+                })
+        return indicators
+
+    # ── Auto-reject response builder ─────────────────────────────────
+
+    def _build_auto_reject_response(
+        self, claim_id: str, screening: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Build a complete AssessmentResponse dict for auto-rejected claims.
+
+        Args:
+            claim_id: The claim identifier.
+            screening: The screening result dict (ScreeningResult.model_dump()).
+
+        Returns:
+            Validated AssessmentResponse dict.
+        """
+        # Map screening checks (1–5b)
+        checks = self._map_screening_checks(screening.get("checks", []))
+
+        # Synthesize check 6 (payout_calculation)
+        has_payout = screening.get("payout") is not None
+        checks.append({
+            "check_number": "6",
+            "check_name": "payout_calculation",
+            "result": "PASS" if has_payout else "NOT_CHECKED",
+            "details": (
+                "Payout computed by screening"
+                if has_payout
+                else f"Payout not computed: {screening.get('payout_error', 'unknown')}"
+            ),
+            "evidence_refs": [],
+        })
+
+        # Synthesize check 7 (final_decision)
+        checks.append({
+            "check_number": "7",
+            "check_name": "final_decision",
+            "result": "FAIL",
+            "details": screening.get("auto_reject_reason", "Auto-rejected by screening"),
+            "evidence_refs": [],
+        })
+
+        # Map payout
+        if screening.get("payout"):
+            payout = self._map_screening_payout(screening["payout"])
+        else:
+            payout = self._zero_payout()
+
+        # Build fraud indicators from hard fails
+        fraud_indicators = self._extract_fraud_indicators(screening.get("checks", []))
+
+        # Assemble the response dict
+        response_dict = {
+            "schema_version": "claims_assessment_v2",
+            "assessment_method": "auto_reject",
+            "claim_id": claim_id,
+            "assessment_timestamp": datetime.now(timezone.utc).isoformat(),
+            "decision": "REJECT",
+            "decision_rationale": screening.get(
+                "auto_reject_reason", "Auto-rejected by screening"
+            ),
+            "confidence_score": 1.0,
+            "checks": checks,
+            "payout": payout,
+            "data_gaps": [],
+            "fraud_indicators": fraud_indicators,
+            "recommendations": ["Claim auto-rejected by deterministic screening."],
+        }
+
+        # Validate via Pydantic
+        validated = AssessmentResponse.model_validate(response_dict)
+
+        # Run completeness check
+        warnings = validate_assessment_completeness(validated)
+        if warnings:
+            for warning in warnings:
+                logger.warning(f"Auto-reject validation warning: {warning}")
+
+        return validated.model_dump()
+
     def process(
         self,
         context: ClaimContext,
@@ -70,12 +252,29 @@ class AssessmentProcessor:
         Returns:
             Assessment result dictionary with decision, checks, etc.
         """
-        self._ensure_client()
-
         logger.info(f"Running assessment for claim {context.claim_id}")
 
         if not context.aggregated_facts:
             raise ValueError(f"No aggregated facts available for claim {context.claim_id}")
+
+        # Check for auto-reject from screening (before initializing OpenAI client)
+        screening = context.screening_result  # Dict or None
+
+        if screening and screening.get("auto_reject"):
+            logger.info(
+                f"Auto-rejecting claim {context.claim_id}: "
+                f"{screening.get('auto_reject_reason')}"
+            )
+            result = self._build_auto_reject_response(context.claim_id, screening)
+            result["claim_id"] = context.claim_id
+            result["prompt_version"] = config.prompt_version
+            result["model"] = "none (auto-reject)"
+            if on_token_update:
+                on_token_update(0, 0)
+            return result
+
+        # LLM path: initialize OpenAI client
+        self._ensure_client()
 
         # Set audit context
         self._audited_client.set_context(
@@ -84,11 +283,12 @@ class AssessmentProcessor:
             call_purpose="assessment",
         )
 
-        # Build prompt with facts
+        # Build prompt with facts (inject screening context if available)
         system_prompt, user_prompt = self._build_prompts(
             config.prompt_content or "",
             context.aggregated_facts,
             context.claim_id,
+            screening=screening if screening and not screening.get("auto_reject") else None,
         )
 
         messages = [
@@ -123,6 +323,7 @@ class AssessmentProcessor:
         prompt_template: str,
         facts: Dict[str, Any],
         claim_id: str,
+        screening: Optional[Dict[str, Any]] = None,
     ) -> tuple[str, str]:
         """Build system and user prompts for assessment.
 
@@ -130,6 +331,7 @@ class AssessmentProcessor:
             prompt_template: The prompt template from config.
             facts: Aggregated claim facts.
             claim_id: The claim identifier.
+            screening: Optional screening result dict to inject as context.
 
         Returns:
             Tuple of (system_prompt, user_prompt).
@@ -147,11 +349,27 @@ class AssessmentProcessor:
             system_prompt = prompt_template
             user_template = ""
 
+        # Build screening context block if available
+        screening_block = ""
+        if screening:
+            screening_json = json.dumps(screening, indent=2, default=str)
+            screening_block = f"""
+## Pre-computed Screening Results (JSON)
+Use these results to verify your analysis. Focus on checks marked
+INCONCLUSIVE or flagged with requires_llm: true. Use the pre-computed
+payout for Check 6 rather than computing from scratch.
+
+```json
+{screening_json}
+```
+
+"""
+
         # Build user prompt with facts
         user_prompt = f"""Evaluate the following claim:
 
 Claim ID: {claim_id}
-
+{screening_block}
 Aggregated Facts:
 ```json
 {facts_json}
@@ -159,52 +377,7 @@ Aggregated Facts:
 
 {user_template}
 
-Provide your assessment as a JSON object with the following structure:
-{{
-  "decision": "APPROVE" | "REJECT" | "REFER_TO_HUMAN",
-  "confidence_score": 0.0-1.0,
-  "decision_rationale": "Explanation of the decision",
-  "checks": [
-    {{
-      "check_number": 1,
-      "check_name": "Name of check",
-      "result": "PASS" | "FAIL" | "INCONCLUSIVE",
-      "details": "Details about the check result",
-      "evidence_refs": ["ref1", "ref2"]
-    }}
-  ],
-  "data_gaps": [
-    {{
-      "field": "field_name",
-      "impact": "LOW" | "MEDIUM" | "HIGH",
-      "action_taken": "How you handled this gap"
-    }}
-  ],
-  "fraud_indicators": [
-    {{
-      "indicator": "Description of indicator",
-      "severity": "high" | "medium" | "low",
-      "details": "Supporting details"
-    }}
-  ],
-  "payout": {{
-    "total_claimed": 0,
-    "non_covered_deductions": 0,
-    "covered_subtotal": 0,
-    "coverage_percent": 0,
-    "after_coverage": 0,
-    "max_coverage_applied": false,
-    "capped_amount": null,
-    "deductible": 0,
-    "after_deductible": 0,
-    "vat_adjusted": false,
-    "vat_deduction": 0,
-    "policyholder_type": "individual",
-    "final_payout": 0,
-    "currency": "CHF"
-  }},
-  "recommendations": ["List of recommendations"]
-}}"""
+Provide your assessment as JSON matching the response schema."""
 
         return system_prompt, user_prompt
 

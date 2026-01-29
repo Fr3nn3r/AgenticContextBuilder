@@ -1,0 +1,506 @@
+"""Unit tests for NSA screening payout calculation.
+
+Tests the deterministic payout calculation in the NSAScreener:
+- Coverage totals from CoverageAnalysisResult
+- Max coverage cap
+- Deductible (percent + minimum)
+- VAT adjustment for companies
+- Edge cases (missing data, zero amounts)
+
+Skipped automatically if the NSA workspace screener is not present.
+"""
+
+import importlib.util
+from pathlib import Path
+from typing import List, Optional
+from unittest.mock import MagicMock
+
+import pytest
+
+from context_builder.coverage.schemas import (
+    CoverageAnalysisResult,
+    CoverageStatus,
+    CoverageSummary,
+    LineItemCoverage,
+    MatchMethod,
+)
+from context_builder.schemas.screening import ScreeningPayoutCalculation
+
+# ── Dynamic import of NSAScreener from workspace config ──────────────
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_WORKSPACE_NSA = _PROJECT_ROOT / "workspaces" / "nsa"
+_SCREENER_FILE = _WORKSPACE_NSA / "config" / "screening" / "screener.py"
+
+_nsa_available = _SCREENER_FILE.exists()
+
+if _nsa_available:
+    _spec = importlib.util.spec_from_file_location("nsa_screener", _SCREENER_FILE)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    NSAScreener = _mod.NSAScreener
+    SWISS_VAT_RATE = _mod.SWISS_VAT_RATE
+else:
+    NSAScreener = None  # type: ignore[assignment,misc]
+    SWISS_VAT_RATE = 0.081
+
+pytestmark = pytest.mark.skipif(
+    not _nsa_available,
+    reason="NSA workspace screener not available",
+)
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _screener() -> "NSAScreener":
+    return NSAScreener(_WORKSPACE_NSA)
+
+
+def _make_facts(*name_value_pairs):
+    return [{"name": n, "value": v} for n, v in name_value_pairs]
+
+
+def _make_coverage_result(
+    covered_total: float = 4500.0,
+    not_covered_total: float = 500.0,
+    coverage_percent: Optional[float] = 80.0,
+) -> CoverageAnalysisResult:
+    """Build a minimal CoverageAnalysisResult with summary totals."""
+    line_items = []
+    if covered_total > 0:
+        line_items.append(
+            LineItemCoverage(
+                description="Covered part",
+                item_type="parts",
+                total_price=covered_total,
+                coverage_status=CoverageStatus.COVERED,
+                match_method=MatchMethod.KEYWORD,
+                match_confidence=0.85,
+                match_reasoning="Covered",
+                covered_amount=covered_total,
+            )
+        )
+    if not_covered_total > 0:
+        line_items.append(
+            LineItemCoverage(
+                description="Not covered part",
+                item_type="parts",
+                total_price=not_covered_total,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.RULE,
+                match_confidence=1.0,
+                match_reasoning="Not covered",
+                not_covered_amount=not_covered_total,
+            )
+        )
+
+    return CoverageAnalysisResult(
+        claim_id="CLM-TEST",
+        line_items=line_items,
+        summary=CoverageSummary(
+            total_covered_before_excess=covered_total,
+            total_not_covered=not_covered_total,
+            items_covered=1 if covered_total > 0 else 0,
+            items_not_covered=1 if not_covered_total > 0 else 0,
+            coverage_percent=coverage_percent,
+        ),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# BASIC PAYOUT CALCULATION
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPayoutBasic:
+    """Basic payout calculation tests."""
+
+    def test_basic_payout_no_cap_no_deductible(self):
+        """No max coverage, no deductible → final = covered_total."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0, not_covered_total=500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout is not None
+        assert payout.covered_total == 4500.0
+        assert payout.not_covered_total == 500.0
+        assert payout.capped_amount == 4500.0
+        assert payout.max_coverage_applied is False
+        assert payout.deductible_amount == 0.0
+        assert payout.after_deductible == 4500.0
+        assert payout.final_payout == 4500.0
+        assert payout.policyholder_type == "individual"
+        assert payout.vat_adjusted is False
+
+    def test_returns_none_without_coverage(self):
+        """No coverage result → payout is None."""
+        facts = _make_facts(("policyholder_name", "Hans Muster"))
+        payout = _screener()._calculate_payout(facts, None)
+        assert payout is None
+
+    def test_zero_covered_total(self):
+        facts = _make_facts(("policyholder_name", "Hans Muster"))
+        coverage = _make_coverage_result(covered_total=0.0, not_covered_total=1000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout is not None
+        assert payout.covered_total == 0.0
+        assert payout.final_payout == 0.0
+
+    def test_currency_is_chf(self):
+        facts = _make_facts(("policyholder_name", "Hans Muster"))
+        coverage = _make_coverage_result()
+        payout = _screener()._calculate_payout(facts, coverage)
+        assert payout.currency == "CHF"
+
+    def test_amounts_are_rounded(self):
+        """Verify amounts are rounded to 2 decimal places."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "10"),
+            ("excess_minimum", "200"),
+        )
+        # 3333.33 * 10% = 333.333 → should round to 333.33
+        coverage = _make_coverage_result(covered_total=3333.33)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_amount == round(3333.33 * 0.10, 2)
+        assert payout.final_payout == round(payout.final_payout, 2)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MAX COVERAGE CAP
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPayoutMaxCoverage:
+    """Tests for max coverage cap."""
+
+    def test_cap_applied_when_exceeded(self):
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("max_coverage", "3000"),
+        )
+        coverage = _make_coverage_result(covered_total=5000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.max_coverage_applied is True
+        assert payout.max_coverage == 3000.0
+        assert payout.capped_amount == 3000.0
+
+    def test_cap_not_applied_when_under(self):
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("max_coverage", "10000"),
+        )
+        coverage = _make_coverage_result(covered_total=5000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.max_coverage_applied is False
+        assert payout.capped_amount == 5000.0
+
+    def test_cap_at_exact_amount(self):
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("max_coverage", "5000"),
+        )
+        coverage = _make_coverage_result(covered_total=5000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.max_coverage_applied is False
+        assert payout.capped_amount == 5000.0
+
+    def test_no_cap_when_not_specified(self):
+        facts = _make_facts(("policyholder_name", "Hans Muster"))
+        coverage = _make_coverage_result(covered_total=50000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.max_coverage is None
+        assert payout.max_coverage_applied is False
+        assert payout.capped_amount == 50000.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DEDUCTIBLE CALCULATION
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPayoutDeductible:
+    """Tests for deductible (excess) calculation."""
+
+    def test_percent_deductible(self):
+        """Deductible = capped * percent/100."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "10"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_percent == 10.0
+        assert payout.deductible_amount == 450.0
+        assert payout.after_deductible == 4050.0
+
+    def test_minimum_deductible(self):
+        """Deductible = MAX(percent * capped, minimum)."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "5"),     # 5% of 1000 = 50
+            ("excess_minimum", "200"),   # minimum 200 → use 200
+        )
+        coverage = _make_coverage_result(covered_total=1000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_amount == 200.0  # MIN wins
+        assert payout.after_deductible == 800.0
+
+    def test_percent_deductible_wins_over_minimum(self):
+        """When percent produces higher amount, it wins."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "10"),    # 10% of 5000 = 500
+            ("excess_minimum", "200"),   # minimum 200 → use 500
+        )
+        coverage = _make_coverage_result(covered_total=5000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_amount == 500.0
+
+    def test_only_minimum_deductible(self):
+        """When only minimum is specified (no percent)."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_minimum", "300"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_amount == 300.0
+        assert payout.after_deductible == 4200.0
+
+    def test_no_deductible(self):
+        """No excess fields → deductible = 0."""
+        facts = _make_facts(("policyholder_name", "Hans Muster"))
+        coverage = _make_coverage_result(covered_total=4500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.deductible_amount == 0.0
+        assert payout.after_deductible == 4500.0
+
+    def test_after_deductible_never_negative(self):
+        """After deductible should not go below zero."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_minimum", "5000"),
+        )
+        coverage = _make_coverage_result(covered_total=1000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.after_deductible == 0.0
+        assert payout.final_payout == 0.0
+
+    def test_deductible_with_max_coverage_cap(self):
+        """Deductible applies to capped amount, not original covered total."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("max_coverage", "3000"),
+            ("excess_percent", "10"),
+        )
+        coverage = _make_coverage_result(covered_total=5000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        # Capped at 3000, deductible = 3000 * 10% = 300
+        assert payout.capped_amount == 3000.0
+        assert payout.deductible_amount == 300.0
+        assert payout.after_deductible == 2700.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VAT ADJUSTMENT (COMPANY)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPayoutVAT:
+    """Tests for VAT adjustment on company policyholders."""
+
+    def test_company_vat_deducted(self):
+        facts = _make_facts(
+            ("policyholder_name", "Muster AG"),
+            ("excess_percent", "10"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.policyholder_type == "company"
+        assert payout.vat_adjusted is True
+        assert payout.vat_deduction > 0
+
+        # Verify formula: final = after_deductible / (1 + VAT_RATE)
+        after_ded = payout.after_deductible
+        expected_final = round(after_ded / (1 + SWISS_VAT_RATE), 2)
+        assert payout.final_payout == expected_final
+
+    def test_individual_no_vat(self):
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "10"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.policyholder_type == "individual"
+        assert payout.vat_adjusted is False
+        assert payout.vat_deduction == 0.0
+        assert payout.final_payout == payout.after_deductible
+
+    def test_company_zero_payout_no_vat(self):
+        """Company with zero after_deductible should have no VAT adjustment."""
+        facts = _make_facts(
+            ("policyholder_name", "Muster GmbH"),
+            ("excess_minimum", "5000"),
+        )
+        coverage = _make_coverage_result(covered_total=1000.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.policyholder_type == "company"
+        assert payout.after_deductible == 0.0
+        assert payout.vat_adjusted is False
+        assert payout.final_payout == 0.0
+
+    def test_vat_deduction_amount_correct(self):
+        """Verify exact VAT deduction amount."""
+        facts = _make_facts(("policyholder_name", "Muster SA"))
+        coverage = _make_coverage_result(covered_total=10810.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        # after_deductible = 10810 (no deductible)
+        # vat_deduction = 10810 - 10810/(1+0.081) = 10810 - 10000 = 810
+        assert payout.vat_adjusted is True
+        expected_vat = round(10810.0 - (10810.0 / (1 + SWISS_VAT_RATE)), 2)
+        assert payout.vat_deduction == expected_vat
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FULL PAYOUT FLOW
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPayoutFullFlow:
+    """End-to-end payout calculation scenarios."""
+
+    def test_typical_individual_claim(self):
+        """Typical claim: individual, deductible, no cap."""
+        facts = _make_facts(
+            ("policyholder_name", "Anna Muster"),
+            ("excess_percent", "10"),
+            ("excess_minimum", "200"),
+        )
+        coverage = _make_coverage_result(
+            covered_total=4500.0, not_covered_total=500.0, coverage_percent=80.0
+        )
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert payout.covered_total == 4500.0
+        assert payout.not_covered_total == 500.0
+        assert payout.capped_amount == 4500.0
+        assert payout.deductible_amount == 450.0  # 10% of 4500 > 200 min
+        assert payout.after_deductible == 4050.0
+        assert payout.vat_adjusted is False
+        assert payout.final_payout == 4050.0
+
+    def test_company_claim_with_cap(self):
+        """Company claim: capped, deductible, VAT deduction."""
+        facts = _make_facts(
+            ("policyholder_name", "Muster AG"),
+            ("max_coverage", "3000"),
+            ("excess_percent", "10"),
+            ("excess_minimum", "200"),
+        )
+        coverage = _make_coverage_result(covered_total=5000.0, not_covered_total=200.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        # Step 1: Cap at 3000
+        assert payout.max_coverage_applied is True
+        assert payout.capped_amount == 3000.0
+
+        # Step 2: Deductible = max(3000*10%, 200) = 300
+        assert payout.deductible_amount == 300.0
+        assert payout.after_deductible == 2700.0
+
+        # Step 3: VAT = 2700 - 2700/1.081
+        assert payout.vat_adjusted is True
+        expected_final = round(2700.0 / (1 + SWISS_VAT_RATE), 2)
+        assert payout.final_payout == expected_final
+
+    def test_payout_is_valid_pydantic_model(self):
+        """Payout result should validate against ScreeningPayoutCalculation."""
+        facts = _make_facts(
+            ("policyholder_name", "Hans Muster"),
+            ("excess_percent", "10"),
+            ("excess_minimum", "200"),
+            ("max_coverage", "10000"),
+        )
+        coverage = _make_coverage_result(covered_total=4500.0, not_covered_total=500.0)
+        payout = _screener()._calculate_payout(facts, coverage)
+
+        assert isinstance(payout, ScreeningPayoutCalculation)
+        # Verify serialization roundtrip
+        data = payout.model_dump()
+        restored = ScreeningPayoutCalculation(**data)
+        assert restored.final_payout == payout.final_payout
+
+    def test_payout_via_screen_method(self):
+        """Payout is computed when running full screen()."""
+        screener = _screener()
+        screener._run_coverage_analysis = MagicMock(
+            return_value=_make_coverage_result(covered_total=3000.0, not_covered_total=200.0)
+        )
+
+        facts = {
+            "facts": _make_facts(
+                ("start_date", "2025-01-01"),
+                ("end_date", "2027-12-31"),
+                ("document_date", "2026-06-15"),
+                ("km_limited_to", "150000"),
+                ("odometer_km", "74359"),
+                ("policyholder_name", "Hans Muster"),
+                ("excess_percent", "10"),
+                ("excess_minimum", "200"),
+            ),
+            "structured_data": {},
+        }
+        result, _ = screener.screen("CLM-TEST", facts)
+
+        assert result.payout is not None
+        assert result.payout.covered_total == 3000.0
+        assert result.payout.deductible_amount == 300.0  # 10% of 3000
+        assert result.payout.final_payout == 2700.0
+        assert result.payout_error is None
+
+    def test_payout_error_captured(self):
+        """Payout calculation errors are captured, not raised."""
+        screener = _screener()
+
+        # Mock _calculate_payout to raise, simulating a payout failure
+        # (coverage analysis may succeed but payout math could fail)
+        screener._run_coverage_analysis = MagicMock(return_value=None)
+        original_calculate = screener._calculate_payout
+        screener._calculate_payout = MagicMock(side_effect=RuntimeError("broken payout"))
+
+        facts = {
+            "facts": _make_facts(
+                ("start_date", "2025-01-01"),
+                ("end_date", "2027-12-31"),
+                ("document_date", "2026-06-15"),
+                ("km_limited_to", "150000"),
+                ("odometer_km", "74359"),
+            ),
+            "structured_data": {},
+        }
+        result, _ = screener.screen("CLM-TEST", facts)
+
+        assert result.payout is None
+        assert result.payout_error is not None

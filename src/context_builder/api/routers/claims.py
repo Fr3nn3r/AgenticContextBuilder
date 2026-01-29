@@ -335,9 +335,9 @@ async def _run_assessment_pipeline(run_id: str, claim_id: str, processing_type: 
         if processor is None:
             raise ValueError(f"No processor registered for type: {processing_type}")
 
-        # Run pipeline stages: Reconciliation -> Enrichment -> Processing
-        from context_builder.pipeline.claim_stages import EnrichmentStage
-        stages = [ReconciliationStage(), EnrichmentStage(), ProcessingStage()]
+        # Run pipeline stages: Reconciliation -> Enrichment -> Screening -> Processing
+        from context_builder.pipeline.claim_stages import EnrichmentStage, ScreeningStage
+        stages = [ReconciliationStage(), EnrichmentStage(), ScreeningStage(), ProcessingStage()]
         runner = ClaimPipelineRunner(stages)
 
         # Run synchronously (blocking)
