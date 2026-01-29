@@ -11,9 +11,10 @@ Confidence levels:
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -95,6 +96,7 @@ class LLMMatcher:
         item_type: str,
         covered_categories: List[str],
         covered_components: Dict[str, List[str]],
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
     ) -> List[Dict[str, str]]:
         """Build the prompt messages for the LLM.
 
@@ -103,6 +105,7 @@ class LLMMatcher:
             item_type: Item type (parts, labor, fee)
             covered_categories: List of covered category names
             covered_components: Dict mapping category to list of component names
+            covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
         Returns:
             List of message dictionaries for OpenAI API
@@ -117,6 +120,7 @@ class LLMMatcher:
                 item_type=item_type,
                 covered_categories=covered_categories,
                 covered_components=covered_components,
+                covered_parts_in_claim=covered_parts_in_claim or [],
             )
             return prompt_data["messages"]
         except FileNotFoundError:
@@ -209,6 +213,49 @@ Determine if this item is covered under the policy."""
                 reasoning=f"Failed to parse LLM response: {content[:200]}",
             )
 
+    def _detect_vague_description(self, description: str) -> bool:
+        """Detect descriptions too vague for confident coverage determination.
+
+        Vague descriptions should trigger low confidence to ensure human review.
+
+        Args:
+            description: Item description to check
+
+        Returns:
+            True if description is vague, False otherwise
+        """
+        if not description:
+            return True
+
+        desc = description.strip().upper()
+
+        # Very short descriptions (1-5 chars) are inherently vague
+        if len(desc) <= 5:
+            return True
+
+        # Single word, all caps patterns (ARRIVEE, MISC, etc.)
+        if re.match(r"^[A-Z]{2,10}$", desc):
+            return True
+
+        # Generic terms that don't indicate specific parts
+        vague_terms = {
+            "PART", "PARTS", "PIECE", "PIECES", "PIÈCE", "PIÈCES",
+            "MISC", "MISCELLANEOUS", "DIVERS", "DIVERSE",
+            "OTHER", "OTHERS", "AUTRE", "AUTRES",
+            "ITEM", "ITEMS", "ARTICLE", "ARTICLES",
+            "ARRIVEE", "ARRIVAL", "LIVRAISON",
+            "WORK", "TRAVAIL", "SERVICE", "SERVICES",
+        }
+        if desc in vague_terms:
+            return True
+
+        # Check for very generic single-word descriptions
+        if " " not in desc and len(desc) < 8:
+            # Single short word without context
+            return True
+
+        return False
+
     def match(
         self,
         description: str,
@@ -218,6 +265,7 @@ Determine if this item is covered under the policy."""
         covered_categories: Optional[List[str]] = None,
         covered_components: Optional[Dict[str, List[str]]] = None,
         claim_id: Optional[str] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
     ) -> LineItemCoverage:
         """Match a single item using LLM.
 
@@ -229,6 +277,7 @@ Determine if this item is covered under the policy."""
             covered_categories: Categories covered by policy
             covered_components: Components per category from policy
             claim_id: Claim ID for audit context
+            covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
         Returns:
             LineItemCoverage result
@@ -242,6 +291,7 @@ Determine if this item is covered under the policy."""
             item_type=item_type,
             covered_categories=covered_categories,
             covered_components=covered_components,
+            covered_parts_in_claim=covered_parts_in_claim,
         )
 
         # Get client and set context
@@ -267,8 +317,15 @@ Determine if this item is covered under the policy."""
             content = response.choices[0].message.content
             result = self._parse_llm_response(content)
 
+            # Cap confidence for vague descriptions to ensure human review
+            confidence = result.confidence
+            reasoning = result.reasoning
+            if self._detect_vague_description(description) and confidence > 0.50:
+                confidence = 0.50
+                reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
+
             # Determine coverage status
-            if result.confidence < self.config.review_needed_threshold:
+            if confidence < self.config.review_needed_threshold:
                 status = CoverageStatus.REVIEW_NEEDED
             elif result.is_covered:
                 status = CoverageStatus.COVERED
@@ -284,8 +341,8 @@ Determine if this item is covered under the policy."""
                 coverage_category=result.category,
                 matched_component=result.matched_component,
                 match_method=MatchMethod.LLM,
-                match_confidence=result.confidence,
-                match_reasoning=result.reasoning,
+                match_confidence=confidence,
+                match_reasoning=reasoning,
                 covered_amount=total_price if status == CoverageStatus.COVERED else 0.0,
                 not_covered_amount=0.0 if status == CoverageStatus.COVERED else total_price,
             )
@@ -313,6 +370,8 @@ Determine if this item is covered under the policy."""
         covered_categories: Optional[List[str]] = None,
         covered_components: Optional[Dict[str, List[str]]] = None,
         claim_id: Optional[str] = None,
+        on_progress: Optional[Callable[[int], None]] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
     ) -> List[LineItemCoverage]:
         """Match multiple items using LLM.
 
@@ -324,6 +383,8 @@ Determine if this item is covered under the policy."""
             covered_categories: Categories covered by policy
             covered_components: Components per category from policy
             claim_id: Claim ID for audit context
+            on_progress: Optional callback called after each LLM call with increment (1)
+            covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
         Returns:
             List of LineItemCoverage results
@@ -339,8 +400,13 @@ Determine if this item is covered under the policy."""
                 covered_categories=covered_categories,
                 covered_components=covered_components,
                 claim_id=claim_id,
+                covered_parts_in_claim=covered_parts_in_claim,
             )
             results.append(result)
+
+            # Notify progress callback
+            if on_progress:
+                on_progress(1)
 
         logger.info(f"LLM matcher processed {len(items)} items with {self._llm_calls} LLM calls")
         return results

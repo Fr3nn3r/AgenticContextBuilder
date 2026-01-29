@@ -371,15 +371,15 @@ class CoverageAnalyzer:
     def _apply_labor_follows_parts(
         self, items: List[LineItemCoverage]
     ) -> List[LineItemCoverage]:
-        """Promote labor items to COVERED if they reference covered parts.
+        """Promote labor items to COVERED if they reference covered parts by part number.
 
-        When a labor item is NOT_COVERED or REVIEW_NEEDED but references a covered part,
-        it should be promoted to COVERED since the labor is for installing/replacing
-        that covered component.
+        When a labor item is NOT_COVERED or REVIEW_NEEDED but references a covered part's
+        part number in its description, it should be promoted to COVERED since the labor
+        is for installing/replacing that covered component.
 
-        Linking heuristics:
-        - Description contains keywords from a covered part's description
-        - Labor items typically reference the part they are for
+        This is a conservative matching approach that only links labor to parts when
+        the part number explicitly appears in the labor description. Generic keyword
+        matching (like "MODULE", "SYNC") was removed to prevent false positives.
 
         Args:
             items: List of analyzed line items
@@ -387,25 +387,24 @@ class CoverageAnalyzer:
         Returns:
             Updated list with labor items potentially promoted
         """
-        # Build index of covered parts by keywords
-        covered_parts_keywords: Dict[str, LineItemCoverage] = {}
+        # Build index of covered parts by part number only (no keyword extraction)
+        # This prevents false positives from generic keywords like MODULE, SYNC, POWER
+        covered_parts_by_code: Dict[str, LineItemCoverage] = {}
         for item in items:
             if (
                 item.coverage_status == CoverageStatus.COVERED
                 and item.item_type in ("parts", "part", "piece")
             ):
-                # Extract keywords from description (words with 4+ characters)
-                desc_words = item.description.upper().split()
-                for word in desc_words:
-                    # Clean word of punctuation and filter short words
-                    clean_word = "".join(c for c in word if c.isalnum())
-                    if len(clean_word) >= 4:
-                        covered_parts_keywords[clean_word] = item
+                # Index by part number only (e.g., "F2237471")
+                if item.item_code:
+                    clean_code = "".join(c for c in item.item_code if c.isalnum()).upper()
+                    if len(clean_code) >= 4:
+                        covered_parts_by_code[clean_code] = item
 
-        if not covered_parts_keywords:
+        if not covered_parts_by_code:
             return items
 
-        # Check labor items for references to covered parts
+        # Check labor items for part number references
         for item in items:
             if item.item_type not in ("labor", "labour", "main d'oeuvre", "arbeit"):
                 continue
@@ -413,26 +412,25 @@ class CoverageAnalyzer:
             if item.coverage_status == CoverageStatus.COVERED:
                 continue
 
-            # Check if labor description references a covered part
-            desc_words = item.description.upper().split()
-            for word in desc_words:
-                clean_word = "".join(c for c in word if c.isalnum())
-                if clean_word in covered_parts_keywords:
-                    covered_part = covered_parts_keywords[clean_word]
+            # Check if labor description contains a covered part number as substring
+            desc_upper = item.description.upper()
+            desc_alphanum = "".join(c for c in desc_upper if c.isalnum() or c.isspace())
 
+            for part_code, covered_part in covered_parts_by_code.items():
+                if part_code in desc_alphanum:
                     # Promote labor to COVERED
                     item.coverage_status = CoverageStatus.COVERED
                     item.coverage_category = covered_part.coverage_category
                     item.matched_component = covered_part.matched_component
-                    item.match_confidence = 0.75
+                    item.match_confidence = 0.85  # Higher confidence for part number match
                     item.match_reasoning = (
                         f"Labor for covered part: {covered_part.description} "
-                        f"(matched keyword: {clean_word})"
+                        f"(matched part number: {part_code})"
                     )
 
                     logger.debug(
                         f"Promoted labor '{item.description}' to COVERED "
-                        f"(linked to part: {covered_part.description})"
+                        f"(linked to part number: {part_code})"
                     )
                     break
 
@@ -517,12 +515,27 @@ class CoverageAnalyzer:
                 if on_llm_start:
                     on_llm_start(len(items_for_llm))
 
+                # Collect covered parts from prior stages to give LLM context
+                # This helps LLM make nuanced labor decisions based on what parts are covered
+                covered_parts_in_claim = []
+                for item in rule_matched + part_matched + keyword_matched:
+                    if (
+                        item.coverage_status == CoverageStatus.COVERED
+                        and item.item_type in ("parts", "part", "piece")
+                    ):
+                        covered_parts_in_claim.append({
+                            "item_code": item.item_code or "",
+                            "description": item.description,
+                            "matched_component": item.matched_component or "",
+                        })
+
                 llm_matched = self.llm_matcher.batch_match(
                     items_for_llm,
                     covered_categories=covered_categories,
                     covered_components=covered_components,
                     claim_id=claim_id,
                     on_progress=on_llm_progress,
+                    covered_parts_in_claim=covered_parts_in_claim,
                 )
 
             # Mark skipped items as review needed
