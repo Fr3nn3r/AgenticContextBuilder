@@ -574,6 +574,12 @@ Examples:
         help="Comma-separated doc types to extract (e.g., fnol_form,police_report). "
              "Use 'list' to show available types. Default: extract all supported types.",
     )
+    pipeline_run_group.add_argument(
+        "--exclude-claims",
+        metavar="CLAIM_IDS",
+        default=None,
+        help="Comma-separated claim IDs to exclude from processing (e.g., CLM-001,CLM-002)",
+    )
 
     # Logging options for pipeline
     pipeline_logging_group = pipeline_parser.add_argument_group("Logging Options")
@@ -841,10 +847,21 @@ Examples:
         help="Preview assessment without running LLM calls",
     )
     assess_parser.add_argument(
+        "--exclude-claims",
+        metavar="CLAIM_IDS",
+        default=None,
+        help="Comma-separated claim IDs to exclude from assessment (e.g., CLM-001,CLM-002)",
+    )
+    assess_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     assess_parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal console output"
+    )
+    assess_parser.add_argument(
+        "--logs",
+        action="store_true",
+        help="Show detailed logs instead of progress bars",
     )
 
     # ========== COVERAGE SUBCOMMAND ==========
@@ -1547,6 +1564,22 @@ def main():
 
             logger.info(f"Discovered {len(claims)} claim(s)")
 
+            # Parse and apply claim exclusions
+            if args.exclude_claims:
+                exclude_claim_ids = {cid.strip() for cid in args.exclude_claims.split(",") if cid.strip()}
+                if exclude_claim_ids:
+                    original_count = len(claims)
+                    claims = [c for c in claims if c.claim_id not in exclude_claim_ids]
+                    excluded_count = original_count - len(claims)
+                    if excluded_count > 0:
+                        logger.info(f"Excluded {excluded_count} claim(s): {', '.join(sorted(exclude_claim_ids))}")
+
+                    if not claims:
+                        logger.warning("All claims were excluded - nothing to process")
+                        if not args.quiet:
+                            print("[!] All claims were excluded - nothing to process")
+                        return
+
             # Parse --doc-types argument early (for dry-run display)
             # Note: "list" is handled earlier before path validation
             doc_type_filter = None
@@ -2089,6 +2122,7 @@ def main():
             from context_builder.pipeline.paths import create_workspace_claim_run_structure
             from context_builder.storage.claim_run import generate_claim_run_id, ClaimRunContext
             from context_builder.storage.filesystem import FileStorage
+            from context_builder.utils.progress import create_progress_reporter
 
             # Validate args
             input_folder = getattr(args, "input_folder", None)
@@ -2100,10 +2134,20 @@ def main():
                 print("[X] Error: Cannot combine --claim-id, --all, and --input-folder")
                 sys.exit(1)
 
-            if args.verbose:
-                logging.getLogger().setLevel(logging.DEBUG)
-            elif args.quiet:
-                logging.getLogger().setLevel(logging.WARNING)
+            # Create progress reporter (handles logging level based on mode)
+            use_logs = getattr(args, "logs", False)
+            progress = create_progress_reporter(
+                verbose=args.verbose,
+                quiet=args.quiet,
+                logs=use_logs,
+            )
+
+            # Only set logging level manually if using logs mode (progress reporter handles it otherwise)
+            if use_logs:
+                if args.verbose:
+                    logging.getLogger().setLevel(logging.DEBUG)
+                elif args.quiet:
+                    logging.getLogger().setLevel(logging.WARNING)
 
             # Use active workspace
             workspace = get_active_workspace()
@@ -2162,6 +2206,22 @@ def main():
             else:
                 claim_ids = args.claim_id
 
+            # Parse and apply claim exclusions
+            if args.exclude_claims:
+                exclude_claim_ids = {cid.strip() for cid in args.exclude_claims.split(",") if cid.strip()}
+                if exclude_claim_ids:
+                    original_count = len(claim_ids)
+                    claim_ids = [cid for cid in claim_ids if cid not in exclude_claim_ids]
+                    excluded_count = original_count - len(claim_ids)
+                    if excluded_count > 0:
+                        logger.info(f"Excluded {excluded_count} claim(s): {', '.join(sorted(exclude_claim_ids))}")
+
+                    if not claim_ids:
+                        logger.warning("All claims were excluded - nothing to assess")
+                        if not args.quiet:
+                            print("[!] All claims were excluded - nothing to assess")
+                        return
+
             # Generate shared claim run ID and context for this CLI invocation
             shared_id = generate_claim_run_id()
             run_start = datetime.now(timezone.utc).isoformat()
@@ -2176,43 +2236,58 @@ def main():
             )
 
             if not args.quiet and not args.dry_run:
-                print(f"[*] Claim run ID: {shared_id}")
+                progress.write(f"[*] Claim run ID: {shared_id}")
 
             # Track results for summary
             results = {"success": [], "failed": []}
+
+            # Start progress tracking
+            if not args.dry_run:
+                progress.start_claims(claim_ids)
 
             for claim_id in claim_ids:
                 if args.dry_run:
                     print(f"[DRY RUN] Would assess claim: {claim_id} (run: {shared_id})")
                     continue
 
+                # Define progress callbacks for this claim
+                def on_stage_update(stage_name: str, status: str, cid=claim_id):
+                    progress.start_stage(cid, stage_name)
+
+                def on_llm_start(total: int):
+                    progress.start_detail(total, desc="LLM calls", unit="call")
+
+                def on_llm_progress(n: int):
+                    progress.update_detail(n)
+
                 result = assessment_service.assess(
                     claim_id=claim_id,
                     force_reconcile=getattr(args, "force_reconcile", False),
+                    on_stage_update=on_stage_update,
+                    on_llm_start=on_llm_start,
+                    on_llm_progress=on_llm_progress,
                     run_context=run_context,
                 )
 
                 if result.success:
                     results["success"].append(claim_id)
-                    if not args.quiet:
-                        # Color-coded output based on decision
-                        decision_color = {
-                            "APPROVE": "\033[92m",  # Green
-                            "REJECT": "\033[91m",   # Red
-                            "REFER_TO_HUMAN": "\033[93m",  # Yellow
-                        }
-                        reset = "\033[0m"
-                        color = decision_color.get(result.decision, "")
-
-                        print(f"\n[OK] {claim_id}: {color}{result.decision}{reset}")
-                        print(f"     Confidence: {result.confidence_score:.0%}")
-                        if result.final_payout is not None:
-                            print(f"     Payout: CHF {result.final_payout:,.2f}")
-                        print(f"     Gate: {result.gate_status}")
-                        print(f"     Claim Run: {result.claim_run_id}")
+                    progress.complete_claim(
+                        claim_id=claim_id,
+                        decision=result.decision,
+                        confidence=result.confidence_score,
+                        payout=result.final_payout,
+                        gate=result.gate_status,
+                    )
                 else:
                     results["failed"].append(claim_id)
-                    print(f"[X] {claim_id}: {result.error}")
+                    progress.complete_claim(
+                        claim_id=claim_id,
+                        decision="FAILED",
+                        error=result.error,
+                    )
+
+            # Finish progress tracking
+            progress.finish()
 
             # Create workspace-level claim run (after loop)
             if not args.dry_run:
@@ -2265,16 +2340,16 @@ def main():
 
             # Print summary if processing multiple claims
             if len(claim_ids) > 1 and not args.quiet and not args.dry_run:
-                print(f"\n{'='*50}")
-                print("ASSESSMENT SUMMARY")
-                print(f"{'='*50}")
-                print(f"  Claim Run: {shared_id}")
-                print(f"  Successful: {len(results['success'])}")
-                print(f"  Failed: {len(results['failed'])}")
+                progress.write(f"\n{'='*50}")
+                progress.write("ASSESSMENT SUMMARY")
+                progress.write(f"{'='*50}")
+                progress.write(f"  Claim Run: {shared_id}")
+                progress.write(f"  Successful: {len(results['success'])}")
+                progress.write(f"  Failed: {len(results['failed'])}")
                 if results["failed"]:
                     for cid in results["failed"]:
-                        print(f"    - {cid}")
-                print(f"  Workspace run: {ws_paths.run_root}")
+                        progress.write(f"    - {cid}")
+                progress.write(f"  Workspace run: {ws_paths.run_root}")
 
         elif args.command == "coverage":
             # ========== COVERAGE COMMAND ==========
