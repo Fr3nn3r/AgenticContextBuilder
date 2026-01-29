@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 # Used to verify if a detected component is actually in the policy's covered parts list
 COMPONENT_SYNONYMS = {
     "oil_cooler": ["ölkühler", "oelkuehler", "refroidisseur d'huile", "oil cooler"],
-    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen"],
+    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen", "nockenwellenrad"],
+    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit", "nockenwellenrad"],
     "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette"],
     "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner"],
     "chain_guide": ["kettenführung", "guide de chaîne", "führung", "guide"],
@@ -558,6 +559,12 @@ class CoverageAnalyzer:
             # If no exact match, try description-based keyword lookup
             if (not result or not result.found) and description:
                 result = self.part_lookup.lookup_by_description(description)
+
+            # If description keyword lookup fails, try item_code keyword lookup
+            # This catches cases like "ZAHNRIEMENKIT" where the part name is in item_code
+            # but the description only contains part numbers like "INA 13938585..."
+            if (not result or not result.found) and item_code:
+                result = self.part_lookup.lookup_by_description(item_code)
 
             if not result or not result.found:
                 unmatched.append(item)

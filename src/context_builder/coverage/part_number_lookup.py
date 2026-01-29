@@ -189,13 +189,17 @@ class AssumptionsLookupProvider:
         if not matches:
             return None
 
-        # Sort matches: prefer labor/diagnostic (to exclude), then by length (longer = more specific)
+        # Sort matches: prefer exclusions (labor, consumables), then by length (longer = more specific)
+        # This ensures "Motorenoel" matches "oel" (consumables) not "motor" (engine)
         def match_priority(m):
             keyword, info, length = m
+            system = info.get("system", "")
             # Labor/diagnostic items get highest priority (should be excluded from coverage)
-            is_labor = info.get("system") == "labor"
+            is_labor = system == "labor"
+            # Consumables also get high priority (exclusions should win over coverage)
+            is_consumable = system == "consumables"
             # Then prefer longer matches (more specific)
-            return (is_labor, length)
+            return (is_labor, is_consumable, length)
 
         matches.sort(key=match_priority, reverse=True)
         keyword, info, _ = matches[0]
