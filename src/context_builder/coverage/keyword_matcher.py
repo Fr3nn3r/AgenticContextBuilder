@@ -68,92 +68,140 @@ class KeywordConfig:
         """Create default NSA German automotive mappings."""
         return cls(
             mappings=[
-                # Engine components
+                # Engine components (German + French)
                 KeywordMapping(
                     category="engine",
                     keywords=[
+                        # German terms
                         "MOTOR", "KOLBEN", "KURBELWELLE", "NOCKENWELLE",
                         "ZYLINDER", "VENTIL", "PLEUEL", "ÖLPUMPE", "OELPUMPE",
                         "ZÜNDSPULE", "ZUENDSPULE", "ZÜNDKERZE", "ZUENDKERZE",
+                        # Timing chain/belt (German)
+                        "STEUERKETTE", "KETTENSPANNER", "KETTENFÜHRUNG",
+                        "KETTENFUEHRUNG", "STEUERKETTENSPANNER",
+                        "ZAHNRIEMEN", "RIEMENSPANNER", "UMLENKROLLE",
+                        "SPANNROLLE", "RIEMENSCHEIBE",
+                        # French terms
+                        "MOTEUR", "PISTON", "VILEBREQUIN", "CULASSE",
+                        "SOUPAPE", "BIELLE", "POMPE À HUILE", "POMPE A HUILE",
+                        # Timing chain/belt (French)
+                        "CHAÎNE", "CHAINE", "DISTRIBUTION", "TENDEUR",
+                        "GUIDE", "POULIE", "PIGNON",
                     ],
-                    context_hints=["MOTOR", "ENGINE"],
+                    context_hints=["MOTOR", "ENGINE", "MOTEUR", "DISTRIBUTION"],
                     confidence=0.88,
                 ),
-                # Transmission
+                # Transmission (German + French)
                 KeywordMapping(
                     category="mechanical_transmission",
                     keywords=[
+                        # German
                         "GETRIEBE", "SCHALTGABEL", "SYNCHRON",
                         "ANTRIEBSWELLE", "KUPPLUNG",
+                        # French
+                        "BOÎTE DE VITESSES", "BOITE DE VITESSES", "EMBRAYAGE",
+                        "TRANSMISSION", "FOURCHETTE", "SYNCHRONISEUR",
+                        "ARBRE DE TRANSMISSION",
                     ],
                     confidence=0.85,
                 ),
-                # Chassis/Suspension - includes hydraulic level control
+                # Chassis/Suspension - includes hydraulic level control (German + French)
                 KeywordMapping(
                     category="chassis",
                     keywords=[
+                        # German
                         "FAHRWERK", "STOSSDÄMPFER", "STOSSDAEMPFER",
                         "FEDERBEIN", "STABILISATOR", "HÖHENVERSTELLUNG",
                         "NIVEAUREGULIERUNG", "NIVEAU", "HYDRAULIK",
+                        # French
+                        "AMORTISSEUR", "RESSORT", "SUSPENSION",
+                        "RÉGLAGE DE NIVEAU", "HYDRAULIQUE",
                     ],
-                    context_hints=["NIVEAU", "HOEHE", "HÖHE"],
+                    context_hints=["NIVEAU", "HOEHE", "HÖHE", "HAUTEUR"],
                     confidence=0.85,
                     component_name="Height control",
                 ),
-                # Suspension arms and links
+                # Suspension arms and links (German + French)
                 KeywordMapping(
                     category="suspension",
                     keywords=[
+                        # German
                         "QUERLENKER", "LÄNGSLENKER", "LAENGSLENKER",
                         "SPURSTANGE", "ACHSE", "AUFHÄNGUNG", "AUFHAENGUNG",
+                        # French
+                        "BRAS DE SUSPENSION", "TRIANGLE", "BIELLETTE",
+                        "ROTULE", "ESSIEU", "TRAIN ROULANT",
                     ],
                     confidence=0.85,
                 ),
-                # Brakes
+                # Brakes (German + French)
                 KeywordMapping(
                     category="brakes",
                     keywords=[
+                        # German
                         "BREMSE", "BREMSSCHEIBE", "BREMSSATTEL",
                         "ABS", "BREMSBELAG", "HAUPTBREMSZYLINDER",
                         "BREMSKRAFTVERSTÄRKER", "BREMSDRUCKREGLER",
+                        # French
+                        "FREIN", "DISQUE DE FREIN", "ÉTRIER", "ETRIER",
+                        "PLAQUETTE", "MAÎTRE CYLINDRE", "MAITRE CYLINDRE",
+                        "SERVOFREIN",
                     ],
                     confidence=0.88,
                 ),
-                # Steering
+                # Steering (German + French)
                 KeywordMapping(
                     category="steering",
                     keywords=[
+                        # German
                         "LENKUNG", "SERVOLENKUNG", "LENKGETRIEBE",
                         "SERVOPUMPE", "LENKSÄULE", "LENKSAEULE",
+                        # French
+                        "DIRECTION", "SERVODIRECTION", "CRÉMAILLÈRE",
+                        "CREMAILLERE", "COLONNE DE DIRECTION",
+                        "POMPE DE DIRECTION",
                     ],
                     confidence=0.85,
                 ),
-                # Electrical system
+                # Electrical system (German + French)
                 KeywordMapping(
                     category="electrical_system",
                     keywords=[
+                        # German
                         "LICHTMASCHINE", "ANLASSER", "STARTER",
                         "SCHEIBENWISCHERMOTOR", "ZENTRALVERRIEGELUNG",
                         "STEUERGERÄT", "STEUERGERAET", "STG",
+                        # French
+                        "ALTERNATEUR", "DÉMARREUR", "DEMARREUR",
+                        "MOTEUR ESSUIE-GLACE", "VERROUILLAGE CENTRAL",
+                        "CALCULATEUR", "MODULE DE COMMANDE", "BOÎTIER",
                     ],
                     confidence=0.85,
                 ),
-                # Air conditioning
+                # Air conditioning (German + French)
                 KeywordMapping(
                     category="air_conditioning",
                     keywords=[
+                        # German
                         "KLIMAANLAGE", "KLIMA", "KOMPRESSOR",
                         "KLIMAKOMPRESSOR", "VERDAMPFER", "KONDENSATOR",
+                        # French
+                        "CLIMATISATION", "CLIM", "COMPRESSEUR",
+                        "ÉVAPORATEUR", "EVAPORATEUR", "CONDENSEUR",
                     ],
-                    context_hints=["KLIMA", "A/C", "AC"],
+                    context_hints=["KLIMA", "A/C", "AC", "CLIM"],
                     confidence=0.88,
                 ),
-                # Cooling system
+                # Cooling system (German + French)
                 KeywordMapping(
                     category="cooling_system",
                     keywords=[
+                        # German
                         "KÜHLER", "KUEHLER", "WASSERPUMPE", "THERMOSTAT",
                         "LÜFTER", "LUEFTER", "KÜHLMITTELPUMPE",
+                        # French
+                        "RADIATEUR", "POMPE À EAU", "POMPE A EAU",
+                        "VENTILATEUR", "REFROIDISSEMENT",
                     ],
                     confidence=0.85,
                 ),
@@ -167,22 +215,32 @@ class KeywordConfig:
                     ],
                     confidence=0.80,
                 ),
-                # Fuel system
+                # Fuel system (German + French)
                 KeywordMapping(
                     category="fuel_system",
                     keywords=[
+                        # German
                         "KRAFTSTOFFPUMPE", "BENZINPUMPE", "EINSPRITZPUMPE",
                         "EINSPRITZVENTIL", "DRUCKREGLER",
+                        # French
+                        "POMPE À CARBURANT", "POMPE A CARBURANT",
+                        "POMPE À ESSENCE", "POMPE A ESSENCE",
+                        "INJECTEUR", "RÉGULATEUR DE PRESSION",
+                        "RAMPE D'INJECTION",
                     ],
-                    context_hints=["KRAFTSTOFF", "BENZIN", "DIESEL"],
+                    context_hints=["KRAFTSTOFF", "BENZIN", "DIESEL", "CARBURANT", "ESSENCE"],
                     confidence=0.85,
                 ),
-                # Axle drive
+                # Axle drive (German + French)
                 KeywordMapping(
                     category="axle_drive",
                     keywords=[
+                        # German
                         "KARDANWELLE", "ANTRIEBSWELLE", "GELENKWELLE",
                         "DIFFERENTIAL", "ACHSANTRIEB",
+                        # French
+                        "CARDAN", "ARBRE DE TRANSMISSION", "DIFFÉRENTIEL",
+                        "DIFFERENTIEL", "PONT ARRIÈRE", "PONT ARRIERE",
                     ],
                     confidence=0.85,
                 ),

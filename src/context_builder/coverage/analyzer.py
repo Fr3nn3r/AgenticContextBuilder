@@ -229,6 +229,9 @@ class CoverageAnalyzer:
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match items by part number lookup.
 
+        First tries exact part number lookup, then falls back to
+        description-based keyword lookup from assumptions.json.
+
         Args:
             items: Line items to match
             covered_categories: Categories covered by the policy
@@ -241,37 +244,45 @@ class CoverageAnalyzer:
 
         for item in items:
             item_code = item.get("item_code")
-            if not item_code:
-                unmatched.append(item)
-                continue
+            description = item.get("description", "")
 
-            result = self.part_lookup.lookup(item_code)
+            # Try exact part number lookup first
+            result = None
+            if item_code:
+                result = self.part_lookup.lookup(item_code)
 
-            if not result.found:
+            # If no exact match, try description-based keyword lookup
+            if (not result or not result.found) and description:
+                result = self.part_lookup.lookup_by_description(description)
+
+            if not result or not result.found:
                 unmatched.append(item)
                 continue
 
             # Check if the part's system matches a covered category
             is_covered = self._is_system_covered(result.system, covered_categories)
 
+            # Use part_number from result (could be item_code or keyword match)
+            part_ref = item_code or result.part_number
+
             if result.covered is False:
                 # Part is explicitly excluded (e.g., accessory)
                 status = CoverageStatus.NOT_COVERED
                 reasoning = (
-                    f"Part {item_code} is excluded: "
+                    f"Part {part_ref} is excluded: "
                     f"{result.note or result.component}"
                 )
             elif is_covered:
                 status = CoverageStatus.COVERED
                 reasoning = (
-                    f"Part {item_code} identified as "
+                    f"Part {part_ref} identified as "
                     f"'{result.component_description or result.component}' "
                     f"in category '{result.system}' (lookup: {result.lookup_source})"
                 )
             else:
                 status = CoverageStatus.NOT_COVERED
                 reasoning = (
-                    f"Part {item_code} is '{result.component}' in category "
+                    f"Part {part_ref} is '{result.component}' in category "
                     f"'{result.system}' which is not covered by this policy"
                 )
 
@@ -301,8 +312,8 @@ class CoverageAnalyzer:
             )
 
             logger.debug(
-                f"Part number match: {item_code} -> {result.system}/{result.component} "
-                f"({status.value})"
+                f"Part lookup match: {part_ref} -> {result.system}/{result.component} "
+                f"({status.value}, source={result.lookup_source})"
             )
 
         return matched, unmatched
@@ -519,6 +530,15 @@ class CoverageAnalyzer:
             # Limit LLM calls
             items_for_llm = remaining[: self.config.llm_max_items]
             skipped = remaining[self.config.llm_max_items :]
+
+            # Warn if items exceed LLM limit
+            if len(remaining) > self.config.llm_max_items:
+                logger.warning(
+                    f"LLM item limit exceeded: {len(remaining)} items need LLM processing "
+                    f"but limit is {self.config.llm_max_items}. "
+                    f"{len(skipped)} items will be skipped and marked as review_needed. "
+                    f"Consider adding keyword rules for frequently skipped item types."
+                )
 
             if items_for_llm:
                 if self.llm_matcher is None:

@@ -59,45 +59,48 @@ class AssumptionsLookupProvider:
 
     def __init__(self, workspace_path: Path):
         self.workspace_path = workspace_path
-        self._mappings: Optional[Dict[str, Any]] = None
+        self._part_number_mappings: Optional[Dict[str, Any]] = None
+        self._keyword_mappings: Optional[Dict[str, Any]] = None
 
     @property
     def source_name(self) -> str:
         return "assumptions"
 
-    def _load_mappings(self) -> Dict[str, Any]:
+    def _load_mappings(self) -> None:
         """Load part mappings from assumptions.json (cached)."""
-        if self._mappings is not None:
-            return self._mappings
+        if self._part_number_mappings is not None:
+            return
 
         assumptions_path = self.workspace_path / "config" / "assumptions.json"
         if not assumptions_path.exists():
             logger.warning(f"No assumptions.json at {assumptions_path}")
-            self._mappings = {}
-            return self._mappings
+            self._part_number_mappings = {}
+            self._keyword_mappings = {}
+            return
 
         try:
             with open(assumptions_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._mappings = data.get("part_system_mapping", {}).get("by_part_number", {})
+            part_mapping = data.get("part_system_mapping", {})
+            self._part_number_mappings = part_mapping.get("by_part_number", {})
+            self._keyword_mappings = part_mapping.get("by_keyword", {})
         except Exception as e:
             logger.error(f"Failed to load part mappings: {e}")
-            self._mappings = {}
-
-        return self._mappings
+            self._part_number_mappings = {}
+            self._keyword_mappings = {}
 
     def lookup(self, part_number: str) -> Optional[PartLookupResult]:
         """Look up a part number in assumptions.json mappings."""
         if not part_number:
             return None
 
-        mappings = self._load_mappings()
+        self._load_mappings()
 
         # Normalize part number (remove spaces, uppercase)
         normalized = part_number.replace(" ", "").upper()
 
         # Try exact match first
-        for stored_pn, info in mappings.items():
+        for stored_pn, info in self._part_number_mappings.items():
             # Skip comment keys
             if stored_pn.startswith("_"):
                 continue
@@ -122,6 +125,60 @@ class AssumptionsLookupProvider:
             lookup_source=self.source_name,
         )
 
+    def lookup_by_description(self, description: str) -> Optional[PartLookupResult]:
+        """Look up a part by matching keywords in its description.
+
+        This is a fallback when exact part number lookup fails.
+        Uses the by_keyword section of assumptions.json.
+
+        Args:
+            description: Item description to match
+
+        Returns:
+            PartLookupResult if keyword match found, None otherwise
+        """
+        if not description:
+            return None
+
+        self._load_mappings()
+
+        if not self._keyword_mappings:
+            return None
+
+        description_upper = description.upper()
+
+        # Find all matching keywords
+        best_match = None
+        best_keyword_len = 0
+
+        for keyword, info in self._keyword_mappings.items():
+            # Skip comment keys
+            if keyword.startswith("_"):
+                continue
+
+            keyword_upper = keyword.upper()
+            if keyword_upper in description_upper:
+                # Prefer longer keyword matches (more specific)
+                if len(keyword) > best_keyword_len:
+                    best_keyword_len = len(keyword)
+                    best_match = (keyword, info)
+
+        if best_match:
+            keyword, info = best_match
+            return PartLookupResult(
+                part_number=f"keyword:{keyword}",
+                found=True,
+                system=info.get("system"),
+                component=info.get("component"),
+                component_description=info.get("component_description"),
+                covered=info.get("covered"),
+                manufacturer=info.get("manufacturer"),
+                lookup_source=f"{self.source_name}_keyword",
+                note=info.get("note"),
+            )
+
+        return None
+
 
 class PartNumberLookup:
     """Main part number lookup service.
@@ -133,9 +190,12 @@ class PartNumberLookup:
     def __init__(self, workspace_path: Path):
         self.workspace_path = workspace_path
         self._providers: List[PartLookupProvider] = []
+        self._assumptions_provider: Optional[AssumptionsLookupProvider] = None
 
         # Initialize default providers
-        self._providers.append(AssumptionsLookupProvider(workspace_path))
+        assumptions_provider = AssumptionsLookupProvider(workspace_path)
+        self._providers.append(assumptions_provider)
+        self._assumptions_provider = assumptions_provider
 
         # FUTURE: Add more providers here
         # self._providers.append(FordETKProvider(api_key=...))
@@ -178,3 +238,33 @@ class PartNumberLookup:
             lookup_source="all_providers",
             note="Part not found in any lookup source",
         )
+
+    def lookup_by_description(self, description: str) -> Optional[PartLookupResult]:
+        """Look up a part by matching keywords in its description.
+
+        This is a fallback when exact part number lookup fails.
+        Currently only supported by AssumptionsLookupProvider.
+
+        Args:
+            description: Item description to match
+
+        Returns:
+            PartLookupResult if keyword match found, None otherwise
+        """
+        if not description:
+            return None
+
+        # Use assumptions provider for keyword-based lookup
+        if self._assumptions_provider:
+            try:
+                result = self._assumptions_provider.lookup_by_description(description)
+                if result and result.found:
+                    logger.debug(
+                        f"Description '{description[:50]}...' matched via keyword: "
+                        f"system={result.system}, component={result.component}"
+                    )
+                    return result
+            except Exception as e:
+                logger.warning(f"Keyword lookup failed: {e}")
+
+        return None
