@@ -8,7 +8,7 @@ import shutil
 import signal
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -2164,7 +2164,7 @@ def main():
 
             # Generate shared claim run ID and context for this CLI invocation
             shared_id = generate_claim_run_id()
-            run_start = datetime.utcnow().isoformat() + "Z"
+            run_start = datetime.now(timezone.utc).isoformat()
             run_context = ClaimRunContext(
                 claim_run_id=shared_id,
                 started_at=run_start,
@@ -2218,7 +2218,7 @@ def main():
             if not args.dry_run:
                 from context_builder.pipeline.helpers.io import write_json_atomic
 
-                run_end = datetime.utcnow().isoformat() + "Z"
+                run_end = datetime.now(timezone.utc).isoformat()
                 ws_paths = create_workspace_claim_run_structure(workspace_root, shared_id)
 
                 # Write workspace-level manifest
