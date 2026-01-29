@@ -703,17 +703,19 @@ class CoverageAnalyzer:
                     f"Policy check: {policy_check_reason}"
                 )
             elif is_category_covered and is_in_policy_list is False:
-                # Category is covered BUT component confirmed NOT in policy's specific list
-                status = CoverageStatus.NOT_COVERED
-                reasoning = (
-                    f"Part {part_ref} is '{result.component}' in category "
-                    f"'{result.system}' which is covered, but this specific component "
-                    f"is not in the policy's covered parts list. {policy_check_reason}"
-                )
+                # Category is covered but synonym check didn't confirm the
+                # component in the policy's specific list.  This does NOT mean
+                # the component is excluded — the policy may simply not
+                # enumerate every part.  Defer to LLM for verification.
                 logger.info(
-                    f"Component exclusion: {part_ref} ({result.component}) - "
-                    f"category '{result.system}' is covered but component not in policy list"
+                    f"Deferring {part_ref} ({result.component}) to LLM: "
+                    f"category '{result.system}' covered but synonym check "
+                    f"inconclusive. {policy_check_reason}"
                 )
+                item["_part_lookup_system"] = result.system
+                item["_part_lookup_component"] = result.component or result.component_description
+                unmatched.append(item)
+                continue
             elif is_category_covered and is_in_policy_list is None:
                 # Category covered but can't verify specific component
                 # Defer to LLM for policy list verification
@@ -728,9 +730,16 @@ class CoverageAnalyzer:
                 unmatched.append(item)
                 continue
             else:
-                # Category is not covered. Defer to LLM when item has repair
-                # context or the category has known aliases — the LLM may
-                # reclassify using the repair description.
+                # Category is not covered. Defer to LLM when:
+                # 1. Item belongs to an ancillary category (labor,
+                #    consumables, parts) whose coverage depends on
+                #    whether it supports a covered repair, OR
+                # 2. Item has repair context, OR
+                # 3. The category has known aliases that might match.
+                ancillary_categories = {"labor", "consumables", "parts"}
+                is_ancillary = (
+                    result.system and result.system.lower() in ancillary_categories
+                )
                 has_repair_ctx = bool(
                     item.get("repair_description")
                     or item.get("repair_context_description")
@@ -738,10 +747,15 @@ class CoverageAnalyzer:
                 has_aliases = bool(
                     CATEGORY_ALIASES.get(result.system.lower() if result.system else "")
                 )
-                if has_repair_ctx or has_aliases:
+                if is_ancillary or has_repair_ctx or has_aliases:
                     logger.info(
                         f"Deferring {part_ref} ({result.system}) to LLM: "
+                        f"ancillary={is_ancillary}, "
                         f"repair_ctx={has_repair_ctx}, aliases={has_aliases}"
+                    )
+                    item["_part_lookup_system"] = result.system
+                    item["_part_lookup_component"] = (
+                        result.component or result.component_description
                     )
                     unmatched.append(item)
                     continue
@@ -1142,24 +1156,24 @@ class CoverageAnalyzer:
                 )
                 return item
 
-        # If LLM said COVERED, verify the component is in the explicit policy list
+        # If LLM said COVERED, only override when the category itself is
+        # NOT covered.  The explicit component list is a known-incomplete
+        # reference — absence from it does not mean the part is excluded.
         if item.coverage_status == CoverageStatus.COVERED:
-            # Use existing method to check if component is in policy list
-            is_in_list, reason = self._is_component_in_policy_list(
-                component=item.matched_component,
-                system=item.coverage_category,
-                covered_components=covered_components,
-                description=item.description,
-            )
+            category = item.coverage_category
+            covered_categories = list(covered_components.keys())
+            category_is_covered = self._is_system_covered(category, covered_categories)
 
-            if not is_in_list:
-                # Override to REVIEW_NEEDED - the component is not explicitly listed
+            if not category_is_covered:
+                # LLM assigned a category that isn't in the policy at all
                 item.coverage_status = CoverageStatus.REVIEW_NEEDED
                 item.match_confidence = 0.45
-                item.match_reasoning += f" [REVIEW: {reason}]"
+                item.match_reasoning += (
+                    f" [REVIEW: category '{category}' is not covered by policy]"
+                )
                 logger.info(
                     f"LLM validation override: '{item.description}' changed from "
-                    f"COVERED to REVIEW_NEEDED (not in explicit policy list)"
+                    f"COVERED to REVIEW_NEEDED (category '{category}' not covered)"
                 )
 
         return item
@@ -1304,6 +1318,20 @@ class CoverageAnalyzer:
                             item.get("repair_description")
                             or labor_context_desc
                             or None
+                        )
+
+                    # Pass part-lookup context so the LLM knows the item
+                    # was already identified as belonging to a category.
+                    lookup_sys = item.pop("_part_lookup_system", None)
+                    lookup_comp = item.pop("_part_lookup_component", None)
+                    if lookup_sys:
+                        hint = (
+                            f"Pre-identified as '{lookup_comp}' "
+                            f"in category '{lookup_sys}'."
+                        )
+                        existing = item.get("repair_context_description") or ""
+                        item["repair_context_description"] = (
+                            f"{hint} {existing}".strip()
                         )
 
                 llm_matched = self.llm_matcher.batch_match(

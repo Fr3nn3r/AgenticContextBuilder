@@ -548,14 +548,14 @@ class TestValidateLLMCoverageDecision:
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert "OVERRIDE" in result.match_reasoning
 
-    def test_covered_item_not_in_policy_becomes_review(self, analyzer, covered_components, excluded_components):
-        """LLM COVERED item whose component isn't in policy → REVIEW_NEEDED."""
+    def test_covered_item_not_in_list_but_category_covered_stays_covered(self, analyzer, covered_components, excluded_components):
+        """LLM COVERED item in a covered category stays COVERED even if specific component isn't listed."""
         item = self._make_item(matched_component="turbocharger")
         result = analyzer._validate_llm_coverage_decision(
             item, covered_components, excluded_components,
         )
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-        assert "REVIEW" in result.match_reasoning
+        # Category "engine" is covered → item stays COVERED
+        assert result.coverage_status == CoverageStatus.COVERED
 
     def test_covered_item_in_policy_stays_covered(self, analyzer, covered_components, excluded_components):
         """LLM COVERED item whose component IS in policy stays COVERED."""
@@ -576,14 +576,27 @@ class TestValidateLLMCoverageDecision:
         )
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_unknown_llm_component_becomes_review_needed(self, analyzer, covered_components, excluded_components):
-        """LLM item with unknown component type → flagged for review."""
+    def test_unknown_component_in_covered_category_stays_covered(self, analyzer, covered_components, excluded_components):
+        """LLM item with unknown component in a covered category stays COVERED."""
         item = self._make_item(matched_component="quantum_inverter")
         result = analyzer._validate_llm_coverage_decision(
             item, covered_components, excluded_components,
         )
-        # No synonyms for "quantum_inverter" → can't verify → REVIEW_NEEDED
+        # Category "engine" is covered → item stays COVERED regardless of component name
+        assert result.coverage_status == CoverageStatus.COVERED
+
+    def test_item_in_uncovered_category_becomes_review_needed(self, analyzer, covered_components, excluded_components):
+        """LLM COVERED item in an uncovered category → REVIEW_NEEDED."""
+        item = self._make_item(
+            coverage_category="body",
+            matched_component="door_handle",
+        )
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        # Category "body" is not in covered_components → override to REVIEW_NEEDED
         assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+        assert "REVIEW" in result.match_reasoning
 
 
 class TestLLMMatcherPromptBuilding:
