@@ -101,6 +101,7 @@ class LLMMatcher:
         covered_components: Dict[str, List[str]],
         excluded_components: Optional[Dict[str, List[str]]] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_context_description: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Build the prompt messages for the LLM.
 
@@ -111,6 +112,7 @@ class LLMMatcher:
             covered_components: Dict mapping category to list of component names
             excluded_components: Dict mapping category to list of excluded component names
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
+            repair_context_description: Section header or labor context for this item
 
         Returns:
             List of message dictionaries for OpenAI API
@@ -127,6 +129,7 @@ class LLMMatcher:
                 covered_components=covered_components,
                 excluded_components=excluded_components or {},
                 covered_parts_in_claim=covered_parts_in_claim or [],
+                repair_context_description=repair_context_description or "",
             )
             return prompt_data["messages"]
         except FileNotFoundError:
@@ -269,6 +272,7 @@ Determine if this item is covered under the policy."""
         excluded_components: Optional[Dict[str, List[str]]] = None,
         claim_id: Optional[str] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_context_description: Optional[str] = None,
     ) -> LineItemCoverage:
         """Match a single item using LLM.
 
@@ -282,6 +286,7 @@ Determine if this item is covered under the policy."""
             excluded_components: Excluded components per category from policy
             claim_id: Claim ID for audit context
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
+            repair_context_description: Section header or labor context for this item
 
         Returns:
             LineItemCoverage result
@@ -298,6 +303,7 @@ Determine if this item is covered under the policy."""
             covered_components=covered_components,
             excluded_components=excluded_components,
             covered_parts_in_claim=covered_parts_in_claim,
+            repair_context_description=repair_context_description,
         )
 
         # Get client and set context
@@ -414,6 +420,7 @@ Determine if this item is covered under the policy."""
                 excluded_components=excluded_components,
                 claim_id=claim_id,
                 covered_parts_in_claim=covered_parts_in_claim,
+                repair_context_description=item.get("repair_context_description"),
             )
             results.append(result)
 

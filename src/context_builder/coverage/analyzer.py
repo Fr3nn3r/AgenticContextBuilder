@@ -67,6 +67,41 @@ COMPONENT_SYNONYMS = {
     "drive_shaft": ["antriebswelle", "gelenkwelle", "arbre de transmission"],
     "shock_absorber": ["stossdämpfer", "amortisseur"],
     "air_suspension": ["luftfederung", "suspension pneumatique"],
+    # --- Added to close synonym gaps ---
+    "throttle_body": ["drosselklappe", "corps de papillon", "drosselklappenstutzen"],
+    "injector": ["einspritzdüse", "injektor", "injecteur"],
+    "maf_sensor": ["luftmassenmesser", "débitmètre", "lmm"],
+    "high_pressure_pump": ["hochdruckpumpe", "pompe haute pression"],
+    "spark_plug": ["zündkerze", "bougie d'allumage", "bougie"],
+    "cylinder_liner": ["zylinderlaufbuchse", "chemise de cylindre"],
+    "valve_cover": ["ventildeckel", "couvre-culasse", "cache culbuteur"],
+    "egr_cooler": ["agr-kühler", "refroidisseur egr", "agrkühler"],
+    "timing_gear": ["steuerrad", "pignon de distribution"],
+    "pulley": ["riemenscheibe", "poulie"],
+    "serpentine_belt": ["keilrippenriemen", "courroie d'accessoires", "courroie poly-v"],
+    "radiator": ["kühler", "radiateur", "wasserkühler"],
+    "control_unit": ["steuergerät", "calculateur", "ecu"],
+    "electric_motor": ["elektromotor", "moteur électrique"],
+    "mechatronic_unit": ["mechatronik", "unité mécatronique", "mechatronikeinheit"],
+    "height_control_valve": ["niveauregelventil", "vanne de régulation de niveau"],
+    "hydraulic_valve": ["hydraulikventil", "valve hydraulique"],
+    "wheel_hub": ["radnabe", "moyeu de roue"],
+    "bearing": ["lager", "roulement", "radlager"],
+    "cv_joint": ["gleichlaufgelenk", "joint homocinétique", "antriebsgelenk"],
+    "cv_boot": ["achsmanschette", "soufflet de cardan", "gelenkmanschette"],
+    "axle_shaft": ["antriebswelle", "arbre de roue", "steckwelle"],
+    "fuel_tank": ["kraftstofftank", "réservoir de carburant", "benzintank"],
+}
+
+# Aliases between equivalent coverage category names.
+# When checking if a system is covered, these aliases are also tested.
+CATEGORY_ALIASES = {
+    "axle_drive": ["four_wd", "differential"],
+    "four_wd": ["axle_drive", "differential"],
+    "differential": ["axle_drive", "four_wd"],
+    "electrical_system": ["electronics", "electric"],
+    "electronics": ["electrical_system", "electric"],
+    "electric": ["electrical_system", "electronics"],
 }
 
 # Keywords in labor descriptions that indicate the primary repair component
@@ -357,9 +392,11 @@ class CoverageAnalyzer:
                         context.source_description = item.get("description", "")
 
                         # Check if this component is covered by policy
-                        context.is_covered = self._is_component_covered_in_policy(
-                            component, category, covered_components
+                        is_covered, _reason = self._is_component_in_policy_list(
+                            component, category, covered_components,
+                            strict=True,
                         )
+                        context.is_covered = is_covered
                         logger.debug(
                             f"Repair context: '{component}' in '{category}' "
                             f"(covered={context.is_covered}) from '{description[:50]}...'"
@@ -376,52 +413,11 @@ class CoverageAnalyzer:
 
         return context
 
-    def _is_component_covered_in_policy(
-        self,
-        component: str,
-        category: str,
-        covered_components: Dict[str, List[str]],
-    ) -> bool:
-        """Check if a specific component is covered in the policy.
-
-        Args:
-            component: Component type (e.g., "oil_cooler")
-            category: Category name (e.g., "engine")
-            covered_components: Policy's covered components by category
-
-        Returns:
-            True if component is in the policy's covered parts list
-        """
-        # Find the matching category
-        category_lower = category.lower()
-        policy_parts = None
-
-        for cat, parts in covered_components.items():
-            if cat.lower() == category_lower or category_lower in cat.lower():
-                policy_parts = parts
-                break
-
-        if not policy_parts:
-            return False
-
-        # Get synonyms for this component
-        synonyms = COMPONENT_SYNONYMS.get(component, [])
-        search_terms = set(synonyms)
-        search_terms.add(component.lower())
-        search_terms.add(component.replace("_", " ").lower())
-
-        # Check if any synonym matches any part in the policy list
-        policy_parts_lower = [p.lower() for p in policy_parts]
-
-        for term in search_terms:
-            for policy_part in policy_parts_lower:
-                if term in policy_part or policy_part in term:
-                    return True
-
-        return False
-
     def _is_system_covered(self, system: str, covered_categories: List[str]) -> bool:
         """Check if a system/category is covered by the policy.
+
+        Uses substring matching first, then checks CATEGORY_ALIASES for
+        equivalent category names (e.g. axle_drive ↔ four_wd).
 
         Args:
             system: System name from part lookup (e.g., "electric")
@@ -441,6 +437,19 @@ class CoverageAnalyzer:
                 or cat_lower in system_lower
             ):
                 return True
+
+        # Check category aliases
+        aliases = CATEGORY_ALIASES.get(system_lower, [])
+        for alias in aliases:
+            for cat in covered_categories:
+                cat_lower = cat.lower()
+                if (
+                    alias == cat_lower
+                    or alias in cat_lower
+                    or cat_lower in alias
+                ):
+                    return True
+
         return False
 
     def _is_component_in_policy_list(
@@ -449,6 +458,7 @@ class CoverageAnalyzer:
         system: Optional[str],
         covered_components: Dict[str, List[str]],
         description: str = "",
+        strict: bool = False,
     ) -> Tuple[bool, str]:
         """Check if a specific component is in the policy's covered parts list.
 
@@ -461,6 +471,8 @@ class CoverageAnalyzer:
             system: System/category name (e.g., "engine")
             covered_components: Dict mapping category to list of covered parts
             description: Original item description for fallback matching
+            strict: If True, return False for unknown components (no safe fallback).
+                    If False (default), assume unknown components are covered.
 
         Returns:
             Tuple of (is_in_list, reason)
@@ -499,8 +511,16 @@ class CoverageAnalyzer:
             or COMPONENT_SYNONYMS.get(space_key)
         )
 
-        # If no synonyms defined for this component, assume covered (don't reject unknown components)
+        # If no synonyms defined for this component
         if not synonyms:
+            if strict:
+                return False, f"No synonym mapping for component '{component}' - strict mode"
+            logger.warning(
+                "No COMPONENT_SYNONYMS entry for '%s' (system='%s') "
+                "- assuming covered. Add synonyms to close this gap.",
+                component,
+                system,
+            )
             return True, f"No synonym mapping for component '{component}' - assuming covered"
 
         # Build search terms from synonyms + component name variants
@@ -621,6 +641,24 @@ class CoverageAnalyzer:
                     f"category '{result.system}' is covered but component not in policy list"
                 )
             else:
+                # Category is not covered. Defer to LLM when item has repair
+                # context or the category has known aliases — the LLM may
+                # reclassify using the repair description.
+                has_repair_ctx = bool(
+                    item.get("repair_description")
+                    or item.get("repair_context_description")
+                )
+                has_aliases = bool(
+                    CATEGORY_ALIASES.get(result.system.lower() if result.system else "")
+                )
+                if has_repair_ctx or has_aliases:
+                    logger.info(
+                        f"Deferring {part_ref} ({result.system}) to LLM: "
+                        f"repair_ctx={has_repair_ctx}, aliases={has_aliases}"
+                    )
+                    unmatched.append(item)
+                    continue
+
                 status = CoverageStatus.NOT_COVERED
                 reasoning = (
                     f"Part {part_ref} is '{result.component}' in category "
@@ -1049,6 +1087,17 @@ class CoverageAnalyzer:
                             "description": item.description,
                             "matched_component": item.matched_component or "",
                         })
+
+                # Enrich items with repair context description for LLM
+                # Priority: extraction-level repair_description > labor keyword context
+                labor_context_desc = repair_context.source_description
+                for item in items_for_llm:
+                    if not item.get("repair_context_description"):
+                        item["repair_context_description"] = (
+                            item.get("repair_description")
+                            or labor_context_desc
+                            or None
+                        )
 
                 llm_matched = self.llm_matcher.batch_match(
                     items_for_llm,

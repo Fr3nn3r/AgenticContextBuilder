@@ -45,6 +45,7 @@ Extract ALL line items visible on THIS PAGE. Each item needs:
   - "labor": Work codes, items with AUS-/EINBAUEN, PRUEFEN, DIAGNOSE, GEFUEHRTE FUNKTION
   - "parts": Part numbers, SCHRAUBE, DICHTRING, VENTIL, OEL, physical components
   - "fee": ENTSORGUNG, UMWELT, ERSATZFAHRZEUG, disposal fees, rental
+- repair_description: The most recent section header text above this item (null if none). This provides repair context for generic part names.
 
 ### Page Totals (if present)
 - carry_forward_amount: "Übertrag" amount at TOP of page (from previous page)
@@ -70,7 +71,7 @@ Extract ALL line items visible on THIS PAGE. Each item needs:
 
 3. **Multi-line descriptions**: Some items span multiple lines. Combine them into one item.
 
-4. **Category headers**: Ignore category headers like "GERÄUSCHE HINTERACHSE" or "COFFRE ÉLECTRIQUE" - extract only the actual line items.
+4. **Section headers as repair context**: Some rows are section headers (descriptive text with NO item_code, NO quantity, NO unit_price, e.g., "GERÄUSCHE HINTERACHSE", "I-Drive Schalter klemmt Teilweise /ersetzen", "Aussenspiegel Aufnahme defekt"). Do NOT emit these rows as separate line items. Instead, capture the most recent section header and add it as `repair_description` on each line item that follows underneath it. This gives downstream processing the repair context for generic part names.
 
 5. **Zero-price items**: Include items with 0.00 price (e.g., "für Sie kostenlos").
 
@@ -100,7 +101,8 @@ Return JSON:
       "unit": null,
       "unit_price": null,
       "total_price": 240.00,
-      "item_type": "labor"
+      "item_type": "labor",
+      "repair_description": "NIVEAUREGELUNG DEFEKT"
     },
     {
       "item_code": "8W0616887",
@@ -109,7 +111,8 @@ Return JSON:
       "unit": "ST",
       "unit_price": 883.45,
       "total_price": 1766.90,
-      "item_type": "parts"
+      "item_type": "parts",
+      "repair_description": "NIVEAUREGELUNG DEFEKT"
     }
   ],
   "page_subtotal": 4415.40,

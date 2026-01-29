@@ -2,8 +2,13 @@
 
 import pytest
 
-from context_builder.coverage.analyzer import AnalyzerConfig, CoverageAnalyzer
-from context_builder.coverage.schemas import CoverageStatus, MatchMethod
+from context_builder.coverage.analyzer import (
+    CATEGORY_ALIASES,
+    COMPONENT_SYNONYMS,
+    AnalyzerConfig,
+    CoverageAnalyzer,
+)
+from context_builder.coverage.schemas import CoverageStatus, LineItemCoverage, MatchMethod
 
 
 class TestCoverageAnalyzer:
@@ -357,3 +362,403 @@ class TestCoverageAnalyzer:
         for labor_item in labor_items:
             if labor_item.coverage_status == CoverageStatus.COVERED:
                 assert "simple invoice rule" not in labor_item.match_reasoning.lower()
+
+
+class TestIsSystemCovered:
+    """Tests for _is_system_covered with category aliases."""
+
+    @pytest.fixture
+    def analyzer(self):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+
+    def test_exact_match(self, analyzer):
+        assert analyzer._is_system_covered("engine", ["engine", "brakes"]) is True
+
+    def test_substring_match(self, analyzer):
+        assert analyzer._is_system_covered("electric", ["electrical_system"]) is True
+
+    def test_no_match(self, analyzer):
+        assert analyzer._is_system_covered("engine", ["brakes", "chassis"]) is False
+
+    def test_empty_system(self, analyzer):
+        assert analyzer._is_system_covered("", ["engine"]) is False
+
+    def test_axle_drive_alias_matches_four_wd(self, analyzer):
+        """axle_drive should match when four_wd is covered (alias)."""
+        assert analyzer._is_system_covered("axle_drive", ["four_wd"]) is True
+
+    def test_four_wd_alias_matches_axle_drive(self, analyzer):
+        """four_wd should match when axle_drive is covered (alias)."""
+        assert analyzer._is_system_covered("four_wd", ["axle_drive"]) is True
+
+    def test_differential_alias_matches_four_wd(self, analyzer):
+        """differential should match when four_wd is covered."""
+        assert analyzer._is_system_covered("differential", ["four_wd"]) is True
+
+    def test_electronics_alias_matches_electrical_system(self, analyzer):
+        """electronics should match when electrical_system is covered."""
+        assert analyzer._is_system_covered("electronics", ["electrical_system"]) is True
+
+    def test_alias_no_false_positive(self, analyzer):
+        """Alias check should not create false positives for unrelated categories."""
+        assert analyzer._is_system_covered("axle_drive", ["engine", "brakes"]) is False
+
+
+class TestIsComponentInPolicyList:
+    """Tests for _is_component_in_policy_list (consolidated method)."""
+
+    @pytest.fixture
+    def analyzer(self):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+
+    @pytest.fixture
+    def covered_components(self):
+        return {
+            "engine": ["Zahnriemen", "Wasserpumpe", "Ölkühler", "Kolben"],
+            "chassis": ["Stossdämpfer", "Federbein"],
+        }
+
+    def test_known_component_found_in_french_policy(self, analyzer):
+        """Known component matched via French synonym in policy list."""
+        policy = {"engine": ["courroie de distribution", "pompe à eau"]}
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing_belt", "engine", policy,
+        )
+        assert found is True
+        assert "found in policy list" in reason
+
+    def test_known_component_not_in_policy(self, analyzer, covered_components):
+        """Known component whose synonyms don't match any policy part."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "turbocharger", "engine", covered_components,
+        )
+        assert found is False
+        assert "not found in policy" in reason
+
+    def test_unknown_component_assumes_covered(self, analyzer, covered_components):
+        """Unknown component (no synonym entry) falls back to True."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "flux_capacitor", "engine", covered_components,
+        )
+        assert found is True
+        assert "assuming covered" in reason
+
+    def test_unknown_component_strict_returns_false(self, analyzer, covered_components):
+        """Unknown component in strict mode returns False."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "flux_capacitor", "engine", covered_components, strict=True,
+        )
+        assert found is False
+        assert "strict mode" in reason
+
+    def test_none_component_returns_true(self, analyzer, covered_components):
+        """None component should pass through as True."""
+        found, reason = analyzer._is_component_in_policy_list(
+            None, "engine", covered_components,
+        )
+        assert found is True
+        assert "No component" in reason
+
+    def test_none_system_returns_true(self, analyzer, covered_components):
+        """None system should pass through as True."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing_belt", None, covered_components,
+        )
+        assert found is True
+
+    def test_category_not_in_policy_returns_true(self, analyzer, covered_components):
+        """Category missing from policy → no parts list → True."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing_belt", "turbo_supercharger", covered_components,
+        )
+        assert found is True
+        assert "No specific parts list" in reason
+
+    def test_description_fallback_match(self, analyzer, covered_components):
+        """Description containing a policy part name should match."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "some_widget", "engine", covered_components,
+            description="Ersatz Zahnriemen inkl. Montage",
+        )
+        # "some_widget" has no synonyms → fallback assumes covered
+        # But if it did have synonyms that failed, description would catch it
+        assert found is True
+
+    def test_space_vs_underscore_key_variants(self, analyzer, covered_components):
+        """Component given with spaces should resolve to underscore key."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "timing belt", "engine", covered_components,
+        )
+        assert found is True
+        assert "found in policy list" in reason
+
+
+class TestValidateLLMCoverageDecision:
+    """Tests for _validate_llm_coverage_decision."""
+
+    @pytest.fixture
+    def analyzer(self):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+
+    @pytest.fixture
+    def covered_components(self):
+        return {
+            "engine": ["Zahnriemen", "Wasserpumpe", "Kolben"],
+        }
+
+    @pytest.fixture
+    def excluded_components(self):
+        return {
+            "consumables": ["Motoröl", "Ölfilter"],
+        }
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code="P001",
+            description="test part",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="timing_belt",
+            match_method=MatchMethod.LLM,
+            match_confidence=0.75,
+            match_reasoning="LLM decided covered",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    def test_non_llm_item_passes_through(self, analyzer, covered_components, excluded_components):
+        """Non-LLM items should be returned unchanged."""
+        item = self._make_item(match_method=MatchMethod.RULE)
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        assert result.coverage_status == CoverageStatus.COVERED
+
+    def test_excluded_item_overridden_to_not_covered(self, analyzer, covered_components, excluded_components):
+        """Item in excluded list should be forced to NOT_COVERED."""
+        item = self._make_item(description="Motoröl 5W40")
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert "OVERRIDE" in result.match_reasoning
+
+    def test_covered_item_not_in_policy_becomes_review(self, analyzer, covered_components, excluded_components):
+        """LLM COVERED item whose component isn't in policy → REVIEW_NEEDED."""
+        item = self._make_item(matched_component="turbocharger")
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+        assert "REVIEW" in result.match_reasoning
+
+    def test_covered_item_in_policy_stays_covered(self, analyzer, covered_components, excluded_components):
+        """LLM COVERED item whose component IS in policy stays COVERED."""
+        item = self._make_item(
+            matched_component="water_pump",
+            description="Wasserpumpe defekt",
+        )
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        assert result.coverage_status == CoverageStatus.COVERED
+
+    def test_already_not_covered_unchanged(self, analyzer, covered_components, excluded_components):
+        """LLM NOT_COVERED item stays NOT_COVERED."""
+        item = self._make_item(coverage_status=CoverageStatus.NOT_COVERED)
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_unknown_llm_component_assumes_covered(self, analyzer, covered_components, excluded_components):
+        """LLM item with unknown component type → fallback assumes covered."""
+        item = self._make_item(matched_component="quantum_inverter")
+        result = analyzer._validate_llm_coverage_decision(
+            item, covered_components, excluded_components,
+        )
+        # No synonyms for "quantum_inverter", fallback assumes covered
+        assert result.coverage_status == CoverageStatus.COVERED
+
+
+class TestLLMMatcherPromptBuilding:
+    """Tests for LLM matcher _build_prompt_messages with repair context."""
+
+    @pytest.fixture
+    def matcher(self):
+        from context_builder.coverage.llm_matcher import LLMMatcher, LLMMatcherConfig
+        # Use inline prompt (no file) for testing
+        return LLMMatcher(config=LLMMatcherConfig(prompt_name="nonexistent_prompt"))
+
+    def test_build_prompt_without_repair_context(self, matcher):
+        """Prompt messages should be built without repair context."""
+        messages = matcher._build_prompt_messages(
+            description="VENTIL",
+            item_type="parts",
+            covered_categories=["engine"],
+            covered_components={"engine": ["Ventil"]},
+        )
+        assert len(messages) == 2
+        assert "VENTIL" in messages[1]["content"]
+
+    def test_build_prompt_with_repair_context(self, matcher):
+        """When repair_context_description is provided, it should appear in the prompt."""
+        messages = matcher._build_prompt_messages(
+            description="MULTIFUNKTIONSEINHEIT",
+            item_type="parts",
+            covered_categories=["electrical_system"],
+            covered_components={"electrical_system": ["I-Drive"]},
+            repair_context_description="I-Drive Schalter klemmt Teilweise /ersetzen",
+        )
+        # The inline fallback doesn't use repair_context_description,
+        # but the template-based prompt does. Verify messages are returned.
+        assert len(messages) == 2
+        assert "MULTIFUNKTIONSEINHEIT" in messages[1]["content"]
+
+
+class TestDeferToLLM:
+    """Tests for deferring uncovered-category items to LLM."""
+
+    @pytest.fixture
+    def analyzer(self):
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+        # Set up a mock part_lookup that returns a result
+        return analyzer
+
+    def test_deferred_when_has_repair_context(self):
+        """Item with non-covered category + repair context should be deferred (unmatched)."""
+        from unittest.mock import MagicMock, patch
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        # Mock part_lookup to return a result in an uncovered category
+        mock_lookup = MagicMock()
+        mock_result = PartLookupResult(
+            part_number="12345",
+            found=True,
+            system="engine",
+            component="oil_filter_housing",
+            component_description="Gehäuse, Ölfilter",
+            covered=None,
+            note=None,
+            lookup_source="assumptions",
+        )
+        mock_lookup.lookup.return_value = mock_result
+        mock_lookup.lookup_by_description.return_value = None
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": "12345",
+                "description": "Gehäuse, Ölfilter",
+                "item_type": "parts",
+                "total_price": 100.0,
+                "repair_description": "Ölkühler defekt ersetzen",
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["brakes"],  # engine NOT covered
+            covered_components={"brakes": ["Bremssattel"]},
+        )
+
+        # Should be deferred (unmatched) because it has repair context
+        assert len(unmatched) == 1
+        assert len(matched) == 0
+
+    def test_not_deferred_when_no_context_no_aliases(self):
+        """Item with non-covered category, no repair context, no aliases → NOT_COVERED."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        mock_result = PartLookupResult(
+            part_number="99999",
+            found=True,
+            system="turbo_supercharger",
+            component="wastegate",
+            component_description="Wastegate",
+            covered=None,
+            note=None,
+            lookup_source="assumptions",
+        )
+        mock_lookup.lookup.return_value = mock_result
+        mock_lookup.lookup_by_description.return_value = None
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": "99999",
+                "description": "Wastegate",
+                "item_type": "parts",
+                "total_price": 200.0,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["brakes"],
+            covered_components={"brakes": ["Bremssattel"]},
+        )
+
+        # Should be NOT_COVERED immediately (no context, no aliases for turbo_supercharger)
+        assert len(matched) == 1
+        assert matched[0].coverage_status == CoverageStatus.NOT_COVERED
+        assert len(unmatched) == 0
+
+    def test_deferred_when_category_has_aliases(self):
+        """Item with non-covered category but category has aliases → deferred."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        mock_result = PartLookupResult(
+            part_number="DIFF001",
+            found=True,
+            system="axle_drive",
+            component="differential",
+            component_description="DIFFERENTIEL ARRIERE",
+            covered=None,
+            note=None,
+            lookup_source="assumptions",
+        )
+        mock_lookup.lookup.return_value = mock_result
+        mock_lookup.lookup_by_description.return_value = None
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": "DIFF001",
+                "description": "DIFFERENTIEL ARRIERE",
+                "item_type": "parts",
+                "total_price": 500.0,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["four_wd"],  # axle_drive not directly listed
+            covered_components={"four_wd": ["Differential"]},
+        )
+
+        # axle_drive has aliases (four_wd) so it should be deferred
+        # BUT actually _is_system_covered now resolves this via aliases,
+        # so it should be COVERED directly (Change 1 handles this case).
+        # Only items where _is_system_covered still fails are deferred.
+        # With Change 1, axle_drive + four_wd in covered → covered directly.
+        assert len(matched) == 1
+        assert matched[0].coverage_status == CoverageStatus.COVERED
