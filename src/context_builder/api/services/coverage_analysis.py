@@ -184,6 +184,26 @@ class CoverageAnalysisService:
 
         return {}
 
+    def _extract_excluded_components(
+        self, claim_facts: Dict[str, Any]
+    ) -> Dict[str, List[str]]:
+        """Extract excluded components from claim facts.
+
+        Args:
+            claim_facts: Claim facts dictionary
+
+        Returns:
+            Dict mapping category to list of excluded component names
+        """
+        facts = claim_facts.get("facts", [])
+        excluded = self._extract_fact_value(facts, "excluded_components", {})
+
+        if isinstance(excluded, dict):
+            # Filter out empty lists
+            return {k: v for k, v in excluded.items() if v}
+
+        return {}
+
     def _extract_vehicle_km(self, claim_facts: Dict[str, Any]) -> Optional[int]:
         """Extract vehicle odometer reading from claim facts.
 
@@ -469,6 +489,7 @@ class CoverageAnalysisService:
             )
 
         covered_components = self._extract_covered_components(claim_facts)
+        excluded_components = self._extract_excluded_components(claim_facts)
         vehicle_km = self._extract_vehicle_km(claim_facts)
         coverage_scale = self._extract_coverage_scale(claim_facts)
         excess_percent, excess_minimum = self._extract_excess_info(claim_facts)
@@ -491,6 +512,7 @@ class CoverageAnalysisService:
             claim_id=claim_id,
             line_items=line_items,
             covered_components=covered_components,
+            excluded_components=excluded_components,
             vehicle_km=vehicle_km,
             coverage_scale=coverage_scale,
             excess_percent=excess_percent,

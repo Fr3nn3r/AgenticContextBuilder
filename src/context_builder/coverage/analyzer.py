@@ -793,11 +793,100 @@ class CoverageAnalyzer:
 
         return items
 
+    def _is_in_excluded_list(
+        self,
+        item: LineItemCoverage,
+        excluded_components: Dict[str, List[str]],
+    ) -> bool:
+        """Check if an item is in the excluded components list.
+
+        Args:
+            item: Line item to check
+            excluded_components: Dict of category -> list of excluded parts
+
+        Returns:
+            True if the item matches an excluded component
+        """
+        if not excluded_components:
+            return False
+
+        description_lower = item.description.lower()
+
+        for category, excluded_parts in excluded_components.items():
+            for part in excluded_parts:
+                part_lower = part.lower()
+                # Check for substring match in description
+                if part_lower in description_lower or description_lower in part_lower:
+                    logger.debug(
+                        f"Item '{item.description}' matches excluded part '{part}' "
+                        f"in category '{category}'"
+                    )
+                    return True
+
+        return False
+
+    def _validate_llm_coverage_decision(
+        self,
+        item: LineItemCoverage,
+        covered_components: Dict[str, List[str]],
+        excluded_components: Dict[str, List[str]],
+    ) -> LineItemCoverage:
+        """Validate and potentially override LLM coverage decision.
+
+        This method provides a safety net against LLM category inference errors.
+        If the LLM approved a part based on category membership rather than
+        explicit list matching, this validation will catch it.
+
+        Args:
+            item: Line item coverage result from LLM
+            covered_components: Dict of category -> list of covered parts
+            excluded_components: Dict of category -> list of excluded parts
+
+        Returns:
+            Validated/corrected LineItemCoverage
+        """
+        if item.match_method != MatchMethod.LLM:
+            return item
+
+        # Check if item is in excluded list -> force NOT_COVERED
+        if self._is_in_excluded_list(item, excluded_components):
+            original_status = item.coverage_status
+            item.coverage_status = CoverageStatus.NOT_COVERED
+            item.match_reasoning += " [OVERRIDE: Component is in excluded list]"
+            logger.info(
+                f"LLM validation override: '{item.description}' changed from "
+                f"{original_status.value} to NOT_COVERED (in excluded list)"
+            )
+            return item
+
+        # If LLM said COVERED, verify the component is in the explicit policy list
+        if item.coverage_status == CoverageStatus.COVERED:
+            # Use existing method to check if component is in policy list
+            is_in_list, reason = self._is_component_in_policy_list(
+                component=item.matched_component,
+                system=item.coverage_category,
+                covered_components=covered_components,
+                description=item.description,
+            )
+
+            if not is_in_list:
+                # Override to REVIEW_NEEDED - the component is not explicitly listed
+                item.coverage_status = CoverageStatus.REVIEW_NEEDED
+                item.match_confidence = 0.45
+                item.match_reasoning += f" [REVIEW: {reason}]"
+                logger.info(
+                    f"LLM validation override: '{item.description}' changed from "
+                    f"COVERED to REVIEW_NEEDED (not in explicit policy list)"
+                )
+
+        return item
+
     def analyze(
         self,
         claim_id: str,
         line_items: List[Dict[str, Any]],
         covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
         vehicle_km: Optional[int] = None,
         coverage_scale: Optional[List[Dict[str, Any]]] = None,
         excess_percent: Optional[float] = None,
@@ -815,6 +904,7 @@ class CoverageAnalyzer:
             claim_id: Claim identifier
             line_items: List of line item dicts from claim_facts
             covered_components: Dict of category -> list of covered parts
+            excluded_components: Dict of category -> list of excluded parts
             vehicle_km: Current vehicle odometer reading
             coverage_scale: List of {km_threshold, coverage_percent}
             excess_percent: Excess percentage from policy
@@ -831,6 +921,7 @@ class CoverageAnalyzer:
         """
         start_time = time.time()
         covered_components = covered_components or {}
+        excluded_components = excluded_components or {}
 
         # Determine coverage percentage from scale (with age adjustment)
         mileage_percent, effective_percent = self._determine_coverage_percent(
@@ -925,10 +1016,19 @@ class CoverageAnalyzer:
                     items_for_llm,
                     covered_categories=covered_categories,
                     covered_components=covered_components,
+                    excluded_components=excluded_components,
                     claim_id=claim_id,
                     on_progress=on_llm_progress,
                     covered_parts_in_claim=covered_parts_in_claim,
                 )
+
+                # Validate LLM decisions against explicit policy lists
+                llm_matched = [
+                    self._validate_llm_coverage_decision(
+                        item, covered_components, excluded_components
+                    )
+                    for item in llm_matched
+                ]
 
             # Mark skipped items as review needed
             for item in skipped:

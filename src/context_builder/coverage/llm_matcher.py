@@ -35,6 +35,8 @@ class LLMMatcherConfig:
     max_tokens: int = 512
     min_confidence_for_coverage: float = 0.60
     review_needed_threshold: float = 0.60
+    # Lower threshold for "not covered" - we're more willing to deny than approve
+    review_needed_threshold_not_covered: float = 0.40
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
@@ -46,6 +48,7 @@ class LLMMatcherConfig:
             max_tokens=config.get("max_tokens", 512),
             min_confidence_for_coverage=config.get("min_confidence_for_coverage", 0.60),
             review_needed_threshold=config.get("review_needed_threshold", 0.60),
+            review_needed_threshold_not_covered=config.get("review_needed_threshold_not_covered", 0.40),
         )
 
 
@@ -96,6 +99,7 @@ class LLMMatcher:
         item_type: str,
         covered_categories: List[str],
         covered_components: Dict[str, List[str]],
+        excluded_components: Optional[Dict[str, List[str]]] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
     ) -> List[Dict[str, str]]:
         """Build the prompt messages for the LLM.
@@ -105,6 +109,7 @@ class LLMMatcher:
             item_type: Item type (parts, labor, fee)
             covered_categories: List of covered category names
             covered_components: Dict mapping category to list of component names
+            excluded_components: Dict mapping category to list of excluded component names
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
         Returns:
@@ -120,6 +125,7 @@ class LLMMatcher:
                 item_type=item_type,
                 covered_categories=covered_categories,
                 covered_components=covered_components,
+                excluded_components=excluded_components or {},
                 covered_parts_in_claim=covered_parts_in_claim or [],
             )
             return prompt_data["messages"]
@@ -229,15 +235,14 @@ Determine if this item is covered under the policy."""
 
         desc = description.strip().upper()
 
-        # Very short descriptions (1-5 chars) are inherently vague
-        if len(desc) <= 5:
-            return True
-
-        # Single word, all caps patterns (ARRIVEE, MISC, etc.)
-        if re.match(r"^[A-Z]{2,10}$", desc):
+        # Very short descriptions (1-4 chars) are inherently vague
+        # e.g., "VIS", "OIL" - but not "MOTOR", "PUMPE"
+        if len(desc) <= 4:
             return True
 
         # Generic terms that don't indicate specific parts
+        # Note: We explicitly list vague terms rather than using length/pattern rules
+        # because valid component names like "ÖLPUMPE", "CONTACTEUR" would be wrongly flagged
         vague_terms = {
             "PART", "PARTS", "PIECE", "PIECES", "PIÈCE", "PIÈCES",
             "MISC", "MISCELLANEOUS", "DIVERS", "DIVERSE",
@@ -245,13 +250,10 @@ Determine if this item is covered under the policy."""
             "ITEM", "ITEMS", "ARTICLE", "ARTICLES",
             "ARRIVEE", "ARRIVAL", "LIVRAISON",
             "WORK", "TRAVAIL", "SERVICE", "SERVICES",
+            "MATERIAL", "MATERIEL", "MATÉRIEL",
+            "ARBEIT", "ARBEIT:",
         }
         if desc in vague_terms:
-            return True
-
-        # Check for very generic single-word descriptions
-        if " " not in desc and len(desc) < 8:
-            # Single short word without context
             return True
 
         return False
@@ -264,6 +266,7 @@ Determine if this item is covered under the policy."""
         total_price: float = 0.0,
         covered_categories: Optional[List[str]] = None,
         covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
         claim_id: Optional[str] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
     ) -> LineItemCoverage:
@@ -276,6 +279,7 @@ Determine if this item is covered under the policy."""
             total_price: Item total price
             covered_categories: Categories covered by policy
             covered_components: Components per category from policy
+            excluded_components: Excluded components per category from policy
             claim_id: Claim ID for audit context
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
@@ -284,6 +288,7 @@ Determine if this item is covered under the policy."""
         """
         covered_categories = covered_categories or []
         covered_components = covered_components or {}
+        excluded_components = excluded_components or {}
 
         # Build prompt
         messages = self._build_prompt_messages(
@@ -291,6 +296,7 @@ Determine if this item is covered under the policy."""
             item_type=item_type,
             covered_categories=covered_categories,
             covered_components=covered_components,
+            excluded_components=excluded_components,
             covered_parts_in_claim=covered_parts_in_claim,
         )
 
@@ -324,8 +330,12 @@ Determine if this item is covered under the policy."""
                 confidence = 0.50
                 reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
 
-            # Determine coverage status
-            if confidence < self.config.review_needed_threshold:
+            # Determine coverage status with asymmetric thresholds:
+            # - High bar (0.60) for approvals: be careful about paying out
+            # - Low bar (0.40) for denials: customer can appeal if wrong
+            if result.is_covered and confidence < self.config.review_needed_threshold:
+                status = CoverageStatus.REVIEW_NEEDED
+            elif not result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
                 status = CoverageStatus.REVIEW_NEEDED
             elif result.is_covered:
                 status = CoverageStatus.COVERED
@@ -369,6 +379,7 @@ Determine if this item is covered under the policy."""
         items: List[Dict[str, Any]],
         covered_categories: Optional[List[str]] = None,
         covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
         claim_id: Optional[str] = None,
         on_progress: Optional[Callable[[int], None]] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
@@ -382,6 +393,7 @@ Determine if this item is covered under the policy."""
             items: List of line item dictionaries
             covered_categories: Categories covered by policy
             covered_components: Components per category from policy
+            excluded_components: Excluded components per category from policy
             claim_id: Claim ID for audit context
             on_progress: Optional callback called after each LLM call with increment (1)
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
@@ -399,6 +411,7 @@ Determine if this item is covered under the policy."""
                 total_price=item.get("total_price") or 0.0,
                 covered_categories=covered_categories,
                 covered_components=covered_components,
+                excluded_components=excluded_components,
                 claim_id=claim_id,
                 covered_parts_in_claim=covered_parts_in_claim,
             )
