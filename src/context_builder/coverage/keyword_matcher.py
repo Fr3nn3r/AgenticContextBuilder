@@ -370,7 +370,7 @@ class KeywordMatcher:
                 description=item.get("description", ""),
                 item_type=item.get("item_type", ""),
                 item_code=item.get("item_code"),
-                total_price=item.get("total_price", 0.0),
+                total_price=item.get("total_price") or 0.0,
                 covered_categories=covered_categories,
             )
 

@@ -396,7 +396,7 @@ Determine if this item is covered under the policy."""
                 description=item.get("description", ""),
                 item_type=item.get("item_type", ""),
                 item_code=item.get("item_code"),
-                total_price=item.get("total_price", 0.0),
+                total_price=item.get("total_price") or 0.0,
                 covered_categories=covered_categories,
                 covered_components=covered_components,
                 claim_id=claim_id,

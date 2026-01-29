@@ -280,7 +280,7 @@ class CoverageAnalyzer:
                     item_code=item_code,
                     description=item.get("description", ""),
                     item_type=item.get("item_type", ""),
-                    total_price=item.get("total_price", 0.0),
+                    total_price=item.get("total_price") or 0.0,
                     coverage_status=status,
                     coverage_category=result.system,
                     matched_component=result.component_description or result.component,
@@ -288,14 +288,14 @@ class CoverageAnalyzer:
                     match_confidence=0.95,  # High confidence for part number matches
                     match_reasoning=reasoning,
                     covered_amount=(
-                        item.get("total_price", 0.0)
+                        item.get("total_price") or 0.0
                         if status == CoverageStatus.COVERED
                         else 0.0
                     ),
                     not_covered_amount=(
                         0.0
                         if status == CoverageStatus.COVERED
-                        else item.get("total_price", 0.0)
+                        else item.get("total_price") or 0.0
                     ),
                 )
             )
@@ -558,7 +558,7 @@ class CoverageAnalyzer:
                         item_code=item.get("item_code"),
                         description=item.get("description", ""),
                         item_type=item.get("item_type", ""),
-                        total_price=item.get("total_price", 0.0),
+                        total_price=item.get("total_price") or 0.0,
                         coverage_status=CoverageStatus.REVIEW_NEEDED,
                         coverage_category=None,
                         matched_component=None,
@@ -566,7 +566,7 @@ class CoverageAnalyzer:
                         match_confidence=0.0,
                         match_reasoning="Skipped due to LLM item limit",
                         covered_amount=0.0,
-                        not_covered_amount=item.get("total_price", 0.0),
+                        not_covered_amount=item.get("total_price") or 0.0,
                     )
                 )
         elif remaining:
@@ -577,7 +577,7 @@ class CoverageAnalyzer:
                         item_code=item.get("item_code"),
                         description=item.get("description", ""),
                         item_type=item.get("item_type", ""),
-                        total_price=item.get("total_price", 0.0),
+                        total_price=item.get("total_price") or 0.0,
                         coverage_status=CoverageStatus.REVIEW_NEEDED,
                         coverage_category=None,
                         matched_component=None,
@@ -585,7 +585,7 @@ class CoverageAnalyzer:
                         match_confidence=0.0,
                         match_reasoning="No rule or keyword match; LLM fallback disabled",
                         covered_amount=0.0,
-                        not_covered_amount=item.get("total_price", 0.0),
+                        not_covered_amount=item.get("total_price") or 0.0,
                     )
                 )
 
