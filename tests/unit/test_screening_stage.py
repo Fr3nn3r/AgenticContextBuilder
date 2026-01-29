@@ -291,6 +291,8 @@ class _MockScreener:
         aggregated_facts: Dict[str, Any],
         reconciliation_report=None,
         claim_run_id=None,
+        on_llm_start=None,
+        on_llm_progress=None,
     ) -> Tuple[ScreeningResult, Optional[CoverageAnalysisResult]]:
         self.screen_called = True
         result = ScreeningResult(

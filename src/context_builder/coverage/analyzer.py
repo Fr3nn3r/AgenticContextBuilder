@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 # Used to verify if a detected component is actually in the policy's covered parts list
 COMPONENT_SYNONYMS = {
     "oil_cooler": ["ölkühler", "oelkuehler", "refroidisseur d'huile", "oil cooler"],
-    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen", "nockenwellenrad"],
-    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit", "nockenwellenrad"],
+    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen"],
+    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit"],
     "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette"],
     "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner"],
     "chain_guide": ["kettenführung", "guide de chaîne", "führung", "guide"],
@@ -489,17 +489,25 @@ class CoverageAnalyzer:
             return True, f"No specific parts list for category '{system}'"
 
         # Get synonyms for this component type
+        # Try multiple key variants: "egr valve" → "egr_valve", "egr valve"
         component_lower = component.lower()
-        synonyms = COMPONENT_SYNONYMS.get(component_lower)
+        underscore_key = component_lower.replace(" ", "_")
+        space_key = component_lower.replace("_", " ")
+        synonyms = (
+            COMPONENT_SYNONYMS.get(component_lower)
+            or COMPONENT_SYNONYMS.get(underscore_key)
+            or COMPONENT_SYNONYMS.get(space_key)
+        )
 
         # If no synonyms defined for this component, assume covered (don't reject unknown components)
-        if synonyms is None:
+        if not synonyms:
             return True, f"No synonym mapping for component '{component}' - assuming covered"
 
-        # Also add the component name itself and description terms
+        # Build search terms from synonyms + component name variants
         search_terms = set(synonyms)
         search_terms.add(component_lower)
-        search_terms.add(component.replace("_", " ").lower())
+        search_terms.add(underscore_key)
+        search_terms.add(space_key)
 
         # Check if any synonym matches any part in the policy list
         policy_parts_lower = [p.lower() for p in policy_parts_list]
@@ -725,18 +733,27 @@ class CoverageAnalyzer:
             coverage_percent=coverage_percent,
         )
 
+    # Generic labor descriptions that mean "work" without referencing specific parts
+    _GENERIC_LABOR_DESCRIPTIONS = {
+        "main d'oeuvre", "main d'œuvre", "main-d'oeuvre", "main-d'œuvre",
+        "arbeit", "arbeitszeit",
+        "labor", "labour",
+        "travail", "manodopera",
+    }
+
     def _apply_labor_follows_parts(
         self, items: List[LineItemCoverage]
     ) -> List[LineItemCoverage]:
-        """Promote labor items to COVERED if they reference covered parts by part number.
+        """Promote labor items to COVERED if they reference covered parts.
 
-        When a labor item is NOT_COVERED or REVIEW_NEEDED but references a covered part's
-        part number in its description, it should be promoted to COVERED since the labor
-        is for installing/replacing that covered component.
+        Two strategies are applied in order:
 
-        This is a conservative matching approach that only links labor to parts when
-        the part number explicitly appears in the labor description. Generic keyword
-        matching (like "MODULE", "SYNC") was removed to prevent false positives.
+        1. **Part-number matching**: If a labor description contains a covered
+           part's item_code as a substring, the labor is linked to that part.
+
+        2. **Simple invoice rule**: When there is exactly 1 uncovered generic
+           labor item (e.g. "Main d'œuvre") and at least 1 covered part, the
+           labor is automatically linked to the first covered part's category.
 
         Args:
             items: List of analyzed line items
@@ -744,52 +761,73 @@ class CoverageAnalyzer:
         Returns:
             Updated list with labor items potentially promoted
         """
-        # Build index of covered parts by part number only (no keyword extraction)
-        # This prevents false positives from generic keywords like MODULE, SYNC, POWER
+        labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
+
+        # Collect all covered parts
+        covered_parts: List[LineItemCoverage] = []
         covered_parts_by_code: Dict[str, LineItemCoverage] = {}
         for item in items:
             if (
                 item.coverage_status == CoverageStatus.COVERED
                 and item.item_type in ("parts", "part", "piece")
             ):
-                # Index by part number only (e.g., "F2237471")
+                covered_parts.append(item)
                 if item.item_code:
                     clean_code = "".join(c for c in item.item_code if c.isalnum()).upper()
                     if len(clean_code) >= 4:
                         covered_parts_by_code[clean_code] = item
 
-        if not covered_parts_by_code:
-            return items
+        # Strategy 1: Part-number matching
+        if covered_parts_by_code:
+            for item in items:
+                if item.item_type not in labor_types:
+                    continue
+                if item.coverage_status == CoverageStatus.COVERED:
+                    continue
 
-        # Check labor items for part number references
-        for item in items:
-            if item.item_type not in ("labor", "labour", "main d'oeuvre", "arbeit"):
-                continue
+                desc_upper = item.description.upper()
+                desc_alphanum = "".join(c for c in desc_upper if c.isalnum() or c.isspace())
 
-            if item.coverage_status == CoverageStatus.COVERED:
-                continue
+                for part_code, covered_part in covered_parts_by_code.items():
+                    if part_code in desc_alphanum:
+                        item.coverage_status = CoverageStatus.COVERED
+                        item.coverage_category = covered_part.coverage_category
+                        item.matched_component = covered_part.matched_component
+                        item.match_confidence = 0.85
+                        item.match_reasoning = (
+                            f"Labor for covered part: {covered_part.description} "
+                            f"(matched part number: {part_code})"
+                        )
+                        logger.debug(
+                            f"Promoted labor '{item.description}' to COVERED "
+                            f"(linked to part number: {part_code})"
+                        )
+                        break
 
-            # Check if labor description contains a covered part number as substring
-            desc_upper = item.description.upper()
-            desc_alphanum = "".join(c for c in desc_upper if c.isalnum() or c.isspace())
+        # Strategy 2: Simple invoice rule
+        if covered_parts:
+            uncovered_generic_labor = [
+                item for item in items
+                if item.item_type in labor_types
+                and item.coverage_status != CoverageStatus.COVERED
+                and item.description.lower().strip() in self._GENERIC_LABOR_DESCRIPTIONS
+            ]
 
-            for part_code, covered_part in covered_parts_by_code.items():
-                if part_code in desc_alphanum:
-                    # Promote labor to COVERED
-                    item.coverage_status = CoverageStatus.COVERED
-                    item.coverage_category = covered_part.coverage_category
-                    item.matched_component = covered_part.matched_component
-                    item.match_confidence = 0.85  # Higher confidence for part number match
-                    item.match_reasoning = (
-                        f"Labor for covered part: {covered_part.description} "
-                        f"(matched part number: {part_code})"
-                    )
-
-                    logger.debug(
-                        f"Promoted labor '{item.description}' to COVERED "
-                        f"(linked to part number: {part_code})"
-                    )
-                    break
+            if len(uncovered_generic_labor) == 1:
+                labor_item = uncovered_generic_labor[0]
+                linked_part = covered_parts[0]
+                labor_item.coverage_status = CoverageStatus.COVERED
+                labor_item.coverage_category = linked_part.coverage_category
+                labor_item.matched_component = linked_part.matched_component
+                labor_item.match_confidence = 0.75
+                labor_item.match_reasoning = (
+                    f"Simple invoice rule: generic labor linked to covered part "
+                    f"'{linked_part.description}' ({linked_part.coverage_category})"
+                )
+                logger.debug(
+                    f"Promoted labor '{labor_item.description}' to COVERED "
+                    f"via simple invoice rule (linked to '{linked_part.description}')"
+                )
 
         return items
 

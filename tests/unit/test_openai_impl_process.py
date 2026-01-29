@@ -191,6 +191,7 @@ class TestOpenAIVisionIngestionProcess:
         assert "Failed to process file" in caplog.text
 
 
+@pytest.mark.slow
 class TestOpenAIVisionIngestionRetry:
     """Test API retry logic with exponential backoff."""
 

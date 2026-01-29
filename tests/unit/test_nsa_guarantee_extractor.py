@@ -520,8 +520,9 @@ class TestNsaGuaranteeExtractorComponentExtraction:
         # Check coverage scale has summary in value
         scale_field = next(f for f in fields if f.name == "coverage_scale")
         assert scale_field.value is not None
-        assert "80% up to 50'000 km" in scale_field.value
-        assert "60% up to 80'000 km" in scale_field.value
+        assert "100% below 50'000 km" in scale_field.value
+        assert "80% from 50'000 km" in scale_field.value
+        assert "60% from 80'000 km" in scale_field.value
 
 
 class TestNsaGuaranteeExtractorSummaryFunctions:

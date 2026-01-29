@@ -117,7 +117,7 @@ class TestPayoutBasic:
     """Basic payout calculation tests."""
 
     def test_basic_payout_no_cap_no_deductible(self):
-        """No max coverage, no deductible → final = covered_total."""
+        """No max coverage, no deductible → final = subtotal_with_vat."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
         )
@@ -130,8 +130,9 @@ class TestPayoutBasic:
         assert payout.capped_amount == 4500.0
         assert payout.max_coverage_applied is False
         assert payout.deductible_amount == 0.0
-        assert payout.after_deductible == 4500.0
-        assert payout.final_payout == 4500.0
+        # VAT added before deductible: 4500 * 1.081 = 4864.5
+        assert payout.after_deductible == 4864.5
+        assert payout.final_payout == 4864.5
         assert payout.policyholder_type == "individual"
         assert payout.vat_adjusted is False
 
@@ -163,11 +164,12 @@ class TestPayoutBasic:
             ("excess_percent", "10"),
             ("excess_minimum", "200"),
         )
-        # 3333.33 * 10% = 333.333 → should round to 333.33
+        # subtotal_with_vat = 3333.33 * 1.081 = 3603.33 (rounded)
+        # deductible = subtotal * 10% = 360.33 (rounded)
         coverage = _make_coverage_result(covered_total=3333.33)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        assert payout.deductible_amount == round(3333.33 * 0.10, 2)
+        assert payout.deductible_amount == round(3333.33 * (1 + SWISS_VAT_RATE) * 0.10, 2)
         assert payout.final_payout == round(payout.final_payout, 2)
 
 
@@ -232,7 +234,7 @@ class TestPayoutDeductible:
     """Tests for deductible (excess) calculation."""
 
     def test_percent_deductible(self):
-        """Deductible = capped * percent/100."""
+        """Deductible = subtotal_with_vat * percent/100."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
             ("excess_percent", "10"),
@@ -240,34 +242,37 @@ class TestPayoutDeductible:
         coverage = _make_coverage_result(covered_total=4500.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
+        # subtotal = 4500 * 1.081 = 4864.5, deductible = 486.45
         assert payout.deductible_percent == 10.0
-        assert payout.deductible_amount == 450.0
-        assert payout.after_deductible == 4050.0
+        assert payout.deductible_amount == 486.45
+        assert payout.after_deductible == 4378.05
 
     def test_minimum_deductible(self):
-        """Deductible = MAX(percent * capped, minimum)."""
+        """Deductible = MAX(percent * subtotal, minimum)."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
-            ("excess_percent", "5"),     # 5% of 1000 = 50
+            ("excess_percent", "5"),     # 5% of 1081 = 54.05
             ("excess_minimum", "200"),   # minimum 200 → use 200
         )
         coverage = _make_coverage_result(covered_total=1000.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        assert payout.deductible_amount == 200.0  # MIN wins
-        assert payout.after_deductible == 800.0
+        # subtotal = 1000 * 1.081 = 1081.0, 5% = 54.05, min 200 wins
+        assert payout.deductible_amount == 200.0
+        assert payout.after_deductible == 881.0
 
     def test_percent_deductible_wins_over_minimum(self):
         """When percent produces higher amount, it wins."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
-            ("excess_percent", "10"),    # 10% of 5000 = 500
-            ("excess_minimum", "200"),   # minimum 200 → use 500
+            ("excess_percent", "10"),    # 10% of 5405 = 540.5
+            ("excess_minimum", "200"),   # minimum 200 → use 540.5
         )
         coverage = _make_coverage_result(covered_total=5000.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        assert payout.deductible_amount == 500.0
+        # subtotal = 5000 * 1.081 = 5405.0, 10% = 540.5
+        assert payout.deductible_amount == 540.5
 
     def test_only_minimum_deductible(self):
         """When only minimum is specified (no percent)."""
@@ -278,17 +283,19 @@ class TestPayoutDeductible:
         coverage = _make_coverage_result(covered_total=4500.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
+        # subtotal = 4500 * 1.081 = 4864.5, min deductible 300
         assert payout.deductible_amount == 300.0
-        assert payout.after_deductible == 4200.0
+        assert payout.after_deductible == 4564.5
 
     def test_no_deductible(self):
-        """No excess fields → deductible = 0."""
+        """No excess fields → deductible = 0, after_deductible = subtotal_with_vat."""
         facts = _make_facts(("policyholder_name", "Hans Muster"))
         coverage = _make_coverage_result(covered_total=4500.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
         assert payout.deductible_amount == 0.0
-        assert payout.after_deductible == 4500.0
+        # subtotal = 4500 * 1.081 = 4864.5
+        assert payout.after_deductible == 4864.5
 
     def test_after_deductible_never_negative(self):
         """After deductible should not go below zero."""
@@ -303,7 +310,7 @@ class TestPayoutDeductible:
         assert payout.final_payout == 0.0
 
     def test_deductible_with_max_coverage_cap(self):
-        """Deductible applies to capped amount, not original covered total."""
+        """Deductible applies to VAT-inclusive capped amount."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
             ("max_coverage", "3000"),
@@ -312,10 +319,11 @@ class TestPayoutDeductible:
         coverage = _make_coverage_result(covered_total=5000.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        # Capped at 3000, deductible = 3000 * 10% = 300
+        # Capped at 3000, subtotal = 3000 * 1.081 = 3243.0
+        # deductible = 3243 * 10% = 324.3
         assert payout.capped_amount == 3000.0
-        assert payout.deductible_amount == 300.0
-        assert payout.after_deductible == 2700.0
+        assert payout.deductible_amount == 324.3
+        assert payout.after_deductible == 2918.7
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -376,10 +384,11 @@ class TestPayoutVAT:
         coverage = _make_coverage_result(covered_total=10810.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        # after_deductible = 10810 (no deductible)
-        # vat_deduction = 10810 - 10810/(1+0.081) = 10810 - 10000 = 810
+        # subtotal = 10810 * 1.081 = 11685.61 (no deductible)
+        # vat_deduction = 11685.61 - 11685.61/1.081 = 875.61
         assert payout.vat_adjusted is True
-        expected_vat = round(10810.0 - (10810.0 / (1 + SWISS_VAT_RATE)), 2)
+        assert payout.after_deductible == 11685.61
+        expected_vat = round(payout.after_deductible - (payout.after_deductible / (1 + SWISS_VAT_RATE)), 2)
         assert payout.vat_deduction == expected_vat
 
 
@@ -406,10 +415,11 @@ class TestPayoutFullFlow:
         assert payout.covered_total == 4500.0
         assert payout.not_covered_total == 500.0
         assert payout.capped_amount == 4500.0
-        assert payout.deductible_amount == 450.0  # 10% of 4500 > 200 min
-        assert payout.after_deductible == 4050.0
+        # subtotal = 4500 * 1.081 = 4864.5, deductible = 486.45
+        assert payout.deductible_amount == 486.45
+        assert payout.after_deductible == 4378.05
         assert payout.vat_adjusted is False
-        assert payout.final_payout == 4050.0
+        assert payout.final_payout == 4378.05
 
     def test_company_claim_with_cap(self):
         """Company claim: capped, deductible, VAT deduction."""
@@ -426,13 +436,14 @@ class TestPayoutFullFlow:
         assert payout.max_coverage_applied is True
         assert payout.capped_amount == 3000.0
 
-        # Step 2: Deductible = max(3000*10%, 200) = 300
-        assert payout.deductible_amount == 300.0
-        assert payout.after_deductible == 2700.0
+        # Step 2: subtotal = 3000 * 1.081 = 3243.0
+        # Deductible = max(3243*10%, 200) = 324.3
+        assert payout.deductible_amount == 324.3
+        assert payout.after_deductible == 2918.7
 
-        # Step 3: VAT = 2700 - 2700/1.081
+        # Step 3: VAT = 2918.7 - 2918.7/1.081
         assert payout.vat_adjusted is True
-        expected_final = round(2700.0 / (1 + SWISS_VAT_RATE), 2)
+        expected_final = round(2918.7 / (1 + SWISS_VAT_RATE), 2)
         assert payout.final_payout == expected_final
 
     def test_payout_is_valid_pydantic_model(self):
@@ -476,8 +487,10 @@ class TestPayoutFullFlow:
 
         assert result.payout is not None
         assert result.payout.covered_total == 3000.0
-        assert result.payout.deductible_amount == 300.0  # 10% of 3000
-        assert result.payout.final_payout == 2700.0
+        # subtotal = 3000 * 1.081 = 3243.0, deductible = 324.3
+        assert result.payout.deductible_amount == 324.3
+        assert result.payout.after_deductible == 2918.7
+        assert result.payout.final_payout == 2918.7  # individual, no VAT removal
         assert result.payout_error is None
 
     def test_payout_error_captured(self):

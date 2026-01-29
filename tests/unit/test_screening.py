@@ -500,11 +500,11 @@ class TestCheck4bServiceCompliance:
         assert check.verdict == CheckVerdict.PASS
         assert check.check_id == "4b"
 
-    def test_fail_service_gap_exceeds_12_months(self):
+    def test_fail_service_gap_exceeds_36_months(self):
         facts = _make_facts(("document_date", "2026-06-15"))
         structured = {
             "service_entries": [
-                {"service_date": "2024-01-01"},
+                {"service_date": "2022-01-01"},
             ]
         }
         check = _screener()._check_4b_service_compliance(facts, structured)
