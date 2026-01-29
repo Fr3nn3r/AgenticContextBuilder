@@ -12,6 +12,7 @@ Integration point for future enhancement:
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
@@ -125,11 +126,38 @@ class AssumptionsLookupProvider:
             lookup_source=self.source_name,
         )
 
+    def _is_whole_word_match(self, keyword: str, text: str) -> bool:
+        """Check if keyword appears as a whole word in text.
+
+        Uses word boundaries to avoid matching 'guide' inside 'guidee'.
+        A word boundary is defined as: the keyword must not be immediately
+        preceded or followed by a letter (to avoid partial word matches).
+
+        Args:
+            keyword: The keyword to search for
+            text: The text to search in
+
+        Returns:
+            True if keyword appears as a complete word
+        """
+        # Escape special regex characters in keyword
+        escaped_keyword = re.escape(keyword)
+        # Use negative lookbehind/lookahead to ensure keyword is not part of a larger word
+        # (?<![a-zA-ZÀ-ÿ]) = not preceded by a letter (including accented chars)
+        # (?![a-zA-ZÀ-ÿ]) = not followed by a letter
+        pattern = rf'(?<![a-zA-ZÀ-ÿ]){escaped_keyword}(?![a-zA-ZÀ-ÿ])'
+        return bool(re.search(pattern, text, re.IGNORECASE))
+
     def lookup_by_description(self, description: str) -> Optional[PartLookupResult]:
         """Look up a part by matching keywords in its description.
 
         This is a fallback when exact part number lookup fails.
         Uses the by_keyword section of assumptions.json.
+
+        Matching rules:
+        1. Keywords must match as whole words (not substrings within words)
+        2. Longer keyword matches are preferred (more specific)
+        3. Labor/diagnostic keywords take precedence to avoid false positives
 
         Args:
             description: Item description to match
@@ -145,39 +173,44 @@ class AssumptionsLookupProvider:
         if not self._keyword_mappings:
             return None
 
-        description_upper = description.upper()
-
-        # Find all matching keywords
-        best_match = None
-        best_keyword_len = 0
+        # Find all matching keywords using whole-word matching
+        matches: List[tuple] = []
 
         for keyword, info in self._keyword_mappings.items():
             # Skip comment keys
             if keyword.startswith("_"):
                 continue
 
-            keyword_upper = keyword.upper()
-            if keyword_upper in description_upper:
-                # Prefer longer keyword matches (more specific)
-                if len(keyword) > best_keyword_len:
-                    best_keyword_len = len(keyword)
-                    best_match = (keyword, info)
+            # Only match whole words to avoid false positives
+            # e.g., "guide" should not match "guidee" in "fonction guidee"
+            if self._is_whole_word_match(keyword, description):
+                matches.append((keyword, info, len(keyword)))
 
-        if best_match:
-            keyword, info = best_match
-            return PartLookupResult(
-                part_number=f"keyword:{keyword}",
-                found=True,
-                system=info.get("system"),
-                component=info.get("component"),
-                component_description=info.get("component_description"),
-                covered=info.get("covered"),
-                manufacturer=info.get("manufacturer"),
-                lookup_source=f"{self.source_name}_keyword",
-                note=info.get("note"),
-            )
+        if not matches:
+            return None
 
-        return None
+        # Sort matches: prefer labor/diagnostic (to exclude), then by length (longer = more specific)
+        def match_priority(m):
+            keyword, info, length = m
+            # Labor/diagnostic items get highest priority (should be excluded from coverage)
+            is_labor = info.get("system") == "labor"
+            # Then prefer longer matches (more specific)
+            return (is_labor, length)
+
+        matches.sort(key=match_priority, reverse=True)
+        keyword, info, _ = matches[0]
+
+        return PartLookupResult(
+            part_number=f"keyword:{keyword}",
+            found=True,
+            system=info.get("system"),
+            component=info.get("component"),
+            component_description=info.get("component_description"),
+            covered=info.get("covered"),
+            manufacturer=info.get("manufacturer"),
+            lookup_source=f"{self.source_name}_keyword",
+            note=info.get("note"),
+        )
 
 
 class PartNumberLookup:
