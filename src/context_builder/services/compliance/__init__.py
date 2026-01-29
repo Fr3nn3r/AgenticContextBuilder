@@ -57,6 +57,8 @@ from context_builder.services.compliance.file import (
     FileLLMCallReader,
     FileLLMCallSink,
     FileLLMCallStorage,
+    NullLLMCallSink,
+    NullLLMCallStorage,
 )
 from context_builder.services.compliance.interfaces import (
     DecisionAppender,
@@ -139,6 +141,9 @@ __all__ = [
     "FileLLMCallSink",
     "FileLLMCallReader",
     "FileLLMCallStorage",
+    # Null backends - LLM (for disabling logging)
+    "NullLLMCallSink",
+    "NullLLMCallStorage",
     # Encrypted backends - Decision
     "EncryptedDecisionAppender",
     "EncryptedDecisionReader",

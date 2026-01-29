@@ -19,6 +19,7 @@ from context_builder.services.compliance.config import (
 from context_builder.services.compliance.file import (
     FileDecisionStorage,
     FileLLMCallStorage,
+    NullLLMCallStorage,
 )
 from context_builder.services.compliance.interfaces import (
     DecisionStorage,
@@ -103,11 +104,15 @@ class ComplianceStorageFactory:
             config: Storage configuration
 
         Returns:
-            LLMCallStorage implementation
+            LLMCallStorage implementation (NullLLMCallStorage if logging disabled)
 
         Raises:
             ValueError: If the backend type is not supported
         """
+        # Return null storage if LLM logging is disabled
+        if not config.llm_logging_enabled:
+            return NullLLMCallStorage()
+
         config.validate_for_backend()
 
         # Use get_storage_dir() for workspace-aware path resolution

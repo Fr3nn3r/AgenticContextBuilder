@@ -59,6 +59,36 @@ def _deserialize_llm_call_record(data: dict) -> LLMCallRecord:
     return LLMCallRecord(**data)
 
 
+class NullLLMCallSink(LLMCallSink):
+    """No-op LLM call sink that discards all records.
+
+    Use this when LLM call logging is disabled to avoid file locking issues
+    or when audit logging is not required.
+    """
+
+    @staticmethod
+    def generate_call_id() -> str:
+        """Generate a unique call ID.
+
+        Returns:
+            Call ID in format: llm_<12-char-hex>
+        """
+        return f"llm_{uuid.uuid4().hex[:12]}"
+
+    def log_call(self, record: LLMCallRecord) -> LLMCallRecord:
+        """No-op: returns record without persisting.
+
+        Args:
+            record: The call record (ignored).
+
+        Returns:
+            The record with call_id populated (but not stored).
+        """
+        if not record.call_id:
+            record.call_id = self.generate_call_id()
+        return record
+
+
 class FileLLMCallSink(LLMCallSink):
     """Append-only file storage for LLM call records.
 
@@ -268,3 +298,31 @@ class FileLLMCallStorage(LLMCallStorage):
     def count(self) -> int:
         """Return the total number of call records."""
         return self._reader.count()
+
+
+class NullLLMCallStorage(LLMCallStorage):
+    """No-op LLM call storage that discards all records.
+
+    Use this when LLM call logging is disabled to avoid file locking issues
+    or when audit logging is not required.
+    """
+
+    def __init__(self):
+        """Initialize the null storage."""
+        self._sink = NullLLMCallSink()
+
+    def log_call(self, record: LLMCallRecord) -> LLMCallRecord:
+        """No-op: returns record without persisting."""
+        return self._sink.log_call(record)
+
+    def get_by_id(self, call_id: str) -> Optional[LLMCallRecord]:
+        """Always returns None (nothing stored)."""
+        return None
+
+    def query_by_decision(self, decision_id: str) -> List[LLMCallRecord]:
+        """Always returns empty list (nothing stored)."""
+        return []
+
+    def count(self) -> int:
+        """Always returns 0 (nothing stored)."""
+        return 0

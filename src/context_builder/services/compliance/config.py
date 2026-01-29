@@ -34,6 +34,8 @@ class ComplianceStorageConfig(BaseModel):
         storage_dir: Base directory for file-based storage. Defaults to workspace logs dir.
         encryption_key_path: Path to encryption key (for encrypted backend)
         encryption_algorithm: Encryption algorithm to use
+        llm_logging_enabled: Enable LLM call logging (default True). Set to False to
+            disable file-based LLM call logging and avoid file locking issues.
         pii_vault_enabled: Enable PII vault tokenization (Phase 3)
         pii_vault_dir: Directory for PII vaults (defaults to storage_dir)
         s3_bucket: S3 bucket name (for S3 backend)
@@ -54,6 +56,9 @@ class ComplianceStorageConfig(BaseModel):
     # Encrypted backend options (Phase 5)
     encryption_key_path: Optional[Path] = None
     encryption_algorithm: str = "AES-256-GCM"
+
+    # LLM call logging options
+    llm_logging_enabled: bool = True  # Set to False to disable LLM call logging
 
     # PII Vault options (Phase 3)
     pii_vault_enabled: bool = False
@@ -137,6 +142,7 @@ class ComplianceStorageConfig(BaseModel):
             {prefix}BACKEND_TYPE: Storage backend type
             {prefix}STORAGE_DIR: Base storage directory
             {prefix}ENCRYPTION_KEY_PATH: Path to encryption key
+            {prefix}LLM_LOGGING_ENABLED: Enable LLM call logging (true/false, default true)
             {prefix}PII_VAULT_ENABLED: Enable PII vault (true/false)
             {prefix}PII_VAULT_DIR: PII vault directory
             {prefix}S3_BUCKET: S3 bucket name
@@ -165,6 +171,10 @@ class ComplianceStorageConfig(BaseModel):
         encryption_key_path = os.getenv(f"{prefix}ENCRYPTION_KEY_PATH")
         if encryption_key_path:
             kwargs["encryption_key_path"] = Path(encryption_key_path)
+
+        llm_logging_enabled = os.getenv(f"{prefix}LLM_LOGGING_ENABLED")
+        if llm_logging_enabled:
+            kwargs["llm_logging_enabled"] = llm_logging_enabled.lower() in ("true", "1", "yes")
 
         pii_vault_enabled = os.getenv(f"{prefix}PII_VAULT_ENABLED")
         if pii_vault_enabled:

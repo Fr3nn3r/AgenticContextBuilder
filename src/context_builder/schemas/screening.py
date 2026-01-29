@@ -79,6 +79,12 @@ class ScreeningPayoutCalculation(BaseModel):
     capped_amount: float = Field(
         description="Amount after cap (equals covered_total if no cap)",
     )
+    vat_amount: float = Field(
+        default=0.0, description="VAT amount added (8.1% for Swiss claims)"
+    )
+    subtotal_with_vat: float = Field(
+        default=0.0, description="Subtotal including VAT (capped_amount + vat_amount)"
+    )
     deductible_percent: Optional[float] = Field(
         default=None, description="Deductible percentage from policy"
     )
@@ -205,14 +211,16 @@ class ScreeningResult(BaseModel):
                     "max_coverage": 10000.0,
                     "max_coverage_applied": False,
                     "capped_amount": 4500.0,
+                    "vat_amount": 364.50,
+                    "subtotal_with_vat": 4864.50,
                     "deductible_percent": 10.0,
                     "deductible_minimum": 200.0,
-                    "deductible_amount": 450.0,
-                    "after_deductible": 4050.0,
+                    "deductible_amount": 486.45,
+                    "after_deductible": 4378.05,
                     "policyholder_type": "individual",
                     "vat_adjusted": False,
                     "vat_deduction": 0.0,
-                    "final_payout": 4050.0,
+                    "final_payout": 4378.05,
                     "currency": "CHF",
                 },
                 "payout_error": None,

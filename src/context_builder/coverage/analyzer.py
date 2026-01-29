@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # Mapping of component types to their German/French equivalents for policy matching
 # Used to verify if a detected component is actually in the policy's covered parts list
 COMPONENT_SYNONYMS = {
+    "oil_cooler": ["ölkühler", "oelkuehler", "refroidisseur d'huile", "oil cooler"],
     "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen"],
     "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette"],
     "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner"],
@@ -67,6 +68,29 @@ COMPONENT_SYNONYMS = {
     "air_suspension": ["luftfederung", "suspension pneumatique"],
 }
 
+# Keywords in labor descriptions that indicate the primary repair component
+# Maps keyword patterns (lowercase) to (component_type, category)
+# Used to establish repair context before applying consumable exclusions
+REPAIR_CONTEXT_KEYWORDS = {
+    # Oil cooler - often mislabeled as oil filter in parts descriptions
+    "ölkühler": ("oil_cooler", "engine"),
+    "oelkuehler": ("oil_cooler", "engine"),
+    "oil cooler": ("oil_cooler", "engine"),
+    "refroidisseur d'huile": ("oil_cooler", "engine"),
+    # Water pump
+    "wasserpumpe": ("water_pump", "engine"),
+    "pompe à eau": ("water_pump", "engine"),
+    # Oil pump
+    "ölpumpe": ("oil_pump", "engine"),
+    "pompe à huile": ("oil_pump", "engine"),
+    # Timing chain/belt
+    "steuerkette": ("timing_chain", "engine"),
+    "zahnriemen": ("timing_belt", "engine"),
+    # Turbo
+    "turbolader": ("turbocharger", "turbo_supercharger"),
+    "turbo": ("turbocharger", "turbo_supercharger"),
+}
+
 
 @dataclass
 class AnalyzerConfig:
@@ -93,6 +117,35 @@ class AnalyzerConfig:
             llm_max_items=config.get("llm_max_items", 20),
             config_version=config.get("config_version", "1.0"),
         )
+
+
+@dataclass
+class RepairContext:
+    """Context about the primary repair being performed.
+
+    Extracted from labor descriptions to provide context for parts coverage.
+    When labor clearly indicates a specific component (e.g., "Ölkühler defekt"),
+    this context helps avoid false consumable matches on related parts.
+    """
+
+    # Primary component being repaired (e.g., "oil_cooler")
+    primary_component: Optional[str] = None
+
+    # Category of the primary component (e.g., "engine")
+    primary_category: Optional[str] = None
+
+    # Whether the primary component is covered by policy
+    is_covered: bool = False
+
+    # Labor description that established the context
+    source_description: Optional[str] = None
+
+    # Components detected in all labor items
+    all_detected_components: List[str] = None
+
+    def __post_init__(self):
+        if self.all_detected_components is None:
+            self.all_detected_components = []
 
 
 class CoverageAnalyzer:
@@ -176,27 +229,39 @@ class CoverageAnalyzer:
         self,
         vehicle_km: Optional[int],
         coverage_scale: Optional[List[Dict[str, Any]]],
-    ) -> Optional[float]:
-        """Determine coverage percentage from scale based on vehicle km.
+        vehicle_age_years: Optional[float] = None,
+        age_threshold_years: Optional[int] = None,
+        age_coverage_percent: Optional[float] = None,
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Determine coverage percentage from scale based on vehicle km and age.
 
         The coverage scale uses "A partir de X km" (from X km onwards) semantics:
         - Below first threshold: 100% coverage (full coverage before any reduction)
         - At or above a threshold: that tier's percentage applies
 
+        Age-based reduction (e.g., "Dès 8 ans 40%"):
+        - If vehicle age >= age_threshold_years, use age_coverage_percent instead
+        - This overrides the mileage-based percentage when the vehicle is old
+
         Example scale:
         - A partir de 80,000 km = 80% -> vehicle at 51,134 km gets 100%
         - A partir de 100,000 km = 70% -> vehicle at 85,000 km gets 80%
-        - A partir de 120,000 km = 60% -> vehicle at 105,000 km gets 70%
+        - A partir de 110,000 km = 50% (Dès 8 ans 40%) -> 10-year-old vehicle gets 40%
 
         Args:
             vehicle_km: Current vehicle odometer in km
             coverage_scale: List of {km_threshold, coverage_percent} dicts
+            vehicle_age_years: Vehicle age in years
+            age_threshold_years: Age threshold for reduced coverage (e.g., 8)
+            age_coverage_percent: Coverage percent for old vehicles (e.g., 40)
 
         Returns:
-            Coverage percentage (e.g., 60.0 for 60%), or None if not determinable
+            Tuple of (mileage_based_percent, effective_percent after age adjustment)
         """
+        mileage_percent = None
+
         if not vehicle_km or not coverage_scale:
-            return None
+            return None, None
 
         # Sort by km_threshold ascending
         sorted_scale = sorted(coverage_scale, key=lambda x: x.get("km_threshold", 0))
@@ -206,18 +271,34 @@ class CoverageAnalyzer:
         # At or above a threshold = that tier's percentage applies
         first_threshold = sorted_scale[0].get("km_threshold", 0)
         if vehicle_km < first_threshold:
-            return 100.0  # Full coverage before first reduction tier
+            mileage_percent = 100.0  # Full coverage before first reduction tier
+        else:
+            # Find the highest applicable tier (last one where km >= threshold)
+            mileage_percent = sorted_scale[0].get("coverage_percent")
+            for tier in sorted_scale:
+                threshold = tier.get("km_threshold", 0)
+                if vehicle_km >= threshold:
+                    mileage_percent = tier.get("coverage_percent")
+                else:
+                    break  # Sorted ascending, so no need to check further
 
-        # Find the highest applicable tier (last one where km >= threshold)
-        coverage_percent = sorted_scale[0].get("coverage_percent")  # Default to first tier
-        for tier in sorted_scale:
-            threshold = tier.get("km_threshold", 0)
-            if vehicle_km >= threshold:
-                coverage_percent = tier.get("coverage_percent")
-            else:
-                break  # Sorted ascending, so no need to check further
+        # Apply age-based reduction if applicable
+        effective_percent = mileage_percent
+        if (
+            vehicle_age_years is not None
+            and age_threshold_years is not None
+            and age_coverage_percent is not None
+            and vehicle_age_years >= age_threshold_years
+        ):
+            # Age override: use the lower of mileage-based or age-based percent
+            if mileage_percent is None or age_coverage_percent < mileage_percent:
+                effective_percent = age_coverage_percent
+                logger.info(
+                    f"Age-based coverage reduction: vehicle is {vehicle_age_years:.1f} years old "
+                    f"(>= {age_threshold_years}), using {age_coverage_percent}% instead of {mileage_percent}%"
+                )
 
-        return coverage_percent
+        return mileage_percent, effective_percent
 
     def _extract_covered_categories(
         self, covered_components: Dict[str, List[str]]
@@ -231,6 +312,112 @@ class CoverageAnalyzer:
             List of category names with non-empty parts lists
         """
         return [cat for cat, parts in covered_components.items() if parts]
+
+    def _extract_repair_context(
+        self,
+        line_items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+    ) -> RepairContext:
+        """Extract repair context from labor descriptions.
+
+        Analyzes labor items to identify the primary component being repaired.
+        This context is used to avoid false consumable matches - e.g., when
+        labor says "Ölkühler defekt", parts shouldn't match "Ölfilter" exclusion.
+
+        Args:
+            line_items: All line items from the claim
+            covered_components: Policy's covered components by category
+
+        Returns:
+            RepairContext with detected component info
+        """
+        context = RepairContext()
+        detected = []
+
+        # Scan labor items for repair keywords
+        for item in line_items:
+            item_type = item.get("item_type", "").lower()
+            if item_type not in ("labor", "labour", "arbeit", "main d'oeuvre"):
+                continue
+
+            description = item.get("description", "").lower()
+            if not description:
+                continue
+
+            # Check for known repair keywords
+            for keyword, (component, category) in REPAIR_CONTEXT_KEYWORDS.items():
+                if keyword in description:
+                    detected.append(component)
+
+                    # Use the first detected component as primary
+                    if context.primary_component is None:
+                        context.primary_component = component
+                        context.primary_category = category
+                        context.source_description = item.get("description", "")
+
+                        # Check if this component is covered by policy
+                        context.is_covered = self._is_component_covered_in_policy(
+                            component, category, covered_components
+                        )
+                        logger.debug(
+                            f"Repair context: '{component}' in '{category}' "
+                            f"(covered={context.is_covered}) from '{description[:50]}...'"
+                        )
+                    break  # Found a match for this item, move to next
+
+        context.all_detected_components = list(set(detected))
+
+        if context.primary_component:
+            logger.info(
+                f"Extracted repair context: {context.primary_component} "
+                f"({context.primary_category}), covered={context.is_covered}"
+            )
+
+        return context
+
+    def _is_component_covered_in_policy(
+        self,
+        component: str,
+        category: str,
+        covered_components: Dict[str, List[str]],
+    ) -> bool:
+        """Check if a specific component is covered in the policy.
+
+        Args:
+            component: Component type (e.g., "oil_cooler")
+            category: Category name (e.g., "engine")
+            covered_components: Policy's covered components by category
+
+        Returns:
+            True if component is in the policy's covered parts list
+        """
+        # Find the matching category
+        category_lower = category.lower()
+        policy_parts = None
+
+        for cat, parts in covered_components.items():
+            if cat.lower() == category_lower or category_lower in cat.lower():
+                policy_parts = parts
+                break
+
+        if not policy_parts:
+            return False
+
+        # Get synonyms for this component
+        synonyms = COMPONENT_SYNONYMS.get(component, [])
+        search_terms = set(synonyms)
+        search_terms.add(component.lower())
+        search_terms.add(component.replace("_", " ").lower())
+
+        # Check if any synonym matches any part in the policy list
+        policy_parts_lower = [p.lower() for p in policy_parts]
+
+        for term in search_terms:
+            for policy_part in policy_parts_lower:
+                if term in policy_part or policy_part in term:
+                    return True
+
+        return False
 
     def _is_system_covered(self, system: str, covered_categories: List[str]) -> bool:
         """Check if a system/category is covered by the policy.
@@ -611,6 +798,9 @@ class CoverageAnalyzer:
         claim_run_id: Optional[str] = None,
         on_llm_progress: Optional[Callable[[int], None]] = None,
         on_llm_start: Optional[Callable[[int], None]] = None,
+        vehicle_age_years: Optional[float] = None,
+        age_threshold_years: Optional[int] = None,
+        age_coverage_percent: Optional[float] = None,
     ) -> CoverageAnalysisResult:
         """Analyze coverage for all line items in a claim.
 
@@ -625,6 +815,9 @@ class CoverageAnalyzer:
             claim_run_id: Optional claim run ID for output
             on_llm_progress: Callback for LLM progress updates (increment)
             on_llm_start: Callback when LLM matching starts (total count)
+            vehicle_age_years: Vehicle age in years (for age-based coverage reduction)
+            age_threshold_years: Age threshold for reduced coverage (e.g., 8)
+            age_coverage_percent: Coverage percent for old vehicles (e.g., 40)
 
         Returns:
             CoverageAnalysisResult with all analysis data
@@ -632,19 +825,39 @@ class CoverageAnalyzer:
         start_time = time.time()
         covered_components = covered_components or {}
 
-        # Determine coverage percentage from scale
-        coverage_percent = self._determine_coverage_percent(vehicle_km, coverage_scale)
+        # Determine coverage percentage from scale (with age adjustment)
+        mileage_percent, effective_percent = self._determine_coverage_percent(
+            vehicle_km,
+            coverage_scale,
+            vehicle_age_years=vehicle_age_years,
+            age_threshold_years=age_threshold_years,
+            age_coverage_percent=age_coverage_percent,
+        )
 
         # Extract covered categories
         covered_categories = self._extract_covered_categories(covered_components)
 
+        # Extract repair context from labor descriptions
+        # This helps avoid false consumable matches (e.g., "Ölkühler" vs "Ölfilter")
+        repair_context = self._extract_repair_context(line_items, covered_components)
+
+        # Log with age info if relevant
+        age_info = ""
+        if vehicle_age_years is not None and effective_percent != mileage_percent:
+            age_info = f", age={vehicle_age_years:.1f}y, age-adjusted"
         logger.info(
             f"Analyzing {len(line_items)} items for claim {claim_id} "
-            f"(coverage={coverage_percent}%, km={vehicle_km})"
+            f"(coverage={effective_percent}%, km={vehicle_km}{age_info})"
         )
 
         # Stage 1: Rule engine
-        rule_matched, remaining = self.rule_engine.batch_match(line_items)
+        # Skip consumable check if repair context indicates a covered component
+        skip_consumable = repair_context.is_covered and repair_context.primary_component is not None
+        rule_matched, remaining = self.rule_engine.batch_match(
+            line_items,
+            skip_consumable_check=skip_consumable,
+            repair_context_component=repair_context.primary_component,
+        )
         logger.debug(f"Rules matched: {len(rule_matched)}/{len(line_items)}")
 
         # Stage 1.5: Part number lookup (if workspace configured)
@@ -754,10 +967,10 @@ class CoverageAnalyzer:
         # Apply labor-follows-parts linking
         all_items = self._apply_labor_follows_parts(all_items)
 
-        # Calculate summary
+        # Calculate summary using effective (age-adjusted) coverage percent
         summary = self._calculate_summary(
             all_items,
-            coverage_percent=coverage_percent,
+            coverage_percent=effective_percent,
             excess_percent=excess_percent,
             excess_minimum=excess_minimum,
         )
@@ -778,7 +991,11 @@ class CoverageAnalyzer:
         # Build inputs record
         inputs = CoverageInputs(
             vehicle_km=vehicle_km,
-            coverage_percent=coverage_percent,
+            vehicle_age_years=vehicle_age_years,
+            coverage_percent=mileage_percent,
+            coverage_percent_effective=effective_percent,
+            age_threshold_years=age_threshold_years,
+            age_coverage_percent=age_coverage_percent,
             excess_percent=excess_percent,
             excess_minimum=excess_minimum,
             covered_categories=covered_categories,

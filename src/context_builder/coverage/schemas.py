@@ -95,8 +95,20 @@ class CoverageInputs(BaseModel):
     """Input parameters used for coverage analysis."""
 
     vehicle_km: Optional[int] = Field(None, description="Vehicle odometer reading in km")
+    vehicle_age_years: Optional[float] = Field(
+        None, description="Vehicle age in years (from first registration to claim date)"
+    )
     coverage_percent: Optional[float] = Field(
-        None, description="Coverage percentage from scale"
+        None, description="Coverage percentage from mileage scale"
+    )
+    coverage_percent_effective: Optional[float] = Field(
+        None, description="Effective coverage percent after age adjustment"
+    )
+    age_threshold_years: Optional[int] = Field(
+        None, description="Age threshold in years for reduced coverage"
+    )
+    age_coverage_percent: Optional[float] = Field(
+        None, description="Coverage percentage for vehicles above age threshold"
     )
     excess_percent: Optional[float] = Field(
         None, description="Excess percentage from policy"

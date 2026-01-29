@@ -15,6 +15,8 @@ from context_builder.services.compliance.file.llm_storage import (
     FileLLMCallReader,
     FileLLMCallSink,
     FileLLMCallStorage,
+    NullLLMCallSink,
+    NullLLMCallStorage,
 )
 
 __all__ = [
@@ -28,4 +30,7 @@ __all__ = [
     "FileLLMCallSink",
     "FileLLMCallReader",
     "FileLLMCallStorage",
+    # Null storage (for disabling logging)
+    "NullLLMCallSink",
+    "NullLLMCallStorage",
 ]

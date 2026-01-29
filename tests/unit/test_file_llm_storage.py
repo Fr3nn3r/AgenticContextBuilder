@@ -500,3 +500,155 @@ class TestAuditedOpenAIClientRetry:
         assert second_call["attempt_number"] == 2
         assert second_call["is_retry"] is True
         assert second_call["previous_call_id"] == "llm_first_call"
+
+
+# =============================================================================
+# NullLLMCallSink Tests
+# =============================================================================
+
+
+class TestNullLLMCallSinkBasics:
+    """Tests for NullLLMCallSink (no-op logging)."""
+
+    def test_implements_protocol(self):
+        """NullLLMCallSink implements LLMCallSink protocol."""
+        from context_builder.services.compliance.file import NullLLMCallSink
+
+        sink = NullLLMCallSink()
+        assert isinstance(sink, LLMCallSink)
+
+    def test_log_call_generates_call_id(self):
+        """log_call generates a unique call_id."""
+        from context_builder.services.compliance.file import NullLLMCallSink
+
+        sink = NullLLMCallSink()
+        record = create_test_call()
+        result = sink.log_call(record)
+
+        assert result.call_id != ""
+        assert result.call_id.startswith("llm_")
+        assert len(result.call_id) == 16
+
+    def test_log_call_preserves_existing_call_id(self):
+        """log_call preserves call_id if already set."""
+        from context_builder.services.compliance.file import NullLLMCallSink
+
+        sink = NullLLMCallSink()
+        record = create_test_call()
+        record.call_id = "llm_custom12345"
+        result = sink.log_call(record)
+
+        assert result.call_id == "llm_custom12345"
+
+    def test_log_call_does_not_write_file(self, temp_storage_dir):
+        """log_call does not write any files (no-op)."""
+        from context_builder.services.compliance.file import NullLLMCallSink
+
+        sink = NullLLMCallSink()
+        sink.log_call(create_test_call())
+
+        # No files should be created
+        assert list(temp_storage_dir.iterdir()) == []
+
+
+# =============================================================================
+# NullLLMCallStorage Tests
+# =============================================================================
+
+
+class TestNullLLMCallStorageBasics:
+    """Tests for NullLLMCallStorage (no-op logging)."""
+
+    def test_implements_protocol(self):
+        """NullLLMCallStorage implements LLMCallStorage protocol."""
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        storage = NullLLMCallStorage()
+        assert isinstance(storage, LLMCallStorage)
+
+    def test_log_call_returns_record(self):
+        """log_call returns the record with call_id."""
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        storage = NullLLMCallStorage()
+        record = create_test_call()
+        result = storage.log_call(record)
+
+        assert result.call_id.startswith("llm_")
+
+    def test_get_by_id_always_returns_none(self):
+        """get_by_id always returns None (nothing stored)."""
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        storage = NullLLMCallStorage()
+        storage.log_call(create_test_call())
+
+        assert storage.get_by_id("llm_any_id") is None
+
+    def test_query_by_decision_always_returns_empty(self):
+        """query_by_decision always returns empty list."""
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        storage = NullLLMCallStorage()
+        record = create_test_call(decision_id="dec_123")
+        storage.log_call(record)
+
+        assert storage.query_by_decision("dec_123") == []
+
+    def test_count_always_returns_zero(self):
+        """count always returns 0 (nothing stored)."""
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        storage = NullLLMCallStorage()
+        storage.log_call(create_test_call())
+        storage.log_call(create_test_call())
+
+        assert storage.count() == 0
+
+
+# =============================================================================
+# Factory with LLM Logging Disabled Tests
+# =============================================================================
+
+
+class TestFactoryWithLLMLoggingDisabled:
+    """Tests for factory behavior when LLM logging is disabled."""
+
+    def test_creates_null_storage_when_disabled(self, temp_storage_dir):
+        """Factory returns NullLLMCallStorage when llm_logging_enabled=False."""
+        from context_builder.services.compliance import (
+            ComplianceStorageConfig,
+            ComplianceStorageFactory,
+        )
+        from context_builder.services.compliance.file import NullLLMCallStorage
+
+        config = ComplianceStorageConfig(
+            storage_dir=temp_storage_dir,
+            llm_logging_enabled=False,
+        )
+        storage = ComplianceStorageFactory.create_llm_storage(config)
+
+        assert isinstance(storage, NullLLMCallStorage)
+
+    def test_creates_file_storage_when_enabled(self, temp_storage_dir):
+        """Factory returns FileLLMCallStorage when llm_logging_enabled=True."""
+        from context_builder.services.compliance import (
+            ComplianceStorageConfig,
+            ComplianceStorageFactory,
+        )
+        from context_builder.services.compliance.file import FileLLMCallStorage
+
+        config = ComplianceStorageConfig(
+            storage_dir=temp_storage_dir,
+            llm_logging_enabled=True,
+        )
+        storage = ComplianceStorageFactory.create_llm_storage(config)
+
+        assert isinstance(storage, FileLLMCallStorage)
+
+    def test_default_is_logging_enabled(self, temp_storage_dir):
+        """Default config has llm_logging_enabled=True."""
+        from context_builder.services.compliance import ComplianceStorageConfig
+
+        config = ComplianceStorageConfig(storage_dir=temp_storage_dir)
+        assert config.llm_logging_enabled is True

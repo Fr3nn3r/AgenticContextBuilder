@@ -594,6 +594,11 @@ Examples:
         action="store_true",
         help="Disable progress bars (useful for CI/logging)",
     )
+    pipeline_logging_group.add_argument(
+        "--no-llm-logging",
+        action="store_true",
+        help="Disable LLM call logging to llm_calls.jsonl (avoids file locking issues)",
+    )
 
     # ========== INDEX SUBCOMMAND (NEW) ==========
     index_parser = subparsers.add_parser(
@@ -862,6 +867,11 @@ Examples:
         "--logs",
         action="store_true",
         help="Show detailed logs instead of progress bars",
+    )
+    assess_parser.add_argument(
+        "--no-llm-logging",
+        action="store_true",
+        help="Disable LLM call logging to llm_calls.jsonl (avoids file locking issues)",
     )
 
     # ========== COVERAGE SUBCOMMAND ==========
@@ -1466,6 +1476,12 @@ def main():
 
         elif args.command == "pipeline":
             # ========== PIPELINE COMMAND ==========
+            # Handle --no-llm-logging flag (set before any LLM calls)
+            import os
+            if getattr(args, "no_llm_logging", False):
+                os.environ["COMPLIANCE_LLM_LOGGING_ENABLED"] = "false"
+                logger.info("LLM call logging disabled via --no-llm-logging")
+
             # Handle --doc-types list before path validation
             if getattr(args, 'doc_types', None) and args.doc_types.lower() == "list":
                 from context_builder.extraction.spec_loader import list_available_specs

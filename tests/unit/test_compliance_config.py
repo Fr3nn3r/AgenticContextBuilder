@@ -244,6 +244,23 @@ class TestEnvironmentLoading:
             config = ComplianceStorageConfig.from_env()
             assert config.database_url == "postgres://localhost"
 
+    def test_from_env_reads_llm_logging_enabled_false(self):
+        """from_env reads COMPLIANCE_LLM_LOGGING_ENABLED=false."""
+        with mock.patch.dict(os.environ, {"COMPLIANCE_LLM_LOGGING_ENABLED": "false"}):
+            config = ComplianceStorageConfig.from_env()
+            assert config.llm_logging_enabled is False
+
+    def test_from_env_reads_llm_logging_enabled_true(self):
+        """from_env reads COMPLIANCE_LLM_LOGGING_ENABLED=true."""
+        with mock.patch.dict(os.environ, {"COMPLIANCE_LLM_LOGGING_ENABLED": "true"}):
+            config = ComplianceStorageConfig.from_env()
+            assert config.llm_logging_enabled is True
+
+    def test_llm_logging_enabled_default_is_true(self):
+        """Default value of llm_logging_enabled is True."""
+        config = ComplianceStorageConfig()
+        assert config.llm_logging_enabled is True
+
     def test_from_env_custom_prefix(self):
         """from_env supports custom prefix."""
         with mock.patch.dict(os.environ, {"CUSTOM_BACKEND_TYPE": "file"}):

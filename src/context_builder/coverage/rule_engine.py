@@ -111,6 +111,8 @@ class RuleEngine:
         item_type: str,
         item_code: Optional[str] = None,
         total_price: float = 0.0,
+        skip_consumable_check: bool = False,
+        repair_context_component: Optional[str] = None,
     ) -> Optional[LineItemCoverage]:
         """Attempt to match a line item using rules.
 
@@ -119,6 +121,9 @@ class RuleEngine:
             item_type: Item type (parts, labor, fee)
             item_code: Optional item code
             total_price: Item total price
+            skip_consumable_check: If True, skip consumable pattern matching
+                (used when repair context indicates a covered component)
+            repair_context_component: The component from repair context (for logging)
 
         Returns:
             LineItemCoverage if matched by a rule, None otherwise
@@ -145,7 +150,8 @@ class RuleEngine:
                 )
 
         # Rule 3: Check consumable patterns (parts only)
-        if item_type.lower() == "parts":
+        # Skip if repair context indicates a covered component
+        if item_type.lower() == "parts" and not skip_consumable_check:
             for pattern in self._consumable_patterns:
                 if pattern.search(description):
                     return self._create_not_covered(
@@ -155,6 +161,15 @@ class RuleEngine:
                         total_price=total_price,
                         reasoning=f"Consumable item not covered: {pattern.pattern}",
                     )
+        elif item_type.lower() == "parts" and skip_consumable_check:
+            # Log that we skipped consumable check due to repair context
+            for pattern in self._consumable_patterns:
+                if pattern.search(description):
+                    logger.info(
+                        f"Skipped consumable exclusion for '{description}' - "
+                        f"repair context indicates '{repair_context_component}' (covered)"
+                    )
+                    break
 
         # Rule 4: Zero-price items (labor) - likely complimentary, skip coverage
         if total_price == 0.0:
@@ -201,12 +216,18 @@ class RuleEngine:
         )
 
     def batch_match(
-        self, items: List[Dict[str, Any]]
+        self,
+        items: List[Dict[str, Any]],
+        skip_consumable_check: bool = False,
+        repair_context_component: Optional[str] = None,
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match multiple items, returning matched and unmatched lists.
 
         Args:
             items: List of line item dictionaries with description, item_type, etc.
+            skip_consumable_check: If True, skip consumable pattern matching for parts
+                (used when repair context indicates a covered component)
+            repair_context_component: The component from repair context (for logging)
 
         Returns:
             Tuple of (matched items, unmatched items for further processing)
@@ -220,6 +241,8 @@ class RuleEngine:
                 item_type=item.get("item_type", ""),
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
+                skip_consumable_check=skip_consumable_check,
+                repair_context_component=repair_context_component,
             )
             if result:
                 matched.append(result)

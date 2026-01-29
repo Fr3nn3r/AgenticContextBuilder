@@ -281,3 +281,79 @@ class TestCoverageAnalyzer:
         assert inputs.excess_percent == 10.0
         assert inputs.excess_minimum == 50.0
         assert len(inputs.covered_categories) > 0
+
+    def test_simple_invoice_rule_links_labor_to_covered_part(self, analyzer, covered_components):
+        """Test simple invoice rule: generic labor linked to covered part.
+
+        When an invoice has:
+        - 1 covered part
+        - 1 generic labor entry (e.g., "Main d'œuvre")
+        The labor should be automatically linked to the covered part.
+        """
+        items = [
+            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            {"description": "Main d'œuvre", "item_type": "labor", "total_price": 160.0},
+            {"description": "Petites fourniture", "item_type": "fee", "total_price": 6.4},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        # Find the labor item
+        labor_item = next(i for i in result.line_items if i.item_type == "labor")
+
+        # Labor should be covered via simple invoice rule
+        assert labor_item.coverage_status == CoverageStatus.COVERED
+        assert "simple invoice rule" in labor_item.match_reasoning.lower()
+        assert labor_item.coverage_category == "engine"
+
+    def test_simple_invoice_rule_not_applied_to_specific_labor(self, analyzer, covered_components):
+        """Test that simple invoice rule doesn't apply to specific labor descriptions.
+
+        Labor with specific part references (like "remplacement X") should not
+        be auto-linked - they need to match the actual part.
+        """
+        items = [
+            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            # This labor mentions a specific part that doesn't match
+            {"description": "remplacement courroie distribution", "item_type": "labor", "total_price": 160.0},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        # Find the labor item
+        labor_item = next(i for i in result.line_items if i.item_type == "labor")
+
+        # Labor should NOT be auto-linked (description is specific, not generic)
+        # It will be REVIEW_NEEDED since LLM is disabled
+        assert labor_item.coverage_status != CoverageStatus.COVERED or \
+            "simple invoice rule" not in labor_item.match_reasoning.lower()
+
+    def test_simple_invoice_rule_not_applied_multiple_labor_items(self, analyzer, covered_components):
+        """Test that simple invoice rule only applies with exactly 1 generic labor item."""
+        items = [
+            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            {"description": "Main d'œuvre", "item_type": "labor", "total_price": 100.0},
+            {"description": "Arbeit", "item_type": "labor", "total_price": 60.0},  # Second labor
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        # Find the labor items
+        labor_items = [i for i in result.line_items if i.item_type == "labor"]
+
+        # Neither should be covered via simple invoice rule (multiple labor items)
+        for labor_item in labor_items:
+            if labor_item.coverage_status == CoverageStatus.COVERED:
+                assert "simple invoice rule" not in labor_item.match_reasoning.lower()
