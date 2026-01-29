@@ -146,6 +146,15 @@ class CoverageAnalyzer:
     ) -> Optional[float]:
         """Determine coverage percentage from scale based on vehicle km.
 
+        The coverage scale uses "A partir de X km" (from X km onwards) semantics:
+        - Below first threshold: 100% coverage (full coverage before any reduction)
+        - At or above a threshold: that tier's percentage applies
+
+        Example scale:
+        - A partir de 80,000 km = 80% -> vehicle at 51,134 km gets 100%
+        - A partir de 100,000 km = 70% -> vehicle at 85,000 km gets 80%
+        - A partir de 120,000 km = 60% -> vehicle at 105,000 km gets 70%
+
         Args:
             vehicle_km: Current vehicle odometer in km
             coverage_scale: List of {km_threshold, coverage_percent} dicts
@@ -159,17 +168,21 @@ class CoverageAnalyzer:
         # Sort by km_threshold ascending
         sorted_scale = sorted(coverage_scale, key=lambda x: x.get("km_threshold", 0))
 
-        # Find applicable coverage percent
-        coverage_percent = None
+        # "A partir de" means "from X km onwards"
+        # Below the first threshold = 100% coverage (full coverage)
+        # At or above a threshold = that tier's percentage applies
+        first_threshold = sorted_scale[0].get("km_threshold", 0)
+        if vehicle_km < first_threshold:
+            return 100.0  # Full coverage before first reduction tier
+
+        # Find the highest applicable tier (last one where km >= threshold)
+        coverage_percent = sorted_scale[0].get("coverage_percent")  # Default to first tier
         for tier in sorted_scale:
             threshold = tier.get("km_threshold", 0)
-            if vehicle_km <= threshold:
+            if vehicle_km >= threshold:
                 coverage_percent = tier.get("coverage_percent")
-                break
-
-        # If vehicle_km exceeds all thresholds, use the last tier
-        if coverage_percent is None and sorted_scale:
-            coverage_percent = sorted_scale[-1].get("coverage_percent")
+            else:
+                break  # Sorted ascending, so no need to check further
 
         return coverage_percent
 

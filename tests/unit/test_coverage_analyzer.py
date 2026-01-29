@@ -131,7 +131,13 @@ class TestCoverageAnalyzer:
         assert summary.items_covered + summary.items_not_covered + summary.items_review_needed == len(sample_line_items)
 
     def test_coverage_percent_applied(self, analyzer, covered_components):
-        """Test that coverage percentage is applied correctly."""
+        """Test that coverage percentage is applied correctly.
+
+        Scale uses "a partir de" (from X km onwards) semantics:
+        - Below 50,000 km: 100% coverage
+        - 50,000+ km: 80% coverage
+        - 100,000+ km: 60% coverage
+        """
         items = [
             {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0},
         ]
@@ -145,39 +151,43 @@ class TestCoverageAnalyzer:
             claim_id="TEST001",
             line_items=items,
             covered_components=covered_components,
-            vehicle_km=75000,  # Should get 60% coverage
-            coverage_scale=coverage_scale,
-        )
-
-        assert result.inputs.coverage_percent == 60
-        assert result.summary.coverage_percent == 60
-
-        # Covered amount should be 60% of 1000 = 600
-        item = result.line_items[0]
-        assert item.coverage_status == CoverageStatus.COVERED
-        assert item.covered_amount == 600.0
-        assert item.not_covered_amount == 400.0
-
-    def test_coverage_percent_low_km(self, analyzer, covered_components):
-        """Test coverage percent for low km vehicle."""
-        items = [
-            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0},
-        ]
-
-        coverage_scale = [
-            {"km_threshold": 50000, "coverage_percent": 80},
-            {"km_threshold": 100000, "coverage_percent": 60},
-        ]
-
-        result = analyzer.analyze(
-            claim_id="TEST001",
-            line_items=items,
-            covered_components=covered_components,
-            vehicle_km=25000,  # Should get 80% coverage
+            vehicle_km=75000,  # 75k >= 50k, so 80% coverage
             coverage_scale=coverage_scale,
         )
 
         assert result.inputs.coverage_percent == 80
+        assert result.summary.coverage_percent == 80
+
+        # Covered amount should be 80% of 1000 = 800
+        item = result.line_items[0]
+        assert item.coverage_status == CoverageStatus.COVERED
+        assert item.covered_amount == 800.0
+        assert item.not_covered_amount == 200.0
+
+    def test_coverage_percent_low_km(self, analyzer, covered_components):
+        """Test coverage percent for low km vehicle (below first threshold).
+
+        Scale uses "a partir de" (from X km onwards) semantics:
+        - Below first threshold (50,000 km): 100% coverage (full coverage)
+        """
+        items = [
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0},
+        ]
+
+        coverage_scale = [
+            {"km_threshold": 50000, "coverage_percent": 80},
+            {"km_threshold": 100000, "coverage_percent": 60},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+            vehicle_km=25000,  # 25k < 50k, so 100% coverage
+            coverage_scale=coverage_scale,
+        )
+
+        assert result.inputs.coverage_percent == 100
 
     def test_excess_calculation(self, analyzer, covered_components):
         """Test excess calculation."""

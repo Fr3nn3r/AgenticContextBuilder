@@ -583,22 +583,30 @@ class TestNsaGuaranteeExtractorSummaryFunctions:
         assert result == ""
 
     def test_summarize_coverage_scale_single_tier(self, extractor):
-        """Test summarize_coverage_scale with single tier."""
+        """Test summarize_coverage_scale with single tier.
+
+        Uses "a partir de" (from X km onwards) semantics with implicit 100% below first threshold.
+        """
         scale = [{"km_threshold": 50000, "coverage_percent": 80}]
         result = extractor._summarize_coverage_scale(scale)
-        assert result == "80% up to 50'000 km"
+        assert "100% below 50'000 km" in result
+        assert "80% from 50'000 km" in result
 
     def test_summarize_coverage_scale_multiple_tiers(self, extractor):
-        """Test summarize_coverage_scale with multiple tiers."""
+        """Test summarize_coverage_scale with multiple tiers.
+
+        Uses "a partir de" (from X km onwards) semantics with implicit 100% below first threshold.
+        """
         scale = [
             {"km_threshold": 50000, "coverage_percent": 80},
             {"km_threshold": 80000, "coverage_percent": 60},
             {"km_threshold": 110000, "coverage_percent": 40},
         ]
         result = extractor._summarize_coverage_scale(scale)
-        assert "80% up to 50'000 km" in result
-        assert "60% up to 80'000 km" in result
-        assert "40% up to 110'000 km" in result
+        assert "100% below 50'000 km" in result
+        assert "80% from 50'000 km" in result
+        assert "60% from 80'000 km" in result
+        assert "40% from 110'000 km" in result
 
     def test_summarize_coverage_scale_swiss_format(self, extractor):
         """Test that km values use Swiss thousands separator (apostrophe)."""
