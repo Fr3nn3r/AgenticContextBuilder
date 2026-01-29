@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 from context_builder.coverage.schemas import CoverageAnalysisResult
 from context_builder.pipeline.claim_stages.context import ClaimContext
@@ -140,7 +140,12 @@ def parse_int(value: Optional[str]) -> Optional[int]:
 def parse_float(value: Optional[str]) -> Optional[float]:
     """Parse numeric/percent string to float.
 
-    Handles formats like '10 %', '200.00 CHF', "74'359.50".
+    Handles European formats where comma is decimal separator and
+    space/apostrophe is thousands separator:
+    - "300,00 CHF" → 300.0
+    - "8 000,00 CHF" → 8000.0
+    - "74'359.50" → 74359.5
+    - "10 %" → 10.0
 
     Args:
         value: Numeric string or None.
@@ -154,8 +159,18 @@ def parse_float(value: Optional[str]) -> Optional[float]:
         return float(value)
     if not isinstance(value, str):
         return None
-    # Remove common separators and currency/unit suffixes
-    cleaned = value.replace("'", "").replace(",", "").replace("\u2019", "").strip()
+
+    # Remove currency/unit suffixes and whitespace
+    cleaned = value.strip()
+
+    # Remove thousands separators (space, apostrophe, right single quote)
+    cleaned = cleaned.replace(" ", "").replace("'", "").replace("\u2019", "")
+
+    # Handle European decimal comma: replace comma with period
+    # But only if there's no period already (to avoid breaking "74359.50")
+    if "," in cleaned and "." not in cleaned:
+        cleaned = cleaned.replace(",", ".")
+
     # Extract number (including decimal)
     match = re.search(r"([\d]+(?:\.[\d]+)?)", cleaned)
     if match:
@@ -185,6 +200,8 @@ class Screener(Protocol):
         aggregated_facts: Dict[str, Any],
         reconciliation_report: Optional[ReconciliationReport] = None,
         claim_run_id: Optional[str] = None,
+        on_llm_start: Optional[Callable[[int], None]] = None,
+        on_llm_progress: Optional[Callable[[int], None]] = None,
     ) -> Tuple[ScreeningResult, Optional[CoverageAnalysisResult]]:
         """Run all screening checks and return results.
 
@@ -193,6 +210,8 @@ class Screener(Protocol):
             aggregated_facts: Enriched aggregated facts dict.
             reconciliation_report: Reconciliation report (for VIN conflicts etc.).
             claim_run_id: Claim run ID for coverage analysis storage.
+            on_llm_start: Optional callback when LLM calls start (total count).
+            on_llm_progress: Optional callback for LLM progress (increment).
 
         Returns:
             Tuple of (ScreeningResult, CoverageAnalysisResult or None).
@@ -218,6 +237,8 @@ class DefaultScreener:
         aggregated_facts: Dict[str, Any],
         reconciliation_report: Optional[ReconciliationReport] = None,
         claim_run_id: Optional[str] = None,
+        on_llm_start: Optional[Callable[[int], None]] = None,
+        on_llm_progress: Optional[Callable[[int], None]] = None,
     ) -> Tuple[ScreeningResult, Optional[CoverageAnalysisResult]]:
         """Return empty screening result with no checks."""
         result = ScreeningResult(
@@ -465,6 +486,8 @@ class ScreeningStage:
                 aggregated_facts=context.aggregated_facts,
                 reconciliation_report=report,
                 claim_run_id=context.run_id,
+                on_llm_start=context.on_llm_start,
+                on_llm_progress=context.on_llm_progress,
             )
 
             # Write screening.json
