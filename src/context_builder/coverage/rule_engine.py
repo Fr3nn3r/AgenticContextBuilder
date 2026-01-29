@@ -22,6 +22,16 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Keywords that indicate the item is a component, not a consumable,
+# even if the description contains a consumable keyword.
+# Example: "Kühlmittelpumpe" contains KÜHLMITTEL but is a pump.
+COMPONENT_OVERRIDE_PATTERNS = [
+    re.compile(r"PUMPE|PUMP", re.IGNORECASE),
+    re.compile(r"KOMPRESSOR|COMPRESSOR", re.IGNORECASE),
+    re.compile(r"KÜHLER|RADIATEUR|RADIATOR", re.IGNORECASE),
+    re.compile(r"THERMOSTAT", re.IGNORECASE),
+]
+
 
 @dataclass
 class RuleConfig:
@@ -154,6 +164,17 @@ class RuleEngine:
         if item_type.lower() == "parts" and not skip_consumable_check:
             for pattern in self._consumable_patterns:
                 if pattern.search(description):
+                    # Check if description also indicates a component (not consumable)
+                    is_component = any(
+                        cp.search(description)
+                        for cp in COMPONENT_OVERRIDE_PATTERNS
+                    )
+                    if is_component:
+                        logger.info(
+                            f"Consumable pattern matched but component override "
+                            f"detected for '{description}' - skipping exclusion"
+                        )
+                        break  # Don't exclude, let it fall through
                     return self._create_not_covered(
                         description=description,
                         item_type=item_type,

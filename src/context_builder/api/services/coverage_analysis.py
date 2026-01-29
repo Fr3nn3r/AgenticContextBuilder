@@ -164,6 +164,17 @@ class CoverageAnalysisService:
 
         return []
 
+    @staticmethod
+    def _normalize_component_name(name: str) -> str:
+        """Fix known PDF extraction encoding issues in component names.
+
+        French 'à' (U+00E0) is sometimes extracted as NBSP (U+00A0) from PDFs.
+        Example: "pompe \\xa0 huile" → "pompe à huile"
+        """
+        if isinstance(name, str):
+            return name.replace("\xa0", "à")
+        return name
+
     def _extract_covered_components(
         self, claim_facts: Dict[str, Any]
     ) -> Dict[str, List[str]]:
@@ -179,8 +190,10 @@ class CoverageAnalysisService:
         covered = self._extract_fact_value(facts, "covered_components", {})
 
         if isinstance(covered, dict):
-            # Filter out empty lists and normalize category names
-            return {k: v for k, v in covered.items() if v}
+            return {
+                k: [self._normalize_component_name(p) for p in v]
+                for k, v in covered.items() if v
+            }
 
         return {}
 
@@ -199,8 +212,10 @@ class CoverageAnalysisService:
         excluded = self._extract_fact_value(facts, "excluded_components", {})
 
         if isinstance(excluded, dict):
-            # Filter out empty lists
-            return {k: v for k, v in excluded.items() if v}
+            return {
+                k: [self._normalize_component_name(p) for p in v]
+                for k, v in excluded.items() if v
+            }
 
         return {}
 

@@ -997,3 +997,228 @@ class TestPolicyholderType:
 
     def test_company_ltd(self):
         assert determine_policyholder_type("Company Ltd") == "company"
+
+
+# ── Reimplemented Check 5 with demotion logic ────────────────────────
+
+
+def check_5_component_coverage(
+    primary_status: str,
+    primary_description: str = "Test Part",
+    primary_price: float = 500.0,
+    primary_confidence: Optional[float] = None,
+    primary_category: Optional[str] = None,
+    primary_match_method: Optional[str] = None,
+    covered_categories: Optional[List[str]] = None,
+    items_covered: int = 0,
+    items_not_covered: int = 0,
+    items_review_needed: int = 0,
+) -> ScreeningCheck:
+    """Reimplemented Check 5 with conditional demotion logic.
+
+    Mirrors the logic in workspaces/nsa/config/screening/screener.py.
+    """
+    evidence = {
+        "items_covered": items_covered,
+        "items_not_covered": items_not_covered,
+        "items_review_needed": items_review_needed,
+        "primary_component": primary_description,
+        "primary_component_price": primary_price,
+        "primary_component_status": primary_status,
+    }
+    if primary_category:
+        evidence["primary_component_category"] = primary_category
+
+    if primary_status == "covered":
+        return ScreeningCheck(
+            check_id="5", check_name="component_coverage",
+            verdict=CheckVerdict.PASS,
+            reason=f"Primary repair '{primary_description}' is covered",
+            evidence=evidence, is_hard_fail=True,
+        )
+
+    if primary_status == "not_covered":
+        confidence = primary_confidence or 0
+        low_confidence = confidence < 0.80
+
+        covered_cats = [c.lower() for c in (covered_categories or [])]
+        item_cat = (primary_category or "").lower()
+        category_is_covered = item_cat and any(
+            item_cat in c or c in item_cat for c in covered_cats
+        )
+
+        should_demote = low_confidence or category_is_covered
+
+        if should_demote:
+            evidence["demotion_reason"] = (
+                "low_confidence" if low_confidence
+                else "category_covered_component_not_listed"
+            )
+            evidence["primary_match_confidence"] = confidence
+            evidence["primary_match_method"] = primary_match_method
+            return ScreeningCheck(
+                check_id="5", check_name="component_coverage",
+                verdict=CheckVerdict.INCONCLUSIVE,
+                reason=(
+                    f"Primary repair '{primary_description}' "
+                    f"({primary_price:.0f} CHF) coverage uncertain "
+                    f"(confidence={confidence:.2f}) - deferring to LLM"
+                ),
+                evidence=evidence, is_hard_fail=True, requires_llm=True,
+            )
+
+        return ScreeningCheck(
+            check_id="5", check_name="component_coverage",
+            verdict=CheckVerdict.FAIL,
+            reason=f"Primary repair '{primary_description}' is not covered",
+            evidence=evidence, is_hard_fail=True,
+        )
+
+    if primary_status == "review_needed" or items_review_needed > 0:
+        return ScreeningCheck(
+            check_id="5", check_name="component_coverage",
+            verdict=CheckVerdict.INCONCLUSIVE,
+            reason=f"Primary repair '{primary_description}' needs review",
+            evidence=evidence, is_hard_fail=True, requires_llm=True,
+        )
+
+    return ScreeningCheck(
+        check_id="5", check_name="component_coverage",
+        verdict=CheckVerdict.SKIPPED,
+        reason="Could not determine primary repair coverage status",
+        evidence=evidence, is_hard_fail=True,
+    )
+
+
+class TestCheck5ComponentCoverage:
+    """Tests for Check 5: Component coverage with demotion logic."""
+
+    def test_covered_primary_passes(self):
+        """COVERED primary repair → PASS."""
+        result = check_5_component_coverage(
+            primary_status="covered",
+            primary_description="Zahnriemen",
+            primary_price=400.0,
+        )
+        assert result.verdict == CheckVerdict.PASS
+        assert result.is_hard_fail is True
+
+    def test_not_covered_low_confidence_demoted(self):
+        """NOT_COVERED + confidence 0.40 → INCONCLUSIVE (demoted)."""
+        result = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Pignon distribution",
+            primary_price=300.0,
+            primary_confidence=0.40,
+            primary_category="engine",
+            covered_categories=["brakes"],  # engine NOT covered
+        )
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.requires_llm is True
+        assert result.is_hard_fail is True
+        assert result.evidence.get("demotion_reason") == "low_confidence"
+
+    def test_not_covered_category_covered_demoted(self):
+        """NOT_COVERED + confidence 0.95 + category covered → INCONCLUSIVE."""
+        result = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Timing gear",
+            primary_price=250.0,
+            primary_confidence=0.95,
+            primary_category="engine",
+            covered_categories=["engine", "brakes"],  # engine IS covered
+        )
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.requires_llm is True
+        assert result.evidence.get("demotion_reason") == "category_covered_component_not_listed"
+
+    def test_not_covered_high_confidence_uncovered_category_fails(self):
+        """NOT_COVERED + confidence 0.95 + category NOT covered → FAIL."""
+        result = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Turbo part",
+            primary_price=800.0,
+            primary_confidence=0.95,
+            primary_category="turbo_supercharger",
+            covered_categories=["engine", "brakes"],  # turbo NOT covered
+        )
+        assert result.verdict == CheckVerdict.FAIL
+        assert result.is_hard_fail is True
+
+    def test_review_needed_inconclusive(self):
+        """REVIEW_NEEDED → INCONCLUSIVE (regression guard)."""
+        result = check_5_component_coverage(
+            primary_status="review_needed",
+            primary_description="Unknown part",
+            primary_price=200.0,
+        )
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.requires_llm is True
+
+    def test_demoted_check_does_not_trigger_auto_reject(self):
+        """Demoted INCONCLUSIVE check should NOT trigger auto_reject in ScreeningResult."""
+        demoted_check = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Pignon distribution",
+            primary_price=300.0,
+            primary_confidence=0.40,
+            primary_category="engine",
+            covered_categories=["brakes"],
+        )
+        assert demoted_check.verdict == CheckVerdict.INCONCLUSIVE
+
+        # Build a ScreeningResult with only this check
+        result = ScreeningResult(
+            claim_id="CLM-TEST",
+            screening_timestamp="2026-01-29T10:00:00Z",
+            checks=[demoted_check],
+        )
+        result.recompute_counts()
+        assert result.auto_reject is False
+        assert result.hard_fails == []
+
+    def test_hard_fail_still_triggers_auto_reject(self):
+        """Non-demoted FAIL check should still trigger auto_reject."""
+        fail_check = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Turbo part",
+            primary_price=800.0,
+            primary_confidence=0.95,
+            primary_category="turbo_supercharger",
+            covered_categories=["engine", "brakes"],
+        )
+        assert fail_check.verdict == CheckVerdict.FAIL
+
+        result = ScreeningResult(
+            claim_id="CLM-TEST",
+            screening_timestamp="2026-01-29T10:00:00Z",
+            checks=[fail_check],
+        )
+        result.recompute_counts()
+        assert result.auto_reject is True
+        assert "5" in result.hard_fails
+
+    def test_not_covered_no_category_low_confidence_demoted(self):
+        """NOT_COVERED + no category + low confidence → INCONCLUSIVE."""
+        result = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Some part",
+            primary_price=100.0,
+            primary_confidence=0.40,
+            primary_category=None,
+            covered_categories=["engine"],
+        )
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.evidence.get("demotion_reason") == "low_confidence"
+
+    def test_not_covered_no_category_high_confidence_fails(self):
+        """NOT_COVERED + no category + high confidence → FAIL."""
+        result = check_5_component_coverage(
+            primary_status="not_covered",
+            primary_description="Some part",
+            primary_price=100.0,
+            primary_confidence=0.95,
+            primary_category=None,
+            covered_categories=["engine"],
+        )
+        assert result.verdict == CheckVerdict.FAIL
