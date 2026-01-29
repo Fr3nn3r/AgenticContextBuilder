@@ -23,6 +23,7 @@ class MatchMethod(str, Enum):
     """Method used to determine coverage."""
 
     RULE = "rule"  # Deterministic rule-based matching
+    PART_NUMBER = "part_number"  # Part number lookup from database/assumptions
     KEYWORD = "keyword"  # German keyword mapping
     LLM = "llm"  # LLM fallback for ambiguous items
     MANUAL = "manual"  # Human override
@@ -112,6 +113,9 @@ class CoverageMetadata(BaseModel):
     """Metadata about the coverage analysis process."""
 
     rules_applied: int = Field(0, description="Count of items matched by rules")
+    part_numbers_applied: int = Field(
+        0, description="Count of items matched by part number lookup"
+    )
     keywords_applied: int = Field(0, description="Count of items matched by keywords")
     llm_calls: int = Field(0, description="Count of LLM calls made")
     processing_time_ms: Optional[float] = Field(

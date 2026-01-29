@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from context_builder.coverage.analyzer import CoverageAnalyzer
 from context_builder.coverage.schemas import CoverageAnalysisResult
+from context_builder.schemas.claim_facts import parse_european_number
 from context_builder.storage.filesystem import FileStorage
 
 logger = logging.getLogger(__name__)
@@ -58,10 +59,12 @@ class CoverageAnalysisService:
 
         if config_path.exists():
             logger.info(f"Loading coverage config from {config_path}")
-            self._analyzer = CoverageAnalyzer.from_config_path(config_path)
+            self._analyzer = CoverageAnalyzer.from_config_path(
+                config_path, workspace_path=workspace_root
+            )
         else:
             logger.info("Using default coverage analyzer config")
-            self._analyzer = CoverageAnalyzer()
+            self._analyzer = CoverageAnalyzer(workspace_path=workspace_root)
 
         return self._analyzer
 
@@ -255,27 +258,18 @@ class CoverageAnalysisService:
     def _parse_amount(self, value: Any) -> Optional[float]:
         """Parse a monetary amount from various formats.
 
+        Uses parse_european_number to correctly handle European number formats:
+        - "300,00 CHF" -> 300.00 (comma as decimal separator)
+        - "1'000,50 CHF" -> 1000.50 (Swiss format)
+        - "1.000,50 EUR" -> 1000.50 (European with dot thousands)
+
         Args:
             value: Value to parse (string like "150.00 CHF" or number)
 
         Returns:
             Numeric amount or None
         """
-        if value is None:
-            return None
-
-        if isinstance(value, (int, float)):
-            return float(value)
-
-        if isinstance(value, str):
-            # Extract numeric part from strings like "150.00 CHF"
-            # Handle Swiss number format with apostrophes
-            cleaned = value.replace("'", "").replace(",", "")
-            match = re.search(r"([\d.]+)", cleaned)
-            if match:
-                return float(match.group(1))
-
-        return None
+        return parse_european_number(value)
 
     def _extract_excess_info(
         self, claim_facts: Dict[str, Any]

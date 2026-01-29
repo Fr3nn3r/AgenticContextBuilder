@@ -14,12 +14,13 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 
 from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatcher
 from context_builder.coverage.llm_matcher import LLMMatcher, LLMMatcherConfig
+from context_builder.coverage.part_number_lookup import PartLookupResult, PartNumberLookup
 from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import (
     CoverageAnalysisResult,
@@ -86,6 +87,7 @@ class CoverageAnalyzer:
         rule_engine: Optional[RuleEngine] = None,
         keyword_matcher: Optional[KeywordMatcher] = None,
         llm_matcher: Optional[LLMMatcher] = None,
+        workspace_path: Optional[Path] = None,
     ):
         """Initialize the coverage analyzer.
 
@@ -94,25 +96,31 @@ class CoverageAnalyzer:
             rule_engine: Pre-configured rule engine
             keyword_matcher: Pre-configured keyword matcher
             llm_matcher: Pre-configured LLM matcher
+            workspace_path: Path to workspace for part number lookup
         """
         self.config = config or AnalyzerConfig()
         self.rule_engine = rule_engine or RuleEngine()
         self.keyword_matcher = keyword_matcher or KeywordMatcher()
         self.llm_matcher = llm_matcher
+        self.workspace_path = workspace_path
+        self.part_lookup = PartNumberLookup(workspace_path) if workspace_path else None
 
     @classmethod
-    def from_config_path(cls, config_path: Path) -> "CoverageAnalyzer":
+    def from_config_path(
+        cls, config_path: Path, workspace_path: Optional[Path] = None
+    ) -> "CoverageAnalyzer":
         """Create an analyzer from a YAML configuration file.
 
         Args:
             config_path: Path to YAML config file
+            workspace_path: Path to workspace for part number lookup
 
         Returns:
             Configured CoverageAnalyzer instance
         """
         if not config_path.exists():
             logger.warning(f"Config file not found: {config_path}, using defaults")
-            return cls()
+            return cls(workspace_path=workspace_path)
 
         with open(config_path, "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
@@ -128,6 +136,7 @@ class CoverageAnalyzer:
             rule_engine=RuleEngine(rule_config),
             keyword_matcher=KeywordMatcher(keyword_config),
             llm_matcher=LLMMatcher(llm_config),
+            workspace_path=workspace_path,
         )
 
     def _determine_coverage_percent(
@@ -176,6 +185,114 @@ class CoverageAnalyzer:
             List of category names with non-empty parts lists
         """
         return [cat for cat, parts in covered_components.items() if parts]
+
+    def _is_system_covered(self, system: str, covered_categories: List[str]) -> bool:
+        """Check if a system/category is covered by the policy.
+
+        Args:
+            system: System name from part lookup (e.g., "electric")
+            covered_categories: Categories covered by the policy
+
+        Returns:
+            True if system matches any covered category
+        """
+        if not system:
+            return False
+        system_lower = system.lower()
+        for cat in covered_categories:
+            cat_lower = cat.lower()
+            if (
+                system_lower == cat_lower
+                or system_lower in cat_lower
+                or cat_lower in system_lower
+            ):
+                return True
+        return False
+
+    def _match_by_part_number(
+        self,
+        items: List[Dict[str, Any]],
+        covered_categories: List[str],
+    ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
+        """Match items by part number lookup.
+
+        Args:
+            items: Line items to match
+            covered_categories: Categories covered by the policy
+
+        Returns:
+            Tuple of (matched items, unmatched items)
+        """
+        matched = []
+        unmatched = []
+
+        for item in items:
+            item_code = item.get("item_code")
+            if not item_code:
+                unmatched.append(item)
+                continue
+
+            result = self.part_lookup.lookup(item_code)
+
+            if not result.found:
+                unmatched.append(item)
+                continue
+
+            # Check if the part's system matches a covered category
+            is_covered = self._is_system_covered(result.system, covered_categories)
+
+            if result.covered is False:
+                # Part is explicitly excluded (e.g., accessory)
+                status = CoverageStatus.NOT_COVERED
+                reasoning = (
+                    f"Part {item_code} is excluded: "
+                    f"{result.note or result.component}"
+                )
+            elif is_covered:
+                status = CoverageStatus.COVERED
+                reasoning = (
+                    f"Part {item_code} identified as "
+                    f"'{result.component_description or result.component}' "
+                    f"in category '{result.system}' (lookup: {result.lookup_source})"
+                )
+            else:
+                status = CoverageStatus.NOT_COVERED
+                reasoning = (
+                    f"Part {item_code} is '{result.component}' in category "
+                    f"'{result.system}' which is not covered by this policy"
+                )
+
+            matched.append(
+                LineItemCoverage(
+                    item_code=item_code,
+                    description=item.get("description", ""),
+                    item_type=item.get("item_type", ""),
+                    total_price=item.get("total_price", 0.0),
+                    coverage_status=status,
+                    coverage_category=result.system,
+                    matched_component=result.component_description or result.component,
+                    match_method=MatchMethod.PART_NUMBER,
+                    match_confidence=0.95,  # High confidence for part number matches
+                    match_reasoning=reasoning,
+                    covered_amount=(
+                        item.get("total_price", 0.0)
+                        if status == CoverageStatus.COVERED
+                        else 0.0
+                    ),
+                    not_covered_amount=(
+                        0.0
+                        if status == CoverageStatus.COVERED
+                        else item.get("total_price", 0.0)
+                    ),
+                )
+            )
+
+            logger.debug(
+                f"Part number match: {item_code} -> {result.system}/{result.component} "
+                f"({status.value})"
+            )
+
+        return matched, unmatched
 
     def _calculate_summary(
         self,
@@ -251,6 +368,76 @@ class CoverageAnalyzer:
             coverage_percent=coverage_percent,
         )
 
+    def _apply_labor_follows_parts(
+        self, items: List[LineItemCoverage]
+    ) -> List[LineItemCoverage]:
+        """Promote labor items to COVERED if they reference covered parts.
+
+        When a labor item is NOT_COVERED or REVIEW_NEEDED but references a covered part,
+        it should be promoted to COVERED since the labor is for installing/replacing
+        that covered component.
+
+        Linking heuristics:
+        - Description contains keywords from a covered part's description
+        - Labor items typically reference the part they are for
+
+        Args:
+            items: List of analyzed line items
+
+        Returns:
+            Updated list with labor items potentially promoted
+        """
+        # Build index of covered parts by keywords
+        covered_parts_keywords: Dict[str, LineItemCoverage] = {}
+        for item in items:
+            if (
+                item.coverage_status == CoverageStatus.COVERED
+                and item.item_type in ("parts", "part", "piece")
+            ):
+                # Extract keywords from description (words with 4+ characters)
+                desc_words = item.description.upper().split()
+                for word in desc_words:
+                    # Clean word of punctuation and filter short words
+                    clean_word = "".join(c for c in word if c.isalnum())
+                    if len(clean_word) >= 4:
+                        covered_parts_keywords[clean_word] = item
+
+        if not covered_parts_keywords:
+            return items
+
+        # Check labor items for references to covered parts
+        for item in items:
+            if item.item_type not in ("labor", "labour", "main d'oeuvre", "arbeit"):
+                continue
+
+            if item.coverage_status == CoverageStatus.COVERED:
+                continue
+
+            # Check if labor description references a covered part
+            desc_words = item.description.upper().split()
+            for word in desc_words:
+                clean_word = "".join(c for c in word if c.isalnum())
+                if clean_word in covered_parts_keywords:
+                    covered_part = covered_parts_keywords[clean_word]
+
+                    # Promote labor to COVERED
+                    item.coverage_status = CoverageStatus.COVERED
+                    item.coverage_category = covered_part.coverage_category
+                    item.matched_component = covered_part.matched_component
+                    item.match_confidence = 0.75
+                    item.match_reasoning = (
+                        f"Labor for covered part: {covered_part.description} "
+                        f"(matched keyword: {clean_word})"
+                    )
+
+                    logger.debug(
+                        f"Promoted labor '{item.description}' to COVERED "
+                        f"(linked to part: {covered_part.description})"
+                    )
+                    break
+
+        return items
+
     def analyze(
         self,
         claim_id: str,
@@ -261,6 +448,8 @@ class CoverageAnalyzer:
         excess_percent: Optional[float] = None,
         excess_minimum: Optional[float] = None,
         claim_run_id: Optional[str] = None,
+        on_llm_progress: Optional[Callable[[int], None]] = None,
+        on_llm_start: Optional[Callable[[int], None]] = None,
     ) -> CoverageAnalysisResult:
         """Analyze coverage for all line items in a claim.
 
@@ -273,6 +462,8 @@ class CoverageAnalyzer:
             excess_percent: Excess percentage from policy
             excess_minimum: Minimum excess amount
             claim_run_id: Optional claim run ID for output
+            on_llm_progress: Callback for LLM progress updates (increment)
+            on_llm_start: Callback when LLM matching starts (total count)
 
         Returns:
             CoverageAnalysisResult with all analysis data
@@ -295,6 +486,14 @@ class CoverageAnalyzer:
         rule_matched, remaining = self.rule_engine.batch_match(line_items)
         logger.debug(f"Rules matched: {len(rule_matched)}/{len(line_items)}")
 
+        # Stage 1.5: Part number lookup (if workspace configured)
+        part_matched = []
+        if self.part_lookup and remaining:
+            part_matched, remaining = self._match_by_part_number(
+                remaining, covered_categories
+            )
+            logger.debug(f"Part numbers matched: {len(part_matched)}/{len(line_items)}")
+
         # Stage 2: Keyword matcher
         keyword_matched, remaining = self.keyword_matcher.batch_match(
             remaining,
@@ -314,11 +513,16 @@ class CoverageAnalyzer:
                 if self.llm_matcher is None:
                     self.llm_matcher = LLMMatcher()
 
+                # Notify about LLM work starting
+                if on_llm_start:
+                    on_llm_start(len(items_for_llm))
+
                 llm_matched = self.llm_matcher.batch_match(
                     items_for_llm,
                     covered_categories=covered_categories,
                     covered_components=covered_components,
                     claim_id=claim_id,
+                    on_progress=on_llm_progress,
                 )
 
             # Mark skipped items as review needed
@@ -360,7 +564,10 @@ class CoverageAnalyzer:
                 )
 
         # Combine all results
-        all_items = rule_matched + keyword_matched + llm_matched
+        all_items = rule_matched + part_matched + keyword_matched + llm_matched
+
+        # Apply labor-follows-parts linking
+        all_items = self._apply_labor_follows_parts(all_items)
 
         # Calculate summary
         summary = self._calculate_summary(
@@ -376,6 +583,7 @@ class CoverageAnalyzer:
 
         metadata = CoverageMetadata(
             rules_applied=len(rule_matched),
+            part_numbers_applied=len(part_matched),
             keywords_applied=len(keyword_matched),
             llm_calls=llm_calls,
             processing_time_ms=processing_time_ms,
