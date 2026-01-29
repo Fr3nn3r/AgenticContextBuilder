@@ -13,7 +13,7 @@ from context_builder import get_version
 from context_builder.api.services.aggregation import AggregationService
 from context_builder.api.services.reconciliation import ReconciliationService
 from context_builder.pipeline.claim_stages.context import ClaimContext
-from context_builder.pipeline.claim_stages.enrichment import EnrichmentStage
+from context_builder.pipeline.claim_stages.screening import ScreeningStage
 from context_builder.pipeline.claim_stages.processing import (
     ProcessingStage,
     ProcessorConfig,
@@ -116,8 +116,11 @@ class ClaimAssessmentService:
                 reconciliation=reconcile_result.report,
             )
 
-        # Step 2b: Run enrichment stage (coverage lookups, shop authorization, etc.)
-        enrichment_context = ClaimContext(
+        # Step 2b: Run screening stage (deterministic checks before LLM)
+        # NOTE: Enrichment stage removed in Phase 6 cleanup.
+        # Shop authorization lookup is now handled by the screening stage.
+        screening_result = None
+        screening_context = ClaimContext(
             claim_id=claim_id,
             workspace_path=self.storage.output_root,
             run_id=claim_run_id,
@@ -125,22 +128,19 @@ class ClaimAssessmentService:
         )
 
         try:
-            enrichment_stage = EnrichmentStage()
-            enrichment_context = enrichment_stage.run(enrichment_context)
-            claim_facts_data = enrichment_context.aggregated_facts
-            logger.info(f"Enrichment complete for {claim_id}")
-
-            # Write enriched facts to separate file (preserves raw claim_facts.json)
-            claim_run_storage.write_to_claim_run(
-                claim_run_id,
-                "claim_facts_enriched.json",
-                claim_facts_data,
+            screening_stage = ScreeningStage()
+            screening_context = screening_stage.run(screening_context)
+            screening_result = screening_context.screening_result
+            logger.info(
+                f"Screening complete for {claim_id}"
+                + (f" (auto_reject={screening_result.get('auto_reject')})"
+                   if screening_result else " (no screener configured)")
             )
-            logger.info(f"Wrote claim_facts_enriched.json to claim_run {claim_run_id}")
-
         except Exception as e:
-            logger.warning(f"Enrichment failed for {claim_id}: {e}, continuing with unenriched facts")
-            # Enrichment failure is non-fatal - continue with unenriched facts
+            logger.warning(
+                f"Screening failed for {claim_id}: {e}, continuing without screening"
+            )
+            screening_result = None
 
         # Step 3: Load assessment prompt config
         try:
@@ -161,6 +161,7 @@ class ClaimAssessmentService:
             workspace_path=self.storage.output_root,
             run_id=claim_run_id,
             aggregated_facts=claim_facts_data,
+            screening_result=screening_result,
             on_token_update=on_token_update,
         )
 
@@ -218,8 +219,8 @@ class ClaimAssessmentService:
             if manifest:
                 if "reconciliation" not in manifest.stages_completed:
                     manifest.stages_completed.append("reconciliation")
-                if "enrichment" not in manifest.stages_completed:
-                    manifest.stages_completed.append("enrichment")
+                if "screening" not in manifest.stages_completed:
+                    manifest.stages_completed.append("screening")
                 if "assessment" not in manifest.stages_completed:
                     manifest.stages_completed.append("assessment")
                 claim_run_storage.write_manifest(manifest)

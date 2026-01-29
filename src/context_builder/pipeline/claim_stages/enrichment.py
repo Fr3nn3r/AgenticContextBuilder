@@ -1,5 +1,16 @@
 """Enrichment stage for claim-level pipeline.
 
+.. deprecated:: Phase 6 (Two-Phase Assessment)
+    This module is DEPRECATED. The enrichment stage functionality has been
+    merged into the ScreeningStage:
+    - Coverage lookups: Now handled by CoverageAnalyzer in screening
+    - Shop authorization: Now handled by screener's _check_4a_shop_auth
+    - Compression: No longer needed with reduced token usage
+
+    The enrichment stage is no longer called from ClaimAssessmentService.
+    This file is retained for backwards compatibility but may be removed
+    in a future release.
+
 This stage applies workspace-specific enrichment to aggregated claim facts.
 Enrichment is optional - workspaces can opt-in by providing an enricher module.
 
@@ -17,6 +28,7 @@ import importlib.util
 import json
 import logging
 import time
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol, runtime_checkable
@@ -263,12 +275,24 @@ class EnrichmentStage:
     def run(self, context: ClaimContext) -> ClaimContext:
         """Execute enrichment and return updated context.
 
+        .. deprecated:: Phase 6
+            This method is deprecated. Use ScreeningStage instead, which now
+            handles coverage analysis and shop authorization lookup internally.
+
         Args:
             context: The claim context with aggregated_facts loaded.
 
         Returns:
             Updated context with enriched aggregated_facts.
         """
+        warnings.warn(
+            "EnrichmentStage.run() is deprecated. Coverage analysis and shop "
+            "authorization are now handled by ScreeningStage. This stage will "
+            "be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         context.current_stage = self.name
         context.notify_stage_update(self.name, "running")
         start = time.time()
