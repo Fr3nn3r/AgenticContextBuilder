@@ -302,7 +302,12 @@ class CoverageAnalyzer:
 
         # Get synonyms for this component type
         component_lower = component.lower()
-        synonyms = COMPONENT_SYNONYMS.get(component_lower, [component_lower])
+        synonyms = COMPONENT_SYNONYMS.get(component_lower)
+
+        # If no synonyms defined for this component, assume covered (don't reject unknown components)
+        if synonyms is None:
+            return True, f"No synonym mapping for component '{component}' - assuming covered"
+
         # Also add the component name itself and description terms
         search_terms = set(synonyms)
         search_terms.add(component_lower)
