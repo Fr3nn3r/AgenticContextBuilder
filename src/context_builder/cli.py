@@ -873,6 +873,13 @@ Examples:
         action="store_true",
         help="Disable LLM call logging to llm_calls.jsonl (avoids file locking issues)",
     )
+    assess_parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Process N claims in parallel (1-8, default: 1 = sequential)",
+    )
 
     # ========== COVERAGE SUBCOMMAND ==========
     coverage_parser = subparsers.add_parser(
@@ -2157,10 +2164,12 @@ def main():
 
             # Create progress reporter (handles logging level based on mode)
             use_logs = getattr(args, "logs", False)
+            parallel = max(1, min(8, getattr(args, "parallel", 1)))
             progress = create_progress_reporter(
                 verbose=args.verbose,
                 quiet=args.quiet,
                 logs=use_logs,
+                parallel=parallel,
             )
 
             # Only set logging level manually if using logs mode (progress reporter handles it otherwise)
@@ -2259,53 +2268,94 @@ def main():
             if not args.quiet and not args.dry_run:
                 progress.write(f"[*] Claim run ID: {shared_id}")
 
-            # Track results for summary
+            # Track results for summary (thread-safe)
+            import threading
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            results_lock = threading.Lock()
             results = {"success": [], "failed": []}
+
+            # Worker function for processing a single claim
+            def process_claim(cid: str) -> tuple:
+                """Process a single claim. Creates per-thread services for isolation."""
+                try:
+                    # Per-thread services for isolation in parallel mode
+                    if parallel > 1:
+                        thread_storage = FileStorage(workspace_root)
+                        thread_aggregation = AggregationService(thread_storage)
+                        thread_reconciliation = ReconciliationService(
+                            thread_storage, thread_aggregation
+                        )
+                        thread_assessment = ClaimAssessmentService(
+                            thread_storage, thread_reconciliation
+                        )
+                    else:
+                        # Sequential mode: reuse shared services
+                        thread_assessment = assessment_service
+
+                    # Progress callbacks (only active in sequential mode)
+                    def on_stage_update(stage_name: str, status: str, claim_id=cid):
+                        progress.start_stage(claim_id, stage_name)
+
+                    def on_llm_start(total: int):
+                        progress.start_detail(total, desc="LLM calls", unit="call")
+
+                    def on_llm_progress(n: int):
+                        progress.update_detail(n)
+
+                    result = thread_assessment.assess(
+                        claim_id=cid,
+                        force_reconcile=getattr(args, "force_reconcile", False),
+                        on_stage_update=on_stage_update,
+                        on_llm_start=on_llm_start,
+                        on_llm_progress=on_llm_progress,
+                        run_context=run_context,
+                    )
+
+                    if result.success:
+                        progress.complete_claim(
+                            claim_id=cid,
+                            decision=result.decision,
+                            confidence=result.confidence_score,
+                            payout=result.final_payout,
+                            gate=result.gate_status,
+                        )
+                        return (cid, True, result.decision)
+                    else:
+                        progress.complete_claim(
+                            claim_id=cid,
+                            decision="FAILED",
+                            error=result.error,
+                        )
+                        return (cid, False, result.error)
+                except Exception as e:
+                    progress.complete_claim(claim_id=cid, decision="FAILED", error=str(e))
+                    return (cid, False, str(e))
 
             # Start progress tracking
             if not args.dry_run:
                 progress.start_claims(claim_ids)
 
-            for claim_id in claim_ids:
-                if args.dry_run:
+            # Execute claims
+            if args.dry_run:
+                # Dry run: just print what would happen
+                for claim_id in claim_ids:
                     print(f"[DRY RUN] Would assess claim: {claim_id} (run: {shared_id})")
-                    continue
-
-                # Define progress callbacks for this claim
-                def on_stage_update(stage_name: str, status: str, cid=claim_id):
-                    progress.start_stage(cid, stage_name)
-
-                def on_llm_start(total: int):
-                    progress.start_detail(total, desc="LLM calls", unit="call")
-
-                def on_llm_progress(n: int):
-                    progress.update_detail(n)
-
-                result = assessment_service.assess(
-                    claim_id=claim_id,
-                    force_reconcile=getattr(args, "force_reconcile", False),
-                    on_stage_update=on_stage_update,
-                    on_llm_start=on_llm_start,
-                    on_llm_progress=on_llm_progress,
-                    run_context=run_context,
-                )
-
-                if result.success:
-                    results["success"].append(claim_id)
-                    progress.complete_claim(
-                        claim_id=claim_id,
-                        decision=result.decision,
-                        confidence=result.confidence_score,
-                        payout=result.final_payout,
-                        gate=result.gate_status,
-                    )
-                else:
-                    results["failed"].append(claim_id)
-                    progress.complete_claim(
-                        claim_id=claim_id,
-                        decision="FAILED",
-                        error=result.error,
-                    )
+            elif parallel == 1:
+                # Sequential execution (original behavior)
+                for claim_id in claim_ids:
+                    cid, success, _ = process_claim(claim_id)
+                    with results_lock:
+                        results["success" if success else "failed"].append(cid)
+            else:
+                # Parallel execution
+                progress.write(f"[*] Processing {len(claim_ids)} claims with {parallel} workers")
+                with ThreadPoolExecutor(max_workers=parallel) as executor:
+                    futures = {executor.submit(process_claim, cid): cid for cid in claim_ids}
+                    for future in as_completed(futures):
+                        cid, success, _ = future.result()
+                        with results_lock:
+                            results["success" if success else "failed"].append(cid)
 
             # Finish progress tracking
             progress.finish()

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -27,6 +28,9 @@ from context_builder.services.compliance.interfaces import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Module-level lock for thread-safe writes
+_llm_write_lock = threading.Lock()
 
 
 def _deserialize_llm_call_record(data: dict) -> LLMCallRecord:
@@ -139,27 +143,28 @@ class FileLLMCallSink(LLMCallSink):
         # Serialize the record
         line = json.dumps(asdict(record), ensure_ascii=False, default=str) + "\n"
 
-        # Write atomically using temp file + rename pattern
-        tmp_file = self._path.with_suffix(".jsonl.tmp")
-        try:
-            existing_content = ""
-            if self._path.exists():
-                with open(self._path, "r", encoding="utf-8") as f:
-                    existing_content = f.read()
+        # Thread-safe write using module-level lock
+        with _llm_write_lock:
+            tmp_file = self._path.with_suffix(".jsonl.tmp")
+            try:
+                existing_content = ""
+                if self._path.exists():
+                    with open(self._path, "r", encoding="utf-8") as f:
+                        existing_content = f.read()
 
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(existing_content)
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    f.write(existing_content)
+                    f.write(line)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-            tmp_file.replace(self._path)
-            logger.debug(f"Logged LLM call {record.call_id}")
+                tmp_file.replace(self._path)
+                logger.debug(f"Logged LLM call {record.call_id}")
 
-        except IOError as e:
-            logger.warning(f"Failed to log LLM call: {e}")
-            if tmp_file.exists():
-                tmp_file.unlink()
+            except IOError as e:
+                logger.warning(f"Failed to log LLM call: {e}")
+                if tmp_file.exists():
+                    tmp_file.unlink()
 
         return record
 
