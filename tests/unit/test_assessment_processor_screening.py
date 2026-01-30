@@ -706,3 +706,31 @@ class TestBuildPromptsScreening:
             "CLM-001",
         )
         assert user_none == user_default
+
+
+class TestFormatScreeningContextNullPayout:
+    """Regression: payout fields may be None (key exists, value null)."""
+
+    def test_null_deductible_fields_do_not_crash(self):
+        """When deductible_percent and deductible_minimum are None, formatting must not raise."""
+        screening = _make_non_auto_reject_screening()
+        screening["payout"]["deductible_percent"] = None
+        screening["payout"]["deductible_minimum"] = None
+        # Should not raise "unsupported format string passed to NoneType.__format__"
+        result = AssessmentProcessor._format_screening_context(screening)
+        assert "Deductible" in result
+        assert "0%" in result  # None → 0
+        assert "min CHF 0.00" in result  # None → 0.00
+
+    def test_all_payout_fields_none(self):
+        """When every numeric payout field is None, formatting must not raise."""
+        screening = _make_non_auto_reject_screening()
+        for key in (
+            "covered_total", "not_covered_total", "coverage_percent",
+            "capped_amount", "deductible_amount", "deductible_percent",
+            "deductible_minimum", "after_deductible", "vat_deduction",
+            "final_payout",
+        ):
+            screening["payout"][key] = None
+        result = AssessmentProcessor._format_screening_context(screening)
+        assert "Pre-computed Payout" in result

@@ -1118,6 +1118,84 @@ class CoverageAnalyzer:
 
         return items
 
+    def _promote_parts_for_covered_repair(
+        self,
+        items: List[LineItemCoverage],
+        repair_context: Optional[RepairContext] = None,
+    ) -> List[LineItemCoverage]:
+        """Promote parts to COVERED when covered labor exists for the same repair.
+
+        NSA treats repairs as grouped jobs: if the labor for an oil cooler
+        replacement is covered, the associated replacement part is covered too,
+        even if its description is ambiguous (e.g. 'Gehäuse, Ölfilter' for an
+        oil cooler part).
+
+        Conditions (all must be true):
+        1. Repair context identifies a covered component in a covered category
+        2. At least one LABOR item is COVERED in that category
+        3. The uncovered PARTS item was classified by LLM (not by deterministic
+           rules), indicating it wasn't a clear exclusion
+        4. The parts item is in the same category as the repair context
+
+        Args:
+            items: List of analyzed line items
+            repair_context: Detected repair context from labor descriptions
+
+        Returns:
+            Updated list with primary repair parts potentially promoted
+        """
+        if not repair_context or not repair_context.is_covered:
+            return items
+        if not repair_context.primary_component or not repair_context.primary_category:
+            return items
+
+        # Check if covered labor exists in the repair category
+        has_covered_labor = any(
+            item.coverage_status == CoverageStatus.COVERED
+            and item.item_type in ("labor", "labour", "arbeit")
+            and item.coverage_category
+            and item.coverage_category.lower() == repair_context.primary_category.lower()
+            for item in items
+        )
+        if not has_covered_labor:
+            return items
+
+        for item in items:
+            if item.coverage_status == CoverageStatus.COVERED:
+                continue
+            if item.item_type not in ("parts", "part", "piece"):
+                continue
+            # Only override LLM decisions, not deterministic rule exclusions
+            if item.match_method != MatchMethod.LLM:
+                continue
+            # Item must have been classified in the same category as the repair
+            if (
+                not item.coverage_category
+                or item.coverage_category.lower()
+                != repair_context.primary_category.lower()
+            ):
+                continue
+
+            item.coverage_status = CoverageStatus.COVERED
+            item.coverage_category = repair_context.primary_category
+            item.matched_component = repair_context.primary_component
+            item.match_confidence = 0.85
+            item.match_reasoning = (
+                f"Part promoted: covered labor for "
+                f"'{repair_context.primary_component}' exists in "
+                f"'{repair_context.primary_category}'; "
+                f"LLM classification overridden by repair context"
+            )
+            item.covered_amount = item.total_price
+            item.not_covered_amount = 0.0
+            logger.info(
+                f"Promoted part '{item.description}' to COVERED "
+                f"(repair context: {repair_context.primary_component} in "
+                f"{repair_context.primary_category})"
+            )
+
+        return items
+
     def _is_in_excluded_list(
         self,
         item: LineItemCoverage,
@@ -1495,6 +1573,9 @@ class CoverageAnalyzer:
 
         # Promote ancillary parts for covered repairs
         all_items = self._promote_ancillary_parts(all_items, repair_context=repair_context)
+
+        # Promote parts when covered labor exists for the same repair
+        all_items = self._promote_parts_for_covered_repair(all_items, repair_context=repair_context)
 
         # Calculate summary using effective (age-adjusted) coverage percent
         summary = self._calculate_summary(

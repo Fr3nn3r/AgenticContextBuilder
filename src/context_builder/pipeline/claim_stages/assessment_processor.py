@@ -365,31 +365,32 @@ class AssessmentProcessor:
         payout = screening.get("payout")
         if payout:
             currency = payout.get("currency", "CHF")
+            # Use `or 0` instead of .get() defaults because keys may exist with None values
             lines.append("### Pre-computed Payout")
-            lines.append(f"- Covered total: {currency} {payout.get('covered_total', 0):,.2f}")
-            lines.append(f"- Not covered total: {currency} {payout.get('not_covered_total', 0):,.2f}")
-            lines.append(f"- Coverage percent: {payout.get('coverage_percent', 0)}%")
+            lines.append(f"- Covered total: {currency} {payout.get('covered_total') or 0:,.2f}")
+            lines.append(f"- Not covered total: {currency} {payout.get('not_covered_total') or 0:,.2f}")
+            lines.append(f"- Coverage percent: {payout.get('coverage_percent') or 0}%")
             if payout.get("max_coverage_applied"):
                 lines.append(
-                    f"- Capped amount: {currency} {payout.get('capped_amount', 0):,.2f} "
+                    f"- Capped amount: {currency} {payout.get('capped_amount') or 0:,.2f} "
                     f"(max coverage applied)"
                 )
             else:
                 lines.append(
-                    f"- After coverage: {currency} {payout.get('capped_amount', 0):,.2f}"
+                    f"- After coverage: {currency} {payout.get('capped_amount') or 0:,.2f}"
                 )
             lines.append(
-                f"- Deductible: {currency} {payout.get('deductible_amount', 0):,.2f} "
-                f"({payout.get('deductible_percent', 0)}%, "
-                f"min {currency} {payout.get('deductible_minimum', 0):,.2f})"
+                f"- Deductible: {currency} {payout.get('deductible_amount') or 0:,.2f} "
+                f"({payout.get('deductible_percent') or 0}%, "
+                f"min {currency} {payout.get('deductible_minimum') or 0:,.2f})"
             )
-            lines.append(f"- After deductible: {currency} {payout.get('after_deductible', 0):,.2f}")
+            lines.append(f"- After deductible: {currency} {payout.get('after_deductible') or 0:,.2f}")
             if payout.get("vat_adjusted"):
                 lines.append(
-                    f"- VAT deduction: {currency} {payout.get('vat_deduction', 0):,.2f} "
+                    f"- VAT deduction: {currency} {payout.get('vat_deduction') or 0:,.2f} "
                     f"({payout.get('policyholder_type', 'individual')})"
                 )
-            lines.append(f"- Final payout: {currency} {payout.get('final_payout', 0):,.2f}")
+            lines.append(f"- Final payout: {currency} {payout.get('final_payout') or 0:,.2f}")
             lines.append("")
         elif screening.get("payout_error"):
             lines.append("### Payout")
