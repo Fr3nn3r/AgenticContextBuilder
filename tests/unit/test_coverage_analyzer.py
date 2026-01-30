@@ -428,9 +428,17 @@ class TestIsComponentInPolicyList:
         assert "found in policy list" in reason
 
     def test_known_component_not_in_policy(self, analyzer, covered_components):
-        """Known component whose synonyms don't match any policy part."""
+        """Known component whose synonyms don't match any policy part (non-strict: uncertain)."""
         found, reason = analyzer._is_component_in_policy_list(
             "turbocharger", "engine", covered_components,
+        )
+        assert found is None
+        assert "not confirmed in policy" in reason
+
+    def test_known_component_not_in_policy_strict(self, analyzer, covered_components):
+        """Known component whose synonyms don't match any policy part (strict: rejected)."""
+        found, reason = analyzer._is_component_in_policy_list(
+            "turbocharger", "engine", covered_components, strict=True,
         )
         assert found is False
         assert "not found in policy" in reason
