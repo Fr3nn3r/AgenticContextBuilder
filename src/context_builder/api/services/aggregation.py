@@ -555,6 +555,7 @@ class AggregationService:
                             total_price=safe_float(item.get("total_price"), default=None),
                             item_type=item.get("item_type"),
                             page_number=item.get("page_number"),
+                            repair_description=item.get("repair_description"),
                             source=provenance,
                         )
                     )

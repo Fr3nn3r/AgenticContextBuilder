@@ -75,6 +75,20 @@ Extract ALL line items visible on THIS PAGE. Each item needs:
 
 5. **Zero-price items**: Include items with 0.00 price (e.g., "für Sie kostenlos").
 
+6. **Footer summary rows (DO NOT extract)**: Cost estimates often end with a summary block listing category totals. These are NOT line items. Do NOT extract rows that are merely category subtotals, such as:
+   - "Travail" / "Arbeitsleistungen" followed by a total (this is labor subtotal)
+   - "Pièces" / "Teilepositionen" followed by a total (this is parts subtotal)
+   - "Divers" / "Diverses" followed by a total (this is fees subtotal)
+   - "Sous-total" / "Zwischensumme" (subtotal)
+   - "TVA" / "MwSt" (VAT line)
+   - "Total" / "Gesamtbetrag" (grand total)
+   These belong in the `summary` section (labor_total, parts_total, etc.), not in `line_items`.
+
+7. **Part number prefixes (strip them)**: Some cost estimates prefix part numbers with codes like "GRU" (Grundteil/base part), "ZUB" (Zubehör/accessory), or "POS". These prefixes are NOT part of the actual part number. Strip them:
+   - "GRU 4N0 407 613 A" → item_code: "4N0 407 613 A"
+   - "ZUB 8W0616887" → item_code: "8W0616887"
+   - The prefix can optionally be noted in the description if relevant.
+
 ## Output Format
 
 Return JSON:

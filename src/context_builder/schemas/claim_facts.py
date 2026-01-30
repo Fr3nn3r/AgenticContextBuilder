@@ -192,6 +192,7 @@ class AggregatedLineItem(BaseModel):
     total_price: Optional[float] = Field(None, description="Total price for this item")
     item_type: Optional[str] = Field(None, description="Item type (labor, parts, fee)")
     page_number: Optional[int] = Field(None, description="Page number where item was found")
+    repair_description: Optional[str] = Field(None, description="Section header / repair context for this item")
     source: LineItemProvenance = Field(..., description="Provenance of this line item")
 
     @field_validator("quantity", "unit_price", "total_price", mode="before")
