@@ -34,6 +34,12 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Gasket/seal indicators: when these terms appear in a description alongside a
+# component keyword, the item is a sealing part FOR the component, not the
+# component itself.  E.g. "Joint du vilebrequin" = crankshaft seal, not crankshaft.
+# Used in _match_by_part_number to defer keyword matches to LLM verification.
+_GASKET_SEAL_INDICATORS = {"JOINT", "DICHTUNG", "SOUFFLET", "GAINE"}
+
 
 def _find_sibling(config_path: Path, pattern: str) -> Optional[Path]:
     """Find a sibling file matching a glob pattern."""
@@ -727,6 +733,31 @@ class CoverageAnalyzer:
             if not result or not result.found:
                 unmatched.append(item)
                 continue
+
+            # Gasket/seal check: when a keyword-based match contains a gasket
+            # indicator (JOINT, DICHTUNG, etc.), the item is a sealing part FOR
+            # the component, not the component itself.  Defer to LLM.
+            if result.lookup_source and "keyword" in result.lookup_source:
+                desc_upper = description.upper()
+                gasket_indicator = next(
+                    (ind for ind in _GASKET_SEAL_INDICATORS if ind in desc_upper),
+                    None,
+                )
+                if gasket_indicator:
+                    logger.info(
+                        "Gasket/seal indicator '%s' in '%s' — "
+                        "deferring keyword match (%s/%s) to LLM",
+                        gasket_indicator,
+                        description,
+                        result.system,
+                        result.component,
+                    )
+                    item["_part_lookup_system"] = result.system
+                    item["_part_lookup_component"] = (
+                        result.component or result.component_description
+                    )
+                    unmatched.append(item)
+                    continue
 
             # Check if the part's system matches a covered category
             is_category_covered = self._is_system_covered(result.system, covered_categories)

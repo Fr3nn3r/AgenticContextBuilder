@@ -305,6 +305,20 @@ class AssessmentProcessor:
             on_token_update=on_token_update,
         )
 
+        # Override APPROVE → REJECT when payout is zero
+        final_payout = (result.get("payout") or {}).get("final_payout", 0.0)
+        if result.get("decision") == "APPROVE" and final_payout <= 0:
+            logger.info(
+                f"Overriding APPROVE → REJECT for claim {context.claim_id}: "
+                f"final_payout={final_payout}"
+            )
+            result["decision"] = "REJECT"
+            result["decision_rationale"] = (
+                f"Rejected: covered amount does not exceed deductible "
+                f"(final payout: {final_payout:.2f}). "
+                f"Original rationale: {result.get('decision_rationale', '')}"
+            )
+
         # Add metadata to result
         result["claim_id"] = context.claim_id
         result["prompt_version"] = config.prompt_version

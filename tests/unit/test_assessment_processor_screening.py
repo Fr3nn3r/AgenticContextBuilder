@@ -551,6 +551,9 @@ class TestProcessBranching:
         mock_logs_dir.return_value = Path("/tmp/logs")
 
         # Mock the _call_with_retry to avoid real API calls
+        payout = AssessmentProcessor._zero_payout()
+        payout["final_payout"] = 500.0  # Non-zero so zero-payout override doesn't apply
+
         mock_response = {
             "schema_version": "claims_assessment_v2",
             "assessment_method": "llm",
@@ -560,7 +563,7 @@ class TestProcessBranching:
             "decision_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
-            "payout": AssessmentProcessor._zero_payout(),
+            "payout": payout,
             "data_gaps": [],
             "fraud_indicators": [],
             "recommendations": [],
@@ -595,6 +598,54 @@ class TestProcessBranching:
         mock_audit_service.return_value = MagicMock()
         mock_logs_dir.return_value = Path("/tmp/logs")
 
+        payout = AssessmentProcessor._zero_payout()
+        payout["final_payout"] = 500.0  # Non-zero so zero-payout override doesn't apply
+
+        mock_response = {
+            "schema_version": "claims_assessment_v2",
+            "assessment_method": "llm",
+            "claim_id": "CLM-001",
+            "assessment_timestamp": "2026-01-28T10:00:00Z",
+            "decision": "APPROVE",
+            "decision_rationale": "All good",
+            "confidence_score": 0.9,
+            "checks": [],
+            "payout": payout,
+            "data_gaps": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        with patch.object(
+            self.processor, "_call_with_retry", return_value=mock_response
+        ):
+            screening = _make_non_auto_reject_screening()
+            context = self._make_context(screening_result=screening)
+            config = self._make_config()
+            result = self.processor.process(context, config)
+
+        # LLM should be called
+        mock_get_client.assert_called_once()
+        assert result["decision"] == "APPROVE"
+
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_llm_audit_service"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
+    )
+    def test_zero_payout_approve_overridden_to_reject(
+        self, mock_logs_dir, mock_audit_service, mock_get_client
+    ):
+        """When LLM says APPROVE but payout is 0, override to REJECT."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_audit_service.return_value = MagicMock()
+        mock_logs_dir.return_value = Path("/tmp/logs")
+
         mock_response = {
             "schema_version": "claims_assessment_v2",
             "assessment_method": "llm",
@@ -613,14 +664,13 @@ class TestProcessBranching:
         with patch.object(
             self.processor, "_call_with_retry", return_value=mock_response
         ):
-            screening = _make_non_auto_reject_screening()
-            context = self._make_context(screening_result=screening)
+            context = self._make_context(screening_result=None)
             config = self._make_config()
             result = self.processor.process(context, config)
 
-        # LLM should be called
-        mock_get_client.assert_called_once()
-        assert result["decision"] == "APPROVE"
+        assert result["decision"] == "REJECT"
+        assert "covered amount does not exceed deductible" in result["decision_rationale"]
+        assert "Original rationale: All good" in result["decision_rationale"]
 
 
 # ── _build_prompts tests ────────────────────────────────────────────

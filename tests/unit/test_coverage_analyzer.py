@@ -786,6 +786,181 @@ class TestDeferToLLM:
         assert matched[0].coverage_status == CoverageStatus.COVERED
 
 
+class TestGasketSealDeferral:
+    """Tests for gasket/seal indicator deferral in _match_by_part_number."""
+
+    def test_joint_defers_keyword_match_to_llm(self):
+        """'Joint du vilebrequin' should be deferred — it's a seal, not the crankshaft."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        mock_lookup.lookup.return_value = PartLookupResult(
+            part_number="", found=False, lookup_source="none",
+        )
+        mock_lookup.lookup_by_description.return_value = PartLookupResult(
+            part_number="keyword:vilebrequin",
+            found=True,
+            system="engine",
+            component="crankshaft",
+            component_description="Kurbelwelle",
+            covered=None,
+            note=None,
+            lookup_source="assumptions_keyword",
+        )
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": None,
+                "description": "Joint du vilebrequin",
+                "item_type": "parts",
+                "total_price": 56.30,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["engine"],
+            covered_components={"engine": ["kurbelwelle"]},
+        )
+
+        assert len(unmatched) == 1
+        assert len(matched) == 0
+        assert unmatched[0].get("_part_lookup_system") == "engine"
+        assert unmatched[0].get("_part_lookup_component") == "crankshaft"
+
+    def test_dichtung_defers_keyword_match_to_llm(self):
+        """'Motordichtung' should be deferred — it's a gasket, not the engine."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        mock_lookup.lookup.return_value = PartLookupResult(
+            part_number="", found=False, lookup_source="none",
+        )
+        mock_lookup.lookup_by_description.return_value = PartLookupResult(
+            part_number="keyword:motor",
+            found=True,
+            system="engine",
+            component="engine",
+            component_description="Motor",
+            covered=None,
+            note=None,
+            lookup_source="assumptions_keyword",
+        )
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": None,
+                "description": "Motordichtung Satz",
+                "item_type": "parts",
+                "total_price": 45.00,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["engine"],
+            covered_components={"engine": ["ölpumpe"]},
+        )
+
+        assert len(unmatched) == 1
+        assert len(matched) == 0
+
+    def test_no_gasket_indicator_matches_normally(self):
+        """'Poulie du vilebrequin' has no gasket indicator — should match normally."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        mock_lookup.lookup.return_value = PartLookupResult(
+            part_number="", found=False, lookup_source="none",
+        )
+        mock_lookup.lookup_by_description.return_value = PartLookupResult(
+            part_number="keyword:vilebrequin",
+            found=True,
+            system="engine",
+            component="crankshaft",
+            component_description="Kurbelwelle",
+            covered=None,
+            note=None,
+            lookup_source="assumptions_keyword",
+        )
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": None,
+                "description": "Poulie du vilebrequin",
+                "item_type": "parts",
+                "total_price": 80.0,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["engine"],
+            covered_components={"engine": ["kurbelwelle"]},
+        )
+
+        assert len(matched) == 1
+        assert len(unmatched) == 0
+        assert matched[0].coverage_status == CoverageStatus.COVERED
+
+    def test_exact_part_number_ignores_gasket_indicator(self):
+        """Exact part number match should NOT be deferred even if description says 'Joint'."""
+        from unittest.mock import MagicMock
+        from context_builder.coverage.part_number_lookup import PartLookupResult
+
+        config = AnalyzerConfig(use_llm_fallback=False)
+        analyzer = CoverageAnalyzer(config=config)
+
+        mock_lookup = MagicMock()
+        # Exact part number match (lookup_source without "keyword")
+        mock_lookup.lookup.return_value = PartLookupResult(
+            part_number="OE-12345",
+            found=True,
+            system="engine",
+            component="crankshaft",
+            component_description="Kurbelwelle",
+            covered=None,
+            note=None,
+            lookup_source="assumptions",
+        )
+        mock_lookup.lookup_by_description.return_value = None
+        analyzer.part_lookup = mock_lookup
+
+        items = [
+            {
+                "item_code": "OE-12345",
+                "description": "Joint du vilebrequin",
+                "item_type": "parts",
+                "total_price": 56.30,
+            },
+        ]
+
+        matched, unmatched = analyzer._match_by_part_number(
+            items,
+            covered_categories=["engine"],
+            covered_components={"engine": ["kurbelwelle"]},
+        )
+
+        # Exact part number match should not be deferred
+        assert len(matched) == 1
+        assert len(unmatched) == 0
+
+
 class TestNormalizeComponentName:
     """Tests for CoverageAnalysisService._normalize_component_name."""
 
