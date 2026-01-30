@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,9 @@ from context_builder.services.compliance.interfaces import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Module-level lock for thread-safe writes (protects hash chain integrity)
+_decision_write_lock = threading.Lock()
 
 GENESIS_HASH = "GENESIS"
 
@@ -121,44 +125,46 @@ class FileDecisionAppender(DecisionAppender):
         """
         self._ensure_parent_dir()
 
-        # Assign decision_id if not set
-        if not record.decision_id:
-            record.decision_id = self.generate_decision_id()
+        # Thread-safe: entire hash chain operation must be atomic
+        with _decision_write_lock:
+            # Assign decision_id if not set
+            if not record.decision_id:
+                record.decision_id = self.generate_decision_id()
 
-        # Set timestamp if not set
-        if not record.created_at:
-            record.created_at = datetime.utcnow().isoformat() + "Z"
+            # Set timestamp if not set
+            if not record.created_at:
+                record.created_at = datetime.utcnow().isoformat() + "Z"
 
-        # Link to previous record
-        record.previous_hash = self.get_last_hash()
+            # Link to previous record
+            record.previous_hash = self.get_last_hash()
 
-        # Compute hash of this record
-        record.record_hash = self.compute_hash(record)
+            # Compute hash of this record
+            record.record_hash = self.compute_hash(record)
 
-        # Serialize the record
-        line = json.dumps(record.model_dump(), ensure_ascii=False, default=str) + "\n"
+            # Serialize the record
+            line = json.dumps(record.model_dump(), ensure_ascii=False, default=str) + "\n"
 
-        # Write atomically using temp file + rename pattern
-        tmp_file = self._path.with_suffix(".jsonl.tmp")
-        try:
-            existing_content = ""
-            if self._path.exists():
-                with open(self._path, "r", encoding="utf-8") as f:
-                    existing_content = f.read()
+            # Write atomically using temp file + rename pattern
+            tmp_file = self._path.with_suffix(".jsonl.tmp")
+            try:
+                existing_content = ""
+                if self._path.exists():
+                    with open(self._path, "r", encoding="utf-8") as f:
+                        existing_content = f.read()
 
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(existing_content)
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    f.write(existing_content)
+                    f.write(line)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-            tmp_file.replace(self._path)
-            logger.debug(f"Appended decision {record.decision_id} to storage")
+                tmp_file.replace(self._path)
+                logger.debug(f"Appended decision {record.decision_id} to storage")
 
-        except IOError as e:
-            if tmp_file.exists():
-                tmp_file.unlink()
-            raise IOError(f"Failed to append to storage: {e}") from e
+            except IOError as e:
+                if tmp_file.exists():
+                    tmp_file.unlink()
+                raise IOError(f"Failed to append to storage: {e}") from e
 
         return record
 
