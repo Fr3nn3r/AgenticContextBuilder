@@ -573,8 +573,8 @@ class CoverageAnalyzer:
               False - confirmed NOT in list (synonym found, no match)
               None  - uncertain (no synonym available, needs LLM verification)
         """
-        if not component or not system:
-            return True, "No component to verify"
+        if not system:
+            return True, "No system to verify"
 
         # Find the matching category in covered_components
         system_lower = system.lower()
@@ -603,12 +603,24 @@ class CoverageAnalyzer:
             # No specific parts list for this category - can't determine, needs verification
             return None, f"No specific parts list for category '{system}' - needs verification"
 
+        # Build lowered policy parts list for matching
+        policy_parts_lower = [p.lower() for p in policy_parts_list]
+
+        if not component:
+            # No specific component (e.g., keyword match without component_name).
+            # Check if any policy part name appears in the item description.
+            desc_lower = description.lower()
+            for policy_part in policy_parts_lower:
+                if policy_part in desc_lower:
+                    return True, f"Description contains policy part '{policy_part}'"
+            return None, (
+                f"No specific component; description doesn't match "
+                f"any of {len(policy_parts_list)} policy parts for '{system}'"
+            )
+
         component_lower = component.lower()
         underscore_key = component_lower.replace(" ", "_")
         space_key = component_lower.replace("_", " ")
-
-        # Build lowered policy parts list for matching
-        policy_parts_lower = [p.lower() for p in policy_parts_list]
 
         # First: check if the component name itself directly matches a policy part.
         # This catches cases where the LLM returns the German name (e.g., "Ölpumpe")
@@ -1196,6 +1208,61 @@ class CoverageAnalyzer:
 
         return items
 
+    def _demote_labor_without_covered_parts(
+        self,
+        items: List[LineItemCoverage],
+    ) -> List[LineItemCoverage]:
+        """Demote labor items to NOT_COVERED when no parts are covered.
+
+        Labor is ancillary — it is only covered when it supports a covered
+        part.  If zero parts ended up covered (e.g. the primary part was
+        excluded by a rule), any LLM-covered labor has no anchor and should
+        be demoted.  This is the logical inverse of _apply_labor_follows_parts.
+
+        Only overrides LLM decisions; deterministic rule/keyword matches are
+        left untouched.
+
+        Args:
+            items: List of analyzed line items (after all promotion stages).
+
+        Returns:
+            Updated list with orphaned labor items demoted.
+        """
+        labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
+
+        has_covered_parts = any(
+            item.coverage_status == CoverageStatus.COVERED
+            and item.item_type in ("parts", "part", "piece")
+            for item in items
+        )
+        if has_covered_parts:
+            return items
+
+        for item in items:
+            if item.item_type not in labor_types:
+                continue
+            if item.coverage_status != CoverageStatus.COVERED:
+                continue
+            if item.match_method != MatchMethod.LLM:
+                continue
+
+            original_category = item.coverage_category
+            item.coverage_status = CoverageStatus.NOT_COVERED
+            item.covered_amount = 0.0
+            item.not_covered_amount = item.total_price
+            item.match_reasoning += (
+                " [DEMOTED: no covered parts in claim — "
+                "labor cannot be covered without an anchoring part]"
+            )
+            logger.info(
+                "Demoted labor '%s' (%s) from COVERED to NOT_COVERED: "
+                "no covered parts to anchor it",
+                item.description,
+                original_category,
+            )
+
+        return items
+
     def _is_in_excluded_list(
         self,
         item: LineItemCoverage,
@@ -1445,6 +1512,68 @@ class CoverageAnalyzer:
         )
         logger.debug(f"Keywords matched: {len(keyword_matched)}/{len(line_items)}")
 
+        # Stage 2.5: Policy list verification for keyword matches
+        # The keyword matcher only checks category-level coverage (e.g., "engine"
+        # is covered). But some guarantees cover only specific parts within a
+        # category. Verify keyword-matched items against the policy's parts list
+        # and demote to LLM any item whose component is confirmed NOT in the list.
+        if covered_components and keyword_matched:
+            verified_keyword = []
+            for item in keyword_matched:
+                if item.coverage_status != CoverageStatus.COVERED:
+                    verified_keyword.append(item)
+                    continue
+
+                is_in_list, reason = self._is_component_in_policy_list(
+                    component=item.matched_component,
+                    system=item.coverage_category,
+                    covered_components=covered_components,
+                    description=item.description,
+                )
+
+                if is_in_list is False:
+                    # Confirmed NOT in policy list — demote to LLM
+                    logger.info(
+                        "Keyword match '%s' (%s) demoted to LLM: %s",
+                        item.description,
+                        item.matched_component,
+                        reason,
+                    )
+                    remaining.append({
+                        "item_code": item.item_code,
+                        "description": item.description,
+                        "item_type": item.item_type,
+                        "total_price": item.total_price,
+                    })
+                elif is_in_list is None and not item.matched_component:
+                    # Category-level keyword match only, description doesn't
+                    # match any specific policy part — demote to LLM for
+                    # component-level verification.
+                    logger.info(
+                        "Keyword match '%s' (no component) demoted to LLM: %s",
+                        item.description,
+                        reason,
+                    )
+                    remaining.append({
+                        "item_code": item.item_code,
+                        "description": item.description,
+                        "item_type": item.item_type,
+                        "total_price": item.total_price,
+                    })
+                else:
+                    # True (confirmed) or None with specific component — keep
+                    if is_in_list is True:
+                        item.match_reasoning += f". Policy check: {reason}"
+                    verified_keyword.append(item)
+
+            demoted = len(keyword_matched) - len(verified_keyword)
+            if demoted:
+                logger.info(
+                    f"Policy list verification: {demoted} keyword match(es) "
+                    f"demoted to LLM out of {len(keyword_matched)}"
+                )
+            keyword_matched = verified_keyword
+
         # Stage 3: LLM fallback (if enabled and items remain)
         llm_matched = []
         if remaining and self.config.use_llm_fallback:
@@ -1576,6 +1705,9 @@ class CoverageAnalyzer:
 
         # Promote parts when covered labor exists for the same repair
         all_items = self._promote_parts_for_covered_repair(all_items, repair_context=repair_context)
+
+        # Demote orphaned labor: if no parts are covered, labor has no anchor
+        all_items = self._demote_labor_without_covered_parts(all_items)
 
         # Calculate summary using effective (age-adjusted) coverage percent
         summary = self._calculate_summary(

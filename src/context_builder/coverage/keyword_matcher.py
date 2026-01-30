@@ -23,6 +23,11 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Consumable terms that indicate gaskets/seals/boots — not the component itself.
+# When these appear alongside a component keyword, confidence is reduced
+# to defer the decision to the LLM matcher.
+_CONSUMABLE_INDICATORS = {"JOINT", "DICHTUNG", "SOUFFLET", "GAINE"}
+
 
 @dataclass
 class KeywordMapping:
@@ -339,6 +344,19 @@ class KeywordMatcher:
         # Select the best match (highest confidence)
         matches.sort(key=lambda x: x[2], reverse=True)
         keyword, best_mapping, confidence = matches[0]
+
+        # Reduce confidence when description contains consumable terms
+        # (gasket, seal, boot) alongside a component keyword.
+        # These items need LLM judgment to determine if the item IS
+        # the component or is a consumable FOR the component.
+        for indicator in _CONSUMABLE_INDICATORS:
+            if indicator in description_upper:
+                confidence *= 0.7
+                logger.debug(
+                    f"Consumable indicator '{indicator}' found in '{description}', "
+                    f"reduced confidence to {confidence:.2f}"
+                )
+                break
 
         # Check if the category is covered by policy
         category = best_mapping.category

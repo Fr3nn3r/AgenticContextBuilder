@@ -22,7 +22,7 @@ class TestKeywordMatcher:
         matcher = KeywordMatcher()
 
         result = matcher.match(
-            description="MOTOR DICHTUNG",
+            description="MOTOR BLOCK",
             item_type="parts",
             total_price=150.0,
             covered_categories=["engine", "chassis"],
@@ -123,7 +123,7 @@ class TestKeywordMatcher:
         matcher = KeywordMatcher()
 
         result = matcher.match(
-            description="motor dichtung",  # lowercase
+            description="motor block",  # lowercase
             item_type="parts",
             total_price=150.0,
             covered_categories=["engine"],
@@ -146,7 +146,7 @@ class TestKeywordMatcher:
 
         # MOTOR without context hint
         result2 = matcher.match(
-            description="MOTOR DICHTUNG",
+            description="MOTOR REPARATUR",
             item_type="parts",
             total_price=150.0,
             covered_categories=["engine"],
@@ -176,7 +176,7 @@ class TestKeywordMatcher:
         matcher = KeywordMatcher()
 
         items = [
-            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 150.0},
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 150.0},
             {"description": "UNKNOWN PART", "item_type": "parts", "total_price": 100.0},
             {"description": "BREMSSATTEL", "item_type": "parts", "total_price": 250.0},
         ]
@@ -276,6 +276,87 @@ class TestKeywordMatcher:
         """None config should trigger default_nsa() fallback."""
         matcher = KeywordMatcher(None)
         assert len(matcher.config.mappings) > 0
+
+    def test_joint_reduces_confidence(self):
+        """JOINT (gasket) alongside VILEBREQUIN should reduce confidence below 0.80."""
+        matcher = KeywordMatcher()
+
+        result = matcher.match(
+            description="Joint du vilebrequin",
+            item_type="parts",
+            total_price=45.0,
+            covered_categories=["engine"],
+        )
+
+        assert result is not None
+        assert result.coverage_category == "engine"
+        assert result.match_confidence < 0.80
+
+    def test_dichtung_reduces_confidence(self):
+        """DICHTUNG (seal) alongside MOTOR should reduce confidence below 0.80."""
+        matcher = KeywordMatcher()
+
+        result = matcher.match(
+            description="MOTOR DICHTUNG",
+            item_type="parts",
+            total_price=30.0,
+            covered_categories=["engine"],
+        )
+
+        assert result is not None
+        assert result.coverage_category == "engine"
+        assert result.match_confidence < 0.80
+
+    def test_soufflet_reduces_confidence(self):
+        """SOUFFLET (boot) alongside DIRECTION should reduce confidence below 0.80."""
+        matcher = KeywordMatcher()
+
+        result = matcher.match(
+            description="SOUFFLET DE DIRECTION",
+            item_type="parts",
+            total_price=25.0,
+            covered_categories=["steering"],
+        )
+
+        assert result is not None
+        assert result.match_confidence < 0.80
+
+    def test_component_without_consumable_unchanged(self):
+        """VILEBREQUIN alone (no consumable term) should keep full confidence."""
+        matcher = KeywordMatcher()
+
+        result = matcher.match(
+            description="VILEBREQUIN",
+            item_type="parts",
+            total_price=800.0,
+            covered_categories=["engine"],
+        )
+
+        assert result is not None
+        assert result.coverage_category == "engine"
+        assert result.match_confidence == 0.88
+
+    def test_consumable_falls_to_unmatched_in_batch(self):
+        """Consumable items should fall to unmatched in batch_match (default threshold 0.80)."""
+        matcher = KeywordMatcher()
+
+        items = [
+            {"description": "VILEBREQUIN", "item_type": "parts", "total_price": 800.0},
+            {"description": "Joint du vilebrequin", "item_type": "parts", "total_price": 45.0},
+            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 30.0},
+        ]
+
+        matched, unmatched = matcher.batch_match(
+            items,
+            covered_categories=["engine"],
+            min_confidence=0.80,
+        )
+
+        # Only VILEBREQUIN (no consumable term) should match
+        assert len(matched) == 1
+        assert matched[0].description == "VILEBREQUIN"
+        # Gasket/seal items should fall to unmatched for LLM
+        assert len(unmatched) == 2
 
 
 class TestFromConfigPathKeywordLoading:

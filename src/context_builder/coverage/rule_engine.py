@@ -90,6 +90,8 @@ class RuleConfig:
                 r"MIETE",  # Rental
                 r"REINIGUNG",  # Cleaning
                 r"BRONZE",  # Bronze service (warranty-related cleaning)
+                r"ADBLUE",  # AdBlue / urea system — emissions, not covered
+                r"HARNSTOFF",  # Urea (German) — emissions, not covered
             ],
             consumable_patterns=[
                 r"MOTOROEL|MOTORÖL|ENGINE OIL",  # Engine oil

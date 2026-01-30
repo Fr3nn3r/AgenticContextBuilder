@@ -31,7 +31,7 @@ class TestCoverageAnalyzer:
             # Disposal fee - excluded by pattern
             {"description": "ENTSORGUNG ALTOEL", "item_type": "parts", "total_price": 25.0},
             # Engine part - should match keyword
-            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 150.0},
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 150.0},
             # Chassis part - should match keyword
             {"description": "STOSSDAEMPFER HINTEN", "item_type": "parts", "total_price": 400.0},
             # Labor for engine - should match keyword
@@ -296,7 +296,7 @@ class TestCoverageAnalyzer:
         The labor should be automatically linked to the covered part.
         """
         items = [
-            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
             {"description": "Main d'œuvre", "item_type": "labor", "total_price": 160.0},
             {"description": "Petites fourniture", "item_type": "fee", "total_price": 6.4},
         ]
@@ -322,7 +322,7 @@ class TestCoverageAnalyzer:
         be auto-linked - they need to match the actual part.
         """
         items = [
-            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
             # This labor mentions a specific part that doesn't match
             {"description": "remplacement courroie distribution", "item_type": "labor", "total_price": 160.0},
         ]
@@ -344,7 +344,7 @@ class TestCoverageAnalyzer:
     def test_simple_invoice_rule_not_applied_multiple_labor_items(self, analyzer, covered_components):
         """Test that simple invoice rule only applies with exactly 1 generic labor item."""
         items = [
-            {"description": "MOTOR DICHTUNG", "item_type": "parts", "total_price": 358.0},
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
             {"description": "Main d'œuvre", "item_type": "labor", "total_price": 100.0},
             {"description": "Arbeit", "item_type": "labor", "total_price": 60.0},  # Second labor
         ]
@@ -451,13 +451,21 @@ class TestIsComponentInPolicyList:
         assert found is False
         assert "strict mode" in reason
 
-    def test_none_component_returns_true(self, analyzer, covered_components):
-        """None component should pass through as True."""
+    def test_none_component_no_description_returns_none(self, analyzer, covered_components):
+        """None component with no description → uncertain (needs LLM)."""
         found, reason = analyzer._is_component_in_policy_list(
             None, "engine", covered_components,
         )
+        assert found is None
+        assert "No specific component" in reason
+
+    def test_none_component_with_matching_description_returns_true(self, analyzer, covered_components):
+        """None component but description matches a policy part → True."""
+        found, reason = analyzer._is_component_in_policy_list(
+            None, "engine", covered_components, description="KOLBEN AUSTAUSCH",
+        )
         assert found is True
-        assert "No component" in reason
+        assert "kolben" in reason.lower()
 
     def test_none_system_returns_true(self, analyzer, covered_components):
         """None system should pass through as True."""

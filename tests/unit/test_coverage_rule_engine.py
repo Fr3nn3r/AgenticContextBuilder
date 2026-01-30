@@ -61,6 +61,45 @@ class TestRuleEngine:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
+    def test_exclusion_pattern_adblue_parts(self):
+        """Test that AdBlue parts are excluded (emissions system, not covered)."""
+        engine = RuleEngine()
+
+        result = engine.match(
+            description="Adblueeinspritzdüse ersetzt inkl. entlüftet und angelernt",
+            item_type="labor",
+            total_price=160.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert "ADBLUE" in result.match_reasoning
+
+    def test_exclusion_pattern_adblue_valve(self):
+        """Test that AdBlue valve/clamp parts are excluded."""
+        engine = RuleEngine()
+
+        result = engine.match(
+            description="Ersatzteile Amag Ventil Klemmschelle Adblue",
+            item_type="parts",
+            total_price=521.75,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert "ADBLUE" in result.match_reasoning
+
+    def test_exclusion_pattern_harnstoff(self):
+        """Test that Harnstoff (urea) items are excluded."""
+        engine = RuleEngine()
+
+        result = engine.match(
+            description="HARNSTOFF EINSPRITZDÜSE",
+            item_type="parts",
+            total_price=300.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert "HARNSTOFF" in result.match_reasoning
+
     def test_exclusion_pattern_case_insensitive(self):
         """Test that patterns are matched case-insensitively."""
         engine = RuleEngine()
