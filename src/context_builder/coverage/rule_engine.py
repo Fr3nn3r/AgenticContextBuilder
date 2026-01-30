@@ -7,6 +7,10 @@ Rules are applied in order:
 1. Fee items -> NOT_COVERED
 2. Exclusion patterns (known non-covered items) -> NOT_COVERED
 3. Consumable patterns (if configured) -> NOT_COVERED
+4. Zero-price items -> COVERED
+5. Non-covered labor patterns (labor only) -> NOT_COVERED
+6. Generic/empty descriptions -> NOT_COVERED
+7. Standalone fastener items -> REVIEW_NEEDED
 """
 
 import logging
@@ -31,6 +35,21 @@ COMPONENT_OVERRIDE_PATTERNS = [
     re.compile(r"KÜHLER|RADIATEUR|RADIATOR", re.IGNORECASE),
     re.compile(r"THERMOSTAT", re.IGNORECASE),
 ]
+
+# Rule 6: Descriptions with no semantic content (just generic placeholders).
+# These tell the LLM nothing useful — it returns low confidence every time.
+GENERIC_DESCRIPTION_PATTERN = re.compile(
+    r"^(ARBEIT:?|MATERIAL:?|REPARATURSATZ|DIVERSES|VARIOUS|DIVERS)$",
+    re.IGNORECASE,
+)
+
+# Rule 7: Standalone fastener items (screws, nuts, bolts).
+# Anchored with ^...$ so "VIS" matches but "SERVISE" or "VIS DE REGLAGE" does not.
+FASTENER_PATTERN = re.compile(
+    r"^(ECROU|MUTTER|SCHRAUBE|BOULON|VIS|BEFESTIGUNGSSCHRAUBE|"
+    r"SELBSTSICHERNDE MUTTER|GOUPILLE|SICHERUNGSRING|SICHERUNGSMUTTER)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -209,6 +228,39 @@ class RuleEngine:
                 not_covered_amount=0.0,
             )
 
+        # Rule 5: Non-covered labor patterns (labor only)
+        if item_type.lower() == "labor":
+            for pattern in self._non_covered_labor_patterns:
+                if pattern.search(description):
+                    return self._create_not_covered(
+                        description=description,
+                        item_type=item_type,
+                        item_code=item_code,
+                        total_price=total_price,
+                        reasoning=f"Labor matches non-covered pattern: {pattern.pattern}",
+                    )
+
+        # Rule 6: Generic/empty descriptions with no semantic content
+        stripped = description.strip()
+        if GENERIC_DESCRIPTION_PATTERN.match(stripped):
+            return self._create_not_covered(
+                description=description,
+                item_type=item_type,
+                item_code=item_code,
+                total_price=total_price,
+                reasoning="Generic description - insufficient detail for coverage determination",
+            )
+
+        # Rule 7: Standalone fastener items -> REVIEW_NEEDED
+        if FASTENER_PATTERN.match(stripped):
+            return self._create_review_needed(
+                description=description,
+                item_type=item_type,
+                item_code=item_code,
+                total_price=total_price,
+                reasoning="Standalone fastener - requires context to determine coverage",
+            )
+
         # No rule matched
         return None
 
@@ -231,6 +283,31 @@ class RuleEngine:
             matched_component=None,
             match_method=MatchMethod.RULE,
             match_confidence=1.0,
+            match_reasoning=reasoning,
+            covered_amount=0.0,
+            not_covered_amount=total_price,
+        )
+
+    def _create_review_needed(
+        self,
+        description: str,
+        item_type: str,
+        item_code: Optional[str],
+        total_price: float,
+        reasoning: str,
+        confidence: float = 0.45,
+    ) -> LineItemCoverage:
+        """Create a REVIEW_NEEDED result."""
+        return LineItemCoverage(
+            item_code=item_code,
+            description=description,
+            item_type=item_type,
+            total_price=total_price,
+            coverage_status=CoverageStatus.REVIEW_NEEDED,
+            coverage_category=None,
+            matched_component=None,
+            match_method=MatchMethod.RULE,
+            match_confidence=confidence,
             match_reasoning=reasoning,
             covered_amount=0.0,
             not_covered_amount=total_price,
