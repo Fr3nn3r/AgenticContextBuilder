@@ -643,8 +643,8 @@ class TestBuildPromptsScreening:
         assert "Pre-computed" not in user
         assert "CLM-001" in user
 
-    def test_with_screening_injects_json(self):
-        """When screening is provided, its JSON should appear in the user prompt."""
+    def test_with_screening_injects_structured_context(self):
+        """When screening is provided, structured context should appear in user prompt."""
         screening = _make_non_auto_reject_screening()
         system, user = self.processor._build_prompts(
             "System prompt",
@@ -654,9 +654,13 @@ class TestBuildPromptsScreening:
         )
 
         assert "Pre-computed Screening Results" in user
-        assert "requires_llm" in user
-        # The screening JSON should be parseable
-        assert '"auto_reject": false' in user
+        # Check verdicts table is present
+        assert "Check Verdicts" in user
+        assert "| # | Check | Verdict | Details |" in user
+        # INCONCLUSIVE check should appear in resolution section
+        assert "Checks Requiring Your Resolution" in user
+        assert "owner_policyholder_match" in user
+        assert "INCONCLUSIVE" in user
 
     def test_screening_block_before_facts(self):
         """The screening block should appear before the aggregated facts."""

@@ -318,6 +318,86 @@ class AssessmentProcessor:
 
         return result
 
+    @staticmethod
+    def _format_screening_context(screening: Dict[str, Any]) -> str:
+        """Format screening results as structured text for LLM context.
+
+        Produces a human-readable summary instead of raw JSON, organized as:
+        - Check verdicts table
+        - Checks requiring LLM resolution (INCONCLUSIVE / requires_llm)
+        - Pre-computed payout summary
+        """
+        lines = ["## Pre-computed Screening Results", ""]
+
+        # Check verdicts table
+        checks = screening.get("checks", [])
+        lines.append("### Check Verdicts")
+        lines.append("| # | Check | Verdict | Details |")
+        lines.append("|---|-------|---------|---------|")
+        for check in checks:
+            lines.append(
+                f"| {check['check_id']} | {check['check_name']} "
+                f"| {check['verdict']} | {check.get('reason', '')} |"
+            )
+        lines.append("")
+
+        # Checks requiring LLM resolution
+        llm_checks = [
+            c for c in checks
+            if c.get("verdict") == "INCONCLUSIVE" or c.get("requires_llm")
+        ]
+        if llm_checks:
+            lines.append("### Checks Requiring Your Resolution")
+            lines.append("")
+            for check in llm_checks:
+                lines.append(
+                    f"**Check {check['check_id']}: {check['check_name']}** "
+                    f"— {check['verdict']}"
+                )
+                lines.append(f"Reason: {check.get('reason', 'N/A')}")
+                evidence = check.get("evidence", {})
+                if evidence:
+                    ev_str = json.dumps(evidence, default=str)
+                    lines.append(f"Evidence: {ev_str}")
+                lines.append("")
+
+        # Pre-computed payout
+        payout = screening.get("payout")
+        if payout:
+            currency = payout.get("currency", "CHF")
+            lines.append("### Pre-computed Payout")
+            lines.append(f"- Covered total: {currency} {payout.get('covered_total', 0):,.2f}")
+            lines.append(f"- Not covered total: {currency} {payout.get('not_covered_total', 0):,.2f}")
+            lines.append(f"- Coverage percent: {payout.get('coverage_percent', 0)}%")
+            if payout.get("max_coverage_applied"):
+                lines.append(
+                    f"- Capped amount: {currency} {payout.get('capped_amount', 0):,.2f} "
+                    f"(max coverage applied)"
+                )
+            else:
+                lines.append(
+                    f"- After coverage: {currency} {payout.get('capped_amount', 0):,.2f}"
+                )
+            lines.append(
+                f"- Deductible: {currency} {payout.get('deductible_amount', 0):,.2f} "
+                f"({payout.get('deductible_percent', 0)}%, "
+                f"min {currency} {payout.get('deductible_minimum', 0):,.2f})"
+            )
+            lines.append(f"- After deductible: {currency} {payout.get('after_deductible', 0):,.2f}")
+            if payout.get("vat_adjusted"):
+                lines.append(
+                    f"- VAT deduction: {currency} {payout.get('vat_deduction', 0):,.2f} "
+                    f"({payout.get('policyholder_type', 'individual')})"
+                )
+            lines.append(f"- Final payout: {currency} {payout.get('final_payout', 0):,.2f}")
+            lines.append("")
+        elif screening.get("payout_error"):
+            lines.append("### Payout")
+            lines.append(f"Payout not computed: {screening['payout_error']}")
+            lines.append("")
+
+        return "\n".join(lines)
+
     def _build_prompts(
         self,
         prompt_template: str,
@@ -352,18 +432,7 @@ class AssessmentProcessor:
         # Build screening context block if available
         screening_block = ""
         if screening:
-            screening_json = json.dumps(screening, indent=2, default=str)
-            screening_block = f"""
-## Pre-computed Screening Results (JSON)
-Use these results to verify your analysis. Focus on checks marked
-INCONCLUSIVE or flagged with requires_llm: true. Use the pre-computed
-payout for Check 6 rather than computing from scratch.
-
-```json
-{screening_json}
-```
-
-"""
+            screening_block = self._format_screening_context(screening) + "\n"
 
         # Build user prompt with facts
         user_prompt = f"""Evaluate the following claim:

@@ -268,7 +268,11 @@ class KeywordMatcher:
         Args:
             config: Keyword configuration. Uses NSA defaults if not provided.
         """
-        self.config = config or KeywordConfig.default_nsa()
+        if not (config and config.mappings):
+            logger.warning("No keyword mappings provided, using built-in defaults")
+            self.config = KeywordConfig.default_nsa()
+        else:
+            self.config = config
 
         # Build lookup structures for fast matching
         self._build_lookup_tables()

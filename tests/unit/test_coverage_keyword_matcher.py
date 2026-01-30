@@ -1,7 +1,9 @@
 """Tests for the coverage keyword matcher."""
 
 import pytest
+import yaml
 
+from context_builder.coverage.analyzer import CoverageAnalyzer
 from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatcher
 from context_builder.coverage.schemas import CoverageStatus, MatchMethod
 
@@ -263,3 +265,92 @@ class TestKeywordMatcher:
 
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_empty_config_falls_back_to_defaults(self):
+        """Empty KeywordConfig should trigger default_nsa() fallback."""
+        empty = KeywordConfig(mappings=[])
+        matcher = KeywordMatcher(empty)
+        assert len(matcher.config.mappings) > 0
+
+    def test_none_config_falls_back_to_defaults(self):
+        """None config should trigger default_nsa() fallback."""
+        matcher = KeywordMatcher(None)
+        assert len(matcher.config.mappings) > 0
+
+
+class TestFromConfigPathKeywordLoading:
+    """Tests for CoverageAnalyzer.from_config_path keyword discovery."""
+
+    def test_loads_keywords_from_sibling_file(self, tmp_path):
+        """from_config_path should load keywords from a sibling *_keyword_mappings.yaml."""
+        # Write a main config with no keywords section
+        main_config = {
+            "analyzer": {"keyword_min_confidence": 0.80},
+            "rules": {},
+        }
+        config_file = tmp_path / "nsa_coverage_config.yaml"
+        config_file.write_text(yaml.dump(main_config), encoding="utf-8")
+
+        # Write a sibling keyword mappings file
+        keyword_data = {
+            "mappings": [
+                {
+                    "category": "engine",
+                    "keywords": ["MOTOR", "KOLBEN"],
+                    "confidence": 0.90,
+                },
+            ],
+        }
+        keyword_file = tmp_path / "nsa_keyword_mappings.yaml"
+        keyword_file.write_text(yaml.dump(keyword_data), encoding="utf-8")
+
+        analyzer = CoverageAnalyzer.from_config_path(config_file)
+
+        # Should have loaded the sibling keyword mappings
+        assert len(analyzer.keyword_matcher.config.mappings) == 1
+        assert analyzer.keyword_matcher.config.mappings[0].category == "engine"
+
+    def test_falls_back_to_defaults_when_no_sibling(self, tmp_path):
+        """from_config_path should fall back to defaults when no sibling file exists."""
+        main_config = {
+            "analyzer": {},
+            "rules": {},
+        }
+        config_file = tmp_path / "nsa_coverage_config.yaml"
+        config_file.write_text(yaml.dump(main_config), encoding="utf-8")
+
+        analyzer = CoverageAnalyzer.from_config_path(config_file)
+
+        # Should have fallen back to built-in defaults
+        assert len(analyzer.keyword_matcher.config.mappings) > 0
+
+    def test_inline_keywords_not_overridden(self, tmp_path):
+        """from_config_path should use inline keywords when present in main config."""
+        main_config = {
+            "analyzer": {},
+            "rules": {},
+            "keywords": {
+                "mappings": [
+                    {
+                        "category": "brakes",
+                        "keywords": ["BREMSE"],
+                        "confidence": 0.88,
+                    },
+                ],
+            },
+        }
+        config_file = tmp_path / "nsa_coverage_config.yaml"
+        config_file.write_text(yaml.dump(main_config), encoding="utf-8")
+
+        # Also write a sibling file that should NOT be loaded
+        keyword_file = tmp_path / "nsa_keyword_mappings.yaml"
+        keyword_file.write_text(
+            yaml.dump({"mappings": [{"category": "engine", "keywords": ["MOTOR"]}]}),
+            encoding="utf-8",
+        )
+
+        analyzer = CoverageAnalyzer.from_config_path(config_file)
+
+        # Should use inline keywords, not sibling file
+        assert len(analyzer.keyword_matcher.config.mappings) == 1
+        assert analyzer.keyword_matcher.config.mappings[0].category == "brakes"

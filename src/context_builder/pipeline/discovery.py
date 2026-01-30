@@ -448,3 +448,122 @@ def check_existing_ingestion(
             logger.warning(f"Failed to read doc.json for {doc_id}: {e}")
 
     return has_pages, doc_meta
+
+
+def discover_from_workspace(
+    workspace_dir: Path,
+    doc_type_filter: Optional[List[str]] = None,
+    claim_id_filter: Optional[List[str]] = None,
+) -> List[DiscoveredClaim]:
+    """Discover documents from the workspace registry (doc_index.jsonl).
+
+    Reads existing document index instead of scanning input folders.
+    This enables re-extraction of specific doc types without re-ingesting.
+
+    Args:
+        workspace_dir: Path to workspace root (e.g. workspaces/nsa)
+        doc_type_filter: Only include documents with these doc_types
+        claim_id_filter: Only include documents from these claim_ids
+
+    Returns:
+        List of DiscoveredClaim objects sorted by claim_id
+
+    Raises:
+        FileNotFoundError: If doc_index.jsonl does not exist
+    """
+    index_path = workspace_dir / "registry" / "doc_index.jsonl"
+    if not index_path.exists():
+        raise FileNotFoundError(
+            f"Registry index not found: {index_path}\n"
+            f"Run 'python -m context_builder.cli index build' first."
+        )
+
+    # Read and filter index records
+    claims_map: Dict[str, List[DiscoveredDocument]] = {}
+    claim_source_paths: Dict[str, Path] = {}
+    skipped = 0
+
+    with open(index_path, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid JSON on line {line_num} in {index_path}: {e}")
+                continue
+
+            claim_id = record.get("claim_id", "")
+            doc_type = record.get("doc_type", "")
+            doc_id = record.get("doc_id", "")
+            doc_root = record.get("doc_root", "")
+
+            # Apply filters
+            if doc_type_filter and doc_type not in doc_type_filter:
+                continue
+            if claim_id_filter and claim_id not in claim_id_filter:
+                continue
+
+            # Load doc.json to get file_md5
+            doc_json_path = workspace_dir / doc_root / "meta" / "doc.json"
+            file_md5 = doc_id  # fallback: use doc_id as partial hash
+            if doc_json_path.exists():
+                try:
+                    with open(doc_json_path, "r", encoding="utf-8") as dj:
+                        doc_meta = json.load(dj)
+                    file_md5 = doc_meta.get("file_md5", doc_id)
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Failed to read {doc_json_path}: {e}, skipping doc {doc_id}")
+                    skipped += 1
+                    continue
+            else:
+                logger.warning(f"Missing doc.json for {doc_id} at {doc_json_path}, skipping")
+                skipped += 1
+                continue
+
+            # Build source path to the original file
+            source_path = workspace_dir / doc_root / "source" / "original.pdf"
+            if not source_path.exists():
+                # Try common alternatives
+                source_dir = workspace_dir / doc_root / "source"
+                if source_dir.exists():
+                    candidates = list(source_dir.iterdir())
+                    source_path = candidates[0] if candidates else source_path
+                else:
+                    logger.warning(f"No source file for {doc_id} at {source_path}, skipping")
+                    skipped += 1
+                    continue
+
+            doc = DiscoveredDocument(
+                source_path=source_path,
+                original_filename=record.get("filename", ""),
+                source_type=record.get("source_type", "pdf"),
+                file_md5=file_md5,
+                doc_id=doc_id,
+                needs_ingestion=False,
+            )
+
+            if claim_id not in claims_map:
+                claims_map[claim_id] = []
+                claim_source_paths[claim_id] = workspace_dir / "claims" / record.get("claim_folder", claim_id)
+            claims_map[claim_id].append(doc)
+
+    if skipped:
+        logger.warning(f"Skipped {skipped} document(s) due to missing metadata")
+
+    # Build sorted DiscoveredClaim list
+    claims = [
+        DiscoveredClaim(
+            claim_id=cid,
+            source_path=claim_source_paths[cid],
+            documents=docs,
+        )
+        for cid, docs in sorted(claims_map.items())
+    ]
+
+    logger.info(
+        f"Workspace discovery: {sum(len(c.documents) for c in claims)} doc(s) "
+        f"in {len(claims)} claim(s)"
+    )
+    return claims

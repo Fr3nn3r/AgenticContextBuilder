@@ -34,6 +34,12 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
+
+def _find_sibling(config_path: Path, pattern: str) -> Optional[Path]:
+    """Find a sibling file matching a glob pattern."""
+    matches = list(config_path.parent.glob(pattern))
+    return matches[0] if matches else None
+
 # Mapping of component types to their German/French equivalents for policy matching
 # Used to verify if a detected component is actually in the policy's covered parts list
 COMPONENT_SYNONYMS = {
@@ -118,6 +124,34 @@ COMPONENT_SYNONYMS = {
         "stromversorgung",
         "netzteil",
         "power supply",
+    ],
+    # --- Added to close component_coverage false-reject gaps ---
+    "door_lock": [
+        "türschloss",
+        "turschloss",
+        "schloss",
+        "serrure de porte",
+        "serrure",
+        "zentralverriegelung",
+        "zentralverriegelungsmotor",
+        "verrouillage centralisé",
+    ],
+    "switch": [
+        "schalter",
+        "contacteur",
+        "contact",
+        "interrupteur",
+        "commutateur",
+    ],
+    "mirror_assembly": [
+        "spiegelgehäuse",
+        "spiegelgehaeuse",
+        "aussenspiegel",
+        "außenspiegel",
+        "aufnahme",
+        "rétroviseur",
+        "retroviseur",
+        "rétroviseur extérieur",
     ],
 }
 
@@ -298,7 +332,17 @@ class CoverageAnalyzer:
         # Parse sub-configs
         analyzer_config = AnalyzerConfig.from_dict(config_data.get("analyzer", {}))
         rule_config = RuleConfig.from_dict(config_data.get("rules", {}))
-        keyword_config = KeywordConfig.from_dict(config_data.get("keywords", {}))
+
+        # Load keyword config: from main YAML, or from sibling keyword mappings file
+        keyword_data = config_data.get("keywords", {})
+        if not keyword_data.get("mappings"):
+            keyword_file = _find_sibling(config_path, "*_keyword_mappings.yaml")
+            if keyword_file:
+                with open(keyword_file, "r", encoding="utf-8") as f:
+                    keyword_data = yaml.safe_load(f) or {}
+                logger.info(f"Loaded keyword mappings from {keyword_file.name}")
+        keyword_config = KeywordConfig.from_dict(keyword_data)
+
         llm_config = LLMMatcherConfig.from_dict(config_data.get("llm", {}))
 
         return cls(
@@ -1155,6 +1199,58 @@ class CoverageAnalyzer:
                     f"{original_status.value} to NOT_COVERED (in excluded list)"
                 )
                 return item
+
+        # If LLM said NOT_COVERED, check if a known synonym from
+        # COMPONENT_SYNONYMS matches the description AND is confirmed
+        # in the policy's parts list.  This catches cases where the LLM
+        # missed a synonym that the deterministic lookup would have found.
+        if item.coverage_status == CoverageStatus.NOT_COVERED:
+            category = item.coverage_category
+            if category:
+                covered_categories = list(covered_components.keys())
+                category_is_covered = self._is_system_covered(
+                    category, covered_categories
+                )
+
+                if category_is_covered:
+                    desc_lower = item.description.lower()
+                    for comp_type, synonyms in COMPONENT_SYNONYMS.items():
+                        for synonym in synonyms:
+                            # Skip short synonyms to avoid false positives
+                            if len(synonym) < 4:
+                                continue
+                            if synonym in desc_lower or desc_lower in synonym:
+                                is_in_list, reason = (
+                                    self._is_component_in_policy_list(
+                                        comp_type,
+                                        category,
+                                        covered_components,
+                                        item.description,
+                                    )
+                                )
+                                if is_in_list is True:
+                                    original_status = item.coverage_status
+                                    item.coverage_status = CoverageStatus.COVERED
+                                    item.matched_component = comp_type
+                                    item.match_confidence = max(
+                                        item.match_confidence or 0, 0.75
+                                    )
+                                    item.match_reasoning += (
+                                        f" [SYNONYM OVERRIDE: '{item.description}'"
+                                        f" matches '{synonym}' → '{comp_type}',"
+                                        f" confirmed in policy: {reason}]"
+                                    )
+                                    logger.info(
+                                        "Post-LLM synonym override: '%s' changed"
+                                        " from %s to COVERED (synonym '%s' →"
+                                        " '%s', %s)",
+                                        item.description,
+                                        original_status.value,
+                                        synonym,
+                                        comp_type,
+                                        reason,
+                                    )
+                                    return item
 
         # If LLM said COVERED, only override when the category itself is
         # NOT covered.  The explicit component list is a known-incomplete

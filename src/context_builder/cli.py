@@ -31,6 +31,7 @@ from context_builder.pipeline.discovery import (
     discover_single_file,
     discover_files,
     discover_claim_folders,
+    discover_from_workspace,
 )
 from context_builder.pipeline.run import process_claim, StageConfig
 from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
@@ -527,6 +528,20 @@ Examples:
         metavar="ID",
         dest="force_claim_id",
         help="Force all files into a single claim with this ID (only with --files).",
+    )
+    pipeline_parser.add_argument(
+        "--from-workspace",
+        action="store_true",
+        default=False,
+        dest="from_workspace",
+        help="Discover documents from active workspace registry (doc_index.jsonl) "
+             "instead of scanning input folders. Use with --stages extract to re-extract.",
+    )
+    pipeline_parser.add_argument(
+        "--claim-ids",
+        metavar="IDS",
+        dest="claim_ids",
+        help="Comma-separated claim IDs to filter (only with --from-workspace).",
     )
 
     # Output options for pipeline
@@ -1504,20 +1519,23 @@ def main():
             multi_files = getattr(args, 'multi_files', None)
             multi_claims = getattr(args, 'multi_claims', None)
             force_claim_id = getattr(args, 'force_claim_id', None)
+            from_workspace = getattr(args, 'from_workspace', False)
+            claim_ids_arg = getattr(args, 'claim_ids', None)
 
             input_modes = sum([
                 bool(args.input_path),
                 bool(single_file),
                 bool(multi_files),
                 bool(multi_claims),
+                bool(from_workspace),
             ])
             if input_modes == 0:
                 logger.error("No input mode specified")
-                print("[X] Error: Provide input_path, --file, --files, or --claims")
+                print("[X] Error: Provide input_path, --file, --files, --claims, or --from-workspace")
                 sys.exit(1)
             if input_modes > 1:
                 logger.error("Multiple input modes specified")
-                print("[X] Error: Only one input mode allowed at a time (input_path, --file, --files, or --claims)")
+                print("[X] Error: Only one input mode allowed at a time (input_path, --file, --files, --claims, or --from-workspace)")
                 sys.exit(1)
 
             # Validate --claim-id only with --files
@@ -1525,6 +1543,21 @@ def main():
                 logger.error("--claim-id can only be used with --files")
                 print("[X] Error: --claim-id can only be used with --files")
                 sys.exit(1)
+
+            # Validate --claim-ids only with --from-workspace
+            if claim_ids_arg and not from_workspace:
+                logger.error("--claim-ids can only be used with --from-workspace")
+                print("[X] Error: --claim-ids can only be used with --from-workspace")
+                sys.exit(1)
+
+            # Warn if --from-workspace used with ingest stage
+            if from_workspace:
+                stages_str = getattr(args, 'stages', 'ingest,classify,extract')
+                if 'ingest' in stages_str.split(','):
+                    logger.warning(
+                        "--from-workspace with 'ingest' stage: documents already have "
+                        "extracted text, ingestion will reuse existing pages.json"
+                    )
 
             # Resolve output directory from workspace config or default
             if args.output_dir:
@@ -1544,7 +1577,35 @@ def main():
 
             # Discover claims based on input mode
             try:
-                if single_file:
+                if from_workspace:
+                    # Workspace registry mode
+                    workspace = get_active_workspace()
+                    if not workspace or not workspace.get("path"):
+                        logger.error("No active workspace configured")
+                        print("[X] Error: No active workspace. Set one via Admin UI or POST /api/workspaces/{id}/activate")
+                        sys.exit(1)
+                    workspace_dir = Path(workspace["path"])
+                    logger.info(f"Workspace discovery mode: {workspace_dir}")
+
+                    # Parse --claim-ids filter
+                    claim_id_filter = None
+                    if claim_ids_arg:
+                        claim_id_filter = [cid.strip() for cid in claim_ids_arg.split(",") if cid.strip()]
+                        logger.info(f"Claim ID filter: {claim_id_filter}")
+
+                    # Parse --doc-types for early filtering during discovery
+                    doc_type_filter_for_discovery = None
+                    if args.doc_types and args.doc_types.lower() != "list":
+                        doc_type_filter_for_discovery = [t.strip() for t in args.doc_types.split(",") if t.strip()]
+
+                    claims = discover_from_workspace(
+                        workspace_dir=workspace_dir,
+                        doc_type_filter=doc_type_filter_for_discovery,
+                        claim_id_filter=claim_id_filter,
+                    )
+                    total_docs = sum(len(c.documents) for c in claims)
+                    logger.info(f"Workspace discovery found {total_docs} doc(s) in {len(claims)} claim(s)")
+                elif single_file:
                     # Single file mode
                     file_path = Path(single_file)
                     logger.info(f"Single file mode: {file_path}")
@@ -1751,7 +1812,7 @@ def main():
                         output_base=output_dir,
                         classifier=classifier,
                         run_id=run_id,  # Use consistent run_id for all claims
-                        force=args.force,
+                        force=args.force or from_workspace,
                         command=command_str,
                         compute_metrics=not args.no_metrics,
                         stage_config=stage_config,
@@ -2276,7 +2337,7 @@ def main():
             results = {"success": [], "failed": []}
 
             # Worker function for processing a single claim
-            def process_claim(cid: str) -> tuple:
+            def assess_single_claim(cid: str) -> tuple:
                 """Process a single claim. Creates per-thread services for isolation."""
                 try:
                     # Per-thread services for isolation in parallel mode
@@ -2344,14 +2405,14 @@ def main():
             elif parallel == 1:
                 # Sequential execution (original behavior)
                 for claim_id in claim_ids:
-                    cid, success, _ = process_claim(claim_id)
+                    cid, success, _ = assess_single_claim(claim_id)
                     with results_lock:
                         results["success" if success else "failed"].append(cid)
             else:
                 # Parallel execution
                 progress.write(f"[*] Processing {len(claim_ids)} claims with {parallel} workers")
                 with ThreadPoolExecutor(max_workers=parallel) as executor:
-                    futures = {executor.submit(process_claim, cid): cid for cid in claim_ids}
+                    futures = {executor.submit(assess_single_claim, cid): cid for cid in claim_ids}
                     for future in as_completed(futures):
                         cid, success, _ = future.result()
                         with results_lock:
