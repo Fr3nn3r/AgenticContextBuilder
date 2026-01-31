@@ -138,6 +138,29 @@ class CoverageMetadata(BaseModel):
     )
 
 
+class PrimaryRepairResult(BaseModel):
+    """Result of primary repair component determination.
+
+    Identifies the main component being repaired, used by the screener
+    to decide coverage verdict. Determined via a three-tier approach:
+    1. Deterministic: highest-value covered parts item
+    2. Repair context: labor-derived primary component
+    3. LLM fallback: focused LLM call (when tiers 1-2 fail)
+    """
+
+    component: Optional[str] = Field(None, description="Component type (e.g., 'timing_chain')")
+    category: Optional[str] = Field(None, description="Coverage category (e.g., 'engine')")
+    description: Optional[str] = Field(None, description="Original item description")
+    is_covered: Optional[bool] = Field(None, description="Whether the component is covered by policy")
+    confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence in the determination")
+    determination_method: str = Field(
+        "none", description="How primary was determined: 'deterministic', 'repair_context', 'llm', 'none'"
+    )
+    source_item_index: Optional[int] = Field(
+        None, description="Index of the source line item (for deterministic method)"
+    )
+
+
 class CoverageAnalysisResult(BaseModel):
     """Complete result of coverage analysis for a claim."""
 
@@ -166,6 +189,11 @@ class CoverageAnalysisResult(BaseModel):
     # Summary statistics
     summary: CoverageSummary = Field(
         default_factory=CoverageSummary, description="Summary of coverage analysis"
+    )
+
+    # Primary repair determination
+    primary_repair: Optional[PrimaryRepairResult] = Field(
+        None, description="Primary repair component determination result"
     )
 
     # Processing metadata

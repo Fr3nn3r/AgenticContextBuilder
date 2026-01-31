@@ -1,14 +1,35 @@
 """Tests for the coverage analyzer."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from context_builder.coverage.analyzer import (
-    CATEGORY_ALIASES,
-    COMPONENT_SYNONYMS,
     AnalyzerConfig,
+    ComponentConfig,
     CoverageAnalyzer,
 )
-from context_builder.coverage.schemas import CoverageStatus, LineItemCoverage, MatchMethod
+from context_builder.coverage.schemas import (
+    CoverageStatus,
+    LineItemCoverage,
+    MatchMethod,
+    PrimaryRepairResult,
+)
+
+
+@pytest.fixture(scope="session")
+def nsa_component_config():
+    """Load the NSA component config from the workspace YAML file."""
+    config_path = (
+        Path(__file__).resolve().parents[2]
+        / "workspaces" / "nsa" / "config" / "coverage" / "nsa_component_config.yaml"
+    )
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return ComponentConfig.from_dict(data)
+    return ComponentConfig.default()
 
 
 class TestCoverageAnalyzer:
@@ -368,8 +389,8 @@ class TestIsSystemCovered:
     """Tests for _is_system_covered with category aliases."""
 
     @pytest.fixture
-    def analyzer(self):
-        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False), component_config=nsa_component_config)
 
     def test_exact_match(self, analyzer):
         assert analyzer._is_system_covered("engine", ["engine", "brakes"]) is True
@@ -408,8 +429,8 @@ class TestIsComponentInPolicyList:
     """Tests for _is_component_in_policy_list (consolidated method)."""
 
     @pytest.fixture
-    def analyzer(self):
-        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False), component_config=nsa_component_config)
 
     @pytest.fixture
     def covered_components(self):
@@ -506,8 +527,8 @@ class TestValidateLLMCoverageDecision:
     """Tests for _validate_llm_coverage_decision."""
 
     @pytest.fixture
-    def analyzer(self):
-        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False), component_config=nsa_component_config)
 
     @pytest.fixture
     def covered_components(self):
@@ -646,19 +667,19 @@ class TestDeferToLLM:
     """Tests for deferring uncovered-category items to LLM."""
 
     @pytest.fixture
-    def analyzer(self):
+    def analyzer(self, nsa_component_config):
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
         # Set up a mock part_lookup that returns a result
         return analyzer
 
-    def test_deferred_when_has_repair_context(self):
+    def test_deferred_when_has_repair_context(self, nsa_component_config):
         """Item with non-covered category + repair context should be deferred (unmatched)."""
         from unittest.mock import MagicMock, patch
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         # Mock part_lookup to return a result in an uncovered category
         mock_lookup = MagicMock()
@@ -696,13 +717,13 @@ class TestDeferToLLM:
         assert len(unmatched) == 1
         assert len(matched) == 0
 
-    def test_not_deferred_when_no_context_no_aliases(self):
+    def test_not_deferred_when_no_context_no_aliases(self, nsa_component_config):
         """Item with non-covered category, no repair context, no aliases → NOT_COVERED."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         mock_result = PartLookupResult(
@@ -739,13 +760,13 @@ class TestDeferToLLM:
         assert matched[0].coverage_status == CoverageStatus.NOT_COVERED
         assert len(unmatched) == 0
 
-    def test_deferred_when_category_has_aliases(self):
+    def test_deferred_when_category_has_aliases(self, nsa_component_config):
         """Item with non-covered category but category has aliases → deferred."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         mock_result = PartLookupResult(
@@ -789,13 +810,13 @@ class TestDeferToLLM:
 class TestGasketSealDeferral:
     """Tests for gasket/seal indicator deferral in _match_by_part_number."""
 
-    def test_joint_defers_keyword_match_to_llm(self):
+    def test_joint_defers_keyword_match_to_llm(self, nsa_component_config):
         """'Joint du vilebrequin' should be deferred — it's a seal, not the crankshaft."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         mock_lookup.lookup.return_value = PartLookupResult(
@@ -833,13 +854,13 @@ class TestGasketSealDeferral:
         assert unmatched[0].get("_part_lookup_system") == "engine"
         assert unmatched[0].get("_part_lookup_component") == "crankshaft"
 
-    def test_dichtung_defers_keyword_match_to_llm(self):
+    def test_dichtung_defers_keyword_match_to_llm(self, nsa_component_config):
         """'Motordichtung' should be deferred — it's a gasket, not the engine."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         mock_lookup.lookup.return_value = PartLookupResult(
@@ -875,13 +896,13 @@ class TestGasketSealDeferral:
         assert len(unmatched) == 1
         assert len(matched) == 0
 
-    def test_no_gasket_indicator_matches_normally(self):
+    def test_no_gasket_indicator_matches_normally(self, nsa_component_config):
         """'Poulie du vilebrequin' has no gasket indicator — should match normally."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         mock_lookup.lookup.return_value = PartLookupResult(
@@ -918,13 +939,13 @@ class TestGasketSealDeferral:
         assert len(unmatched) == 0
         assert matched[0].coverage_status == CoverageStatus.COVERED
 
-    def test_exact_part_number_ignores_gasket_indicator(self):
+    def test_exact_part_number_ignores_gasket_indicator(self, nsa_component_config):
         """Exact part number match should NOT be deferred even if description says 'Joint'."""
         from unittest.mock import MagicMock
         from context_builder.coverage.part_number_lookup import PartLookupResult
 
         config = AnalyzerConfig(use_llm_fallback=False)
-        analyzer = CoverageAnalyzer(config=config)
+        analyzer = CoverageAnalyzer(config=config, component_config=nsa_component_config)
 
         mock_lookup = MagicMock()
         # Exact part number match (lookup_source without "keyword")
@@ -996,8 +1017,8 @@ class TestDistributionCatchAll:
     """Tests for distribution catch-all matching in _is_component_in_policy_list."""
 
     @pytest.fixture
-    def analyzer(self):
-        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False))
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False), component_config=nsa_component_config)
 
     def test_timing_gear_matches_distribution_catchall(self, analyzer):
         """timing_gear should match when policy has 'Ensemble de distribution'."""
@@ -1049,3 +1070,186 @@ class TestDistributionCatchAll:
         )
         # oil_pump has synonyms ("ölpumpe", "pompe à huile") but none are distribution parts
         assert found is not True
+
+
+class TestDeterminePrimaryRepair:
+    """Tests for _determine_primary_repair (three-tier approach)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+        )
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code="P001",
+            description="test part",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="timing_belt",
+            match_method=MatchMethod.KEYWORD,
+            match_confidence=0.90,
+            match_reasoning="Keyword match",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    def test_tier1a_highest_value_covered_part(self, analyzer):
+        """Tier 1a: highest-value COVERED parts item is selected."""
+        items = [
+            self._make_item(description="Small part", total_price=50.0),
+            self._make_item(description="Big part", total_price=500.0, matched_component="water_pump"),
+            self._make_item(description="Labor", item_type="labor", total_price=300.0),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.determination_method == "deterministic"
+        assert result.description == "Big part"
+        assert result.is_covered is True
+        assert result.confidence >= 0.85
+
+    def test_tier1b_highest_value_covered_any_when_no_parts(self, analyzer):
+        """Tier 1b: when no covered parts, use highest covered item of any type."""
+        items = [
+            self._make_item(
+                description="Motor repair labor", item_type="labor",
+                total_price=400.0, matched_component="engine",
+            ),
+            self._make_item(
+                description="Not covered part", item_type="parts",
+                total_price=200.0, coverage_status=CoverageStatus.NOT_COVERED,
+                matched_component="turbocharger",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.determination_method == "deterministic"
+        assert result.description == "Motor repair labor"
+        assert result.is_covered is True
+
+    def test_tier2_repair_context(self, analyzer):
+        """Tier 2: repair context primary component used when no covered items."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
+                matched_component=None,
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="timing_chain",
+            primary_category="engine",
+            source_description="Steuerkette ersetzen",
+            is_covered=True,
+        )
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.component == "timing_chain"
+        assert result.confidence == 0.80
+        assert result.is_covered is True
+
+    def test_fallback_none_when_no_tiers_match(self, analyzer):
+        """Fallback: no covered items, no repair context → determination_method='none'."""
+        items = [
+            self._make_item(
+                description="Unknown part", coverage_status=CoverageStatus.REVIEW_NEEDED,
+                matched_component=None,
+            ),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.determination_method == "none"
+        assert result.is_covered is None
+
+    def test_empty_items_returns_none(self, analyzer):
+        """Empty line items → determination_method='none'."""
+        result = analyzer._determine_primary_repair([], {}, None, "TEST")
+        assert result.determination_method == "none"
+
+    def test_tier1a_over_tier1b(self, analyzer):
+        """Tier 1a (parts) takes priority over tier 1b (any type) even if labor is higher value."""
+        items = [
+            self._make_item(description="Covered part", total_price=100.0, item_type="parts"),
+            self._make_item(
+                description="Expensive labor", total_price=500.0, item_type="labor",
+                matched_component="engine",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.determination_method == "deterministic"
+        assert result.description == "Covered part"
+
+    def test_source_item_index_populated(self, analyzer):
+        """source_item_index should be the index of the selected item."""
+        items = [
+            self._make_item(description="Not covered", coverage_status=CoverageStatus.NOT_COVERED, matched_component=None),
+            self._make_item(description="Fee", item_type="fee", total_price=10.0, coverage_status=CoverageStatus.NOT_COVERED, matched_component=None),
+            self._make_item(description="The one", total_price=400.0),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.source_item_index == 2
+
+    def test_tier2_repair_context_not_covered(self, analyzer):
+        """Tier 2: repair context works even if component is not covered."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
+                matched_component=None,
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="turbocharger",
+            primary_category="turbo_supercharger",
+            source_description="Turbolader ersetzen",
+            is_covered=False,
+        )
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.component == "turbocharger"
+        assert result.is_covered is False
+
+    def test_tier1c_highest_value_uncovered_item(self, analyzer):
+        """Tier 1c: when nothing is covered and no repair context, pick highest uncovered with matched_component."""
+        items = [
+            self._make_item(
+                description="Small uncovered", coverage_status=CoverageStatus.NOT_COVERED,
+                total_price=200.0, matched_component="gasket",
+            ),
+            self._make_item(
+                description="Trunk control unit", coverage_status=CoverageStatus.NOT_COVERED,
+                total_price=1164.0, matched_component="control_unit",
+                coverage_category="electronics",
+            ),
+            self._make_item(
+                description="No component match", coverage_status=CoverageStatus.NOT_COVERED,
+                total_price=500.0, matched_component=None,
+            ),
+        ]
+        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
+        assert result.determination_method == "deterministic"
+        assert result.description == "Trunk control unit"
+        assert result.is_covered is False
+        assert result.source_item_index == 1
+
+    def test_tier2_before_tier1c(self, analyzer):
+        """Tier 2 (repair context) takes priority over tier 1c (uncovered items)."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Expensive uncovered", coverage_status=CoverageStatus.NOT_COVERED,
+                total_price=1000.0, matched_component="control_unit",
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="angle_gearbox",
+            primary_category="axle_drive",
+            source_description="Winkelgetriebe aus/einbau",
+            is_covered=True,
+        )
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.component == "angle_gearbox"

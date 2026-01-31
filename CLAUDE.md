@@ -84,6 +84,29 @@ python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 
 ## Architecture Rules (CRITICAL)
 
+### Core vs Customer Code Separation
+
+The core product (`src/context_builder/`) must remain **customer-agnostic**. Customer-specific logic, vocabulary, and configuration belong in the **customer repo** and are loaded at runtime from workspace config.
+
+| Belongs in core (`src/`) | Belongs in customer config (`workspaces/{id}/config/`) |
+|--------------------------|-------------------------------------------------------|
+| Generic pipeline stages, schemas, interfaces | Customer-specific screening checks (`screening/screener.py`) |
+| Coverage analyzer framework (matching pipeline, LLM integration) | Keyword mappings, component synonyms, category aliases (`coverage/*.yaml`) |
+| Rule engine, keyword matcher, LLM matcher (extensible classes) | Extraction specs, prompt templates (`extraction_specs/`, `prompts/`) |
+| API routes, services, storage layer | Business assumptions, part mappings (`assumptions.json`) |
+| Base data models (Pydantic schemas) | Customer-specific extractors (`extractors/*.py`) |
+
+**Principles:**
+- Core code defines **interfaces and extensible frameworks** — customer code provides **implementation details and domain vocabulary**
+- Configuration is loaded from workspace YAML/JSON at runtime, never hardcoded in `src/`
+- If you're adding German/French terms, part numbers, category names, or business rules to a file in `src/`, **STOP** — it belongs in customer config
+- New customer-specific config files follow the existing YAML pattern (see `nsa_keyword_mappings.yaml`, `nsa_coverage_config.yaml`)
+- The `_find_sibling()` pattern in the analyzer auto-discovers config files by glob (e.g., `*_keyword_mappings.yaml`)
+
+**Known tech debt:** `COMPONENT_SYNONYMS`, `CATEGORY_ALIASES`, and `REPAIR_CONTEXT_KEYWORDS` are still hardcoded in `src/context_builder/coverage/analyzer.py`. These are being externalized — see `docs/REFACTOR-coverage-primary-component.md`.
+
+### Code Organization
+
 **NEVER add code to these files - they are being refactored:**
 - `api/main.py` - Use existing routers or create new ones in `api/routers/`
 - `pipeline/run.py` - Add stage logic to `pipeline/stages/` modules
@@ -101,6 +124,7 @@ python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 - Adding >50 lines to any single file
 - Any edit to `api/main.py` or `pipeline/run.py`
 - Duplicating logic that exists elsewhere
+- Adding customer-specific vocabulary or business rules to `src/`
 
 **Full guidelines:** `docs/DEVELOPER_GUIDELINES.md`
 

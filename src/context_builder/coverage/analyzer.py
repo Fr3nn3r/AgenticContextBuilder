@@ -30,6 +30,7 @@ from context_builder.coverage.schemas import (
     CoverageSummary,
     LineItemCoverage,
     MatchMethod,
+    PrimaryRepairResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,174 +47,54 @@ def _find_sibling(config_path: Path, pattern: str) -> Optional[Path]:
     matches = list(config_path.parent.glob(pattern))
     return matches[0] if matches else None
 
-# Mapping of component types to their German/French equivalents for policy matching
-# Used to verify if a detected component is actually in the policy's covered parts list
-COMPONENT_SYNONYMS = {
-    "oil_cooler": ["ölkühler", "oelkuehler", "refroidisseur d'huile", "oil cooler"],
-    "timing_belt": ["zahnriemen", "courroie de distribution", "courroie crantée", "riemen", "ensemble de distribution"],
-    "timing_belt_kit": ["zahnriemenkit", "kit courroie", "timing kit", "ensemble de distribution"],
-    "timing_chain": ["steuerkette", "chaîne de distribution", "chaine de distribution", "kette", "ensemble de distribution"],
-    "chain_tensioner": ["kettenspanner", "tendeur de chaîne", "tendeur", "spanner", "ensemble de distribution"],
-    "chain_guide": ["kettenführung", "guide de chaîne", "führung", "guide"],
-    "belt_tensioner": ["riemenspanner", "tendeur de courroie"],
-    "idler_pulley": ["umlenkrolle", "poulie de renvoi", "spannrolle", "ensemble de distribution"],
-    "tensioner_pulley": ["spannrolle", "poulie tendeur", "ensemble de distribution"],
-    "turbocharger": ["turbolader", "turbo", "turbocompresseur"],
-    "water_pump": ["wasserpumpe", "pompe à eau", "kühlmittelpumpe"],
-    "oil_pump": ["ölpumpe", "pompe à huile"],
-    "fuel_pump": ["kraftstoffpumpe", "benzinpumpe", "pompe à carburant"],
-    "cylinder_head": ["zylinderkopf", "culasse"],
-    "cylinder_head_gasket": ["zylinderkopfdichtung", "joint de culasse"],
-    "crankshaft": ["kurbelwelle", "vilebrequin"],
-    "camshaft": ["nockenwelle", "arbre à cames"],
-    "piston": ["kolben", "piston"],
-    "connecting_rod": ["pleuelstange", "pleuel", "bielle"],
-    "valve": ["ventil", "ventile", "soupape"],
-    "egr_valve": ["agr-ventil", "egr", "abgasrückführung", "vanne egr", "recirculation"],
-    "headlight": ["scheinwerfer", "phare", "frontscheinwerfer"],
-    "sensor": ["sensor", "capteur", "fühler"],
-    "particle_filter_sensor": ["partikelfilter", "partikelsensor", "dpf", "fap"],
-    "transmission": ["getriebe", "boîte de vitesses", "transmission"],
-    "clutch": ["kupplung", "embrayage"],
-    "differential": ["differenzial", "differential", "différentiel"],
-    "drive_shaft": ["antriebswelle", "gelenkwelle", "arbre de transmission"],
-    "shock_absorber": ["stossdämpfer", "amortisseur"],
-    "air_suspension": ["luftfederung", "suspension pneumatique"],
-    # --- Added to close synonym gaps ---
-    "throttle_body": ["drosselklappe", "corps de papillon", "drosselklappenstutzen", "carburateur"],
-    "injector": ["einspritzdüse", "injektor", "injecteur"],
-    "maf_sensor": ["luftmassenmesser", "débitmètre", "lmm"],
-    "high_pressure_pump": ["hochdruckpumpe", "pompe haute pression"],
-    "spark_plug": ["zündkerze", "bougie d'allumage", "bougie"],
-    "cylinder_liner": ["zylinderlaufbuchse", "chemise de cylindre"],
-    "valve_cover": ["ventildeckel", "couvre-culasse", "cache culbuteur"],
-    "egr_cooler": ["agr-kühler", "refroidisseur egr", "agrkühler"],
-    "timing_gear": ["steuerrad", "pignon de distribution", "pignon d'arbre à cames", "pignon d'arbre à came", "ensemble de distribution"],
-    "pulley": ["riemenscheibe", "poulie", "ensemble de distribution"],
-    "serpentine_belt": ["keilrippenriemen", "courroie d'accessoires", "courroie poly-v"],
-    "radiator": ["kühler", "radiateur", "wasserkühler"],
-    "control_unit": ["steuergerät", "calculateur", "ecu"],
-    "electric_motor": ["elektromotor", "moteur électrique"],
-    "mechatronic_unit": ["mechatronik", "unité mécatronique", "mechatronikeinheit"],
-    "height_control_valve": ["niveauregelventil", "vanne de régulation de niveau"],
-    "hydraulic_valve": ["hydraulikventil", "valve hydraulique"],
-    "wheel_hub": ["radnabe", "moyeu de roue"],
-    "bearing": ["lager", "roulement", "radlager"],
-    "cv_joint": ["gleichlaufgelenk", "joint homocinétique", "antriebsgelenk"],
-    "cv_boot": ["achsmanschette", "soufflet de cardan", "gelenkmanschette"],
-    "axle_shaft": ["antriebswelle", "arbre de roue", "steckwelle"],
-    "fuel_tank": ["kraftstofftank", "réservoir de carburant", "benzintank"],
-    # --- Added to close "assuming covered" synonym gaps ---
-    "heating_valve": ["heizungsventil", "vanne de chauffage"],
-    "valve_cover_gasket": ["ventildeckeldichtung", "joint de cache-soupapes", "joint couvre-culasse"],
-    "valve_body": ["ventilgehäuse", "corps de vanne", "ventilkörper"],
-    "valve_unit": ["ventileinheit", "unité de vanne"],
-    "valve_clamp": ["ventilklemmschelle", "collier de soupape"],
-    "oil_pan_gasket": ["ölwannendichtung", "joint de carter d'huile"],
-    "injection_pump_outlet": ["ausgangsstutzen", "sortie pompe injection"],
-    "injector_kit": ["einspritzkit", "kit injecteur", "kit de repose"],
-    "connecting_rod_bolt": ["pleuelschraube", "boulon de bielle"],
-    "timing_bolt": ["steuerkettenbolzen", "boulon distribution", "ensemble de distribution"],
-    "pressure_accumulator": ["druckspeicher", "accumulateur de pression"],
-    "pressure_line": ["druckleitung", "conduite de pression"],
-    "fuel_supply_line": ["kraftstoffzulaufleitung", "conduite d'alimentation"],
-    "fuel_return_line": ["kraftstoffrücklaufleitung", "conduite de retour"],
-    "fuel_delivery_unit": ["fördereinheit", "unité d'alimentation"],
-    "cv_joint_boot": ["gelenkmanschette", "gaine étanchéité", "soufflet"],
-    "gasket": ["dichtung", "joint d'étanchéité"],
-    "power_supply_module": [
-        "alimentation",
-        "module d'alimentation",
-        "électronique de puissance",
-        "electronique de puissance",
-        "stromversorgungsmodul",
-        "stromversorgung",
-        "netzteil",
-        "power supply",
-    ],
-    # --- Added to close component_coverage false-reject gaps ---
-    "door_lock": [
-        "türschloss",
-        "turschloss",
-        "schloss",
-        "serrure de porte",
-        "serrure",
-        "zentralverriegelung",
-        "zentralverriegelungsmotor",
-        "verrouillage centralisé",
-    ],
-    "switch": [
-        "schalter",
-        "contacteur",
-        "contact",
-        "interrupteur",
-        "commutateur",
-    ],
-    "mirror_assembly": [
-        "spiegelgehäuse",
-        "spiegelgehaeuse",
-        "aussenspiegel",
-        "außenspiegel",
-        "aufnahme",
-        "rétroviseur",
-        "retroviseur",
-        "rétroviseur extérieur",
-    ],
-}
 
-# Components implicitly covered by "Ensemble de distribution" (distribution assembly)
-# catch-all entries in French/German policies.
-DISTRIBUTION_CATCH_ALL_COMPONENTS = {
-    "timing_belt", "timing_chain", "timing_gear",
-    "chain_tensioner", "chain_guide", "belt_tensioner",
-    "idler_pulley", "tensioner_pulley", "pulley",
-    "timing_bolt", "timing_belt_kit",
-}
+@dataclass
+class ComponentConfig:
+    """Customer-specific component vocabulary for coverage matching.
 
-DISTRIBUTION_CATCH_ALL_KEYWORDS = [
-    "ensemble de distribution",
-    "distribution",
-]
+    Loaded from *_component_config.yaml in the coverage config directory.
+    """
 
-# Aliases between equivalent coverage category names.
-# When checking if a system is covered, these aliases are also tested.
-CATEGORY_ALIASES = {
-    "axle_drive": ["four_wd", "differential"],
-    "four_wd": ["axle_drive", "differential"],
-    "differential": ["axle_drive", "four_wd"],
-    "electrical_system": ["electronics", "electric"],
-    "electronics": ["electrical_system", "electric"],
-    "electric": ["electrical_system", "electronics"],
-}
+    component_synonyms: Dict[str, List[str]]
+    category_aliases: Dict[str, List[str]]
+    repair_context_keywords: Dict[str, Tuple[str, str]]
+    distribution_catch_all_components: set
+    distribution_catch_all_keywords: List[str]
 
-# Keywords in labor descriptions that indicate the primary repair component
-# Maps keyword patterns (lowercase) to (component_type, category)
-# Used to establish repair context before applying consumable exclusions
-REPAIR_CONTEXT_KEYWORDS = {
-    # Oil cooler - often mislabeled as oil filter in parts descriptions
-    "ölkühler": ("oil_cooler", "engine"),
-    "oelkuehler": ("oil_cooler", "engine"),
-    "oil cooler": ("oil_cooler", "engine"),
-    "refroidisseur d'huile": ("oil_cooler", "engine"),
-    # Water pump
-    "wasserpumpe": ("water_pump", "engine"),
-    "pompe à eau": ("water_pump", "engine"),
-    # Oil pump
-    "ölpumpe": ("oil_pump", "engine"),
-    "pompe à huile": ("oil_pump", "engine"),
-    # Timing chain/belt
-    "steuerkette": ("timing_chain", "engine"),
-    "zahnriemen": ("timing_belt", "engine"),
-    "chaîne de distribution": ("timing_chain", "engine"),
-    "chaine de distribution": ("timing_chain", "engine"),
-    "distribution": ("timing_chain", "engine"),
-    # Turbo
-    "turbolader": ("turbocharger", "turbo_supercharger"),
-    "turbo": ("turbocharger", "turbo_supercharger"),
-    # Oil jet (piston cooling)
-    "gicleur": ("oil_jet", "engine"),
-    "injecteur d'huile": ("oil_jet", "engine"),
-}
+    @classmethod
+    def default(cls) -> "ComponentConfig":
+        """Return empty defaults (no vocabulary loaded)."""
+        return cls(
+            component_synonyms={},
+            category_aliases={},
+            repair_context_keywords={},
+            distribution_catch_all_components=set(),
+            distribution_catch_all_keywords=[],
+        )
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ComponentConfig":
+        """Create from a parsed YAML dict."""
+        # Parse repair_context_keywords: {keyword: {component, category}} → {keyword: (component, category)}
+        raw_rck = data.get("repair_context_keywords", {})
+        repair_kw: Dict[str, Tuple[str, str]] = {}
+        for kw, val in raw_rck.items():
+            if isinstance(val, dict):
+                repair_kw[kw] = (val["component"], val["category"])
+            elif isinstance(val, (list, tuple)) and len(val) == 2:
+                repair_kw[kw] = (val[0], val[1])
+
+        return cls(
+            component_synonyms=data.get("component_synonyms", {}),
+            category_aliases=data.get("category_aliases", {}),
+            repair_context_keywords=repair_kw,
+            distribution_catch_all_components=set(
+                data.get("distribution_catch_all_components", [])
+            ),
+            distribution_catch_all_keywords=data.get(
+                "distribution_catch_all_keywords", []
+            ),
+        )
 
 
 @dataclass
@@ -298,6 +179,7 @@ class CoverageAnalyzer:
         keyword_matcher: Optional[KeywordMatcher] = None,
         llm_matcher: Optional[LLMMatcher] = None,
         workspace_path: Optional[Path] = None,
+        component_config: Optional[ComponentConfig] = None,
     ):
         """Initialize the coverage analyzer.
 
@@ -307,8 +189,10 @@ class CoverageAnalyzer:
             keyword_matcher: Pre-configured keyword matcher
             llm_matcher: Pre-configured LLM matcher
             workspace_path: Path to workspace for part number lookup
+            component_config: Customer-specific component vocabulary
         """
         self.config = config or AnalyzerConfig()
+        self.component_config = component_config or ComponentConfig.default()
         self.rule_engine = rule_engine or RuleEngine()
         self.keyword_matcher = keyword_matcher or KeywordMatcher()
         self.llm_matcher = llm_matcher
@@ -351,12 +235,22 @@ class CoverageAnalyzer:
 
         llm_config = LLMMatcherConfig.from_dict(config_data.get("llm", {}))
 
+        # Load component config from sibling *_component_config.yaml
+        comp_config = ComponentConfig.default()
+        comp_file = _find_sibling(config_path, "*_component_config.yaml")
+        if comp_file:
+            with open(comp_file, "r", encoding="utf-8") as f:
+                comp_data = yaml.safe_load(f) or {}
+            comp_config = ComponentConfig.from_dict(comp_data)
+            logger.info(f"Loaded component config from {comp_file.name}")
+
         return cls(
             config=analyzer_config,
             rule_engine=RuleEngine(rule_config),
             keyword_matcher=KeywordMatcher(keyword_config),
             llm_matcher=LLMMatcher(llm_config),
             workspace_path=workspace_path,
+            component_config=comp_config,
         )
 
     def _determine_coverage_percent(
@@ -479,7 +373,7 @@ class CoverageAnalyzer:
                 continue
 
             # Check for known repair keywords
-            for keyword, (component, category) in REPAIR_CONTEXT_KEYWORDS.items():
+            for keyword, (component, category) in self.component_config.repair_context_keywords.items():
                 if keyword in description:
                     detected.append(component)
 
@@ -538,7 +432,7 @@ class CoverageAnalyzer:
                 return True
 
         # Check category aliases
-        aliases = CATEGORY_ALIASES.get(system_lower, [])
+        aliases = self.component_config.category_aliases.get(system_lower, [])
         for alias in aliases:
             for cat in covered_categories:
                 cat_lower = cat.lower()
@@ -589,7 +483,7 @@ class CoverageAnalyzer:
 
         # Build list of names to search: the system itself + its aliases
         search_names = [system_lower]
-        search_names.extend(CATEGORY_ALIASES.get(system_lower, []))
+        search_names.extend(self.component_config.category_aliases.get(system_lower, []))
 
         for search_name in search_names:
             for cat, parts in covered_components.items():
@@ -639,9 +533,9 @@ class CoverageAnalyzer:
         # Look up synonyms for this component type
         # Try multiple key variants: "egr valve" → "egr_valve", "egr valve"
         synonyms = (
-            COMPONENT_SYNONYMS.get(component_lower)
-            or COMPONENT_SYNONYMS.get(underscore_key)
-            or COMPONENT_SYNONYMS.get(space_key)
+            self.component_config.component_synonyms.get(component_lower)
+            or self.component_config.component_synonyms.get(underscore_key)
+            or self.component_config.component_synonyms.get(space_key)
         )
 
         # If synonyms exist, check them against the policy parts list
@@ -653,9 +547,9 @@ class CoverageAnalyzer:
 
         # Check distribution catch-all: if policy lists "Ensemble de distribution",
         # all timing/distribution components are implicitly covered
-        if component_lower in DISTRIBUTION_CATCH_ALL_COMPONENTS:
+        if component_lower in self.component_config.distribution_catch_all_components:
             for policy_part in policy_parts_lower:
-                for keyword in DISTRIBUTION_CATCH_ALL_KEYWORDS:
+                for keyword in self.component_config.distribution_catch_all_keywords:
                     if keyword in policy_part:
                         return True, (
                             f"Component '{component}' covered by distribution "
@@ -832,7 +726,7 @@ class CoverageAnalyzer:
                     or item.get("repair_context_description")
                 )
                 has_aliases = bool(
-                    CATEGORY_ALIASES.get(result.system.lower() if result.system else "")
+                    self.component_config.category_aliases.get(result.system.lower() if result.system else "")
                 )
                 if is_ancillary or has_repair_ctx or has_aliases:
                     logger.info(
@@ -1073,7 +967,7 @@ class CoverageAnalyzer:
                     continue
 
                 desc_lower = item.description.lower()
-                for keyword, (component, category) in REPAIR_CONTEXT_KEYWORDS.items():
+                for keyword, (component, category) in self.component_config.repair_context_keywords.items():
                     if keyword in desc_lower:
                         matching_covered = [
                             p for p in covered_parts
@@ -1294,6 +1188,150 @@ class CoverageAnalyzer:
 
         return items
 
+    def _determine_primary_repair(
+        self,
+        all_items: List[LineItemCoverage],
+        covered_components: Dict[str, List[str]],
+        repair_context: Optional["RepairContext"] = None,
+        claim_id: str = "",
+    ) -> PrimaryRepairResult:
+        """Determine the primary repair component using a three-tier approach.
+
+        Tier 1a: highest-value COVERED parts item
+        Tier 1b: highest-value COVERED item of any type
+        Tier 1c: highest-value NOT_COVERED/REVIEW_NEEDED item with matched_component
+        Tier 2:  repair context (from labor keyword detection)
+        Tier 3:  LLM fallback (reserved for future use)
+
+        Fallback: returns PrimaryRepairResult(determination_method="none"),
+            which signals the screener to REFER.
+
+        Args:
+            all_items: All analyzed line items
+            covered_components: Policy's covered components by category
+            repair_context: Detected repair context from labor descriptions
+            claim_id: Claim identifier for logging
+
+        Returns:
+            PrimaryRepairResult describing the primary component
+        """
+        # Tier 1a: highest-value COVERED parts item
+        best_covered_part: Optional[LineItemCoverage] = None
+        best_covered_part_idx: Optional[int] = None
+        for idx, item in enumerate(all_items):
+            if (
+                item.coverage_status == CoverageStatus.COVERED
+                and item.item_type in ("parts", "part", "piece")
+            ):
+                if best_covered_part is None or (item.total_price or 0) > (best_covered_part.total_price or 0):
+                    best_covered_part = item
+                    best_covered_part_idx = idx
+
+        if best_covered_part is not None:
+            logger.info(
+                "Primary repair (tier 1a): '%s' (%s, %.0f CHF) for claim %s",
+                best_covered_part.description,
+                best_covered_part.coverage_category,
+                best_covered_part.total_price,
+                claim_id,
+            )
+            return PrimaryRepairResult(
+                component=best_covered_part.matched_component,
+                category=best_covered_part.coverage_category,
+                description=best_covered_part.description,
+                is_covered=True,
+                confidence=best_covered_part.match_confidence or 0.90,
+                determination_method="deterministic",
+                source_item_index=best_covered_part_idx,
+            )
+
+        # Tier 1b: highest-value COVERED item (any type, e.g. labor)
+        best_covered_any: Optional[LineItemCoverage] = None
+        best_covered_any_idx: Optional[int] = None
+        for idx, item in enumerate(all_items):
+            if item.coverage_status == CoverageStatus.COVERED and item.matched_component:
+                if best_covered_any is None or (item.total_price or 0) > (best_covered_any.total_price or 0):
+                    best_covered_any = item
+                    best_covered_any_idx = idx
+
+        if best_covered_any is not None:
+            logger.info(
+                "Primary repair (tier 1b): '%s' (%s, %.0f CHF) for claim %s",
+                best_covered_any.description,
+                best_covered_any.coverage_category,
+                best_covered_any.total_price,
+                claim_id,
+            )
+            return PrimaryRepairResult(
+                component=best_covered_any.matched_component,
+                category=best_covered_any.coverage_category,
+                description=best_covered_any.description,
+                is_covered=True,
+                confidence=best_covered_any.match_confidence or 0.85,
+                determination_method="deterministic",
+                source_item_index=best_covered_any_idx,
+            )
+
+        # Tier 2: repair context (works even if component is not covered)
+        if repair_context and repair_context.primary_component:
+            logger.info(
+                "Primary repair (tier 2): '%s' (%s, covered=%s) from repair context for claim %s",
+                repair_context.primary_component,
+                repair_context.primary_category,
+                repair_context.is_covered,
+                claim_id,
+            )
+            return PrimaryRepairResult(
+                component=repair_context.primary_component,
+                category=repair_context.primary_category,
+                description=repair_context.source_description,
+                is_covered=repair_context.is_covered,
+                confidence=0.80,
+                determination_method="repair_context",
+            )
+
+        # Tier 1c: highest-value NOT_COVERED or REVIEW_NEEDED item with
+        # a matched_component — so the screener can make a verdict even
+        # when nothing is covered.
+        best_uncovered: Optional[LineItemCoverage] = None
+        best_uncovered_idx: Optional[int] = None
+        for idx, item in enumerate(all_items):
+            if (
+                item.coverage_status in (CoverageStatus.NOT_COVERED, CoverageStatus.REVIEW_NEEDED)
+                and item.matched_component
+            ):
+                if best_uncovered is None or (item.total_price or 0) > (best_uncovered.total_price or 0):
+                    best_uncovered = item
+                    best_uncovered_idx = idx
+
+        if best_uncovered is not None:
+            logger.info(
+                "Primary repair (tier 1c): '%s' (%s, %.0f CHF, NOT_COVERED) for claim %s",
+                best_uncovered.description,
+                best_uncovered.coverage_category,
+                best_uncovered.total_price,
+                claim_id,
+            )
+            return PrimaryRepairResult(
+                component=best_uncovered.matched_component,
+                category=best_uncovered.coverage_category,
+                description=best_uncovered.description,
+                is_covered=False,
+                confidence=best_uncovered.match_confidence or 0.70,
+                determination_method="deterministic",
+                source_item_index=best_uncovered_idx,
+            )
+
+        # Tier 3: LLM fallback (reserved for future implementation)
+        # For now, fall through to "none"
+
+        # Fallback: could not determine primary repair
+        logger.info(
+            "Primary repair: could not determine for claim %s — will REFER",
+            claim_id,
+        )
+        return PrimaryRepairResult(determination_method="none")
+
     def _is_in_excluded_list(
         self,
         item: LineItemCoverage,
@@ -1390,7 +1428,7 @@ class CoverageAnalyzer:
 
                 if category_is_covered:
                     desc_lower = item.description.lower()
-                    for comp_type, synonyms in COMPONENT_SYNONYMS.items():
+                    for comp_type, synonyms in self.component_config.component_synonyms.items():
                         for synonym in synonyms:
                             # Skip short synonyms to avoid false positives
                             if len(synonym) < 4:
@@ -1740,6 +1778,11 @@ class CoverageAnalyzer:
         # Demote orphaned labor: if no parts are covered, labor has no anchor
         all_items = self._demote_labor_without_covered_parts(all_items)
 
+        # Determine primary repair component (three-tier approach)
+        primary_repair = self._determine_primary_repair(
+            all_items, covered_components, repair_context, claim_id,
+        )
+
         # Calculate summary using effective (age-adjusted) coverage percent
         summary = self._calculate_summary(
             all_items,
@@ -1789,5 +1832,6 @@ class CoverageAnalyzer:
             inputs=inputs,
             line_items=all_items,
             summary=summary,
+            primary_repair=primary_repair,
             metadata=metadata,
         )

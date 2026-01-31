@@ -579,6 +579,7 @@ class TestCheck5ComponentCoverage:
             CoverageStatus,
             LineItemCoverage,
             MatchMethod,
+            PrimaryRepairResult,
         )
 
         if line_items is None:
@@ -591,6 +592,7 @@ class TestCheck5ComponentCoverage:
                         total_price=3500.0,
                         coverage_status=CoverageStatus.COVERED,
                         coverage_category="engine",
+                        matched_component="engine",
                         match_method=MatchMethod.KEYWORD,
                         match_confidence=0.85,
                         match_reasoning="Matched engine keyword",
@@ -625,6 +627,40 @@ class TestCheck5ComponentCoverage:
                     )
                 )
 
+        # Build primary_repair based on line items (mirrors analyzer logic)
+        primary_repair = None
+        covered_parts = [
+            i for i in line_items
+            if i.coverage_status == CoverageStatus.COVERED
+            and i.item_type in ("parts", "part", "piece")
+        ]
+        if covered_parts:
+            best = max(covered_parts, key=lambda x: x.total_price or 0)
+            primary_repair = PrimaryRepairResult(
+                component=best.matched_component,
+                category=best.coverage_category,
+                description=best.description,
+                is_covered=True,
+                confidence=best.match_confidence or 0.90,
+                determination_method="deterministic",
+            )
+        else:
+            not_covered_parts = [
+                i for i in line_items
+                if i.coverage_status == CoverageStatus.NOT_COVERED
+                and i.item_type in ("parts", "part", "piece")
+            ]
+            if not_covered_parts:
+                best = max(not_covered_parts, key=lambda x: x.total_price or 0)
+                primary_repair = PrimaryRepairResult(
+                    component=best.matched_component,
+                    category=best.coverage_category,
+                    description=best.description,
+                    is_covered=False,
+                    confidence=best.match_confidence or 0.90,
+                    determination_method="deterministic",
+                )
+
         return CoverageAnalysisResult(
             claim_id="CLM-TEST",
             line_items=line_items,
@@ -637,6 +673,7 @@ class TestCheck5ComponentCoverage:
                 ),
                 total_not_covered=sum(i.not_covered_amount for i in line_items),
             ),
+            primary_repair=primary_repair,
         )
 
     def test_pass_covered_items_exist(self):
