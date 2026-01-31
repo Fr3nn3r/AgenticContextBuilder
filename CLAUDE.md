@@ -196,6 +196,9 @@ Customer-specific extractors, prompts, and specs are stored in **separate git re
 
 **Full documentation:** `.claude/docs/customer-config.md`
 
+## Planning
+When entering plan mode, save the plan file to the `plans/` folder (e.g., `plans/plan-<feature-name>.md`).
+
 ## Context Management
 - **BACKLOG.md** - All tasks (todo/doing/done). Update before clearing context.
 - **.claude/docs/** - Reference docs:
