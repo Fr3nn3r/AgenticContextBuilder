@@ -418,7 +418,9 @@ class CoverageAnalyzer:
                         else:
                             # Part not in covered list — check if category is
                             # covered and part is NOT explicitly excluded.
-                            # If so, treat as uncertain (needs human review).
+                            # Policy lists are representative, not exhaustive:
+                            # if a category is covered and the part isn't
+                            # excluded, the part is covered.
                             covered_cats = self._extract_covered_categories(covered_components)
                             cat_covered = self._is_system_covered(category, covered_cats)
 
@@ -426,10 +428,10 @@ class CoverageAnalyzer:
                                 component, category, item.get("description", ""),
                                 excluded_components or {},
                             ):
-                                context.is_covered = None  # uncertain
+                                context.is_covered = True
                                 logger.info(
                                     "Repair context: '%s' in '%s' — category covered, "
-                                    "part not listed, NOT excluded → uncertain",
+                                    "part not listed, NOT excluded → covered",
                                     component, category,
                                 )
                             else:
@@ -1314,6 +1316,75 @@ class CoverageAnalyzer:
 
         return items
 
+    def _promote_items_for_covered_primary_repair(
+        self,
+        items: List[LineItemCoverage],
+        primary_repair: "PrimaryRepairResult",
+        repair_context: Optional["RepairContext"] = None,
+    ) -> List[LineItemCoverage]:
+        """Promote line items when the primary repair is confirmed covered.
+
+        When the repair context identifies a covered primary component but
+        the per-item LLM analysis didn't recognise individual items as covered
+        (because the specific part isn't in the policy's explicit list), this
+        step corrects that by promoting LLM-classified items.
+
+        Only activates when **zero** non-trivial items are currently covered,
+        ensuring it doesn't interfere with claims that already have correct
+        per-item coverage.  This is the logical complement of
+        ``_demote_labor_without_covered_parts``.
+
+        Args:
+            items: List of analysed line items (after all stages).
+            primary_repair: The determined primary repair result.
+            repair_context: Detected repair context from labor descriptions.
+
+        Returns:
+            Updated list with orphaned items promoted when appropriate.
+        """
+        if not primary_repair or not primary_repair.is_covered:
+            return items
+        if not primary_repair.category:
+            return items
+
+        # Only activate when no items are currently covered (zero-payout).
+        has_covered = any(
+            item.coverage_status == CoverageStatus.COVERED
+            and item.total_price > 0
+            for item in items
+        )
+        if has_covered:
+            return items
+
+        category = primary_repair.category
+
+        for item in items:
+            if item.coverage_status != CoverageStatus.NOT_COVERED:
+                continue
+            # Only override LLM decisions, not deterministic rules
+            if item.match_method != MatchMethod.LLM:
+                continue
+
+            item.coverage_status = CoverageStatus.COVERED
+            item.coverage_category = category
+            if not item.matched_component:
+                item.matched_component = primary_repair.component
+            item.covered_amount = item.total_price
+            item.not_covered_amount = 0.0
+            item.match_reasoning += (
+                f" [PROMOTED: primary repair '{primary_repair.component}' "
+                f"in '{category}' is covered by policy]"
+            )
+            logger.info(
+                "Promoted '%s' to COVERED via primary repair anchor "
+                "(%s in %s)",
+                item.description,
+                primary_repair.component,
+                category,
+            )
+
+        return items
+
     def _determine_primary_repair(
         self,
         all_items: List[LineItemCoverage],
@@ -1908,6 +1979,14 @@ class CoverageAnalyzer:
         # Determine primary repair component (three-tier approach)
         primary_repair = self._determine_primary_repair(
             all_items, covered_components, repair_context, claim_id,
+        )
+
+        # Promote orphaned items when the primary repair is confirmed covered.
+        # This reverses demotion cascades where the LLM couldn't match
+        # individual items to the policy's explicit parts list but the
+        # repair-context tier identifies the repair as covered.
+        all_items = self._promote_items_for_covered_primary_repair(
+            all_items, primary_repair, repair_context,
         )
 
         # Calculate summary using effective (age-adjusted) coverage percent
