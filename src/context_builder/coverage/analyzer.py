@@ -681,17 +681,10 @@ class CoverageAnalyzer:
             return None, f"No synonym mapping for component '{component}' - needs LLM verification"
 
         # Component not found in policy list (synonyms exist but none matched)
-        if strict:
-            return False, (
-                f"Component '{component}' (synonyms: {list(synonyms)[:3]}) "
-                f"not found in policy's {matching_category} parts list "
-                f"({len(policy_parts_list)} parts)"
-            )
-        # Non-strict: policy parts lists are not exhaustive, treat as uncertain
-        return None, (
+        return False, (
             f"Component '{component}' (synonyms: {list(synonyms)[:3]}) "
-            f"not confirmed in policy's {matching_category} parts list "
-            f"({len(policy_parts_list)} parts) — category covered, needs verification"
+            f"not found in policy's {matching_category} parts list "
+            f"({len(policy_parts_list)} parts)"
         )
 
     def _match_by_part_number(
