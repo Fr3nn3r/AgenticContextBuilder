@@ -9,6 +9,7 @@ from context_builder.coverage.analyzer import (
     AnalyzerConfig,
     ComponentConfig,
     CoverageAnalyzer,
+    _normalize_coverage_scale,
 )
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -1253,3 +1254,199 @@ class TestDeterminePrimaryRepair:
         result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
         assert result.determination_method == "repair_context"
         assert result.component == "angle_gearbox"
+
+
+class TestNormalizeCoverageScale:
+    """Tests for _normalize_coverage_scale helper."""
+
+    def test_old_list_format(self):
+        """Old list format returns (None, list)."""
+        tiers = [
+            {"km_threshold": 50000, "coverage_percent": 80},
+            {"km_threshold": 100000, "coverage_percent": 60},
+        ]
+        age_threshold, result_tiers = _normalize_coverage_scale(tiers)
+        assert age_threshold is None
+        assert result_tiers == tiers
+
+    def test_new_dict_format_with_age(self):
+        """New dict format with age returns (8, tiers)."""
+        raw = {
+            "age_threshold_years": 8,
+            "tiers": [
+                {"km_threshold": 50000, "coverage_percent": 90, "age_coverage_percent": 80},
+                {"km_threshold": 100000, "coverage_percent": 70, "age_coverage_percent": 60},
+            ],
+        }
+        age_threshold, tiers = _normalize_coverage_scale(raw)
+        assert age_threshold == 8
+        assert len(tiers) == 2
+        assert tiers[0]["age_coverage_percent"] == 80
+
+    def test_new_dict_format_without_age(self):
+        """New dict format without age returns (None, tiers)."""
+        raw = {
+            "age_threshold_years": None,
+            "tiers": [
+                {"km_threshold": 100000, "coverage_percent": 80, "age_coverage_percent": None},
+            ],
+        }
+        age_threshold, tiers = _normalize_coverage_scale(raw)
+        assert age_threshold is None
+        assert len(tiers) == 1
+
+    def test_none_input(self):
+        """None input returns (None, None)."""
+        age_threshold, tiers = _normalize_coverage_scale(None)
+        assert age_threshold is None
+        assert tiers is None
+
+    def test_invalid_input(self):
+        """Invalid input (string) returns (None, None)."""
+        age_threshold, tiers = _normalize_coverage_scale("not a scale")
+        assert age_threshold is None
+        assert tiers is None
+
+    def test_empty_dict(self):
+        """Empty dict returns (None, [])."""
+        age_threshold, tiers = _normalize_coverage_scale({})
+        assert age_threshold is None
+        assert tiers == []
+
+    def test_empty_list(self):
+        """Empty list returns (None, [])."""
+        age_threshold, tiers = _normalize_coverage_scale([])
+        assert age_threshold is None
+        assert tiers == []
+
+
+class TestPerTierAgeCoverage:
+    """Tests for per-tier age-adjusted coverage rates."""
+
+    @pytest.fixture
+    def analyzer(self):
+        config = AnalyzerConfig(use_llm_fallback=False)
+        return CoverageAnalyzer(config=config)
+
+    @pytest.fixture
+    def covered_components(self):
+        return {"engine": ["Motor", "Kolben", "Zylinder"]}
+
+    @pytest.fixture
+    def age_tier_scale(self):
+        """Coverage scale with per-tier age rates."""
+        return [
+            {"km_threshold": 50000, "coverage_percent": 90, "age_coverage_percent": 80},
+            {"km_threshold": 80000, "coverage_percent": 70, "age_coverage_percent": 60},
+            {"km_threshold": 110000, "coverage_percent": 50, "age_coverage_percent": 40},
+        ]
+
+    @pytest.fixture
+    def no_age_scale(self):
+        """Coverage scale without age column."""
+        return [
+            {"km_threshold": 50000, "coverage_percent": 90, "age_coverage_percent": None},
+            {"km_threshold": 80000, "coverage_percent": 70, "age_coverage_percent": None},
+        ]
+
+    def test_young_vehicle_uses_mileage_rate(self, analyzer, covered_components, age_tier_scale):
+        """Young vehicle (below age threshold) uses the normal mileage rate."""
+        result = analyzer.analyze(
+            claim_id="TEST_AGE_YOUNG",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=75000,
+            coverage_scale=age_tier_scale,
+            vehicle_age_years=5.0,
+            age_threshold_years=8,
+        )
+        # 75k >= 50k → 90%, vehicle is 5y < 8y → no age adjustment
+        assert result.inputs.coverage_percent == 90
+        assert result.inputs.coverage_percent_effective == 90
+        item = result.line_items[0]
+        assert item.covered_amount == 900.0
+
+    def test_old_vehicle_uses_per_tier_age_rate(self, analyzer, covered_components, age_tier_scale):
+        """Old vehicle uses the per-tier age rate, not a flat blanket rate."""
+        result = analyzer.analyze(
+            claim_id="TEST_AGE_OLD",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=75000,
+            coverage_scale=age_tier_scale,
+            vehicle_age_years=10.0,
+            age_threshold_years=8,
+        )
+        # 75k >= 50k → tier has age_coverage_percent=80, vehicle is 10y >= 8y → 80%
+        assert result.inputs.coverage_percent == 90  # mileage-based
+        assert result.inputs.coverage_percent_effective == 80  # age-adjusted
+        item = result.line_items[0]
+        assert item.covered_amount == 800.0
+
+    def test_old_vehicle_high_km_uses_correct_tier(self, analyzer, covered_components, age_tier_scale):
+        """Old vehicle at high km uses the correct tier's age rate."""
+        result = analyzer.analyze(
+            claim_id="TEST_AGE_HIGH_KM",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=95000,
+            coverage_scale=age_tier_scale,
+            vehicle_age_years=10.0,
+            age_threshold_years=8,
+        )
+        # 95k >= 80k → tier: 70%/60%, vehicle is 10y >= 8y → 60%
+        assert result.inputs.coverage_percent == 70
+        assert result.inputs.coverage_percent_effective == 60
+        item = result.line_items[0]
+        assert item.covered_amount == 600.0
+
+    def test_old_vehicle_no_age_column_no_adjustment(self, analyzer, covered_components, no_age_scale):
+        """Old vehicle with policy lacking age column gets no age adjustment."""
+        result = analyzer.analyze(
+            claim_id="TEST_NO_AGE_COL",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=75000,
+            coverage_scale=no_age_scale,
+            vehicle_age_years=12.0,
+            age_threshold_years=None,  # No age threshold from extraction
+        )
+        # 75k >= 50k → 90%, no age column → stays at 90%
+        assert result.inputs.coverage_percent == 90
+        assert result.inputs.coverage_percent_effective == 90
+
+    def test_below_first_tier_old_vehicle_stays_at_100(self, analyzer, covered_components, age_tier_scale):
+        """Below first tier + old vehicle: stays at 100% (conservative)."""
+        result = analyzer.analyze(
+            claim_id="TEST_BELOW_FIRST",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=20000,
+            coverage_scale=age_tier_scale,
+            vehicle_age_years=10.0,
+            age_threshold_years=8,
+        )
+        # 20k < 50k → 100%, below first tier so no age rate defined → stays 100%
+        assert result.inputs.coverage_percent == 100
+        assert result.inputs.coverage_percent_effective == 100
+
+    def test_old_list_format_backward_compat(self, analyzer, covered_components):
+        """Old list format (no age_coverage_percent) works without age adjustment."""
+        old_scale = [
+            {"km_threshold": 50000, "coverage_percent": 80},
+            {"km_threshold": 100000, "coverage_percent": 60},
+        ]
+        result = analyzer.analyze(
+            claim_id="TEST_OLD_FORMAT",
+            line_items=[{"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0}],
+            covered_components=covered_components,
+            vehicle_km=75000,
+            coverage_scale=old_scale,
+            vehicle_age_years=10.0,
+            age_threshold_years=8,
+        )
+        # Old format has no age_coverage_percent → no age adjustment
+        assert result.inputs.coverage_percent == 80
+        assert result.inputs.coverage_percent_effective == 80
+        item = result.line_items[0]
+        assert item.covered_amount == 800.0

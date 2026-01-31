@@ -250,22 +250,24 @@ class CoverageAnalysisService:
 
     def _extract_coverage_scale(
         self, claim_facts: Dict[str, Any]
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Tuple[Optional[int], Optional[List[Dict[str, Any]]]]:
         """Extract coverage scale from claim facts.
+
+        Supports both old (list) and new (dict with age_threshold_years) formats
+        via ``_normalize_coverage_scale``.
 
         Args:
             claim_facts: Claim facts dictionary
 
         Returns:
-            List of {km_threshold, coverage_percent} dicts or None
+            Tuple of (age_threshold_years, tiers_list).
         """
+        from context_builder.coverage.analyzer import _normalize_coverage_scale
+
         facts = claim_facts.get("facts", [])
-        scale = self._extract_fact_value(facts, "coverage_scale")
+        raw_scale = self._extract_fact_value(facts, "coverage_scale")
 
-        if isinstance(scale, list):
-            return scale
-
-        return None
+        return _normalize_coverage_scale(raw_scale)
 
     def _parse_percent(self, value: Any) -> Optional[float]:
         """Parse a percentage value from various formats.
@@ -392,40 +394,6 @@ class CoverageAnalysisService:
 
         return age_years
 
-    def _get_age_coverage_params(
-        self,
-    ) -> Tuple[Optional[int], Optional[float]]:
-        """Get age-based coverage parameters from workspace assumptions.
-
-        NSA policies typically use "Dès 8 ans 40%" rule.
-
-        Returns:
-            Tuple of (age_threshold_years, age_coverage_percent)
-        """
-        # Default NSA values: "Dès 8 ans 40%"
-        age_threshold_years = 8
-        age_coverage_percent = 40.0
-
-        # Try to load from workspace assumptions
-        assumptions_path = self.storage.output_root / "config" / "assumptions.json"
-        if assumptions_path.exists():
-            try:
-                import json
-
-                with open(assumptions_path, "r", encoding="utf-8") as f:
-                    assumptions = json.load(f)
-                coverage_config = assumptions.get("coverage", {})
-                age_threshold_years = coverage_config.get(
-                    "age_threshold_years", age_threshold_years
-                )
-                age_coverage_percent = coverage_config.get(
-                    "age_coverage_percent", age_coverage_percent
-                )
-            except (json.JSONDecodeError, IOError) as e:
-                logger.debug(f"Could not load age params from assumptions: {e}")
-
-        return age_threshold_years, age_coverage_percent
-
     def _write_coverage_analysis(
         self, claim_run_path: Path, result: CoverageAnalysisResult
     ) -> Path:
@@ -506,12 +474,11 @@ class CoverageAnalysisService:
         covered_components = self._extract_covered_components(claim_facts)
         excluded_components = self._extract_excluded_components(claim_facts)
         vehicle_km = self._extract_vehicle_km(claim_facts)
-        coverage_scale = self._extract_coverage_scale(claim_facts)
+        age_threshold_years, coverage_scale = self._extract_coverage_scale(claim_facts)
         excess_percent, excess_minimum = self._extract_excess_info(claim_facts)
 
         # Extract vehicle age for age-based coverage reduction
         vehicle_age_years = self._extract_vehicle_age(claim_facts)
-        age_threshold_years, age_coverage_percent = self._get_age_coverage_params()
 
         age_info = ""
         if vehicle_age_years is not None:
@@ -535,7 +502,6 @@ class CoverageAnalysisService:
             claim_run_id=claim_run_id,
             vehicle_age_years=vehicle_age_years,
             age_threshold_years=age_threshold_years,
-            age_coverage_percent=age_coverage_percent,
         )
 
         # Write results

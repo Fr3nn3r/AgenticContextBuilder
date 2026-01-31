@@ -595,6 +595,13 @@ Examples:
         default=None,
         help="Comma-separated claim IDs to exclude from processing (e.g., CLM-001,CLM-002)",
     )
+    pipeline_run_group.add_argument(
+        "--skip-first",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Skip the first N claims (useful for resuming after a failure)",
+    )
 
     # Logging options for pipeline
     pipeline_logging_group = pipeline_parser.add_argument_group("Logging Options")
@@ -871,6 +878,13 @@ Examples:
         metavar="CLAIM_IDS",
         default=None,
         help="Comma-separated claim IDs to exclude from assessment (e.g., CLM-001,CLM-002)",
+    )
+    assess_parser.add_argument(
+        "--skip-first",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Skip the first N claims (useful for resuming after a failure)",
     )
     assess_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
@@ -1664,6 +1678,17 @@ def main():
                             print("[!] All claims were excluded - nothing to process")
                         return
 
+            # Apply --skip-first
+            skip_first = getattr(args, "skip_first", 0)
+            if skip_first > 0:
+                if skip_first >= len(claims):
+                    logger.warning(f"--skip-first {skip_first} >= total claims {len(claims)} — nothing to process")
+                    if not args.quiet:
+                        print(f"[!] --skip-first {skip_first} skips all {len(claims)} claim(s) — nothing to process")
+                    return
+                claims = claims[skip_first:]
+                logger.info(f"Skipped first {skip_first} claim(s), {len(claims)} remaining")
+
             # Parse --doc-types argument early (for dry-run display)
             # Note: "list" is handled earlier before path validation
             doc_type_filter = None
@@ -2312,6 +2337,17 @@ def main():
                         if not args.quiet:
                             print("[!] All claims were excluded - nothing to assess")
                         return
+
+            # Apply --skip-first
+            skip_first = getattr(args, "skip_first", 0)
+            if skip_first > 0:
+                if skip_first >= len(claim_ids):
+                    logger.warning(f"--skip-first {skip_first} >= total claims {len(claim_ids)} — nothing to assess")
+                    if not args.quiet:
+                        print(f"[!] --skip-first {skip_first} skips all {len(claim_ids)} claim(s) — nothing to assess")
+                    return
+                claim_ids = claim_ids[skip_first:]
+                logger.info(f"Skipped first {skip_first} claim(s), {len(claim_ids)} remaining")
 
             # Generate shared claim run ID and context for this CLI invocation
             shared_id = generate_claim_run_id()

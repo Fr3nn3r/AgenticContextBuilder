@@ -105,10 +105,7 @@ class CoverageInputs(BaseModel):
         None, description="Effective coverage percent after age adjustment"
     )
     age_threshold_years: Optional[int] = Field(
-        None, description="Age threshold in years for reduced coverage"
-    )
-    age_coverage_percent: Optional[float] = Field(
-        None, description="Coverage percentage for vehicles above age threshold"
+        None, description="Age threshold from policy (e.g., 8 from 'Dès 8 ans'). None if policy has no age rule."
     )
     excess_percent: Optional[float] = Field(
         None, description="Excess percentage from policy"

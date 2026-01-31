@@ -11,7 +11,11 @@ Confidence levels:
 
 import json
 import logging
+import random
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -37,6 +41,12 @@ class LLMMatcherConfig:
     review_needed_threshold: float = 0.60
     # Lower threshold for "not covered" - we're more willing to deny than approve
     review_needed_threshold_not_covered: float = 0.40
+    # Max concurrent LLM calls in batch_match (1 = sequential)
+    max_concurrent: int = 3
+    # Retry config for transient failures (rate limits, 5xx)
+    max_retries: int = 3
+    retry_base_delay: float = 1.0  # seconds, doubles each attempt
+    retry_max_delay: float = 15.0  # cap on backoff delay
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
@@ -49,6 +59,10 @@ class LLMMatcherConfig:
             min_confidence_for_coverage=config.get("min_confidence_for_coverage", 0.60),
             review_needed_threshold=config.get("review_needed_threshold", 0.60),
             review_needed_threshold_not_covered=config.get("review_needed_threshold_not_covered", 0.40),
+            max_concurrent=config.get("max_concurrent", 3),
+            max_retries=config.get("max_retries", 3),
+            retry_base_delay=config.get("retry_base_delay", 1.0),
+            retry_max_delay=config.get("retry_max_delay", 15.0),
         )
 
 
@@ -261,6 +275,160 @@ Determine if this item is covered under the policy."""
 
         return False
 
+    def _match_single(
+        self,
+        description: str,
+        item_type: str,
+        client: Any,
+        item_code: Optional[str] = None,
+        total_price: float = 0.0,
+        covered_categories: Optional[List[str]] = None,
+        covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        claim_id: Optional[str] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_context_description: Optional[str] = None,
+    ) -> LineItemCoverage:
+        """Match a single item using LLM with a specific client instance.
+
+        This is the core matching logic, separated from client management
+        so it can be used by both sequential and parallel batch modes.
+
+        Args:
+            description: Item description
+            item_type: Item type (parts, labor, fee)
+            client: AuditedOpenAIClient to use for this call
+            item_code: Optional item code
+            total_price: Item total price
+            covered_categories: Categories covered by policy
+            covered_components: Components per category from policy
+            excluded_components: Excluded components per category from policy
+            claim_id: Claim ID for audit context
+            covered_parts_in_claim: List of covered parts from this claim (for labor context)
+            repair_context_description: Section header or labor context for this item
+
+        Returns:
+            LineItemCoverage result
+        """
+        covered_categories = covered_categories or []
+        covered_components = covered_components or {}
+        excluded_components = excluded_components or {}
+
+        # Build prompt
+        messages = self._build_prompt_messages(
+            description=description,
+            item_type=item_type,
+            covered_categories=covered_categories,
+            covered_components=covered_components,
+            excluded_components=excluded_components,
+            covered_parts_in_claim=covered_parts_in_claim,
+            repair_context_description=repair_context_description,
+        )
+
+        # Set context on the provided client
+        client.set_context(
+            claim_id=claim_id,
+            call_purpose="coverage_analysis",
+        )
+
+        # Retry loop with exponential backoff + jitter
+        last_error = None
+        max_attempts = max(1, self.config.max_retries)
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    # Mark as retry for audit trail
+                    last_call_id = getattr(client, "get_last_call_id", lambda: None)()
+                    if last_call_id and hasattr(client, "mark_retry"):
+                        client.mark_retry(last_call_id)
+
+                # Make LLM call
+                response = client.chat_completions_create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    response_format={"type": "json_object"},
+                )
+
+                # Parse response
+                content = response.choices[0].message.content
+                result = self._parse_llm_response(content)
+
+                # Cap confidence for vague descriptions to ensure human review
+                confidence = result.confidence
+                reasoning = result.reasoning
+                if self._detect_vague_description(description) and confidence > 0.50:
+                    confidence = 0.50
+                    reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
+
+                # Determine coverage status with asymmetric thresholds:
+                # - High bar (0.60) for approvals: be careful about paying out
+                # - Low bar (0.40) for denials: customer can appeal if wrong
+                if result.is_covered and confidence < self.config.review_needed_threshold:
+                    status = CoverageStatus.REVIEW_NEEDED
+                elif not result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
+                    status = CoverageStatus.REVIEW_NEEDED
+                elif result.is_covered:
+                    status = CoverageStatus.COVERED
+                else:
+                    status = CoverageStatus.NOT_COVERED
+
+                if attempt > 0:
+                    reasoning += f" [Succeeded on attempt {attempt + 1}]"
+
+                return LineItemCoverage(
+                    item_code=item_code,
+                    description=description,
+                    item_type=item_type,
+                    total_price=total_price,
+                    coverage_status=status,
+                    coverage_category=result.category,
+                    matched_component=result.matched_component,
+                    match_method=MatchMethod.LLM,
+                    match_confidence=confidence,
+                    match_reasoning=reasoning,
+                    covered_amount=total_price if status == CoverageStatus.COVERED else 0.0,
+                    not_covered_amount=0.0 if status == CoverageStatus.COVERED else total_price,
+                )
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts - 1:
+                    # Exponential backoff with full jitter to break thundering herd
+                    base_delay = min(
+                        self.config.retry_base_delay * (2 ** attempt),
+                        self.config.retry_max_delay,
+                    )
+                    delay = random.uniform(0, base_delay)
+                    logger.warning(
+                        "LLM call failed for '%s' (attempt %d/%d): %s. "
+                        "Retrying in %.1fs...",
+                        description[:40], attempt + 1, max_attempts, e, delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        "LLM coverage analysis failed for '%s' after %d attempts: %s",
+                        description[:40], max_attempts, e,
+                    )
+
+        return LineItemCoverage(
+            item_code=item_code,
+            description=description,
+            item_type=item_type,
+            total_price=total_price,
+            coverage_status=CoverageStatus.REVIEW_NEEDED,
+            coverage_category=None,
+            matched_component=None,
+            match_method=MatchMethod.LLM,
+            match_confidence=0.0,
+            match_reasoning=f"LLM analysis failed after {max_attempts} attempts: {str(last_error)}",
+            covered_amount=0.0,
+            not_covered_amount=total_price,
+        )
+
     def match(
         self,
         description: str,
@@ -291,94 +459,34 @@ Determine if this item is covered under the policy."""
         Returns:
             LineItemCoverage result
         """
-        covered_categories = covered_categories or []
-        covered_components = covered_components or {}
-        excluded_components = excluded_components or {}
-
-        # Build prompt
-        messages = self._build_prompt_messages(
+        client = self._get_client()
+        result = self._match_single(
             description=description,
             item_type=item_type,
+            client=client,
+            item_code=item_code,
+            total_price=total_price,
             covered_categories=covered_categories,
             covered_components=covered_components,
             excluded_components=excluded_components,
+            claim_id=claim_id,
             covered_parts_in_claim=covered_parts_in_claim,
             repair_context_description=repair_context_description,
         )
+        self._llm_calls += 1
+        return result
 
-        # Get client and set context
-        client = self._get_client()
-        client.set_context(
-            claim_id=claim_id,
-            call_purpose="coverage_analysis",
-        )
+    def _create_thread_client(self) -> Any:
+        """Create a per-thread AuditedOpenAIClient.
 
-        try:
-            # Make LLM call
-            response = client.chat_completions_create(
-                model=self.config.model,
-                messages=messages,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-                response_format={"type": "json_object"},
-            )
+        Shares the underlying OpenAI SDK client (thread-safe via httpx)
+        and the log sink (thread-safe via module-level lock), but gives
+        each thread its own audit context state.
+        """
+        from context_builder.services.llm_audit import AuditedOpenAIClient
 
-            self._llm_calls += 1
-
-            # Parse response
-            content = response.choices[0].message.content
-            result = self._parse_llm_response(content)
-
-            # Cap confidence for vague descriptions to ensure human review
-            confidence = result.confidence
-            reasoning = result.reasoning
-            if self._detect_vague_description(description) and confidence > 0.50:
-                confidence = 0.50
-                reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
-
-            # Determine coverage status with asymmetric thresholds:
-            # - High bar (0.60) for approvals: be careful about paying out
-            # - Low bar (0.40) for denials: customer can appeal if wrong
-            if result.is_covered and confidence < self.config.review_needed_threshold:
-                status = CoverageStatus.REVIEW_NEEDED
-            elif not result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
-                status = CoverageStatus.REVIEW_NEEDED
-            elif result.is_covered:
-                status = CoverageStatus.COVERED
-            else:
-                status = CoverageStatus.NOT_COVERED
-
-            return LineItemCoverage(
-                item_code=item_code,
-                description=description,
-                item_type=item_type,
-                total_price=total_price,
-                coverage_status=status,
-                coverage_category=result.category,
-                matched_component=result.matched_component,
-                match_method=MatchMethod.LLM,
-                match_confidence=confidence,
-                match_reasoning=reasoning,
-                covered_amount=total_price if status == CoverageStatus.COVERED else 0.0,
-                not_covered_amount=0.0 if status == CoverageStatus.COVERED else total_price,
-            )
-
-        except Exception as e:
-            logger.error(f"LLM coverage analysis failed: {e}")
-            return LineItemCoverage(
-                item_code=item_code,
-                description=description,
-                item_type=item_type,
-                total_price=total_price,
-                coverage_status=CoverageStatus.REVIEW_NEEDED,
-                coverage_category=None,
-                matched_component=None,
-                match_method=MatchMethod.LLM,
-                match_confidence=0.0,
-                match_reasoning=f"LLM analysis failed: {str(e)}",
-                covered_amount=0.0,
-                not_covered_amount=total_price,
-            )
+        base = self._get_client()
+        return AuditedOpenAIClient(base.client, base._sink)
 
     def batch_match(
         self,
@@ -392,8 +500,9 @@ Determine if this item is covered under the policy."""
     ) -> List[LineItemCoverage]:
         """Match multiple items using LLM.
 
-        Note: This makes one LLM call per item. For many items,
-        consider batching in the prompt or using keyword matching first.
+        Uses parallel execution when max_concurrent > 1 and there are
+        multiple items. Each worker thread gets its own AuditedOpenAIClient
+        to avoid shared-state races on set_context().
 
         Args:
             items: List of line item dictionaries
@@ -405,14 +514,40 @@ Determine if this item is covered under the policy."""
             covered_parts_in_claim: List of covered parts from this claim (for labor context)
 
         Returns:
-            List of LineItemCoverage results
+            List of LineItemCoverage results (same order as input items)
         """
+        if self.config.max_concurrent <= 1 or len(items) <= 1:
+            return self._batch_match_sequential(
+                items, covered_categories, covered_components,
+                excluded_components, claim_id, on_progress,
+                covered_parts_in_claim,
+            )
+
+        return self._batch_match_parallel(
+            items, covered_categories, covered_components,
+            excluded_components, claim_id, on_progress,
+            covered_parts_in_claim,
+        )
+
+    def _batch_match_sequential(
+        self,
+        items: List[Dict[str, Any]],
+        covered_categories: Optional[List[str]] = None,
+        covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        claim_id: Optional[str] = None,
+        on_progress: Optional[Callable[[int], None]] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+    ) -> List[LineItemCoverage]:
+        """Match items sequentially (original behavior)."""
         results = []
+        client = self._get_client()
 
         for item in items:
-            result = self.match(
+            result = self._match_single(
                 description=item.get("description", ""),
                 item_type=item.get("item_type", ""),
+                client=client,
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
                 covered_categories=covered_categories,
@@ -423,12 +558,99 @@ Determine if this item is covered under the policy."""
                 repair_context_description=item.get("repair_context_description"),
             )
             results.append(result)
+            self._llm_calls += 1
 
-            # Notify progress callback
             if on_progress:
                 on_progress(1)
 
-        logger.info(f"LLM matcher processed {len(items)} items with {self._llm_calls} LLM calls")
+        logger.info(f"LLM matcher processed {len(items)} items sequentially with {self._llm_calls} LLM calls")
+        return results
+
+    def _batch_match_parallel(
+        self,
+        items: List[Dict[str, Any]],
+        covered_categories: Optional[List[str]] = None,
+        covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        claim_id: Optional[str] = None,
+        on_progress: Optional[Callable[[int], None]] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+    ) -> List[LineItemCoverage]:
+        """Match items in parallel using ThreadPoolExecutor.
+
+        Each worker thread gets its own AuditedOpenAIClient instance
+        (sharing the underlying httpx client and log sink).
+        """
+        call_count_lock = threading.Lock()
+        progress_lock = threading.Lock()
+
+        def match_one(index: int, item: Dict[str, Any]) -> Tuple[int, LineItemCoverage]:
+            thread_client = self._create_thread_client()
+            result = self._match_single(
+                description=item.get("description", ""),
+                item_type=item.get("item_type", ""),
+                client=thread_client,
+                item_code=item.get("item_code"),
+                total_price=item.get("total_price") or 0.0,
+                covered_categories=covered_categories,
+                covered_components=covered_components,
+                excluded_components=excluded_components,
+                claim_id=claim_id,
+                covered_parts_in_claim=covered_parts_in_claim,
+                repair_context_description=item.get("repair_context_description"),
+            )
+
+            with call_count_lock:
+                self._llm_calls += 1
+
+            if on_progress:
+                with progress_lock:
+                    on_progress(1)
+
+            return (index, result)
+
+        max_workers = min(self.config.max_concurrent, len(items))
+        results: List[Optional[LineItemCoverage]] = [None] * len(items)
+
+        logger.info(
+            f"LLM matcher starting parallel processing: {len(items)} items, "
+            f"{max_workers} workers"
+        )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(match_one, i, item): i
+                for i, item in enumerate(items)
+            }
+
+            for future in as_completed(futures):
+                try:
+                    index, result = future.result()
+                    results[index] = result
+                except Exception as e:
+                    # Should not happen — _match_single catches internally.
+                    # But defend against unexpected errors.
+                    idx = futures[future]
+                    item = items[idx]
+                    logger.error(f"Unexpected error in parallel LLM match for item {idx}: {e}")
+                    results[idx] = LineItemCoverage(
+                        item_code=item.get("item_code"),
+                        description=item.get("description", ""),
+                        item_type=item.get("item_type", ""),
+                        total_price=item.get("total_price") or 0.0,
+                        coverage_status=CoverageStatus.REVIEW_NEEDED,
+                        coverage_category=None,
+                        matched_component=None,
+                        match_method=MatchMethod.LLM,
+                        match_confidence=0.0,
+                        match_reasoning=f"Parallel LLM analysis failed: {str(e)}",
+                        covered_amount=0.0,
+                        not_covered_amount=item.get("total_price") or 0.0,
+                    )
+                    with call_count_lock:
+                        self._llm_calls += 1
+
+        logger.info(f"LLM matcher processed {len(items)} items in parallel with {self._llm_calls} LLM calls")
         return results
 
     def get_llm_call_count(self) -> int:

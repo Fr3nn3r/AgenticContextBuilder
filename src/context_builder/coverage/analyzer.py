@@ -48,6 +48,29 @@ def _find_sibling(config_path: Path, pattern: str) -> Optional[Path]:
     return matches[0] if matches else None
 
 
+def _normalize_coverage_scale(
+    raw_scale: Any,
+) -> Tuple[Optional[int], Optional[List[Dict[str, Any]]]]:
+    """Normalize coverage_scale from either old or new format.
+
+    Old format (list): [{"km_threshold": 50000, "coverage_percent": 90}, ...]
+    New format (dict): {"age_threshold_years": 8, "tiers": [{"km_threshold": 50000, "coverage_percent": 90, "age_coverage_percent": 80}, ...]}
+
+    Returns:
+        Tuple of (age_threshold_years, tiers_list).
+        age_threshold_years is None if not present (old format or policy without age rule).
+        tiers_list is None if raw_scale is invalid/missing.
+    """
+    if isinstance(raw_scale, list):
+        # Old format — no age data
+        return None, raw_scale
+    elif isinstance(raw_scale, dict):
+        age_threshold = raw_scale.get("age_threshold_years")
+        tiers = raw_scale.get("tiers", [])
+        return age_threshold, tiers
+    return None, None
+
+
 @dataclass
 class ComponentConfig:
     """Customer-specific component vocabulary for coverage matching.
@@ -110,6 +133,9 @@ class AnalyzerConfig:
     # Maximum items to process with LLM (cost control)
     llm_max_items: int = 35
 
+    # Max concurrent LLM calls (1 = sequential, >1 = parallel)
+    llm_max_concurrent: int = 3
+
     # Config version for metadata
     config_version: str = "1.0"
 
@@ -120,6 +146,7 @@ class AnalyzerConfig:
             keyword_min_confidence=config.get("keyword_min_confidence", 0.80),
             use_llm_fallback=config.get("use_llm_fallback", True),
             llm_max_items=config.get("llm_max_items", 35),
+            llm_max_concurrent=config.get("llm_max_concurrent", 3),
             config_version=config.get("config_version", "1.0"),
         )
 
@@ -140,7 +167,8 @@ class RepairContext:
     primary_category: Optional[str] = None
 
     # Whether the primary component is covered by policy
-    is_covered: bool = False
+    # True = confirmed covered, False = confirmed not covered, None = uncertain
+    is_covered: Optional[bool] = False
 
     # Labor description that established the context
     source_description: Optional[str] = None
@@ -259,7 +287,6 @@ class CoverageAnalyzer:
         coverage_scale: Optional[List[Dict[str, Any]]],
         vehicle_age_years: Optional[float] = None,
         age_threshold_years: Optional[int] = None,
-        age_coverage_percent: Optional[float] = None,
     ) -> Tuple[Optional[float], Optional[float]]:
         """Determine coverage percentage from scale based on vehicle km and age.
 
@@ -267,27 +294,21 @@ class CoverageAnalyzer:
         - Below first threshold: 100% coverage (full coverage before any reduction)
         - At or above a threshold: that tier's percentage applies
 
-        Age-based reduction (e.g., "Dès 8 ans 40%"):
-        - If vehicle age >= age_threshold_years, use age_coverage_percent instead
-        - This overrides the mileage-based percentage when the vehicle is old
-
-        Example scale:
-        - A partir de 80,000 km = 80% -> vehicle at 51,134 km gets 100%
-        - A partir de 100,000 km = 70% -> vehicle at 85,000 km gets 80%
-        - A partir de 110,000 km = 50% (Dès 8 ans 40%) -> 10-year-old vehicle gets 40%
+        Per-tier age-based reduction (e.g., "Dès 8 ans 80%" at the 50k tier):
+        - If vehicle age >= age_threshold_years AND the matching tier has an
+          age_coverage_percent, use the tier's age rate instead of the normal rate
+        - If the policy has no age column (age_coverage_percent is null/missing),
+          no age adjustment is applied
 
         Args:
             vehicle_km: Current vehicle odometer in km
-            coverage_scale: List of {km_threshold, coverage_percent} dicts
+            coverage_scale: List of {km_threshold, coverage_percent, age_coverage_percent?} dicts
             vehicle_age_years: Vehicle age in years
             age_threshold_years: Age threshold for reduced coverage (e.g., 8)
-            age_coverage_percent: Coverage percent for old vehicles (e.g., 40)
 
         Returns:
             Tuple of (mileage_based_percent, effective_percent after age adjustment)
         """
-        mileage_percent = None
-
         if not vehicle_km or not coverage_scale:
             return None, None
 
@@ -300,31 +321,32 @@ class CoverageAnalyzer:
         first_threshold = sorted_scale[0].get("km_threshold", 0)
         if vehicle_km < first_threshold:
             mileage_percent = 100.0  # Full coverage before first reduction tier
+            tier_age_percent = None  # Below first tier — no age rate defined
         else:
             # Find the highest applicable tier (last one where km >= threshold)
-            mileage_percent = sorted_scale[0].get("coverage_percent")
+            applicable_tier = sorted_scale[0]
             for tier in sorted_scale:
-                threshold = tier.get("km_threshold", 0)
-                if vehicle_km >= threshold:
-                    mileage_percent = tier.get("coverage_percent")
+                if vehicle_km >= tier.get("km_threshold", 0):
+                    applicable_tier = tier
                 else:
-                    break  # Sorted ascending, so no need to check further
+                    break  # Sorted ascending, no need to check further
+            mileage_percent = applicable_tier.get("coverage_percent")
+            tier_age_percent = applicable_tier.get("age_coverage_percent")
 
-        # Apply age-based reduction if applicable
+        # Apply per-tier age-based reduction if applicable
         effective_percent = mileage_percent
         if (
             vehicle_age_years is not None
             and age_threshold_years is not None
-            and age_coverage_percent is not None
             and vehicle_age_years >= age_threshold_years
+            and tier_age_percent is not None
         ):
-            # Age override: use the lower of mileage-based or age-based percent
-            if mileage_percent is None or age_coverage_percent < mileage_percent:
-                effective_percent = age_coverage_percent
-                logger.info(
-                    f"Age-based coverage reduction: vehicle is {vehicle_age_years:.1f} years old "
-                    f"(>= {age_threshold_years}), using {age_coverage_percent}% instead of {mileage_percent}%"
-                )
+            effective_percent = tier_age_percent
+            logger.info(
+                f"Age-based coverage reduction: vehicle is {vehicle_age_years:.1f} years old "
+                f"(>= {age_threshold_years}), using tier age rate {tier_age_percent}% "
+                f"instead of {mileage_percent}%"
+            )
 
         return mileage_percent, effective_percent
 
@@ -345,6 +367,7 @@ class CoverageAnalyzer:
         self,
         line_items: List[Dict[str, Any]],
         covered_components: Dict[str, List[str]],
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> RepairContext:
         """Extract repair context from labor descriptions.
 
@@ -355,6 +378,7 @@ class CoverageAnalyzer:
         Args:
             line_items: All line items from the claim
             covered_components: Policy's covered components by category
+            excluded_components: Policy's excluded components by category
 
         Returns:
             RepairContext with detected component info
@@ -388,8 +412,29 @@ class CoverageAnalyzer:
                             component, category, covered_components,
                             strict=True,
                         )
-                        # None means uncertain — treat as not confirmed covered
-                        context.is_covered = bool(is_covered)
+
+                        if is_covered:
+                            context.is_covered = True
+                        else:
+                            # Part not in covered list — check if category is
+                            # covered and part is NOT explicitly excluded.
+                            # If so, treat as uncertain (needs human review).
+                            covered_cats = self._extract_covered_categories(covered_components)
+                            cat_covered = self._is_system_covered(category, covered_cats)
+
+                            if cat_covered and not self._is_component_excluded_by_policy(
+                                component, category, item.get("description", ""),
+                                excluded_components or {},
+                            ):
+                                context.is_covered = None  # uncertain
+                                logger.info(
+                                    "Repair context: '%s' in '%s' — category covered, "
+                                    "part not listed, NOT excluded → uncertain",
+                                    component, category,
+                                )
+                            else:
+                                context.is_covered = False
+
                         logger.debug(
                             f"Repair context: '{component}' in '{category}' "
                             f"(covered={context.is_covered}) from '{description[:50]}...'"
@@ -405,6 +450,87 @@ class CoverageAnalyzer:
             )
 
         return context
+
+    def _is_component_excluded_by_policy(
+        self,
+        component: str,
+        category: str,
+        description: str,
+        excluded_components: Dict[str, List[str]],
+    ) -> bool:
+        """Check if a component is explicitly in the policy's exclusion list.
+
+        Uses the component's synonyms and the item description to match
+        against excluded parts for the relevant category (including aliases).
+
+        Args:
+            component: Component type (e.g., "angle_gearbox")
+            category: Category name (e.g., "axle_drive")
+            description: Original item description
+            excluded_components: Policy's excluded components by category
+
+        Returns:
+            True if the component is explicitly excluded
+        """
+        if not excluded_components:
+            return False
+
+        # Collect excluded parts for this category (and its aliases)
+        category_lower = category.lower()
+        search_names = [category_lower]
+        search_names.extend(
+            self.component_config.category_aliases.get(category_lower, [])
+        )
+
+        excluded_parts: List[str] = []
+        for search_name in search_names:
+            for cat, parts in excluded_components.items():
+                cat_lower = cat.lower()
+                if (
+                    search_name == cat_lower
+                    or search_name in cat_lower
+                    or cat_lower in search_name
+                ):
+                    excluded_parts.extend(parts)
+
+        if not excluded_parts:
+            return False
+
+        excluded_lower = [p.lower() for p in excluded_parts]
+
+        # Check component name and synonyms against exclusion list
+        component_lower = component.lower().replace(" ", "_")
+        synonyms = (
+            self.component_config.component_synonyms.get(component_lower)
+            or self.component_config.component_synonyms.get(
+                component_lower.replace("_", " ")
+            )
+            or []
+        )
+
+        check_terms = [component_lower, component_lower.replace("_", " ")]
+        check_terms.extend(synonyms)
+
+        for term in check_terms:
+            for excl in excluded_lower:
+                if term in excl or excl in term:
+                    logger.debug(
+                        "Component '%s' matched exclusion '%s' (term='%s')",
+                        component, excl, term,
+                    )
+                    return True
+
+        # Check original description against exclusion list
+        desc_lower = description.lower()
+        for excl in excluded_lower:
+            if excl in desc_lower or desc_lower in excl:
+                logger.debug(
+                    "Description '%s' matched exclusion '%s'",
+                    description[:60], excl,
+                )
+                return True
+
+        return False
 
     def _is_system_covered(self, system: str, covered_categories: List[str]) -> bool:
         """Check if a system/category is covered by the policy.
@@ -1503,7 +1629,6 @@ class CoverageAnalyzer:
         on_llm_start: Optional[Callable[[int], None]] = None,
         vehicle_age_years: Optional[float] = None,
         age_threshold_years: Optional[int] = None,
-        age_coverage_percent: Optional[float] = None,
     ) -> CoverageAnalysisResult:
         """Analyze coverage for all line items in a claim.
 
@@ -1513,15 +1638,14 @@ class CoverageAnalyzer:
             covered_components: Dict of category -> list of covered parts
             excluded_components: Dict of category -> list of excluded parts
             vehicle_km: Current vehicle odometer reading
-            coverage_scale: List of {km_threshold, coverage_percent}
+            coverage_scale: List of {km_threshold, coverage_percent, age_coverage_percent?}
             excess_percent: Excess percentage from policy
             excess_minimum: Minimum excess amount
             claim_run_id: Optional claim run ID for output
             on_llm_progress: Callback for LLM progress updates (increment)
             on_llm_start: Callback when LLM matching starts (total count)
             vehicle_age_years: Vehicle age in years (for age-based coverage reduction)
-            age_threshold_years: Age threshold for reduced coverage (e.g., 8)
-            age_coverage_percent: Coverage percent for old vehicles (e.g., 40)
+            age_threshold_years: Age threshold for reduced coverage (from policy extraction, e.g., 8)
 
         Returns:
             CoverageAnalysisResult with all analysis data
@@ -1530,13 +1654,12 @@ class CoverageAnalyzer:
         covered_components = covered_components or {}
         excluded_components = excluded_components or {}
 
-        # Determine coverage percentage from scale (with age adjustment)
+        # Determine coverage percentage from scale (with per-tier age adjustment)
         mileage_percent, effective_percent = self._determine_coverage_percent(
             vehicle_km,
             coverage_scale,
             vehicle_age_years=vehicle_age_years,
             age_threshold_years=age_threshold_years,
-            age_coverage_percent=age_coverage_percent,
         )
 
         # Extract covered categories
@@ -1544,7 +1667,9 @@ class CoverageAnalyzer:
 
         # Extract repair context from labor descriptions
         # This helps avoid false consumable matches (e.g., "Ölkühler" vs "Ölfilter")
-        repair_context = self._extract_repair_context(line_items, covered_components)
+        repair_context = self._extract_repair_context(
+            line_items, covered_components, excluded_components
+        )
 
         # Log with age info if relevant
         age_info = ""
@@ -1661,7 +1786,9 @@ class CoverageAnalyzer:
 
             if items_for_llm:
                 if self.llm_matcher is None:
-                    self.llm_matcher = LLMMatcher()
+                    self.llm_matcher = LLMMatcher(
+                        config=LLMMatcherConfig(max_concurrent=self.config.llm_max_concurrent),
+                    )
 
                 # Notify about LLM work starting
                 if on_llm_start:
@@ -1811,7 +1938,6 @@ class CoverageAnalyzer:
             coverage_percent=mileage_percent,
             coverage_percent_effective=effective_percent,
             age_threshold_years=age_threshold_years,
-            age_coverage_percent=age_coverage_percent,
             excess_percent=excess_percent,
             excess_minimum=excess_minimum,
             covered_categories=covered_categories,
