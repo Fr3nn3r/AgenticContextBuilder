@@ -174,7 +174,7 @@ Each `assessment.json` contains:
 
 ## Evaluation Results History
 
-### Full Run History (15 evaluations)
+### Full Run History
 
 | # | Date | Eval ID | Accuracy | Appr OK | Deny OK | FRR | FAR | Top Error |
 |---|------|---------|----------|---------|---------|-----|-----|-----------|
@@ -190,9 +190,13 @@ Each `assessment.json` contains:
 | 10 | 01-29 | eval_20260129_225329 | 60% | 8/25 | 22/25 | 68% | 12% | false_reject:component (10) |
 | 11 | 01-30 | eval_20260130_032512 | 60% | 16/25 | 14/25 | 36% | 44% | amount_mismatch (10) |
 | 12 | 01-30 | eval_20260130_061455 | 66% | 13/25 | 20/25 | 48% | 20% | amount_mismatch (7) |
-| 13 | 01-30 | eval_20260130_073431 | **76%** | 16/25 | 22/25 | 36% | 12% | amount_mismatch (10) |
+| 13 | 01-30 | eval_20260130_073431 | 76% | 16/25 | 22/25 | 36% | 12% | amount_mismatch (10) |
 | 14 | 01-30 | eval_20260130_091345 | 58% | 12/25 | 16/25 | 52% | 36% | amount_mismatch (8) |
 | 15 | 01-30 | eval_20260130_103240 | 68% | 19/25 | 15/25 | 24% | 40% | amount_mismatch (13) |
+| 16–18 | 01-30 | (various) | 69–76% | — | — | — | — | amount_mismatch |
+| 19 | 01-30 | eval_20260130_180826 | 92% | 22/26 | 24/24 | 15% | 0% | amount_mismatch (13) |
+| 20 | 01-31 | eval_20260131_072810 | 80% | 25/26 | 15/24 | 4% | 38% | amount_mismatch (15) — regression from component_name |
+| 21 | 01-31 | eval_20260131_104745 | **94%** | 23/26 | 24/24 | 12% | 0% | amount_mismatch (15) |
 
 **FRR** = False Reject Rate, **FAR** = False Approve Rate
 
@@ -209,7 +213,8 @@ Both repos are tagged on each eval for reproducibility.
 | #17 | 72% | `eval-17-72pct` (de4b91c) | `eval-17-72pct` (a337e59) | Screener age-based coverage reduction |
 | #18 | 76% | `eval-18-76pct` (c743193) | `eval-18-76pct` (e1a8c23) | Improved coverage analysis and keyword matching |
 | #19 | **92%** | `eval-19-92pct` (fa41bdc) | `eval-19-92pct` (e1a8c23) | Best result. Same customer config as #18, code improvements. Renamed from eval-19-86pct. |
-| #20 | 80% | `eval-20-80pct` (a9af7dc) | `eval-20-80pct` (a3fbd15) | Regression — config changes caused 9 false approves. Renamed from eval-20-92pct. |
+| #20 | 80% | `eval-20-80pct` (a9af7dc) | `eval-20-80pct` (a3fbd15) | Regression — component_name bypassed Stage 2.5 safety net. Renamed from eval-20-92pct. |
+| #21 | **94%** | `eval-21-94pct` (e52e1ba) | `eval-21-94pct` (8300278) | New best. Stripped component_name, kept other config improvements, LLM max 35. |
 
 **Process**: After every future eval:
 1. Sync customer config: `powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"`
@@ -217,19 +222,20 @@ Both repos are tagged on each eval for reproducibility.
 3. Commit + tag main repo: `git -C <main-repo> tag -a eval-NN-XXpct`
 4. Record tags in the table above
 
-### Best Result: eval_20260130_180826 (92%)
+### Best Result: eval_20260131_104745 (94%, eval #21)
 
-- 46/50 correct (22 approved + 24 denied)
-- FRR=15.4%, FAR=0% (zero false approves)
-- Main issue: `amount_mismatch` (13) — correct decisions but wrong payout amounts
-- Tagged as `eval-19-92pct` in both repos
+- 47/50 correct (23 approved + 24 denied)
+- FRR=11.5%, FAR=0% (zero false approves, perfect denial accuracy)
+- Main issue: `amount_mismatch` (15) — correct decisions but wrong payout amounts
+- Tagged as `eval-21-94pct` in both repos
+- Changes from eval #19 (92%): stripped `component_name` from keyword mappings, added door lock/mirror keywords, `comfort_options` in labor categories, age-based reduction disabled, LLM max items bumped to 35
 - This is the target to beat
 
-### Latest Result: clm_20260131_065503_4e3b0a (92%, eval #21)
+### Previous Best: eval_20260130_180826 (92%, eval #19)
 
-- 92% accuracy — matches best result after reverting config to eval-19-92pct baseline
-- Config reverted from eval-20-80pct (which regressed to 80% due to broad keyword mappings)
-- Confirms the 92% config is reproducible
+- 46/50 correct (22 approved + 24 denied)
+- FRR=15.4%, FAR=0%
+- Tagged as `eval-19-92pct`
 
 ### Key Patterns Across All Runs
 
@@ -326,12 +332,11 @@ Input Claim
 
 | Priority | Issue | Impact | Claims | Status |
 |----------|-------|--------|--------|--------|
-| P0 | `component_coverage` false rejects | Approved claims wrongly rejected | 64358, 64836, 65040, 65047, 65055, 65150 | Active |
-| P0 | `amount_mismatch` (payout calculation) | Correct decisions with wrong amounts (13 claims) | Various | Persistent |
-| P1 | `false_approve` | Denied claims wrongly approved (6 claims) | Various | Regression from best (was 1) |
-| P1 | `refer_should_deny` (data gaps) | System refers instead of denying (4 claims) | Various | No failed checks to trigger rejection |
-| P2 | `service_compliance` false rejects | 2 approved claims wrongly rejected | 64168, 64659 | Stuck — same 2 claims every run |
-| P2 | `refer_should_approve` | System refers instead of approving (1 claim) | Various | No failed checks but won't commit |
+| P0 | `amount_mismatch` (payout calculation) | Correct decisions with wrong amounts (15 claims) | Various | Persistent — #1 error since eval #6 |
+| P1 | `false_reject:component_coverage` | Approved claims wrongly rejected (2 claims) | TBD | Reduced from 6 → 2 in eval #21 |
+| P1 | `refer_should_approve` | System refers instead of approving (1 claim) | TBD | Persistent |
+| ~~P1~~ | ~~`false_approve`~~ | ~~Denied claims wrongly approved~~ | — | **Fixed** in eval #21 (was 9 in eval #20, 0 now) |
+| ~~P1~~ | ~~`refer_should_deny`~~ | ~~System refers instead of denying~~ | — | **Fixed** in eval #21 (0 now) |
 
 ## Related Documentation
 
