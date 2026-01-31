@@ -205,6 +205,11 @@ Both repos are tagged on each eval for reproducibility.
 | #13 | 76% | `eval-13-76pct` (b07dbc7) | `eval-13-76pct` (735b6c4) | Customer tag approximate — config not committed at eval time |
 | #14 | 56% | `eval-14-56pct` (b07dbc7) | `eval-14-56pct` (ecca6ad) | Same code commit, different config |
 | #15 | 68% | `eval-15-68pct` (8910dd3) | `eval-15-68pct` (4832281) | Reverted damage_date hard_fail, simplified assessment prompt |
+| #16 | 69% | `eval-16-69pct` (eac6f20) | `eval-16-69pct` (9cf0f3f) | Keyword matching implementation |
+| #17 | 72% | `eval-17-72pct` (de4b91c) | `eval-17-72pct` (a337e59) | Screener age-based coverage reduction |
+| #18 | 76% | `eval-18-76pct` (c743193) | `eval-18-76pct` (e1a8c23) | Improved coverage analysis and keyword matching |
+| #19 | **92%** | `eval-19-92pct` (fa41bdc) | `eval-19-92pct` (e1a8c23) | Best result. Same customer config as #18, code improvements. Renamed from eval-19-86pct. |
+| #20 | 80% | `eval-20-80pct` (a9af7dc) | `eval-20-80pct` (a3fbd15) | Regression — config changes caused 9 false approves. Renamed from eval-20-92pct. |
 
 **Process**: After every future eval:
 1. Sync customer config: `powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"`
@@ -212,29 +217,19 @@ Both repos are tagged on each eval for reproducibility.
 3. Commit + tag main repo: `git -C <main-repo> tag -a eval-NN-XXpct`
 4. Record tags in the table above
 
-### Best Result: eval_20260130_073431 (76%)
+### Best Result: eval_20260130_180826 (92%)
 
-- 38/50 correct (16 approved + 22 denied)
-- Balanced: FRR=36%, FAR=12%
-- Main issue: `amount_mismatch` (10) — correct decisions but wrong payout amounts
+- 46/50 correct (22 approved + 24 denied)
+- FRR=15.4%, FAR=0% (zero false approves)
+- Main issue: `amount_mismatch` (13) — correct decisions but wrong payout amounts
+- Tagged as `eval-19-92pct` in both repos
 - This is the target to beat
 
-### Latest Result: eval_20260130_103240 (68%)
+### Latest Result: clm_20260131_065503_4e3b0a (92%, eval #21)
 
-- 34/50 correct (19 approved + 15 denied)
-- Best approval accuracy so far (19/25), weaker on denials (15/25)
-- FRR=24% (best ever), FAR=40% (regression — too permissive on denials)
-
-**Error breakdown**:
-
-| Error | Count | Trend vs Best (76%) |
-|-------|-------|---------------------|
-| `amount_mismatch` | 13 | Worse (was 10) |
-| `false_approve` | 6 | Worse (was 1) |
-| `refer_should_deny:no_fails` | 4 | Worse (was 2) |
-| `false_reject:component_coverage` | 2 | Improved (was 6) |
-| `false_reject:service_compliance` | 2 | Same |
-| `refer_should_approve:no_fails` | 1 | Same (was 0→1) |
+- 92% accuracy — matches best result after reverting config to eval-19-92pct baseline
+- Config reverted from eval-20-80pct (which regressed to 80% due to broad keyword mappings)
+- Confirms the 92% config is reproducible
 
 ### Key Patterns Across All Runs
 

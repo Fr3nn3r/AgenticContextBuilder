@@ -227,7 +227,7 @@ class AnalyzerConfig:
     use_llm_fallback: bool = True
 
     # Maximum items to process with LLM (cost control)
-    llm_max_items: int = 20
+    llm_max_items: int = 35
 
     # Config version for metadata
     config_version: str = "1.0"
@@ -238,7 +238,7 @@ class AnalyzerConfig:
         return cls(
             keyword_min_confidence=config.get("keyword_min_confidence", 0.80),
             use_llm_fallback=config.get("use_llm_fallback", True),
-            llm_max_items=config.get("llm_max_items", 20),
+            llm_max_items=config.get("llm_max_items", 35),
             config_version=config.get("config_version", "1.0"),
         )
 
