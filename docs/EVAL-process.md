@@ -1,6 +1,6 @@
 # NSA Pipeline Evaluation Process
 
-**Status**: 15 iterations complete, best accuracy **76%**, latest **68%**
+**Status**: 22 iterations complete, best accuracy **94%** (eval #21), latest **92%** (eval #22)
 
 ## Quick Start
 
@@ -215,6 +215,7 @@ Both repos are tagged on each eval for reproducibility.
 | #19 | **92%** | `eval-19-92pct` (fa41bdc) | `eval-19-92pct` (e1a8c23) | Best result. Same customer config as #18, code improvements. Renamed from eval-19-86pct. |
 | #20 | 80% | `eval-20-80pct` (a9af7dc) | `eval-20-80pct` (a3fbd15) | Regression — component_name bypassed Stage 2.5 safety net. Renamed from eval-20-92pct. |
 | #21 | **94%** | `eval-21-94pct` (e52e1ba) | `eval-21-94pct` (8300278) | New best. Stripped component_name, kept other config improvements, LLM max 35. |
+| #22 | 92% | `eval-22-92pct` (59d16a4) | `eval-22-92pct` (7861d6a) | Refactored coverage analyzer: externalized config, primary repair on schema, null-primary reject logic. |
 
 **Process**: After every future eval:
 1. Sync customer config: `powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"`
@@ -332,11 +333,12 @@ Input Claim
 
 | Priority | Issue | Impact | Claims | Status |
 |----------|-------|--------|--------|--------|
-| P0 | `amount_mismatch` (payout calculation) | Correct decisions with wrong amounts (15 claims) | Various | Persistent — #1 error since eval #6 |
-| P1 | `false_reject:component_coverage` | Approved claims wrongly rejected (2 claims) | TBD | Reduced from 6 → 2 in eval #21 |
-| P1 | `refer_should_approve` | System refers instead of approving (1 claim) | TBD | Persistent |
-| ~~P1~~ | ~~`false_approve`~~ | ~~Denied claims wrongly approved~~ | — | **Fixed** in eval #21 (was 9 in eval #20, 0 now) |
-| ~~P1~~ | ~~`refer_should_deny`~~ | ~~System refers instead of denying~~ | — | **Fixed** in eval #21 (0 now) |
+| P0 | `amount_mismatch` (payout calculation) | Correct decisions with wrong amounts (14 claims) | Various | Persistent — #1 error since eval #6 |
+| P1 | `false_reject:component_coverage` | Approved claims wrongly rejected (2 claims) | 64358, 65040 | Persistent — angle gearbox not in policy list, trunk ECU unresolvable |
+| P1 | `refer_should_approve` | System refers instead of approving (1 claim) | 65055 | Persistent |
+| P2 | `false_approve` | Denied claim wrongly approved (1 claim) | TBD | New in eval #22 (was 0 in #21) — investigate |
+| P2 | `refer_should_deny` | System refers instead of denying (1 claim) | 64961 | New in eval #22 — 3 review-needed items cause uncertainty |
+| ~~P1~~ | ~~`false_approve` (eval #20)~~ | ~~Denied claims wrongly approved (9)~~ | — | **Fixed** in eval #21 (component_name stripped) |
 
 ## Related Documentation
 
