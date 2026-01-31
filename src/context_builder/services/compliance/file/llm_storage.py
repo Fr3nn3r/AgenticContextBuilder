@@ -143,28 +143,18 @@ class FileLLMCallSink(LLMCallSink):
         # Serialize the record
         line = json.dumps(asdict(record), ensure_ascii=False, default=str) + "\n"
 
-        # Thread-safe write using module-level lock
+        # Thread-safe append using module-level lock
         with _llm_write_lock:
-            tmp_file = self._path.with_suffix(".jsonl.tmp")
             try:
-                existing_content = ""
-                if self._path.exists():
-                    with open(self._path, "r", encoding="utf-8") as f:
-                        existing_content = f.read()
-
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    f.write(existing_content)
+                with open(self._path, "a", encoding="utf-8") as f:
                     f.write(line)
                     f.flush()
                     os.fsync(f.fileno())
 
-                tmp_file.replace(self._path)
                 logger.debug(f"Logged LLM call {record.call_id}")
 
             except IOError as e:
                 logger.warning(f"Failed to log LLM call: {e}")
-                if tmp_file.exists():
-                    tmp_file.unlink()
 
         return record
 

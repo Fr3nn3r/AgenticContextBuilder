@@ -424,9 +424,9 @@ class CoverageAnalyzer:
                             covered_cats = self._extract_covered_categories(covered_components)
                             cat_covered = self._is_system_covered(category, covered_cats)
 
-                            if cat_covered and not self._is_component_excluded_by_policy(
+                            if cat_covered and excluded_components and not self._is_component_excluded_by_policy(
                                 component, category, item.get("description", ""),
-                                excluded_components or {},
+                                excluded_components,
                             ):
                                 context.is_covered = True
                                 logger.info(

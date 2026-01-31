@@ -89,6 +89,21 @@ Extract ALL line items visible on THIS PAGE. Each item needs:
    - "ZUB 8W0616887" → item_code: "8W0616887"
    - The prefix can optionally be noted in the description if relevant.
 
+8. **Eurotax dual-column format (Travail + Matériel)**: Some cost estimates (EurotaxGlass's / EC2) show
+   a `Travail` (labor) column AND a `Matériel` (material/parts) column on the SAME row. When a row has
+   BOTH a Travail amount and a Matériel amount, emit TWO line items:
+   - One with `item_type: "labor"` and `total_price` = the Travail amount
+   - One with `item_type: "parts"` and `total_price` = the Matériel amount
+   Both items share the same `item_code` and `description`. If a row has only Travail (no Matériel) or
+   only Matériel (no Travail), emit a single item. The `Temps de travail` column is hours worked — do NOT
+   use it as a price. Labor price is in the `Travail` column (hours × hourly rate).
+
+9. **Replacement parts cross-reference tables (DO NOT extract)**: Eurotax/EC2 documents include a
+   "Désignation pièce / Désignation pièce précédente" table that maps original part numbers to
+   replacement part numbers. This is a cross-reference for ordering, NOT additional line items. Do NOT
+   extract items from these tables — they duplicate the items already extracted from the detailed
+   calculation page. Similarly, skip "Désignation pièce / Position / Désignation position" tables.
+
 ## Output Format
 
 Return JSON:
