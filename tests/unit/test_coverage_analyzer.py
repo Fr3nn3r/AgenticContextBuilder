@@ -11,6 +11,8 @@ from context_builder.coverage.analyzer import (
     CoverageAnalyzer,
     _normalize_coverage_scale,
 )
+from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatcher
+from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import (
     CoverageStatus,
     LineItemCoverage,
@@ -18,31 +20,59 @@ from context_builder.coverage.schemas import (
     PrimaryRepairResult,
 )
 
+_WORKSPACE_COVERAGE_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "workspaces" / "nsa" / "config" / "coverage"
+)
+
+
+def _load_yaml(filename: str) -> dict:
+    """Load a YAML file from the NSA workspace coverage config directory."""
+    path = _WORKSPACE_COVERAGE_DIR / filename
+    if not path.exists():
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
 
 @pytest.fixture(scope="session")
 def nsa_component_config():
     """Load the NSA component config from the workspace YAML file."""
-    config_path = (
-        Path(__file__).resolve().parents[2]
-        / "workspaces" / "nsa" / "config" / "coverage" / "nsa_component_config.yaml"
-    )
-    if config_path.exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+    data = _load_yaml("nsa_component_config.yaml")
+    if data:
         return ComponentConfig.from_dict(data)
     return ComponentConfig.default()
+
+
+@pytest.fixture(scope="session")
+def nsa_rule_config():
+    """Load NSA rule config from workspace."""
+    data = _load_yaml("nsa_coverage_config.yaml")
+    return RuleConfig.from_dict(data.get("rules", {}))
+
+
+@pytest.fixture(scope="session")
+def nsa_keyword_config():
+    """Load NSA keyword config from workspace."""
+    data = _load_yaml("nsa_keyword_mappings.yaml")
+    return KeywordConfig.from_dict(data)
 
 
 class TestCoverageAnalyzer:
     """Tests for CoverageAnalyzer class."""
 
     @pytest.fixture
-    def analyzer(self):
-        """Create analyzer with LLM disabled for faster tests."""
+    def analyzer(self, nsa_rule_config, nsa_keyword_config, nsa_component_config):
+        """Create analyzer with NSA config, LLM disabled for faster tests."""
         config = AnalyzerConfig(
             use_llm_fallback=False,  # Disable LLM for unit tests
         )
-        return CoverageAnalyzer(config=config)
+        return CoverageAnalyzer(
+            config=config,
+            rule_engine=RuleEngine(nsa_rule_config),
+            keyword_matcher=KeywordMatcher(nsa_keyword_config),
+            component_config=nsa_component_config,
+        )
 
     @pytest.fixture
     def sample_line_items(self):
@@ -1324,9 +1354,14 @@ class TestPerTierAgeCoverage:
     """Tests for per-tier age-adjusted coverage rates."""
 
     @pytest.fixture
-    def analyzer(self):
+    def analyzer(self, nsa_rule_config, nsa_keyword_config, nsa_component_config):
         config = AnalyzerConfig(use_llm_fallback=False)
-        return CoverageAnalyzer(config=config)
+        return CoverageAnalyzer(
+            config=config,
+            rule_engine=RuleEngine(nsa_rule_config),
+            keyword_matcher=KeywordMatcher(nsa_keyword_config),
+            component_config=nsa_component_config,
+        )
 
     @pytest.fixture
     def covered_components(self):

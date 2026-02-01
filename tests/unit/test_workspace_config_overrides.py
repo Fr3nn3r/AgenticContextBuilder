@@ -19,7 +19,6 @@ from context_builder.extraction.spec_loader import (
 from context_builder.classification.openai_classifier import (
     load_doc_type_catalog,
     _resolve_catalog_path,
-    DOC_TYPE_CATALOG_PATH,
 )
 from context_builder.config.tenant import (
     TenantConfig,
@@ -251,8 +250,8 @@ doc_types:
             resolved = _resolve_catalog_path()
             assert resolved == override_catalog
 
-    def test_resolve_catalog_path_falls_back_to_repo(self, tmp_path):
-        """Test that catalog falls back to repo when no workspace override."""
+    def test_resolve_catalog_path_returns_none_without_workspace_catalog(self, tmp_path):
+        """Test that catalog returns None when no workspace catalog exists."""
         workspace_config = tmp_path / "config"
         workspace_config.mkdir(parents=True)
 
@@ -260,7 +259,7 @@ doc_types:
             mock_config.return_value = workspace_config
 
             resolved = _resolve_catalog_path()
-            assert resolved == DOC_TYPE_CATALOG_PATH
+            assert resolved is None
 
     def test_load_doc_type_catalog_uses_workspace_override(self, tmp_path):
         """Test that load_doc_type_catalog uses workspace override."""

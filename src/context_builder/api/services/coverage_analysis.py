@@ -53,17 +53,28 @@ class CoverageAnalysisService:
         if self._analyzer is not None:
             return self._analyzer
 
-        # Try to load config from workspace
+        # Try to load config from workspace using glob-based discovery
         workspace_root = self.storage.output_root
-        config_path = workspace_root / "config" / "coverage" / "nsa_coverage_config.yaml"
+        coverage_dir = workspace_root / "config" / "coverage"
+        config_path = None
 
-        if config_path.exists():
+        if coverage_dir.exists():
+            matches = list(coverage_dir.glob("*_coverage_config.yaml"))
+            if matches:
+                config_path = matches[0]
+                if len(matches) > 1:
+                    logger.warning(
+                        f"Multiple coverage configs found: {[m.name for m in matches]}, "
+                        f"using {config_path.name}"
+                    )
+
+        if config_path and config_path.exists():
             logger.info(f"Loading coverage config from {config_path}")
             self._analyzer = CoverageAnalyzer.from_config_path(
                 config_path, workspace_path=workspace_root
             )
         else:
-            logger.info("Using default coverage analyzer config")
+            logger.info("No coverage config found in workspace, using default analyzer")
             self._analyzer = CoverageAnalyzer(workspace_path=workspace_root)
 
         return self._analyzer

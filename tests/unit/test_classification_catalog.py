@@ -1,12 +1,15 @@
 """Unit tests for document type catalog and classification prompt."""
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 import yaml
 
 from context_builder.classification.openai_classifier import (
     load_doc_type_catalog,
     format_doc_type_catalog,
-    DOC_TYPE_CATALOG_PATH,
+    _resolve_catalog_path,
 )
 from context_builder.schemas.document_classification import (
     DocumentClassification,
@@ -14,10 +17,19 @@ from context_builder.schemas.document_classification import (
 )
 from context_builder.utils.prompt_loader import load_prompt
 
+_WORKSPACE_CATALOG = (
+    Path(__file__).resolve().parents[2]
+    / "workspaces" / "nsa" / "config" / "extraction_specs" / "doc_type_catalog.yaml"
+)
 
-def _load_repo_default_catalog():
-    """Load the repo default catalog directly, bypassing workspace overrides."""
-    with open(DOC_TYPE_CATALOG_PATH, "r", encoding="utf-8") as f:
+
+def _has_workspace_catalog() -> bool:
+    return _WORKSPACE_CATALOG.exists()
+
+
+def _load_workspace_catalog():
+    """Load the workspace catalog directly."""
+    with open(_WORKSPACE_CATALOG, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data.get("doc_types", [])
 
@@ -25,45 +37,60 @@ def _load_repo_default_catalog():
 class TestDocTypeCatalog:
     """Test cases for document type catalog loading."""
 
-    def test_catalog_file_exists(self):
-        """Test that the catalog YAML file exists."""
-        assert DOC_TYPE_CATALOG_PATH.exists(), (
-            f"Catalog file not found: {DOC_TYPE_CATALOG_PATH}"
-        )
+    def test_resolve_returns_none_without_workspace(self, tmp_path):
+        """_resolve_catalog_path returns None when workspace has no catalog."""
+        with patch(
+            "context_builder.classification.openai_classifier.get_workspace_config_dir",
+            return_value=tmp_path,
+        ):
+            result = _resolve_catalog_path()
+            assert result is None
 
-    def test_catalog_loads_successfully(self):
-        """Test that catalog loads without errors."""
-        doc_types = load_doc_type_catalog()
-        assert doc_types is not None
-        assert len(doc_types) > 0
+    def test_resolve_returns_path_with_workspace_catalog(self, tmp_path):
+        """_resolve_catalog_path returns path when workspace catalog exists."""
+        specs_dir = tmp_path / "extraction_specs"
+        specs_dir.mkdir()
+        catalog_file = specs_dir / "doc_type_catalog.yaml"
+        catalog_file.write_text("doc_types: []", encoding="utf-8")
 
-    def test_repo_default_catalog_has_required_doc_types(self):
-        """Test that repo default catalog contains all required document types."""
-        # Load repo default catalog directly (bypasses workspace overrides)
-        doc_types = _load_repo_default_catalog()
-        doc_type_names = [d["doc_type"] for d in doc_types]
+        with patch(
+            "context_builder.classification.openai_classifier.get_workspace_config_dir",
+            return_value=tmp_path,
+        ):
+            result = _resolve_catalog_path()
+            assert result == catalog_file
 
-        expected_types = [
-            "fnol_form",
-            "insurance_policy",
-            "police_report",
-            "invoice",
-            "id_document",
-            "vehicle_registration",
-            "certificate",
-            "medical_report",
-            "travel_itinerary",
-            "customer_comm",
-            "supporting_document",
-            "damage_evidence",
-        ]
+    def test_load_raises_without_workspace_catalog(self, tmp_path):
+        """load_doc_type_catalog raises ConfigurationError without catalog."""
+        with patch(
+            "context_builder.classification.openai_classifier.get_workspace_config_dir",
+            return_value=tmp_path,
+        ):
+            from context_builder.classification import ConfigurationError
+            with pytest.raises(ConfigurationError, match="not found in workspace"):
+                load_doc_type_catalog()
 
-        for expected in expected_types:
-            assert expected in doc_type_names, f"Missing doc_type: {expected}"
+    @pytest.mark.skipif(
+        not _has_workspace_catalog(),
+        reason="NSA workspace catalog not available",
+    )
+    def test_workspace_catalog_loads_successfully(self):
+        """Test that workspace catalog loads without errors."""
+        with patch(
+            "context_builder.classification.openai_classifier.get_workspace_config_dir",
+            return_value=_WORKSPACE_CATALOG.parents[1],
+        ):
+            doc_types = load_doc_type_catalog()
+            assert doc_types is not None
+            assert len(doc_types) > 0
 
-    def test_catalog_entries_have_required_fields(self):
+    @pytest.mark.skipif(
+        not _has_workspace_catalog(),
+        reason="NSA workspace catalog not available",
+    )
+    def test_workspace_catalog_entries_have_required_fields(self):
         """Test that each catalog entry has description and cues."""
-        doc_types = load_doc_type_catalog()
+        doc_types = _load_workspace_catalog()
 
         for entry in doc_types:
             assert "doc_type" in entry, f"Missing doc_type in entry: {entry}"
@@ -73,9 +100,13 @@ class TestDocTypeCatalog:
                 f"Doc type {entry['doc_type']} should have at least 3 cues"
             )
 
+    @pytest.mark.skipif(
+        not _has_workspace_catalog(),
+        reason="NSA workspace catalog not available",
+    )
     def test_format_doc_type_catalog(self):
         """Test that catalog formats correctly for prompt injection."""
-        doc_types = load_doc_type_catalog()
+        doc_types = _load_workspace_catalog()
         formatted = format_doc_type_catalog(doc_types)
 
         assert formatted is not None
@@ -83,6 +114,11 @@ class TestDocTypeCatalog:
         # Check that at least one doc type from the loaded catalog appears
         assert doc_types[0]["doc_type"] in formatted
         assert "Cues:" in formatted
+
+    def test_format_empty_catalog(self):
+        """Test that formatting empty catalog returns empty string."""
+        formatted = format_doc_type_catalog([])
+        assert formatted == ""
 
 
 class TestClassificationSchema:

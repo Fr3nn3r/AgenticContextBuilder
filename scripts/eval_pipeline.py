@@ -38,7 +38,7 @@ except ImportError:
 
 # Configuration
 WORKSPACE_PATH = Path("workspaces/nsa")
-GROUND_TRUTH_PATH = Path("data/08-NSA-Supporting-docs/claims_ground_truth.json")
+GROUND_TRUTH_PATH = Path("data/datasets/nsa-motor-eval-v1/ground_truth.json")
 
 
 def load_ground_truth() -> dict:
@@ -355,7 +355,7 @@ def save_results(results: list, summary: dict):
     return output_dir
 
 
-def update_metrics_history(output_dir: Path, summary: dict, description: str = ""):
+def update_metrics_history(output_dir: Path, summary: dict, description: str = "", ground_truth_path: Path = None):
     """Append this run to metrics_history.json for tracking over time."""
     history_path = WORKSPACE_PATH / "eval" / "metrics_history.json"
 
@@ -366,7 +366,7 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
     else:
         history = {
             "schema_version": "metrics_history_v1",
-            "ground_truth_path": str(GROUND_TRUTH_PATH),
+            "ground_truth_path": str(ground_truth_path or GROUND_TRUTH_PATH),
             "ground_truth_claims": summary["total_claims"],
             "runs": []
         }
@@ -416,7 +416,22 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Pipeline Evaluation")
     parser.add_argument("--run-id", nargs="+", default=None, help="Evaluate specific run ID(s). Multiple IDs: tries each in order per claim, uses first hit.")
+    gt_group = parser.add_mutually_exclusive_group()
+    gt_group.add_argument("--ground-truth", type=Path, default=None,
+        help="Path to ground truth JSON file")
+    gt_group.add_argument("--dataset", type=str, default=None,
+        help="Dataset ID from data/datasets/ (e.g., nsa-motor-eval-v1)")
+    parser.add_argument("--workspace", type=Path, default=None,
+        help="Workspace path (default: workspaces/nsa)")
     args = parser.parse_args()
+
+    global GROUND_TRUTH_PATH, WORKSPACE_PATH
+    if args.ground_truth:
+        GROUND_TRUTH_PATH = args.ground_truth
+    elif args.dataset:
+        GROUND_TRUTH_PATH = Path(f"data/datasets/{args.dataset}/ground_truth.json")
+    if args.workspace:
+        WORKSPACE_PATH = args.workspace
 
     print("=" * 60)
     print("Pipeline Evaluation")
@@ -480,7 +495,7 @@ def main():
     output_dir = save_results(results, summary)
 
     # Update metrics history for tracking
-    update_metrics_history(output_dir, summary)
+    update_metrics_history(output_dir, summary, ground_truth_path=GROUND_TRUTH_PATH)
 
     print()
     print(f"Results saved to: {output_dir}")

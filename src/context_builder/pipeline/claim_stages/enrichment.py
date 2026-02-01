@@ -310,10 +310,13 @@ class EnrichmentStage:
             # Get enricher for this workspace
             enricher = self._get_enricher(context.workspace_path)
 
-            # Load reconciliation report for gate status
-            report = self._load_reconciliation_report(
-                context.workspace_path, context.claim_id
-            )
+            # Use reconciliation report from pipeline context (preferred),
+            # falling back to disk for standalone enrichment runs
+            report = context.reconciliation_report
+            if report is None:
+                report = self._load_reconciliation_report(
+                    context.workspace_path, context.claim_id
+                )
 
             if report:
                 gate_status = report.gate.status.value

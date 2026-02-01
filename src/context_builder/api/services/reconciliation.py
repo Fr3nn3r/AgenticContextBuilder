@@ -9,6 +9,7 @@ This service orchestrates:
 
 import json
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -315,6 +316,25 @@ class ReconciliationService:
                 critical_facts.update(critical_by_doctype[doc_type])
         return critical_facts
 
+    @staticmethod
+    def _normalize_vin(vin: str) -> str:
+        """Normalize a VIN for comparison.
+
+        Per ISO 3779, VINs never contain letters I, O, or Q (to avoid
+        confusion with digits 1, 0, and 9).  OCR/extraction often
+        produces these ambiguous characters, so we normalize them.
+
+        Also strips whitespace and uppercases for consistent comparison.
+        """
+        result = vin.strip().upper()
+        result = result.replace("O", "0").replace("I", "1").replace("Q", "9")
+        # Remove any spaces/dashes that may appear in formatted VINs
+        result = re.sub(r"[\s\-]", "", result)
+        return result
+
+    # Fact names that should use VIN normalization before comparison.
+    _VIN_FACT_NAMES = {"vin", "chassis_number", "fahrgestellnummer", "vehicle_id"}
+
     def detect_conflicts(
         self, candidates: Dict[str, List[dict]]
     ) -> List[FactConflict]:
@@ -336,6 +356,9 @@ class ReconciliationService:
             if len(candidate_list) < 2:
                 continue  # Need at least 2 candidates to have a conflict
 
+            # Determine if this fact needs VIN normalization
+            is_vin_fact = fact_name.lower() in self._VIN_FACT_NAMES
+
             # Group by normalized value (or raw value if no normalized)
             values_to_sources: Dict[str, List[ConflictSource]] = defaultdict(list)
             value_to_confidence: Dict[str, float] = {}
@@ -347,6 +370,10 @@ class ReconciliationService:
 
                 # Convert to string for comparison
                 val_str = str(val)
+
+                # Apply VIN-specific normalization (O→0, I→1, Q→9)
+                if is_vin_fact:
+                    val_str = self._normalize_vin(val_str)
                 doc_id = candidate.get("doc_id", "unknown")
                 doc_type = candidate.get("doc_type", "unknown")
                 filename = candidate.get("filename", f"{doc_id}.pdf")

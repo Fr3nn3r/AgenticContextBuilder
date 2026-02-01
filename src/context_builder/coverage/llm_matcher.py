@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 class LLMMatcherConfig:
     """Configuration for LLM matcher."""
 
-    prompt_name: str = "nsa_coverage"  # Prompt file name (without .md)
+    prompt_name: str = "coverage"  # Prompt file name (without .md)
     model: str = "gpt-4o"
     temperature: float = 0.0
     max_tokens: int = 512
@@ -52,7 +52,7 @@ class LLMMatcherConfig:
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
         """Create config from dictionary."""
         return cls(
-            prompt_name=config.get("prompt_name", "nsa_coverage"),
+            prompt_name=config.get("prompt_name", "coverage"),
             model=config.get("model", "gpt-4o"),
             temperature=config.get("temperature", 0.0),
             max_tokens=config.get("max_tokens", 512),

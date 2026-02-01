@@ -81,6 +81,7 @@ python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 - Python: snake_case | TypeScript: camelCase | Classes: PascalCase
 - Test new/changed logic with PyTest or Jest
 - Do not start/stop dev servers automatically - ask user first
+- **Never run assess/pipeline on more than 3 claims at a time without explicit user permission** (LLM calls are expensive and slow)
 
 ## Architecture Rules (CRITICAL)
 

@@ -97,6 +97,7 @@ class ReconciliationStage:
             # Store in context for downstream stages
             context.aggregated_facts = claim_facts.model_dump(mode="json")
             context.facts_run_id = claim_facts.run_id
+            context.reconciliation_report = result.report
 
             # Log summary
             gate_status = result.report.gate.status.value if result.report else "unknown"

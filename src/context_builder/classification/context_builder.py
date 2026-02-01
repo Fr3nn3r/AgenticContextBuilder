@@ -62,15 +62,23 @@ def load_all_cue_phrases(catalog_path: Optional[Path] = None) -> List[str]:
     """
     Load all cue phrases from the doc_type_catalog.yaml.
 
+    Checks workspace config first, then falls back to provided path.
     Returns a flat list of all cues across all document types.
     """
     if catalog_path is None:
-        catalog_path = (
-            Path(__file__).parent.parent
-            / "extraction"
-            / "specs"
-            / "doc_type_catalog.yaml"
-        )
+        # Use workspace-aware resolution (same as openai_classifier)
+        try:
+            from context_builder.storage.workspace_paths import get_workspace_config_dir
+            workspace_config = get_workspace_config_dir()
+            workspace_catalog = workspace_config / "extraction_specs" / "doc_type_catalog.yaml"
+            if workspace_catalog.exists():
+                catalog_path = workspace_catalog
+        except Exception:
+            pass  # Workspace not available (e.g., in tests)
+
+    if catalog_path is None or not catalog_path.exists():
+        logger.warning("No doc type catalog found for cue phrase loading")
+        return []
 
     try:
         with open(catalog_path, "r", encoding="utf-8") as f:

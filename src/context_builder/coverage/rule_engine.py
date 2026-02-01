@@ -26,31 +26,6 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Keywords that indicate the item is a component, not a consumable,
-# even if the description contains a consumable keyword.
-# Example: "Kühlmittelpumpe" contains KÜHLMITTEL but is a pump.
-COMPONENT_OVERRIDE_PATTERNS = [
-    re.compile(r"PUMPE|PUMP", re.IGNORECASE),
-    re.compile(r"KOMPRESSOR|COMPRESSOR", re.IGNORECASE),
-    re.compile(r"KÜHLER|RADIATEUR|RADIATOR", re.IGNORECASE),
-    re.compile(r"THERMOSTAT", re.IGNORECASE),
-]
-
-# Rule 6: Descriptions with no semantic content (just generic placeholders).
-# These tell the LLM nothing useful — it returns low confidence every time.
-GENERIC_DESCRIPTION_PATTERN = re.compile(
-    r"^(ARBEIT:?|MATERIAL:?|REPARATURSATZ|DIVERSES|VARIOUS|DIVERS)$",
-    re.IGNORECASE,
-)
-
-# Rule 7: Standalone fastener items (screws, nuts, bolts).
-# Anchored with ^...$ so "VIS" matches but "SERVISE" or "VIS DE REGLAGE" does not.
-FASTENER_PATTERN = re.compile(
-    r"^(ECROU|MUTTER|SCHRAUBE|BOULON|VIS|BEFESTIGUNGSSCHRAUBE|"
-    r"SELBSTSICHERNDE MUTTER|GOUPILLE|SICHERUNGSRING|SICHERUNGSMUTTER)$",
-    re.IGNORECASE,
-)
-
 
 @dataclass
 class RuleConfig:
@@ -68,6 +43,16 @@ class RuleConfig:
     # Patterns that indicate labor for non-covered items
     non_covered_labor_patterns: List[str]
 
+    # Patterns that override consumable detection (indicates a component, not a consumable)
+    # Example: "Kühlmittelpumpe" contains KÜHLMITTEL but is a pump.
+    component_override_patterns: List[str]
+
+    # Rule 6: Generic/empty descriptions with no semantic content
+    generic_description_patterns: List[str]
+
+    # Rule 7: Standalone fastener items (screws, nuts, bolts)
+    fastener_patterns: List[str]
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "RuleConfig":
         """Create config from dictionary."""
@@ -76,36 +61,22 @@ class RuleConfig:
             exclusion_patterns=config.get("exclusion_patterns", []),
             consumable_patterns=config.get("consumable_patterns", []),
             non_covered_labor_patterns=config.get("non_covered_labor_patterns", []),
+            component_override_patterns=config.get("component_override_patterns", []),
+            generic_description_patterns=config.get("generic_description_patterns", []),
+            fastener_patterns=config.get("fastener_patterns", []),
         )
 
     @classmethod
     def default(cls) -> "RuleConfig":
-        """Create default NSA config."""
+        """Create empty default config (no customer-specific patterns)."""
         return cls(
             fee_item_types=["fee"],
-            exclusion_patterns=[
-                r"ENTSORGUNG",  # Disposal fees
-                r"UMWELT",  # Environmental fees
-                r"ERSATZFAHRZEUG",  # Rental car
-                r"MIETE",  # Rental
-                r"REINIGUNG",  # Cleaning
-                r"BRONZE",  # Bronze service (warranty-related cleaning)
-                r"ADBLUE",  # AdBlue / urea system — emissions, not covered
-                r"HARNSTOFF",  # Urea (German) — emissions, not covered
-            ],
-            consumable_patterns=[
-                r"MOTOROEL|MOTORÖL|ENGINE OIL",  # Engine oil
-                r"OELFILTER|ÖLFILTER|OIL FILTER",  # Oil filters
-                r"LUFTFILTER|AIR FILTER",  # Air filters
-                r"BREMSFLÜSSIGKEIT|BRAKE FLUID",  # Brake fluid
-                r"KÜHLMITTEL|COOLANT",  # Coolant
-                r"SCHEIBENWISCHERBLÄTTER|WIPER BLADES",  # Wiper blades
-            ],
-            non_covered_labor_patterns=[
-                r"DIAGNOSE",  # Diagnostic work
-                r"KONTROLLE",  # Inspection/control
-                r"PRÜFUNG",  # Testing
-            ],
+            exclusion_patterns=[],
+            consumable_patterns=[],
+            non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
         )
 
 
@@ -135,6 +106,27 @@ class RuleEngine:
         self._non_covered_labor_patterns = [
             re.compile(p, re.IGNORECASE) for p in self.config.non_covered_labor_patterns
         ]
+        self._component_override_patterns = [
+            re.compile(p, re.IGNORECASE) for p in self.config.component_override_patterns
+        ]
+
+        # Build combined generic description pattern (anchored ^...$)
+        if self.config.generic_description_patterns:
+            joined = "|".join(self.config.generic_description_patterns)
+            self._generic_description_pattern = re.compile(
+                f"^({joined})$", re.IGNORECASE
+            )
+        else:
+            self._generic_description_pattern = None
+
+        # Build combined fastener pattern (anchored ^...$)
+        if self.config.fastener_patterns:
+            joined = "|".join(self.config.fastener_patterns)
+            self._fastener_pattern = re.compile(
+                f"^({joined})$", re.IGNORECASE
+            )
+        else:
+            self._fastener_pattern = None
 
     def match(
         self,
@@ -188,7 +180,7 @@ class RuleEngine:
                     # Check if description also indicates a component (not consumable)
                     is_component = any(
                         cp.search(description)
-                        for cp in COMPONENT_OVERRIDE_PATTERNS
+                        for cp in self._component_override_patterns
                     )
                     if is_component:
                         logger.info(
@@ -244,7 +236,7 @@ class RuleEngine:
 
         # Rule 6: Generic/empty descriptions with no semantic content
         stripped = description.strip()
-        if GENERIC_DESCRIPTION_PATTERN.match(stripped):
+        if self._generic_description_pattern and self._generic_description_pattern.match(stripped):
             return self._create_not_covered(
                 description=description,
                 item_type=item_type,
@@ -254,7 +246,7 @@ class RuleEngine:
             )
 
         # Rule 7: Standalone fastener items -> REVIEW_NEEDED
-        if FASTENER_PATTERN.match(stripped):
+        if self._fastener_pattern and self._fastener_pattern.match(stripped):
             return self._create_review_needed(
                 description=description,
                 item_type=item_type,

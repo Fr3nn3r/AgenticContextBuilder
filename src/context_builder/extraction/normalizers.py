@@ -127,13 +127,21 @@ def validate_plate_like(value: Any) -> bool:
     return bool(re.match(r"^[A-Za-z]{3}\d{3,4}$", cleaned))
 
 
-def validate_vin_format(value: Any) -> bool:
-    """Validate that value looks like a VIN (17 alphanumeric chars)."""
+def normalize_vin(value: Any) -> str:
+    """Normalize a VIN to canonical form: uppercase, no spaces or hyphens."""
     import re
     s = safe_string(value)
     if not s:
+        return s
+    return re.sub(r"[\s-]", "", s.upper())
+
+
+def validate_vin_format(value: Any) -> bool:
+    """Validate that value looks like a VIN (17 alphanumeric chars)."""
+    import re
+    cleaned = normalize_vin(value)
+    if not cleaned:
         return False
-    cleaned = re.sub(r"[\s-]", "", s.upper())
     return len(cleaned) == 17 and bool(re.match(r"^[A-HJ-NPR-Z0-9]{17}$", cleaned))
 
 
@@ -144,6 +152,7 @@ def validate_vin_format(value: Any) -> bool:
 # All normalizer names map to safe_string - we keep the names for YAML compatibility
 NORMALIZERS: dict[str, Callable[[Any], str]] = {
     "uppercase_trim": safe_string,
+    "vin_canonical": normalize_vin,
     "date_to_iso": safe_string,
     "plate_normalize": safe_string,
     "none": safe_string,

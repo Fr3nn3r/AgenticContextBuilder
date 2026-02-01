@@ -17,7 +17,7 @@ You are helping run and analyze pipeline evaluations for 50 NSA motor insurance 
 
 1. Run the pipeline on all 50 eval claims:
    ```
-   python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2
+   python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims
    ```
 2. Note the claim run ID from output (or check `ls workspaces/nsa/claim_runs/` for newest folder)
 3. Run evaluation for that specific run:
@@ -36,7 +36,7 @@ Find and analyze these files for the claim (use the most recent claim run):
 - `workspaces/nsa/claims/<claim_id>/claim_runs/<run_id>/assessment.json` — final decision + rationale
 - `workspaces/nsa/claims/<claim_id>/claim_runs/<run_id>/claim_facts.json` — aggregated facts
 
-Cross-reference against ground truth in `data/08-NSA-Supporting-docs/claims_ground_truth.json`.
+Cross-reference against ground truth in `data/datasets/nsa-motor-eval-v1/ground_truth.json`.
 
 Report: what the system decided vs what was expected, which check caused the error, and what specifically went wrong.
 
@@ -91,7 +91,7 @@ Read `workspaces/nsa/eval/metrics_history.json` and report:
 
 | What | Path |
 |------|------|
-| Ground truth | `data/08-NSA-Supporting-docs/claims_ground_truth.json` |
+| Ground truth | `data/datasets/nsa-motor-eval-v1/ground_truth.json` |
 | Eval script | `scripts/eval_pipeline.py` |
 | Metrics history | `workspaces/nsa/eval/metrics_history.json` |
 | Regression claims | `workspaces/nsa/eval/regression_claims.json` |
@@ -99,12 +99,14 @@ Read `workspaces/nsa/eval/metrics_history.json` and report:
 | Full eval docs | `docs/EVAL-process.md` |
 | Claim assessments | `workspaces/nsa/claims/{claim_id}/claim_runs/{run_id}/assessment.json` |
 | Batch run manifests | `workspaces/nsa/claim_runs/{run_id}/manifest.json` |
+| Dataset registry | `data/datasets/registry.yaml` |
+| Eval claim docs | `data/datasets/nsa-motor-eval-v1/claims/` |
 | Customer config repo | `C:\Users\fbrun\Documents\GitHub\context-builder-nsa` |
 
 ## Important notes
 
 - **Always use `--run-id`** when evaluating. Without it, the script picks each claim's most recent assessment, which may mix results from different pipeline runs.
 - **Dependencies**: `pip install pandas openpyxl` (required by eval script)
-- The 4 development claims in `data/07-Claims-Motor-NSA/` are NOT in the ground truth — don't mix them up.
+- The 4 development claims in `data/datasets/nsa-motor-seed-v1/claims/` are NOT in the ground truth — don't mix them up.
 - `amount_mismatch` is the persistent #1 error above 50% accuracy — it's payout calculation, not decision logic.
 - Best result so far: **76%** (eval #13). That's the target to beat.

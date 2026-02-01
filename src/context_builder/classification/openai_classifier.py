@@ -42,37 +42,32 @@ from context_builder.schemas.decision_record import (
 
 logger = logging.getLogger(__name__)
 
-# Repo default path to doc type catalog
-SPECS_DIR = Path(__file__).parent.parent / "extraction" / "specs"
-DOC_TYPE_CATALOG_PATH = SPECS_DIR / "doc_type_catalog.yaml"
+def _resolve_catalog_path() -> Optional[Path]:
+    """Resolve doc type catalog path from workspace config.
 
-
-def _resolve_catalog_path() -> Path:
-    """Resolve doc type catalog path with workspace override support.
-
-    Checks workspace config first, then falls back to repo default.
+    The doc type catalog is workspace-specific (no core fallback).
+    Each workspace must provide its own catalog.
 
     Returns:
-        Path to the catalog file (may not exist - caller should check)
+        Path to the catalog file, or None if not found.
     """
-    # Check workspace config first
     workspace_config = get_workspace_config_dir()
     workspace_catalog = workspace_config / "extraction_specs" / "doc_type_catalog.yaml"
 
     if workspace_catalog.exists():
-        logger.debug(f"Using workspace catalog override: {workspace_catalog}")
+        logger.debug(f"Using workspace catalog: {workspace_catalog}")
         return workspace_catalog
 
-    # Fall back to repo default
-    logger.debug(f"Using repo default catalog: {DOC_TYPE_CATALOG_PATH}")
-    return DOC_TYPE_CATALOG_PATH
+    logger.warning(f"No doc type catalog found in workspace: {workspace_catalog}")
+    return None
 
 
 def load_doc_type_catalog() -> List[Dict[str, Any]]:
     """
-    Load the document type catalog from YAML file.
+    Load the document type catalog from workspace config.
 
-    Checks workspace config first, then falls back to repo default.
+    The catalog is workspace-specific and must be provided in
+    the active workspace's config/extraction_specs/ directory.
 
     Returns:
         List of doc type entries with doc_type, description, and cues.
@@ -82,10 +77,11 @@ def load_doc_type_catalog() -> List[Dict[str, Any]]:
     """
     catalog_path = _resolve_catalog_path()
 
-    if not catalog_path.exists():
+    if not catalog_path:
         raise ConfigurationError(
-            f"Document type catalog not found: {catalog_path}. "
-            f"Checked workspace config and repo default at: {DOC_TYPE_CATALOG_PATH}"
+            "Document type catalog not found in workspace config. "
+            "Expected at: <workspace>/config/extraction_specs/doc_type_catalog.yaml. "
+            "Each workspace must provide its own doc type catalog."
         )
 
     try:

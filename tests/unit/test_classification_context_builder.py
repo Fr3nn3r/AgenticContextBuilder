@@ -36,17 +36,42 @@ class TestNormalizeForMatching:
 class TestLoadAllCuePhrases:
     """Tests for cue phrase loading from catalog."""
 
-    def test_loads_cues_from_catalog(self):
-        cues = load_all_cue_phrases()
+    def test_loads_cues_from_catalog(self, tmp_path):
+        """Test loading cues from a catalog file."""
+        catalog = tmp_path / "doc_type_catalog.yaml"
+        catalog.write_text(
+            """doc_types:
+  - doc_type: test_type
+    description: Test doc
+    cues:
+      - fnol
+      - invoice
+      - police report
+""",
+            encoding="utf-8",
+        )
+        cues = load_all_cue_phrases(catalog_path=catalog)
         assert len(cues) > 0
-        # Should include known cues from different doc types
         cues_lower = [c.lower() for c in cues]
         assert "fnol" in cues_lower
         assert "invoice" in cues_lower
         assert "police report" in cues_lower
 
-    def test_removes_duplicates(self):
-        cues = load_all_cue_phrases()
+    def test_removes_duplicates(self, tmp_path):
+        """Test that duplicate cues are removed."""
+        catalog = tmp_path / "doc_type_catalog.yaml"
+        catalog.write_text(
+            """doc_types:
+  - doc_type: type_a
+    description: A
+    cues: [fnol, claim, report]
+  - doc_type: type_b
+    description: B
+    cues: [claim, invoice, report]
+""",
+            encoding="utf-8",
+        )
+        cues = load_all_cue_phrases(catalog_path=catalog)
         cues_lower = [c.lower() for c in cues]
         assert len(cues_lower) == len(set(cues_lower))
 

@@ -475,10 +475,13 @@ class ScreeningStage:
             # Get screener for this workspace
             screener = self._get_screener(context.workspace_path)
 
-            # Load reconciliation report for VIN conflicts etc.
-            report = self._load_reconciliation_report(
-                context.workspace_path, context.claim_id
-            )
+            # Use reconciliation report from pipeline context (preferred),
+            # falling back to disk for standalone screening runs
+            report = context.reconciliation_report
+            if report is None:
+                report = self._load_reconciliation_report(
+                    context.workspace_path, context.claim_id
+                )
 
             # Run screening
             screening_result, coverage_result = screener.screen(

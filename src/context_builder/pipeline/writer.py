@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,8 @@ class ResultWriter:
 
     def copy_file(self, src: Path, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
+        if os.path.exists(src) and os.path.exists(dest) and os.path.samefile(src, dest):
+            return  # Source and destination are the same file (e.g. --from-workspace)
         shutil.copy2(src, dest)
 
     def touch(self, path: Path) -> None:

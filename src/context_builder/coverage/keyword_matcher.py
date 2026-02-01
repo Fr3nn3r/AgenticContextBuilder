@@ -23,11 +23,6 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Consumable terms that indicate gaskets/seals/boots — not the component itself.
-# When these appear alongside a component keyword, confidence is reduced
-# to defer the decision to the LLM matcher.
-_CONSUMABLE_INDICATORS = {"JOINT", "DICHTUNG", "SOUFFLET", "GAINE"}
-
 
 @dataclass
 class KeywordMapping:
@@ -47,6 +42,7 @@ class KeywordConfig:
     mappings: List[KeywordMapping]
     min_confidence_threshold: float = 0.70
     labor_coverage_categories: List[str] = field(default_factory=list)
+    consumable_indicators: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "KeywordConfig":
@@ -66,196 +62,7 @@ class KeywordConfig:
             mappings=mappings,
             min_confidence_threshold=config.get("min_confidence_threshold", 0.70),
             labor_coverage_categories=config.get("labor_coverage_categories", []),
-        )
-
-    @classmethod
-    def default_nsa(cls) -> "KeywordConfig":
-        """Create default NSA German automotive mappings."""
-        return cls(
-            mappings=[
-                # Engine components (German + French)
-                KeywordMapping(
-                    category="engine",
-                    keywords=[
-                        # German terms
-                        "MOTOR", "KOLBEN", "KURBELWELLE", "NOCKENWELLE",
-                        "ZYLINDER", "VENTIL", "PLEUEL", "ÖLPUMPE", "OELPUMPE",
-                        "ZÜNDSPULE", "ZUENDSPULE", "ZÜNDKERZE", "ZUENDKERZE",
-                        # Timing chain/belt (German)
-                        "STEUERKETTE", "KETTENSPANNER", "KETTENFÜHRUNG",
-                        "KETTENFUEHRUNG", "STEUERKETTENSPANNER",
-                        "ZAHNRIEMEN", "RIEMENSPANNER", "UMLENKROLLE",
-                        "SPANNROLLE", "RIEMENSCHEIBE",
-                        # French terms
-                        "MOTEUR", "PISTON", "VILEBREQUIN", "CULASSE",
-                        "SOUPAPE", "BIELLE", "POMPE À HUILE", "POMPE A HUILE",
-                        # Timing chain/belt (French)
-                        "CHAÎNE", "CHAINE", "DISTRIBUTION", "TENDEUR",
-                        "GUIDE", "POULIE", "PIGNON",
-                    ],
-                    context_hints=["MOTOR", "ENGINE", "MOTEUR", "DISTRIBUTION"],
-                    confidence=0.88,
-                ),
-                # Transmission (German + French)
-                KeywordMapping(
-                    category="mechanical_transmission",
-                    keywords=[
-                        # German
-                        "GETRIEBE", "SCHALTGABEL", "SYNCHRON",
-                        "ANTRIEBSWELLE", "KUPPLUNG",
-                        # French
-                        "BOÎTE DE VITESSES", "BOITE DE VITESSES", "EMBRAYAGE",
-                        "TRANSMISSION", "FOURCHETTE", "SYNCHRONISEUR",
-                        "ARBRE DE TRANSMISSION",
-                    ],
-                    confidence=0.85,
-                ),
-                # Chassis/Suspension - includes hydraulic level control (German + French)
-                KeywordMapping(
-                    category="chassis",
-                    keywords=[
-                        # German
-                        "FAHRWERK", "STOSSDÄMPFER", "STOSSDAEMPFER",
-                        "FEDERBEIN", "STABILISATOR", "HÖHENVERSTELLUNG",
-                        "NIVEAUREGULIERUNG", "NIVEAU", "HYDRAULIK",
-                        # French
-                        "AMORTISSEUR", "RESSORT", "SUSPENSION",
-                        "RÉGLAGE DE NIVEAU", "HYDRAULIQUE",
-                    ],
-                    context_hints=["NIVEAU", "HOEHE", "HÖHE", "HAUTEUR"],
-                    confidence=0.85,
-                    component_name="Height control",
-                ),
-                # Suspension arms and links (German + French)
-                KeywordMapping(
-                    category="suspension",
-                    keywords=[
-                        # German
-                        "QUERLENKER", "LÄNGSLENKER", "LAENGSLENKER",
-                        "SPURSTANGE", "ACHSE", "AUFHÄNGUNG", "AUFHAENGUNG",
-                        # French
-                        "BRAS DE SUSPENSION", "TRIANGLE", "BIELLETTE",
-                        "ROTULE", "ESSIEU", "TRAIN ROULANT",
-                    ],
-                    confidence=0.85,
-                ),
-                # Brakes (German + French)
-                KeywordMapping(
-                    category="brakes",
-                    keywords=[
-                        # German
-                        "BREMSE", "BREMSSCHEIBE", "BREMSSATTEL",
-                        "ABS", "BREMSBELAG", "HAUPTBREMSZYLINDER",
-                        "BREMSKRAFTVERSTÄRKER", "BREMSDRUCKREGLER",
-                        # French
-                        "FREIN", "DISQUE DE FREIN", "ÉTRIER", "ETRIER",
-                        "PLAQUETTE", "MAÎTRE CYLINDRE", "MAITRE CYLINDRE",
-                        "SERVOFREIN",
-                    ],
-                    confidence=0.88,
-                ),
-                # Steering (German + French)
-                KeywordMapping(
-                    category="steering",
-                    keywords=[
-                        # German
-                        "LENKUNG", "SERVOLENKUNG", "LENKGETRIEBE",
-                        "SERVOPUMPE", "LENKSÄULE", "LENKSAEULE",
-                        # French
-                        "DIRECTION", "SERVODIRECTION", "CRÉMAILLÈRE",
-                        "CREMAILLERE", "COLONNE DE DIRECTION",
-                        "POMPE DE DIRECTION",
-                    ],
-                    confidence=0.85,
-                ),
-                # Electrical system (German + French)
-                KeywordMapping(
-                    category="electrical_system",
-                    keywords=[
-                        # German
-                        "LICHTMASCHINE", "ANLASSER", "STARTER",
-                        "SCHEIBENWISCHERMOTOR", "ZENTRALVERRIEGELUNG",
-                        "STEUERGERÄT", "STEUERGERAET", "STG",
-                        # French
-                        "ALTERNATEUR", "DÉMARREUR", "DEMARREUR",
-                        "MOTEUR ESSUIE-GLACE", "VERROUILLAGE CENTRAL",
-                        "CALCULATEUR", "MODULE DE COMMANDE", "BOÎTIER",
-                    ],
-                    confidence=0.85,
-                ),
-                # Air conditioning (German + French)
-                KeywordMapping(
-                    category="air_conditioning",
-                    keywords=[
-                        # German
-                        "KLIMAANLAGE", "KLIMA", "KOMPRESSOR",
-                        "KLIMAKOMPRESSOR", "VERDAMPFER", "KONDENSATOR",
-                        # French
-                        "CLIMATISATION", "CLIM", "COMPRESSEUR",
-                        "ÉVAPORATEUR", "EVAPORATEUR", "CONDENSEUR",
-                    ],
-                    context_hints=["KLIMA", "A/C", "AC", "CLIM"],
-                    confidence=0.88,
-                ),
-                # Cooling system (German + French)
-                KeywordMapping(
-                    category="cooling_system",
-                    keywords=[
-                        # German
-                        "KÜHLER", "KUEHLER", "WASSERPUMPE", "THERMOSTAT",
-                        "LÜFTER", "LUEFTER", "KÜHLMITTELPUMPE",
-                        # French
-                        "RADIATEUR", "POMPE À EAU", "POMPE A EAU",
-                        "VENTILATEUR", "REFROIDISSEMENT",
-                    ],
-                    confidence=0.85,
-                ),
-                # Electronics
-                KeywordMapping(
-                    category="electronics",
-                    keywords=[
-                        "SPURWECHSELASSISTENT", "ESP", "SENSOR",
-                        "DISPLAY", "COMPUTER", "BOARDCOMPUTER",
-                        "ALARMANLAGE",
-                    ],
-                    confidence=0.80,
-                ),
-                # Fuel system (German + French)
-                KeywordMapping(
-                    category="fuel_system",
-                    keywords=[
-                        # German
-                        "KRAFTSTOFFPUMPE", "BENZINPUMPE", "EINSPRITZPUMPE",
-                        "EINSPRITZVENTIL", "DRUCKREGLER",
-                        # French
-                        "POMPE À CARBURANT", "POMPE A CARBURANT",
-                        "POMPE À ESSENCE", "POMPE A ESSENCE",
-                        "INJECTEUR", "RÉGULATEUR DE PRESSION",
-                        "RAMPE D'INJECTION",
-                    ],
-                    context_hints=["KRAFTSTOFF", "BENZIN", "DIESEL", "CARBURANT", "ESSENCE"],
-                    confidence=0.85,
-                ),
-                # Axle drive (German + French)
-                KeywordMapping(
-                    category="axle_drive",
-                    keywords=[
-                        # German
-                        "KARDANWELLE", "ANTRIEBSWELLE", "GELENKWELLE",
-                        "DIFFERENTIAL", "ACHSANTRIEB",
-                        # French
-                        "CARDAN", "ARBRE DE TRANSMISSION", "DIFFÉRENTIEL",
-                        "DIFFERENTIEL", "PONT ARRIÈRE", "PONT ARRIERE",
-                    ],
-                    confidence=0.85,
-                ),
-            ],
-            min_confidence_threshold=0.70,
-            labor_coverage_categories=[
-                "engine", "mechanical_transmission", "chassis", "suspension",
-                "brakes", "steering", "electrical_system", "air_conditioning",
-                "cooling_system", "electronics", "fuel_system", "axle_drive",
-            ],
+            consumable_indicators=config.get("consumable_indicators", []),
         )
 
 
@@ -271,11 +78,11 @@ class KeywordMatcher:
         """Initialize the keyword matcher.
 
         Args:
-            config: Keyword configuration. Uses NSA defaults if not provided.
+            config: Keyword configuration. Uses empty config if not provided.
         """
         if not (config and config.mappings):
-            logger.warning("No keyword mappings provided, using built-in defaults")
-            self.config = KeywordConfig.default_nsa()
+            logger.warning("No keyword mappings provided, matcher will not match any items")
+            self.config = KeywordConfig(mappings=[])
         else:
             self.config = config
 
@@ -349,8 +156,8 @@ class KeywordMatcher:
         # (gasket, seal, boot) alongside a component keyword.
         # These items need LLM judgment to determine if the item IS
         # the component or is a consumable FOR the component.
-        for indicator in _CONSUMABLE_INDICATORS:
-            if indicator in description_upper:
+        for indicator in self.config.consumable_indicators:
+            if indicator.upper() in description_upper:
                 confidence *= 0.7
                 logger.debug(
                     f"Consumable indicator '{indicator}' found in '{description}', "

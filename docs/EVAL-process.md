@@ -6,7 +6,7 @@
 
 ```bash
 # 1. Run pipeline on all 50 eval claims
-python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2
+python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims
 
 # 2. Evaluate the LATEST assessment per claim (picks most recent claim_run)
 python scripts/eval_pipeline.py
@@ -29,7 +29,7 @@ ls workspaces/nsa/eval/  # find latest eval_YYYYMMDD_HHMMSS folder
 
 ## Ground Truth
 
-- **Location**: `data/08-NSA-Supporting-docs/claims_ground_truth.json`
+- **Location**: `data/datasets/nsa-motor-eval-v1/ground_truth.json`
 - **Claims**: 50 total (25 approved, 25 denied)
 - **Source**: Decision letters from NSA (Claim_Decision_for_Claim_Number_*.pdf)
 - **Fields**: claim_id, decision, total_approved_amount, deductible, currency, vehicle, date, denial_reason
@@ -38,8 +38,8 @@ ls workspaces/nsa/eval/  # find latest eval_YYYYMMDD_HHMMSS folder
 
 | Set | Location | Claims | Purpose |
 |-----|----------|--------|---------|
-| Development | `data/07-Claims-Motor-NSA/` | 4 (65128, 65157, 65196, 65258) | Original test claims, sanity check |
-| Evaluation | `data/09-Claims-Motor-NSA-2/` | 50 | Primary evaluation set with ground truth |
+| Development | `data/datasets/nsa-motor-seed-v1/claims/` | 4 (65128, 65157, 65196, 65258) | Original test claims, sanity check |
+| Evaluation | `data/datasets/nsa-motor-eval-v1/claims/` | 50 | Primary evaluation set with ground truth |
 
 **Note**: The 4 development claims are NOT in the ground truth. Keep them separate.
 
@@ -286,7 +286,7 @@ Input Claim
 | `src/context_builder/api/services/reconciliation.py` | Fact aggregation and conflict detection |
 | `workspaces/nsa/config/assumptions.json` | Coverage lookup tables (keywords, part numbers, authorized shops) |
 | `workspaces/nsa/config/enrichment/enricher.py` | NSA-specific enrichment logic |
-| `data/08-NSA-Supporting-docs/claims_ground_truth.json` | Ground truth (50 claims) |
+| `data/datasets/nsa-motor-eval-v1/ground_truth.json` | Ground truth (50 claims) |
 | `workspaces/nsa/eval/metrics_history.json` | All eval metrics over time |
 | `workspaces/nsa/eval/regression_claims.json` | Verified claims for non-regression testing |
 | `workspaces/nsa/eval/EVAL_LOG.md` | Human analysis of findings per iteration |
@@ -297,7 +297,7 @@ Input Claim
 
 2. **Run pipeline on all 50 eval claims**:
    ```bash
-   python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2
+   python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims
    ```
    Check the run ID from the output or:
    ```bash

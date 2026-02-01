@@ -12,9 +12,9 @@ This guide documents the evaluation-driven development process for improving the
 
 | Set | Location | Claims | Purpose |
 |-----|----------|--------|---------|
-| Development | `data/07-Claims-Motor-NSA/` | 4 (65128, 65157, 65196, 65258) | Sanity check, known behavior |
-| Evaluation | `data/09-Claims-Motor-NSA-2/` | 50 | Primary metrics, ground truth comparison |
-| Ground Truth | `data/08-NSA-Supporting-docs/claims_ground_truth.json` | 50 | Expected outcomes |
+| Development | `data/datasets/nsa-motor-seed-v1/claims/` | 4 (65128, 65157, 65196, 65258) | Sanity check, known behavior |
+| Evaluation | `data/datasets/nsa-motor-eval-v1/claims/` | 50 | Primary metrics, ground truth comparison |
+| Ground Truth | `data/datasets/nsa-motor-eval-v1/ground_truth.json` | 50 | Expected outcomes |
 
 ### Ground Truth Schema
 
@@ -99,7 +99,7 @@ Track every error by category to identify where to focus:
 
 2. **Run pipeline on evaluation set**
    ```bash
-   python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2
+   python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims
    ```
 
 3. **Save baseline results**
@@ -199,16 +199,16 @@ python scripts/eval_pipeline.py
 
 ```bash
 # Run full pipeline
-python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2
+python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims
 
 # Run specific stages only
-python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2 --stages ingest,classify,extract
+python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims --stages ingest,classify,extract
 
 # Run assessment only (after extraction)
 python -m context_builder.cli assess --claim-id <id>
 
 # Dry run (preview without processing)
-python -m context_builder.cli pipeline data/09-Claims-Motor-NSA-2 --dry-run
+python -m context_builder.cli pipeline data/datasets/nsa-motor-eval-v1/claims --dry-run
 
 # Run evaluation
 python -m context_builder.cli eval run --run-id <run_id>

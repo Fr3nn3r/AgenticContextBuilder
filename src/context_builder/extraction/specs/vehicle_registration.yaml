@@ -38,7 +38,7 @@ field_rules:
       - "owner name"
 
   vin:
-    normalize: uppercase_trim
+    normalize: vin_canonical
     validate: non_empty
     hints:
       - "VIN"

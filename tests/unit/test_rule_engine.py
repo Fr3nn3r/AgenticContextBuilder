@@ -1,17 +1,33 @@
-"""Tests for the coverage rule engine."""
+"""Tests for the coverage rule engine component override patterns."""
+
+from pathlib import Path
 
 import pytest
+import yaml
 
-from context_builder.coverage.rule_engine import RuleEngine
+from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import CoverageStatus
 
 
+def _load_nsa_rule_config() -> RuleConfig:
+    """Load NSA rule config from workspace YAML."""
+    config_path = (
+        Path(__file__).resolve().parents[2]
+        / "workspaces" / "nsa" / "config" / "coverage" / "nsa_coverage_config.yaml"
+    )
+    if not config_path.exists():
+        pytest.skip("NSA workspace config not available")
+    with open(config_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return RuleConfig.from_dict(data.get("rules", {}))
+
+
 class TestComponentOverridePatterns:
-    """Tests for pump/component override of consumable exclusions."""
+    """Tests for pump/component override of consumable exclusions (NSA-specific)."""
 
     @pytest.fixture
     def engine(self):
-        return RuleEngine()
+        return RuleEngine(_load_nsa_rule_config())
 
     def test_coolant_pump_not_excluded_as_consumable(self, engine):
         """'Kühlmittelpumpe elektrisch' should NOT be excluded as consumable."""

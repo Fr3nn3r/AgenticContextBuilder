@@ -299,25 +299,31 @@ class IngestionStage:
                 azure_di_data = ingestion_result.azure_di_data
                 context.vision_data = ingestion_result.vision_data  # Store Vision data for images
             else:
-                context.text_content = context.doc.content
+                if context.doc.content is not None:
+                    context.text_content = context.doc.content
+                else:
+                    # --from-workspace: text already on disk, load it
+                    context.text_content, context.pages_data = load_existing_ingestion(context.doc_paths)
+                    context.ingestion_reused = True
 
-            self.writer.write_text(context.doc_paths.source_txt, context.text_content)
+            if not context.ingestion_reused:
+                self.writer.write_text(context.doc_paths.source_txt, context.text_content)
 
-            # Use Azure DI page spans for reliable multi-page splitting
-            if azure_di_data is not None:
-                context.pages_data = build_pages_json_from_azure_di(
-                    azure_di_data,
-                    context.doc.doc_id,
-                )
-            else:
-                # Both PDFs and images use Azure DI, so source_type is azure_di
-                # Only preextracted text files use a different source_type
-                context.pages_data = build_pages_json(
-                    context.text_content,
-                    context.doc.doc_id,
-                    source_type="azure_di" if context.doc.source_type in ("pdf", "image") else "preextracted_txt",
-                )
-            self.writer.write_json(context.doc_paths.pages_json, context.pages_data)
+                # Use Azure DI page spans for reliable multi-page splitting
+                if azure_di_data is not None:
+                    context.pages_data = build_pages_json_from_azure_di(
+                        azure_di_data,
+                        context.doc.doc_id,
+                    )
+                else:
+                    # Both PDFs and images use Azure DI, so source_type is azure_di
+                    # Only preextracted text files use a different source_type
+                    context.pages_data = build_pages_json(
+                        context.text_content,
+                        context.doc.doc_id,
+                        source_type="azure_di" if context.doc.source_type in ("pdf", "image") else "preextracted_txt",
+                    )
+                self.writer.write_json(context.doc_paths.pages_json, context.pages_data)
         else:
             try:
                 context.text_content, context.pages_data = load_existing_ingestion(context.doc_paths)

@@ -35,17 +35,28 @@ from context_builder.coverage.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Gasket/seal indicators: when these terms appear in a description alongside a
-# component keyword, the item is a sealing part FOR the component, not the
-# component itself.  E.g. "Joint du vilebrequin" = crankshaft seal, not crankshaft.
-# Used in _match_by_part_number to defer keyword matches to LLM verification.
-_GASKET_SEAL_INDICATORS = {"JOINT", "DICHTUNG", "SOUFFLET", "GAINE"}
-
 
 def _find_sibling(config_path: Path, pattern: str) -> Optional[Path]:
     """Find a sibling file matching a glob pattern."""
     matches = list(config_path.parent.glob(pattern))
     return matches[0] if matches else None
+
+
+# German umlaut / accent normalization table for substring matching.
+_UMLAUT_TABLE = str.maketrans({
+    "ä": "a", "ö": "o", "ü": "u",
+    "Ä": "A", "Ö": "O", "Ü": "U",
+    "é": "e", "è": "e", "ê": "e",
+    "à": "a", "â": "a",
+    "î": "i", "ï": "i",
+    "ô": "o", "û": "u", "ù": "u",
+    "ç": "c", "ß": "ss",
+})
+
+
+def _normalize_umlauts(text: str) -> str:
+    """Normalize umlauts and accents for fuzzy substring matching."""
+    return text.translate(_UMLAUT_TABLE)
 
 
 def _normalize_coverage_scale(
@@ -83,6 +94,8 @@ class ComponentConfig:
     repair_context_keywords: Dict[str, Tuple[str, str]]
     distribution_catch_all_components: set
     distribution_catch_all_keywords: List[str]
+    gasket_seal_indicators: set
+    ancillary_keywords: set
 
     @classmethod
     def default(cls) -> "ComponentConfig":
@@ -93,6 +106,8 @@ class ComponentConfig:
             repair_context_keywords={},
             distribution_catch_all_components=set(),
             distribution_catch_all_keywords=[],
+            gasket_seal_indicators=set(),
+            ancillary_keywords=set(),
         )
 
     @classmethod
@@ -116,6 +131,12 @@ class ComponentConfig:
             ),
             distribution_catch_all_keywords=data.get(
                 "distribution_catch_all_keywords", []
+            ),
+            gasket_seal_indicators=set(
+                data.get("gasket_seal_indicators", [])
+            ),
+            ancillary_keywords=set(
+                data.get("ancillary_keywords", [])
             ),
         )
 
@@ -631,16 +652,20 @@ class CoverageAnalyzer:
             # No specific parts list for this category - can't determine, needs verification
             return None, f"No specific parts list for category '{system}' - needs verification"
 
-        # Build lowered policy parts list for matching
+        # Build lowered + umlaut-normalized policy parts lists for matching.
+        # We keep both the raw-lower list (for display) and the normalized list
+        # (for substring comparison) so that ü/u, ö/o, ä/a, accents don't
+        # cause false negatives.
         policy_parts_lower = [p.lower() for p in policy_parts_list]
+        policy_parts_norm = [_normalize_umlauts(p) for p in policy_parts_lower]
 
         if not component:
             # No specific component (e.g., keyword match without component_name).
             # Check if any policy part name appears in the item description.
-            desc_lower = description.lower()
-            for policy_part in policy_parts_lower:
-                if policy_part in desc_lower:
-                    return True, f"Description contains policy part '{policy_part}'"
+            desc_norm = _normalize_umlauts(description.lower())
+            for idx, policy_norm in enumerate(policy_parts_norm):
+                if policy_norm in desc_norm:
+                    return True, f"Description contains policy part '{policy_parts_lower[idx]}'"
             return None, (
                 f"No specific component; description doesn't match "
                 f"any of {len(policy_parts_list)} policy parts for '{system}'"
@@ -654,9 +679,10 @@ class CoverageAnalyzer:
         # This catches cases where the LLM returns the German name (e.g., "Ölpumpe")
         # that appears verbatim in the policy's covered parts list.
         for variant in (component_lower, underscore_key, space_key):
-            for policy_part in policy_parts_lower:
-                if variant in policy_part or policy_part in variant:
-                    return True, f"Component '{component}' found in policy list as '{policy_part}'"
+            variant_norm = _normalize_umlauts(variant)
+            for idx, policy_norm in enumerate(policy_parts_norm):
+                if variant_norm in policy_norm or policy_norm in variant_norm:
+                    return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
 
         # Look up synonyms for this component type
         # Try multiple key variants: "egr valve" → "egr_valve", "egr valve"
@@ -669,26 +695,27 @@ class CoverageAnalyzer:
         # If synonyms exist, check them against the policy parts list
         if synonyms:
             for term in synonyms:
-                for policy_part in policy_parts_lower:
-                    if term in policy_part or policy_part in term:
-                        return True, f"Component '{component}' found in policy list as '{policy_part}'"
+                term_norm = _normalize_umlauts(term.lower())
+                for idx, policy_norm in enumerate(policy_parts_norm):
+                    if term_norm in policy_norm or policy_norm in term_norm:
+                        return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
 
         # Check distribution catch-all: if policy lists "Ensemble de distribution",
         # all timing/distribution components are implicitly covered
         if component_lower in self.component_config.distribution_catch_all_components:
-            for policy_part in policy_parts_lower:
+            for idx, policy_norm in enumerate(policy_parts_norm):
                 for keyword in self.component_config.distribution_catch_all_keywords:
-                    if keyword in policy_part:
+                    if _normalize_umlauts(keyword) in policy_norm:
                         return True, (
                             f"Component '{component}' covered by distribution "
-                            f"catch-all '{policy_part}'"
+                            f"catch-all '{policy_parts_lower[idx]}'"
                         )
 
         # Also check if the original description contains any policy part name
-        desc_lower = description.lower()
-        for policy_part in policy_parts_lower:
-            if policy_part in desc_lower:
-                return True, f"Description contains policy part '{policy_part}'"
+        desc_norm = _normalize_umlauts(description.lower())
+        for idx, policy_norm in enumerate(policy_parts_norm):
+            if policy_norm in desc_norm:
+                return True, f"Description contains policy part '{policy_parts_lower[idx]}'"
 
         # No match found through any method
         if not synonyms:
@@ -714,6 +741,7 @@ class CoverageAnalyzer:
         items: List[Dict[str, Any]],
         covered_categories: List[str],
         covered_components: Optional[Dict[str, List[str]]] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match items by part number lookup.
 
@@ -725,6 +753,7 @@ class CoverageAnalyzer:
             covered_categories: Categories covered by the policy
             covered_components: Dict mapping category to list of covered parts
                                (used to verify specific components are covered)
+            excluded_components: Dict mapping category to list of excluded parts
 
         Returns:
             Tuple of (matched items, unmatched items)
@@ -732,6 +761,7 @@ class CoverageAnalyzer:
         matched = []
         unmatched = []
         covered_components = covered_components or {}
+        excluded_components = excluded_components or {}
 
         for item in items:
             item_code = item.get("item_code")
@@ -762,7 +792,7 @@ class CoverageAnalyzer:
             if result.lookup_source and "keyword" in result.lookup_source:
                 desc_upper = description.upper()
                 gasket_indicator = next(
-                    (ind for ind in _GASKET_SEAL_INDICATORS if ind in desc_upper),
+                    (ind for ind in self.component_config.gasket_seal_indicators if ind in desc_upper),
                     None,
                 )
                 if gasket_indicator:
@@ -812,32 +842,61 @@ class CoverageAnalyzer:
                     f"Policy check: {policy_check_reason}"
                 )
             elif is_category_covered and is_in_policy_list is False:
-                # Category is covered but synonym check didn't confirm the
-                # component in the policy's specific list.  This does NOT mean
-                # the component is excluded — the policy may simply not
-                # enumerate every part.  Defer to LLM for verification.
-                logger.info(
-                    f"Deferring {part_ref} ({result.component}) to LLM: "
-                    f"category '{result.system}' covered but synonym check "
-                    f"inconclusive. {policy_check_reason}"
+                # Category is covered but the component is definitively NOT
+                # in the policy's exhaustive parts list.  Per GCI §2.1A the
+                # insured parts are "exhaustively listed" in the specific
+                # conditions — not on the list means not covered.
+                is_exact_pn = result.lookup_source and "keyword" not in result.lookup_source
+                status = CoverageStatus.NOT_COVERED
+                reasoning = (
+                    f"Part {part_ref} identified as "
+                    f"'{result.component_description or result.component}' "
+                    f"in category '{result.system}' "
+                    f"({'exact part number' if is_exact_pn else 'keyword match'}). "
+                    f"Component not in policy's exhaustive parts list. "
+                    f"Policy list note: {policy_check_reason}"
                 )
-                item["_part_lookup_system"] = result.system
-                item["_part_lookup_component"] = result.component or result.component_description
-                unmatched.append(item)
-                continue
             elif is_category_covered and is_in_policy_list is None:
-                # Category covered but can't verify specific component
-                # Defer to LLM for policy list verification
-                logger.info(
-                    f"Deferring {part_ref} ({result.component}) to LLM: "
-                    f"category '{result.system}' covered but component unverifiable. "
-                    f"{policy_check_reason}"
-                )
-                # Enrich item with context for LLM
-                item["_part_lookup_system"] = result.system
-                item["_part_lookup_component"] = result.component or result.component_description
-                unmatched.append(item)
-                continue
+                # Category is covered but we couldn't determine whether the
+                # component is in the policy list (synonym gap, no mapping).
+                is_exact_pn = result.lookup_source and "keyword" not in result.lookup_source
+                if is_exact_pn:
+                    # High-trust part number match but can't verify against
+                    # policy list.  Check exclusion list first.
+                    is_excluded = self._is_component_excluded_by_policy(
+                        result.component or "", result.system or "",
+                        description, excluded_components,
+                    )
+                    if is_excluded:
+                        status = CoverageStatus.NOT_COVERED
+                        reasoning = (
+                            f"Part {part_ref} identified as "
+                            f"'{result.component_description or result.component}' "
+                            f"in category '{result.system}' (exact part number) "
+                            f"but explicitly excluded by policy"
+                        )
+                    else:
+                        # Can't verify against policy list — defer to LLM
+                        logger.info(
+                            f"Deferring {part_ref} ({result.component}) to LLM: "
+                            f"category '{result.system}' covered but policy list "
+                            f"inconclusive (synonym gap). {policy_check_reason}"
+                        )
+                        item["_part_lookup_system"] = result.system
+                        item["_part_lookup_component"] = result.component or result.component_description
+                        unmatched.append(item)
+                        continue
+                else:
+                    # Keyword-based match — defer to LLM for verification
+                    logger.info(
+                        f"Deferring {part_ref} ({result.component}) to LLM: "
+                        f"category '{result.system}' covered but policy list "
+                        f"inconclusive (keyword match). {policy_check_reason}"
+                    )
+                    item["_part_lookup_system"] = result.system
+                    item["_part_lookup_component"] = result.component or result.component_description
+                    unmatched.append(item)
+                    continue
             else:
                 # Category is not covered. Defer to LLM when:
                 # 1. Item belongs to an ancillary category (labor,
@@ -1119,16 +1178,6 @@ class CoverageAnalyzer:
 
         return items
 
-    # Ancillary part keywords promoted when they support a covered repair
-    _ANCILLARY_KEYWORDS = {
-        "vis", "boulon", "écrou", "schraube",       # fasteners
-        "joint", "dichtung",                         # gaskets
-        "bague", "o-ring", "o ring",                 # seals
-        "bouchon",                                   # plugs
-        "jeu mont", "jeu de mont",                   # mounting kits
-        "kit de repose",                             # install kits
-    }
-
     def _promote_ancillary_parts(
         self,
         items: List[LineItemCoverage],
@@ -1165,7 +1214,7 @@ class CoverageAnalyzer:
                 continue
 
             desc_lower = item.description.lower()
-            for pattern in self._ANCILLARY_KEYWORDS:
+            for pattern in self.component_config.ancillary_keywords:
                 if pattern in desc_lower:
                     item.coverage_status = CoverageStatus.COVERED
                     item.coverage_category = repair_context.primary_category
@@ -1594,7 +1643,7 @@ class CoverageAnalyzer:
         # BUT skip exclusion when the item is ancillary to a covered repair
         if self._is_in_excluded_list(item, excluded_components):
             is_ancillary = repair_context and repair_context.is_covered and any(
-                kw in item.description.lower() for kw in self._ANCILLARY_KEYWORDS
+                kw in item.description.lower() for kw in self.component_config.ancillary_keywords
             )
             if is_ancillary:
                 logger.info(
@@ -1765,7 +1814,8 @@ class CoverageAnalyzer:
         part_matched = []
         if self.part_lookup and remaining:
             part_matched, remaining = self._match_by_part_number(
-                remaining, covered_categories, covered_components
+                remaining, covered_categories, covered_components,
+                excluded_components,
             )
             logger.debug(f"Part numbers matched: {len(part_matched)}/{len(line_items)}")
 

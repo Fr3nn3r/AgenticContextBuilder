@@ -67,6 +67,7 @@ class ClaimContext:
     # Loaded by reconciliation stage
     aggregated_facts: Optional[Dict[str, Any]] = None
     facts_run_id: Optional[str] = None  # Run ID the facts came from
+    reconciliation_report: Optional[Any] = None  # ReconciliationReport from reconciliation stage
 
     # Set by screening stage
     screening_result: Optional[Dict[str, Any]] = None

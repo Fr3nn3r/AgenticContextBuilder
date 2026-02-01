@@ -1,31 +1,62 @@
 """Tests for the coverage rule engine."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import CoverageStatus, MatchMethod
 
 
-class TestRuleEngine:
-    """Tests for RuleEngine class."""
+def _load_nsa_rule_config() -> RuleConfig:
+    """Load NSA rule config from workspace YAML."""
+    config_path = (
+        Path(__file__).resolve().parents[2]
+        / "workspaces" / "nsa" / "config" / "coverage" / "nsa_coverage_config.yaml"
+    )
+    if not config_path.exists():
+        pytest.skip("NSA workspace config not available")
+    with open(config_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return RuleConfig.from_dict(data.get("rules", {}))
 
-    def test_default_config(self):
-        """Test that default config is created correctly."""
+
+@pytest.fixture(scope="session")
+def nsa_rule_config():
+    """Load NSA rule config from workspace."""
+    return _load_nsa_rule_config()
+
+
+@pytest.fixture
+def nsa_engine(nsa_rule_config):
+    """Create a RuleEngine with NSA config."""
+    return RuleEngine(nsa_rule_config)
+
+
+class TestRuleEngineDefaults:
+    """Tests for RuleEngine with empty default config."""
+
+    def test_default_config_is_empty(self):
+        """Test that default config has no customer-specific patterns."""
         engine = RuleEngine()
         assert engine.config is not None
         assert "fee" in engine.config.fee_item_types
-        assert len(engine.config.exclusion_patterns) > 0
+        assert len(engine.config.exclusion_patterns) == 0
+        assert len(engine.config.consumable_patterns) == 0
+        assert len(engine.config.non_covered_labor_patterns) == 0
+        assert len(engine.config.component_override_patterns) == 0
+        assert len(engine.config.generic_description_patterns) == 0
+        assert len(engine.config.fastener_patterns) == 0
 
     def test_fee_items_not_covered(self):
-        """Test that fee items are always not covered."""
+        """Fee items are always not covered (even without customer config)."""
         engine = RuleEngine()
-
         result = engine.match(
             description="Handling fee",
             item_type="fee",
             total_price=50.0,
         )
-
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert result.match_method == MatchMethod.RULE
@@ -33,195 +64,230 @@ class TestRuleEngine:
         assert result.not_covered_amount == 50.0
         assert "fee" in result.match_reasoning.lower()
 
-    def test_exclusion_pattern_entsorgung(self):
-        """Test that ENTSORGUNG pattern triggers not covered."""
+    def test_zero_price_item_covered(self):
+        """Zero-price items are marked covered."""
         engine = RuleEngine()
-
-        result = engine.match(
-            description="ENTSORGUNG ALTOEL",
-            item_type="parts",
-            total_price=25.0,
-        )
-
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-        assert result.match_method == MatchMethod.RULE
-        assert "ENTSORGUNG" in result.match_reasoning
-
-    def test_exclusion_pattern_ersatzfahrzeug(self):
-        """Test that rental car pattern triggers not covered."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="ERSATZFAHRZEUG 3 TAGE",
-            item_type="fee",
-            total_price=300.0,
-        )
-
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-
-    def test_exclusion_pattern_adblue_parts(self):
-        """Test that AdBlue parts are excluded (emissions system, not covered)."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="Adblueeinspritzdüse ersetzt inkl. entlüftet und angelernt",
-            item_type="labor",
-            total_price=160.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-        assert "ADBLUE" in result.match_reasoning
-
-    def test_exclusion_pattern_adblue_valve(self):
-        """Test that AdBlue valve/clamp parts are excluded."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="Ersatzteile Amag Ventil Klemmschelle Adblue",
-            item_type="parts",
-            total_price=521.75,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-        assert "ADBLUE" in result.match_reasoning
-
-    def test_exclusion_pattern_harnstoff(self):
-        """Test that Harnstoff (urea) items are excluded."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="HARNSTOFF EINSPRITZDÜSE",
-            item_type="parts",
-            total_price=300.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-        assert "HARNSTOFF" in result.match_reasoning
-
-    def test_exclusion_pattern_case_insensitive(self):
-        """Test that patterns are matched case-insensitively."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="Entsorgung altöl",
-            item_type="parts",
-            total_price=25.0,
-        )
-
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-
-    def test_consumable_motoroel(self):
-        """Test that engine oil is not covered."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="MOTOROEL 5W30 6L",
-            item_type="parts",
-            total_price=120.0,
-        )
-
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-        assert "Consumable" in result.match_reasoning
-
-    def test_consumable_oil_filter(self):
-        """Test that oil filter is not covered."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="OELFILTER MANN",
-            item_type="parts",
-            total_price=35.0,
-        )
-
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.NOT_COVERED
-
-    def test_consumable_labor_not_excluded(self):
-        """Test that consumable pattern doesn't apply to labor."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="OELFILTER WECHSELN",
-            item_type="labor",  # Labor, not parts
-            total_price=50.0,
-        )
-
-        # Labor should not be excluded by consumable pattern
-        # It might be excluded by another rule or pass through
-        if result is not None:
-            # If matched, should not be a consumable match
-            assert "Consumable" not in result.match_reasoning
-
-    def test_zero_price_item(self):
-        """Test that zero-price items are marked covered."""
-        engine = RuleEngine()
-
         result = engine.match(
             description="SERVICE GRATIS",
             item_type="labor",
             total_price=0.0,
         )
-
         assert result is not None
         assert result.coverage_status == CoverageStatus.COVERED
         assert result.match_method == MatchMethod.RULE
         assert result.covered_amount == 0.0
 
     def test_normal_part_passes_through(self):
-        """Test that normal parts pass through without matching."""
+        """Normal parts pass through without matching (no patterns configured)."""
         engine = RuleEngine()
-
         result = engine.match(
             description="STOSSDAEMPFER HINTEN LINKS",
             item_type="parts",
             total_price=450.0,
         )
-
-        # Should not match any rule
         assert result is None
 
     def test_normal_labor_passes_through(self):
-        """Test that normal labor passes through without matching."""
+        """Normal labor passes through without matching."""
         engine = RuleEngine()
-
         result = engine.match(
             description="STOSSDAEMPFER ERSETZEN AW 2.5",
             item_type="labor",
             total_price=175.0,
         )
-
-        # Should not match any rule
         assert result is None
 
-    def test_batch_match(self):
-        """Test batch matching functionality."""
+    def test_empty_engine_no_exclusions(self):
+        """Empty engine does not exclude ENTSORGUNG (no patterns)."""
         engine = RuleEngine()
+        result = engine.match(
+            description="ENTSORGUNG ALTOEL",
+            item_type="parts",
+            total_price=25.0,
+        )
+        # No exclusion patterns → passes through
+        assert result is None
 
+    def test_empty_engine_no_generic_rule(self):
+        """Empty engine does not trigger generic description rule."""
+        engine = RuleEngine()
+        result = engine.match(
+            description="ARBEIT",
+            item_type="labor",
+            total_price=100.0,
+        )
+        # No generic patterns → passes through
+        assert result is None
+
+    def test_empty_engine_no_fastener_rule(self):
+        """Empty engine does not trigger fastener rule."""
+        engine = RuleEngine()
+        result = engine.match(
+            description="SCHRAUBE",
+            item_type="parts",
+            total_price=5.0,
+        )
+        # No fastener patterns → passes through
+        assert result is None
+
+
+class TestRuleEngineNSA:
+    """Tests for RuleEngine with NSA config (customer-specific patterns)."""
+
+    def test_nsa_config_has_patterns(self, nsa_engine):
+        """NSA config has customer-specific patterns."""
+        assert len(nsa_engine.config.exclusion_patterns) > 0
+        assert len(nsa_engine.config.consumable_patterns) > 0
+        assert len(nsa_engine.config.non_covered_labor_patterns) > 0
+        assert len(nsa_engine.config.component_override_patterns) > 0
+        assert len(nsa_engine.config.generic_description_patterns) > 0
+        assert len(nsa_engine.config.fastener_patterns) > 0
+
+    def test_fee_items_not_covered(self, nsa_engine):
+        """Fee items are always not covered."""
+        result = nsa_engine.match(
+            description="Handling fee",
+            item_type="fee",
+            total_price=50.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert result.match_method == MatchMethod.RULE
+        assert result.match_confidence == 1.0
+        assert result.not_covered_amount == 50.0
+
+    def test_exclusion_pattern_entsorgung(self, nsa_engine):
+        """ENTSORGUNG pattern triggers not covered."""
+        result = nsa_engine.match(
+            description="ENTSORGUNG ALTOEL",
+            item_type="parts",
+            total_price=25.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert result.match_method == MatchMethod.RULE
+        assert "ENTSORGUNG" in result.match_reasoning
+
+    def test_exclusion_pattern_ersatzfahrzeug(self, nsa_engine):
+        """Rental car pattern triggers not covered."""
+        result = nsa_engine.match(
+            description="ERSATZFAHRZEUG 3 TAGE",
+            item_type="fee",
+            total_price=300.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_exclusion_pattern_case_insensitive(self, nsa_engine):
+        """Patterns are matched case-insensitively."""
+        result = nsa_engine.match(
+            description="Entsorgung altöl",
+            item_type="parts",
+            total_price=25.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_consumable_motoroel(self, nsa_engine):
+        """Engine oil is not covered."""
+        result = nsa_engine.match(
+            description="MOTOROEL 5W30 6L",
+            item_type="parts",
+            total_price=120.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+        assert "Consumable" in result.match_reasoning
+
+    def test_consumable_oil_filter(self, nsa_engine):
+        """Oil filter is not covered."""
+        result = nsa_engine.match(
+            description="OELFILTER MANN",
+            item_type="parts",
+            total_price=35.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_consumable_labor_not_excluded(self, nsa_engine):
+        """Consumable pattern doesn't apply to labor."""
+        result = nsa_engine.match(
+            description="OELFILTER WECHSELN",
+            item_type="labor",
+            total_price=50.0,
+        )
+        if result is not None:
+            assert "Consumable" not in result.match_reasoning
+
+    def test_zero_price_item(self, nsa_engine):
+        """Zero-price items are marked covered."""
+        result = nsa_engine.match(
+            description="SERVICE GRATIS",
+            item_type="labor",
+            total_price=0.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.COVERED
+        assert result.match_method == MatchMethod.RULE
+        assert result.covered_amount == 0.0
+
+    def test_normal_part_passes_through(self, nsa_engine):
+        """Normal parts pass through without matching."""
+        result = nsa_engine.match(
+            description="STOSSDAEMPFER HINTEN LINKS",
+            item_type="parts",
+            total_price=450.0,
+        )
+        assert result is None
+
+    def test_normal_labor_passes_through(self, nsa_engine):
+        """Normal labor passes through without matching."""
+        result = nsa_engine.match(
+            description="STOSSDAEMPFER ERSETZEN AW 2.5",
+            item_type="labor",
+            total_price=175.0,
+        )
+        assert result is None
+
+    def test_batch_match(self, nsa_engine):
+        """Batch matching functionality."""
         items = [
             {"description": "ENTSORGUNG", "item_type": "fee", "total_price": 20.0},
             {"description": "STOSSDAEMPFER", "item_type": "parts", "total_price": 400.0},
             {"description": "MOTOROEL", "item_type": "parts", "total_price": 80.0},
             {"description": "STOSSDAEMPFER EINBAUEN", "item_type": "labor", "total_price": 200.0},
         ]
-
-        matched, unmatched = engine.batch_match(items)
-
+        matched, unmatched = nsa_engine.batch_match(items)
         # ENTSORGUNG and MOTOROEL should be matched
         assert len(matched) == 2
         # STOSSDAEMPFER and STOSSDAEMPFER EINBAUEN should be unmatched
         assert len(unmatched) == 2
 
+    def test_item_code_preserved(self, nsa_engine):
+        """Item code is preserved in result."""
+        result = nsa_engine.match(
+            description="ENTSORGUNG",
+            item_type="fee",
+            item_code="FEE001",
+            total_price=20.0,
+        )
+        assert result is not None
+        assert result.item_code == "FEE001"
+
+
+class TestCustomConfig:
+    """Tests for RuleEngine with custom configuration."""
+
     def test_custom_config(self):
-        """Test with custom configuration."""
+        """Custom configuration works correctly."""
         config = RuleConfig(
             fee_item_types=["fee", "charge"],
             exclusion_patterns=["CUSTOM_EXCLUSION"],
             consumable_patterns=[],
             non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
         )
         engine = RuleEngine(config)
 
@@ -243,28 +309,13 @@ class TestRuleEngine:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_item_code_preserved(self):
-        """Test that item code is preserved in result."""
-        engine = RuleEngine()
-
-        result = engine.match(
-            description="ENTSORGUNG",
-            item_type="fee",
-            item_code="FEE001",
-            total_price=20.0,
-        )
-
-        assert result is not None
-        assert result.item_code == "FEE001"
-
 
 class TestRule5NonCoveredLaborPatterns:
-    """Tests for Rule 5: Non-covered labor patterns."""
+    """Tests for Rule 5: Non-covered labor patterns (NSA-specific)."""
 
-    def test_diagnose_labor_not_covered(self):
+    def test_diagnose_labor_not_covered(self, nsa_engine):
         """DIAGNOSE labor with non-zero price is not covered."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="DIAGNOSE MOTORSTEUERGERÄT",
             item_type="labor",
             total_price=150.0,
@@ -274,10 +325,9 @@ class TestRule5NonCoveredLaborPatterns:
         assert result.match_method == MatchMethod.RULE
         assert "non-covered pattern" in result.match_reasoning
 
-    def test_kontrolle_labor_not_covered(self):
+    def test_kontrolle_labor_not_covered(self, nsa_engine):
         """KONTROLLE labor is not covered."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="KONTROLLE BREMSEN",
             item_type="labor",
             total_price=80.0,
@@ -285,10 +335,9 @@ class TestRule5NonCoveredLaborPatterns:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_pruefung_labor_not_covered(self):
+    def test_pruefung_labor_not_covered(self, nsa_engine):
         """PRÜFUNG labor is not covered."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="PRÜFUNG ABGASANLAGE",
             item_type="labor",
             total_price=60.0,
@@ -296,10 +345,9 @@ class TestRule5NonCoveredLaborPatterns:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_labor_pattern_only_applies_to_labor(self):
+    def test_labor_pattern_only_applies_to_labor(self, nsa_engine):
         """Non-covered labor patterns should not match parts."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="DIAGNOSE KABEL",
             item_type="parts",
             total_price=30.0,
@@ -307,10 +355,9 @@ class TestRule5NonCoveredLaborPatterns:
         # Parts should NOT be matched by labor-only rule
         assert result is None
 
-    def test_zero_price_labor_still_covered(self):
+    def test_zero_price_labor_still_covered(self, nsa_engine):
         """Zero-price DIAGNOSE labor should be covered (Rule 4 before Rule 5)."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="DIAGNOSE GRATIS",
             item_type="labor",
             total_price=0.0,
@@ -318,10 +365,9 @@ class TestRule5NonCoveredLaborPatterns:
         assert result is not None
         assert result.coverage_status == CoverageStatus.COVERED
 
-    def test_labor_pattern_case_insensitive(self):
+    def test_labor_pattern_case_insensitive(self, nsa_engine):
         """Labor patterns match case-insensitively."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="diagnose fahrwerk",
             item_type="labor",
             total_price=100.0,
@@ -331,7 +377,7 @@ class TestRule5NonCoveredLaborPatterns:
 
 
 class TestRule6GenericDescriptions:
-    """Tests for Rule 6: Generic/empty descriptions."""
+    """Tests for Rule 6: Generic/empty descriptions (NSA-specific)."""
 
     @pytest.mark.parametrize(
         "description",
@@ -346,10 +392,9 @@ class TestRule6GenericDescriptions:
             "DIVERS",
         ],
     )
-    def test_generic_descriptions_not_covered(self, description):
+    def test_generic_descriptions_not_covered(self, nsa_engine, description):
         """Generic placeholder descriptions are not covered."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description=description,
             item_type="labor",
             total_price=100.0,
@@ -358,10 +403,9 @@ class TestRule6GenericDescriptions:
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert "Generic description" in result.match_reasoning
 
-    def test_generic_with_whitespace(self):
+    def test_generic_with_whitespace(self, nsa_engine):
         """Generic descriptions with surrounding whitespace still match."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="  ARBEIT  ",
             item_type="labor",
             total_price=100.0,
@@ -369,10 +413,9 @@ class TestRule6GenericDescriptions:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_generic_case_insensitive(self):
+    def test_generic_case_insensitive(self, nsa_engine):
         """Generic pattern matches case-insensitively."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="arbeit:",
             item_type="labor",
             total_price=50.0,
@@ -380,10 +423,9 @@ class TestRule6GenericDescriptions:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_non_generic_description_passes_through(self):
+    def test_non_generic_description_passes_through(self, nsa_engine):
         """Descriptions with actual content should pass through."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="ARBEIT STOSSDAEMPFER WECHSELN",
             item_type="labor",
             total_price=200.0,
@@ -391,10 +433,9 @@ class TestRule6GenericDescriptions:
         # Has real content beyond just "ARBEIT", should not match Rule 6
         assert result is None
 
-    def test_generic_parts_also_matched(self):
+    def test_generic_parts_also_matched(self, nsa_engine):
         """Generic descriptions apply to all item types, not just labor."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="MATERIAL",
             item_type="parts",
             total_price=50.0,
@@ -402,10 +443,9 @@ class TestRule6GenericDescriptions:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
-    def test_zero_price_generic_still_covered(self):
+    def test_zero_price_generic_still_covered(self, nsa_engine):
         """Zero-price generic items are still covered (Rule 4 before Rule 6)."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="ARBEIT",
             item_type="labor",
             total_price=0.0,
@@ -415,7 +455,7 @@ class TestRule6GenericDescriptions:
 
 
 class TestRule7FastenerPatterns:
-    """Tests for Rule 7: Standalone fastener items."""
+    """Tests for Rule 7: Standalone fastener items (NSA-specific)."""
 
     @pytest.mark.parametrize(
         "description",
@@ -432,10 +472,9 @@ class TestRule7FastenerPatterns:
             "SICHERUNGSMUTTER",
         ],
     )
-    def test_standalone_fasteners_review_needed(self, description):
+    def test_standalone_fasteners_review_needed(self, nsa_engine, description):
         """Standalone fastener descriptions trigger REVIEW_NEEDED."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description=description,
             item_type="parts",
             total_price=5.0,
@@ -447,10 +486,9 @@ class TestRule7FastenerPatterns:
         assert "fastener" in result.match_reasoning.lower()
         assert result.not_covered_amount == 5.0
 
-    def test_fastener_case_insensitive(self):
+    def test_fastener_case_insensitive(self, nsa_engine):
         """Fastener pattern matches case-insensitively."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="schraube",
             item_type="parts",
             total_price=3.0,
@@ -458,12 +496,10 @@ class TestRule7FastenerPatterns:
         assert result is not None
         assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
 
-    def test_fastener_does_not_match_substring(self):
+    def test_fastener_does_not_match_substring(self, nsa_engine):
         """'VIS' should not match 'SERVISE' or 'VIS DE REGLAGE SOUPAPE'."""
-        engine = RuleEngine()
-
         # "VIS" as part of a larger word
-        result = engine.match(
+        result = nsa_engine.match(
             description="SERVISE COMPLET",
             item_type="parts",
             total_price=100.0,
@@ -471,18 +507,16 @@ class TestRule7FastenerPatterns:
         assert result is None
 
         # "VIS" as part of a compound description
-        result = engine.match(
+        result = nsa_engine.match(
             description="VIS DE REGLAGE SOUPAPE",
             item_type="parts",
             total_price=15.0,
         )
         assert result is None
 
-    def test_fastener_compound_description_passes_through(self):
+    def test_fastener_compound_description_passes_through(self, nsa_engine):
         """Compound descriptions containing fastener words should pass."""
-        engine = RuleEngine()
-
-        result = engine.match(
+        result = nsa_engine.match(
             description="SCHRAUBE OELWANNENDICHTUNG M8X20",
             item_type="parts",
             total_price=2.0,
@@ -490,10 +524,9 @@ class TestRule7FastenerPatterns:
         # Not a standalone fastener - should pass through
         assert result is None
 
-    def test_fastener_with_whitespace(self):
+    def test_fastener_with_whitespace(self, nsa_engine):
         """Fastener with surrounding whitespace still matches."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="  MUTTER  ",
             item_type="parts",
             total_price=1.50,
@@ -501,10 +534,9 @@ class TestRule7FastenerPatterns:
         assert result is not None
         assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
 
-    def test_zero_price_fastener_covered(self):
+    def test_zero_price_fastener_covered(self, nsa_engine):
         """Zero-price fastener is covered (Rule 4 before Rule 7)."""
-        engine = RuleEngine()
-        result = engine.match(
+        result = nsa_engine.match(
             description="SCHRAUBE",
             item_type="parts",
             total_price=0.0,

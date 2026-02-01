@@ -198,9 +198,11 @@ class AssessmentProcessor:
             "evidence_refs": [],
         })
 
-        # Map payout
+        # Map payout — keep breakdown for transparency but zero final_payout
+        # on rejection (a rejected claim must never show a positive payout).
         if screening.get("payout"):
             payout = self._map_screening_payout(screening["payout"])
+            payout["final_payout"] = 0.0
         else:
             payout = self._zero_payout()
 
@@ -318,6 +320,14 @@ class AssessmentProcessor:
                 f"(final payout: {final_payout:.2f}). "
                 f"Original rationale: {result.get('decision_rationale', '')}"
             )
+
+        # Zero payout when decision is REJECT (rejected claims must not show positive payout)
+        if result.get("decision") == "REJECT" and final_payout > 0:
+            logger.info(
+                f"Zeroing payout for rejected claim {context.claim_id}: "
+                f"final_payout was {final_payout}"
+            )
+            result.setdefault("payout", {})["final_payout"] = 0.0
 
         # Add metadata to result
         result["claim_id"] = context.claim_id

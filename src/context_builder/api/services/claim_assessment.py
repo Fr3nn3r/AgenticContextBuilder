@@ -131,6 +131,7 @@ class ClaimAssessmentService:
             workspace_path=self.storage.output_root,
             run_id=claim_run_id,
             aggregated_facts=claim_facts_data,
+            reconciliation_report=reconcile_result.report,
             on_stage_update=on_stage_update,
             on_llm_start=on_llm_start,
             on_llm_progress=on_llm_progress,
