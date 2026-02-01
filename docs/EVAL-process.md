@@ -1,6 +1,6 @@
 # NSA Pipeline Evaluation Process
 
-**Status**: 23 iterations complete, best accuracy **94%** (eval #21), latest **88%** (eval #23)
+**Status**: 27 iterations complete, best accuracy **100%** (eval #25), latest **96%** (eval #27)
 
 ## Quick Start
 
@@ -217,6 +217,10 @@ Both repos are tagged on each eval for reproducibility.
 | #21 | **94%** | `eval-21-94pct` (e52e1ba) | `eval-21-94pct` (8300278) | New best. Stripped component_name, kept other config improvements, LLM max 35. |
 | #22 | 92% | `eval-22-92pct` (59d16a4) | `eval-22-92pct` (7861d6a) | Refactored coverage analyzer: externalized config, primary repair on schema, null-primary reject logic. |
 | #23 | 88% | `eval-23-88pct` (b0caf76) | `eval-23-88pct` (28c69e9) | Exclusion-aware coverage + evidence 3-state fix. Fixed false_reject→refer for 64358/65040. Regressions: 65129 (empty excluded_components), 65060 (age threshold). |
+| #24 | 92% | `eval-24-92pct` (1d719ef) | `eval-24-92pct` (28c69e9) | Repair-context parts treated as covered when category covered and not excluded. |
+| #25 | **100%** | `eval-25-100pct` (203b11e) | `eval-25-100pct` (0555537) | Perfect decision accuracy (50/50). 17 amount_mismatch remain. |
+| #26 | 98% | `eval-26-98pct` (06eb159) | `eval-26-98pct` (d862195) | 49/50 correct. 1 false_reject:other. |
+| #27 | 96% | `eval-27-96pct` (9c6b7b4) | `eval-27-96pct` (d862195) | Cross-category component matching. 2 false_approve (EGR valve/module). 0% FRR. |
 
 **Process**: After every future eval:
 1. Sync customer config: `powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"`
@@ -224,20 +228,18 @@ Both repos are tagged on each eval for reproducibility.
 3. Commit + tag main repo: `git -C <main-repo> tag -a eval-NN-XXpct`
 4. Record tags in the table above
 
-### Best Result: eval_20260131_104745 (94%, eval #21)
+### Best Result: eval #25 (100% decision accuracy)
+
+- 50/50 correct (25 approved + 25 denied)
+- FRR=0%, FAR=0% — perfect decision accuracy
+- Main issue: `amount_mismatch` (17) — correct decisions but wrong payout amounts
+- Tagged as `eval-25-100pct` in both repos
+
+### Previous Best: eval #21 (94%)
 
 - 47/50 correct (23 approved + 24 denied)
-- FRR=11.5%, FAR=0% (zero false approves, perfect denial accuracy)
-- Main issue: `amount_mismatch` (15) — correct decisions but wrong payout amounts
+- FRR=11.5%, FAR=0%
 - Tagged as `eval-21-94pct` in both repos
-- Changes from eval #19 (92%): stripped `component_name` from keyword mappings, added door lock/mirror keywords, `comfort_options` in labor categories, age-based reduction disabled, LLM max items bumped to 35
-- This is the target to beat
-
-### Previous Best: eval_20260130_180826 (92%, eval #19)
-
-- 46/50 correct (22 approved + 24 denied)
-- FRR=15.4%, FAR=0%
-- Tagged as `eval-19-92pct`
 
 ### Key Patterns Across All Runs
 
