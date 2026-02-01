@@ -17,10 +17,12 @@ from context_builder.coverage.schemas import (
     LineItemCoverage,
     MatchMethod,
     CoverageStatus,
+    NonCoveredExplanation,
 )
 from context_builder.coverage.rule_engine import RuleEngine
 from context_builder.coverage.keyword_matcher import KeywordMatcher
 from context_builder.coverage.analyzer import CoverageAnalyzer
+from context_builder.coverage.explanation_generator import ExplanationGenerator
 
 __all__ = [
     "CoverageAnalysisResult",
@@ -28,7 +30,9 @@ __all__ = [
     "LineItemCoverage",
     "MatchMethod",
     "CoverageStatus",
+    "NonCoveredExplanation",
     "RuleEngine",
     "KeywordMatcher",
     "CoverageAnalyzer",
+    "ExplanationGenerator",
 ]

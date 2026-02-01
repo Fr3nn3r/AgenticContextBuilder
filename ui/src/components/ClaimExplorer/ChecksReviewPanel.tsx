@@ -8,6 +8,7 @@ import { StatusBadge } from "../shared";
 interface ChecksReviewPanelProps {
   checks: AssessmentCheck[];
   onEvidenceClick?: (ref: string) => void;
+  resolvableRefs?: Set<string>;
   className?: string;
 }
 
@@ -17,7 +18,7 @@ type FilterMode = "all" | "FAIL" | "INCONCLUSIVE";
  * Accordion panel for reviewing assessment checks.
  * Shows summary badges and allows filtering by result type.
  */
-export function ChecksReviewPanel({ checks, onEvidenceClick, className }: ChecksReviewPanelProps) {
+export function ChecksReviewPanel({ checks, onEvidenceClick, resolvableRefs, className }: ChecksReviewPanelProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<FilterMode>("all");
 
@@ -120,6 +121,7 @@ export function ChecksReviewPanel({ checks, onEvidenceClick, className }: Checks
                 isExpanded={expandedIndex === originalIndex}
                 onToggle={() => handleToggle(originalIndex)}
                 onEvidenceClick={onEvidenceClick}
+                resolvableRefs={resolvableRefs}
               />
             );
           })

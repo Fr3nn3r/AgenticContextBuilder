@@ -159,6 +159,7 @@ class RuleEngine:
                 item_code=item_code,
                 total_price=total_price,
                 reasoning=f"Fee items ({item_type}) are not covered by policy",
+                exclusion_reason="fee",
             )
 
         # Rule 2: Check exclusion patterns
@@ -170,6 +171,7 @@ class RuleEngine:
                     item_code=item_code,
                     total_price=total_price,
                     reasoning=f"Item matches exclusion pattern: {pattern.pattern}",
+                    exclusion_reason="exclusion_pattern",
                 )
 
         # Rule 3: Check consumable patterns (parts only)
@@ -194,6 +196,7 @@ class RuleEngine:
                         item_code=item_code,
                         total_price=total_price,
                         reasoning=f"Consumable item not covered: {pattern.pattern}",
+                        exclusion_reason="consumable",
                     )
         elif item_type.lower() == "parts" and skip_consumable_check:
             # Log that we skipped consumable check due to repair context
@@ -232,6 +235,7 @@ class RuleEngine:
                         item_code=item_code,
                         total_price=total_price,
                         reasoning=f"Labor matches non-covered pattern: {pattern.pattern}",
+                        exclusion_reason="non_covered_labor",
                     )
 
         # Rule 6: Generic/empty descriptions with no semantic content
@@ -243,6 +247,7 @@ class RuleEngine:
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Generic description - insufficient detail for coverage determination",
+                exclusion_reason="generic_description",
             )
 
         # Rule 7: Standalone fastener items -> REVIEW_NEEDED
@@ -265,6 +270,7 @@ class RuleEngine:
         item_code: Optional[str],
         total_price: float,
         reasoning: str,
+        exclusion_reason: Optional[str] = None,
     ) -> LineItemCoverage:
         """Create a NOT_COVERED result."""
         return LineItemCoverage(
@@ -278,6 +284,7 @@ class RuleEngine:
             match_method=MatchMethod.RULE,
             match_confidence=1.0,
             match_reasoning=reasoning,
+            exclusion_reason=exclusion_reason,
             covered_amount=0.0,
             not_covered_amount=total_price,
         )

@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from context_builder.coverage.analyzer import CoverageAnalyzer
+from context_builder.coverage.explanation_generator import (
+    ExplanationConfig,
+    ExplanationGenerator,
+)
 from context_builder.coverage.schemas import CoverageAnalysisResult
 from context_builder.schemas.claim_facts import parse_european_number
 from context_builder.storage.filesystem import FileStorage
@@ -47,6 +51,7 @@ class CoverageAnalysisService:
         """
         self.storage = storage
         self._analyzer: Optional[CoverageAnalyzer] = None
+        self._explanation_generator: Optional[ExplanationGenerator] = None
 
     def _get_analyzer(self) -> CoverageAnalyzer:
         """Get or create the coverage analyzer with config from workspace."""
@@ -78,6 +83,58 @@ class CoverageAnalysisService:
             self._analyzer = CoverageAnalyzer(workspace_path=workspace_root)
 
         return self._analyzer
+
+    @staticmethod
+    def _create_explanation_llm_client(claim_id: str) -> Any:
+        """Create an audited LLM client for non-covered explanations.
+
+        Returns None if the client cannot be created (e.g., no API key),
+        which causes the generator to fall back to template mode.
+        """
+        try:
+            from context_builder.services.llm_audit import create_audited_client
+
+            client = create_audited_client()
+            client.set_context(
+                claim_id=claim_id,
+                call_purpose="non_covered_explanation",
+            )
+            return client
+        except Exception:
+            logger.warning(
+                "Could not create LLM client for non-covered explanations; "
+                "falling back to template mode",
+                exc_info=True,
+            )
+            return None
+
+    def _get_explanation_generator(self) -> ExplanationGenerator:
+        """Get or create the explanation generator with config from workspace."""
+        if self._explanation_generator is not None:
+            return self._explanation_generator
+
+        workspace_root = self.storage.output_root
+        coverage_dir = workspace_root / "config" / "coverage"
+        config: Optional[ExplanationConfig] = None
+
+        if coverage_dir.exists():
+            matches = list(coverage_dir.glob("*_explanation_templates.yaml"))
+            if matches:
+                config_path = matches[0]
+                if len(matches) > 1:
+                    logger.warning(
+                        f"Multiple explanation template configs found: "
+                        f"{[m.name for m in matches]}, using {config_path.name}"
+                    )
+                logger.info(f"Loading explanation templates from {config_path}")
+                config = ExplanationConfig.from_yaml(config_path)
+
+        if config is None:
+            logger.info("No explanation templates found, using default config")
+            config = ExplanationConfig.default()
+
+        self._explanation_generator = ExplanationGenerator(config)
+        return self._explanation_generator
 
     def _get_latest_claim_run(self, claim_id: str) -> Optional[Tuple[str, Path]]:
         """Get the latest claim run ID and path for a claim.
@@ -514,6 +571,19 @@ class CoverageAnalysisService:
             vehicle_age_years=vehicle_age_years,
             age_threshold_years=age_threshold_years,
         )
+
+        # Generate non-covered explanations (LLM rewrite when available)
+        generator = self._get_explanation_generator()
+        llm_client = self._create_explanation_llm_client(claim_id)
+        explanations, summary = generator.generate(
+            result,
+            covered_components=covered_components,
+            excluded_components=excluded_components,
+            llm_client=llm_client,
+        )
+        if explanations:
+            result.non_covered_explanations = explanations
+            result.non_covered_summary = summary
 
         # Write results
         self._write_coverage_analysis(claim_run_path, result)

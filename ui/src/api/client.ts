@@ -1184,7 +1184,22 @@ import type {
   ReconciliationEvaluation,
   TriageQueueItem,
   TriageQueueFilters,
+  CoverageAnalysisResult,
 } from "../types";
+
+/**
+ * Get coverage analysis for a specific claim.
+ * Returns null if no coverage analysis exists for this claim.
+ */
+export async function getCoverageAnalysis(claimId: string): Promise<CoverageAnalysisResult | null> {
+  try {
+    return await fetchJson<CoverageAnalysisResult>(
+      `${API_BASE}/claims/${encodeURIComponent(claimId)}/coverage-analysis`
+    );
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Get assessment data for a specific claim.

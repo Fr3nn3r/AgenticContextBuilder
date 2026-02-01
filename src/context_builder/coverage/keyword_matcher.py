@@ -205,6 +205,7 @@ class KeywordMatcher:
                 match_method=MatchMethod.KEYWORD,
                 match_confidence=confidence,
                 match_reasoning=f"Keyword '{keyword}' maps to category '{category}' which is not covered",
+                exclusion_reason="category_not_covered",
                 covered_amount=0.0,
                 not_covered_amount=total_price,
             )

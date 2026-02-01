@@ -1,13 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
-import { LayoutDashboard, FileText, ClipboardCheck, AlertTriangle, Database } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { ClipboardCheck, LayoutDashboard, FileText, Database, Shield } from "lucide-react";
 import { cn } from "../../lib/utils";
-import type { ClaimSummary, DocSummary, ClaimFacts, ClaimAssessment } from "../../types";
-import { getClaimFacts, getClaimAssessment } from "../../api/client";
+import type { ClaimSummary, DocSummary, ClaimFacts, ClaimAssessment, CoverageAnalysisResult } from "../../types";
+import { getClaimFacts, getClaimAssessment, getCoverageAnalysis } from "../../api/client";
 import { ClaimContextBar } from "./ClaimContextBar";
 import { ClaimOverviewTab } from "./ClaimOverviewTab";
 import { ClaimFactsTab } from "./ClaimFactsTab";
 import { ClaimAssessmentTab } from "./ClaimAssessmentTab";
-import { ClaimAssumptionsTab } from "./ClaimAssumptionsTab";
+import { ClaimCoveragesTab } from "./ClaimCoveragesTab";
 import { ClaimDataTab } from "./ClaimDataTab";
 import { DocumentSlidePanel, type EvidenceLocation } from "./DocumentSlidePanel";
 
@@ -28,26 +28,31 @@ interface ClaimSummaryTabProps {
   ) => void;
 }
 
-type SubTab = "overview" | "facts" | "assessment" | "assumptions" | "data";
+type SubTab = "assessment" | "coverages" | "overview" | "facts" | "data";
 
-const SUB_TABS: { id: SubTab; label: string; icon: typeof FileText }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "facts", label: "Facts", icon: FileText },
+// All tabs (overview and facts kept for backwards compatibility but hidden from UI)
+const ALL_SUB_TABS: { id: SubTab; label: string; icon: typeof FileText; hidden?: boolean }[] = [
   { id: "assessment", label: "Assessment", icon: ClipboardCheck },
-  { id: "assumptions", label: "Assumptions", icon: AlertTriangle },
+  { id: "coverages", label: "Coverages", icon: Shield },
+  { id: "overview", label: "Overview", icon: LayoutDashboard, hidden: true },
+  { id: "facts", label: "Facts", icon: FileText, hidden: true },
   { id: "data", label: "Data", icon: Database },
 ];
 
+const VISIBLE_TABS = ALL_SUB_TABS.filter((t) => !t.hidden);
+
 /**
- * Main claim view with sub-tabs for Overview, Facts, Assessment, and History.
- * Overview is the default landing tab showing decision readiness and attention items.
+ * Main claim view with sub-tabs for Assessment, Coverages, and Data.
+ * Overview and Facts are deprecated (hidden) but kept for backwards compatibility.
+ * Assessment is the default landing tab.
  */
 export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimSummaryTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("overview");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>("assessment");
 
   // Data state
   const [claimFacts, setClaimFacts] = useState<ClaimFacts | null>(null);
   const [assessment, setAssessment] = useState<ClaimAssessment | null>(null);
+  const [coverageAnalysis, setCoverageAnalysis] = useState<CoverageAnalysisResult | null>(null);
 
   // Document slide panel state
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceLocation | null>(null);
@@ -55,10 +60,24 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
   // Loading state
   const [factsLoading, setFactsLoading] = useState(true);
   const [assessmentLoading, setAssessmentLoading] = useState(true);
+  const [coverageLoading, setCoverageLoading] = useState(true);
 
   // Error state
   const [factsError, setFactsError] = useState<string | null>(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+
+  // Compute set of evidence refs that have actual document backing
+  const resolvableRefs = useMemo(() => {
+    const refs = new Set<string>();
+    if (claimFacts?.facts) {
+      for (const fact of claimFacts.facts) {
+        if (fact.selected_from?.doc_id) {
+          refs.add(fact.name.toLowerCase());
+        }
+      }
+    }
+    return refs;
+  }, [claimFacts]);
 
   // Load facts
   useEffect(() => {
@@ -94,6 +113,23 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
       }
     }
     loadAssessment();
+  }, [claim.claim_id]);
+
+  // Load coverage analysis
+  useEffect(() => {
+    async function loadCoverageAnalysis() {
+      setCoverageLoading(true);
+      try {
+        const data = await getCoverageAnalysis(claim.claim_id);
+        setCoverageAnalysis(data);
+      } catch (err) {
+        console.warn("Coverage analysis API error:", err);
+        setCoverageAnalysis(null);
+      } finally {
+        setCoverageLoading(false);
+      }
+    }
+    loadCoverageAnalysis();
   }, [claim.claim_id]);
 
   // Refresh assessment data (for re-run callback)
@@ -136,13 +172,8 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
 
   // Handle running assessment
   const handleRunAssessment = async () => {
-    // TODO: Implement API call to run assessment
-    // await runAssessment(claim.claim_id);
-    // Then reload assessment
     console.log("Running assessment for claim:", claim.claim_id);
-    // For now, just simulate
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    // Reload assessment after running
     setAssessmentLoading(true);
     try {
       const data = await getClaimAssessment(claim.claim_id);
@@ -156,7 +187,6 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
 
   const handleExport = () => {
     console.log("Export claim:", claim.claim_id);
-    // TODO: Implement export action
   };
 
   return (
@@ -172,7 +202,7 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
       {/* Sub-Tab Navigation */}
       <div className="bg-card border-b border-border px-4">
         <div className="flex gap-1">
-          {SUB_TABS.map((tab) => {
+          {VISIBLE_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
 
@@ -197,51 +227,22 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeSubTab === "overview" && (
-          <ClaimOverviewTab
-            claim={claim}
-            facts={claimFacts}
-            assessment={assessment}
-            factsLoading={factsLoading}
-            assessmentLoading={assessmentLoading}
-            factsError={factsError}
-            assessmentError={assessmentError}
-            onDocumentClick={handleDocumentClick}
-            onViewSource={handleViewSource}
-            onAction={(action, reason) => {
-              console.log(`Claim action: ${action}`, { claimId: claim.claim_id, reason });
-              // TODO: Implement actual action API call
-            }}
-          />
-        )}
-
-        {activeSubTab === "facts" && (
-          <ClaimFactsTab
-            claim={claim}
-            facts={claimFacts}
-            loading={factsLoading}
-            error={factsError}
-            onDocumentClick={handleDocumentClick}
-            onViewSource={handleViewSource}
-          />
-        )}
-
         {activeSubTab === "assessment" && (
           <ClaimAssessmentTab
             claimId={claim.claim_id}
             assessment={assessment}
+            coverageAnalysis={coverageAnalysis}
+            coverageLoading={coverageLoading}
             loading={assessmentLoading}
             error={assessmentError}
             onRunAssessment={handleRunAssessment}
             onRefreshAssessment={handleRefreshAssessment}
+            resolvableRefs={resolvableRefs}
             onEvidenceClick={(ref) => {
-              // Synthetic refs (computed lookups) - no navigation
               if (ref.startsWith("_")) {
-                console.log("Computed lookup result:", ref);
                 return;
               }
 
-              // Try to find matching fact by name to get full provenance
               const fact = claimFacts?.facts.find(
                 (f) => f.name.toLowerCase() === ref.toLowerCase()
               );
@@ -255,24 +256,45 @@ export function ClaimSummaryTab({ claim, onDocumentClick, onViewSource }: ClaimS
                   fact.selected_from.text_quote ?? undefined,
                   typeof fact.value === 'string' ? fact.value : undefined
                 );
-                return;
               }
-
-              // Fallback: parse as "doc_id:page" format
-              const parts = ref.split(":");
-              const docId = parts[0];
-              const page = parts.length > 1 ? parseInt(parts[1], 10) : null;
-              handleViewSource(docId, page, null, null);
+              // If no document backing, do nothing (ref is not resolvable)
             }}
           />
         )}
 
-        {activeSubTab === "assumptions" && (
-          <ClaimAssumptionsTab
-            assumptions={assessment?.assumptions || []}
-            checks={assessment?.checks}
-            loading={assessmentLoading}
-            error={assessmentError}
+        {activeSubTab === "coverages" && (
+          <ClaimCoveragesTab
+            coverageAnalysis={coverageAnalysis}
+            loading={coverageLoading}
+          />
+        )}
+
+        {/* Deprecated tabs (hidden from navigation but kept for backwards compatibility) */}
+        {activeSubTab === "overview" && (
+          <ClaimOverviewTab
+            claim={claim}
+            facts={claimFacts}
+            assessment={assessment}
+            factsLoading={factsLoading}
+            assessmentLoading={assessmentLoading}
+            factsError={factsError}
+            assessmentError={assessmentError}
+            onDocumentClick={handleDocumentClick}
+            onViewSource={handleViewSource}
+            onAction={(action, reason) => {
+              console.log(`Claim action: ${action}`, { claimId: claim.claim_id, reason });
+            }}
+          />
+        )}
+
+        {activeSubTab === "facts" && (
+          <ClaimFactsTab
+            claim={claim}
+            facts={claimFacts}
+            loading={factsLoading}
+            error={factsError}
+            onDocumentClick={handleDocumentClick}
+            onViewSource={handleViewSource}
           />
         )}
 

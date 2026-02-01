@@ -8,6 +8,7 @@ interface CheckCardProps {
   isExpanded?: boolean;
   onToggle?: () => void;
   onEvidenceClick?: (ref: string) => void;
+  resolvableRefs?: Set<string>;
 }
 
 const resultConfig: Record<CheckResult, {
@@ -23,7 +24,7 @@ const resultConfig: Record<CheckResult, {
 /**
  * Single assessment check display with expandable details.
  */
-export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick }: CheckCardProps) {
+export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick, resolvableRefs }: CheckCardProps) {
   const config = resultConfig[check.result];
   const Icon = config.icon;
   const hasNoEvidence = check.evidence_refs.length === 0;
@@ -90,20 +91,30 @@ export function CheckCard({ check, isExpanded = false, onToggle, onEvidenceClick
             </span>
             {check.evidence_refs.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {check.evidence_refs.map((ref, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => onEvidenceClick?.(ref)}
-                    className={cn(
-                      "inline-flex items-center gap-1 px-2 py-1 rounded text-xs",
-                      "bg-info/10 text-info",
-                      "hover:bg-info/20 transition-colors"
-                    )}
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    {formatEvidenceRef(ref)}
-                  </button>
-                ))}
+                {check.evidence_refs.map((ref, idx) => {
+                  const isResolvable = !resolvableRefs || resolvableRefs.has(ref.toLowerCase());
+                  return isResolvable ? (
+                    <button
+                      key={idx}
+                      onClick={() => onEvidenceClick?.(ref)}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-1 rounded text-xs",
+                        "bg-info/10 text-info",
+                        "hover:bg-info/20 transition-colors"
+                      )}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      {formatEvidenceRef(ref)}
+                    </button>
+                  ) : (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-muted text-muted-foreground"
+                    >
+                      {formatEvidenceRef(ref)}
+                    </span>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-xs text-warning flex items-center gap-1">

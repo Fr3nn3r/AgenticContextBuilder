@@ -58,6 +58,11 @@ class LineItemCoverage(BaseModel):
         ..., description="Human-readable explanation of the coverage decision"
     )
 
+    # Exclusion reason (populated by rule engine / analyzer for NOT_COVERED items)
+    exclusion_reason: Optional[str] = Field(
+        None, description="Reason key for non-coverage (e.g. 'fee', 'consumable', 'component_excluded')"
+    )
+
     # Coverage amounts (calculated based on status and coverage_percent)
     covered_amount: float = Field(
         0.0, description="Amount covered by policy (before excess)"
@@ -158,6 +163,35 @@ class PrimaryRepairResult(BaseModel):
     )
 
 
+class NonCoveredExplanation(BaseModel):
+    """Adjuster-ready explanation for a group of non-covered items."""
+
+    exclusion_reason: str = Field(
+        ..., description="Reason string (from rule config or analyzer)"
+    )
+    items: List[str] = Field(
+        default_factory=list, description="Item descriptions in this group"
+    )
+    item_codes: List[Optional[str]] = Field(
+        default_factory=list, description="Item codes (parallel to items)"
+    )
+    category: Optional[str] = Field(
+        None, description="Coverage category (if sub-grouped by category)"
+    )
+    total_amount: float = Field(
+        0.0, description="Sum of not_covered_amount in this group"
+    )
+    explanation: str = Field(
+        ..., description="Adjuster-ready explanation text"
+    )
+    policy_reference: Optional[str] = Field(
+        None, description="Policy clause reference"
+    )
+    match_confidence: float = Field(
+        1.0, ge=0.0, le=1.0, description="Minimum confidence in this group"
+    )
+
+
 class CoverageAnalysisResult(BaseModel):
     """Complete result of coverage analysis for a claim."""
 
@@ -191,6 +225,14 @@ class CoverageAnalysisResult(BaseModel):
     # Primary repair determination
     primary_repair: Optional[PrimaryRepairResult] = Field(
         None, description="Primary repair component determination result"
+    )
+
+    # Non-covered explanations (post-processing)
+    non_covered_explanations: Optional[List[NonCoveredExplanation]] = Field(
+        None, description="Grouped explanations for non-covered items"
+    )
+    non_covered_summary: Optional[str] = Field(
+        None, description="Summary string of non-covered items"
     )
 
     # Processing metadata

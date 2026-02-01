@@ -554,6 +554,92 @@ class TestIsComponentInPolicyList:
         assert "found in policy list" in reason
 
 
+class TestCrossCategoryMatching:
+    """Tests for _find_component_across_categories (cross-category lookup)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(config=AnalyzerConfig(use_llm_fallback=False), component_config=nsa_component_config)
+
+    def test_cross_category_finds_component_in_other_category(self, analyzer):
+        """height_control_valve not in suspension list but found in chassis via 'Height control'."""
+        covered = {
+            "suspension": ["Stossdämpfer", "Federbein", "Stabilisator"],
+            "chassis": ["Height control", "Lenkgetriebe", "Spurstange"],
+        }
+        excluded = {}
+        found, category, reason = analyzer._find_component_across_categories(
+            component="height_control_valve",
+            primary_system="suspension",
+            covered_components=covered,
+            excluded_components=excluded,
+            description="VENTIL",
+        )
+        assert found is True
+        assert category == "chassis"
+        assert "Cross-category match" in reason
+
+    def test_cross_category_skips_excluded_component(self, analyzer):
+        """Component found in another category but excluded there → not found."""
+        covered = {
+            "suspension": ["Stossdämpfer"],
+            "chassis": ["Height control", "Lenkgetriebe"],
+        }
+        excluded = {
+            "chassis": ["Height control"],
+        }
+        found, category, reason = analyzer._find_component_across_categories(
+            component="height_control_valve",
+            primary_system="suspension",
+            covered_components=covered,
+            excluded_components=excluded,
+            description="VENTIL",
+        )
+        assert found is False
+        assert category is None
+
+    def test_cross_category_no_match_anywhere(self, analyzer):
+        """Component not found in any category → not found."""
+        covered = {
+            "suspension": ["Stossdämpfer"],
+            "chassis": ["Lenkgetriebe", "Spurstange"],
+        }
+        excluded = {}
+        found, category, reason = analyzer._find_component_across_categories(
+            component="flux_capacitor",
+            primary_system="suspension",
+            covered_components=covered,
+            excluded_components=excluded,
+            description="FLUX CAPACITOR ASSEMBLY",
+        )
+        assert found is False
+        assert category is None
+
+    def test_cross_category_not_triggered_when_found_in_primary(self, analyzer):
+        """When component IS in primary category list, cross-category is irrelevant.
+
+        This tests the method directly — it should skip the primary category
+        and not find a match elsewhere if only primary has it.
+        """
+        covered = {
+            "engine": ["Zahnriemen", "Wasserpumpe"],
+            "chassis": ["Lenkgetriebe"],
+        }
+        excluded = {}
+        found, category, reason = analyzer._find_component_across_categories(
+            component="timing_belt",
+            primary_system="engine",
+            covered_components=covered,
+            excluded_components=excluded,
+            description="ZAHNRIEMEN",
+        )
+        # timing_belt maps to Zahnriemen which is in engine (primary) — but
+        # _find_component_across_categories skips primary, so it won't find
+        # it in chassis either → not found
+        assert found is False
+        assert category is None
+
+
 class TestValidateLLMCoverageDecision:
     """Tests for _validate_llm_coverage_decision."""
 

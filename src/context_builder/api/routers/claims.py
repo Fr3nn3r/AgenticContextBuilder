@@ -132,6 +132,26 @@ def get_claim_facts(claim_id: str) -> Optional[Dict[str, Any]]:
     return data
 
 
+@router.get("/api/claims/{claim_id}/coverage-analysis")
+def get_claim_coverage_analysis(claim_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get coverage analysis for a claim.
+
+    Returns the CoverageAnalysisResult with line items, summary, and
+    non-covered explanations, or null if no coverage analysis exists.
+    """
+    from context_builder.api.services.coverage_analysis import CoverageAnalysisService
+    from context_builder.storage.filesystem import FileStorage
+
+    workspace_root = get_workspace_path()
+    storage = FileStorage(workspace_root)
+    service = CoverageAnalysisService(storage)
+    result = service.get_coverage_analysis(claim_id)
+    if result is None:
+        return None
+    return result.model_dump(mode="json")
+
+
 @router.get("/api/claims/{claim_id}/assessment")
 def get_claim_assessment(claim_id: str) -> Optional[Dict[str, Any]]:
     """

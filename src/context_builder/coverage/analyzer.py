@@ -11,7 +11,7 @@ Pipeline order:
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -594,6 +594,59 @@ class CoverageAnalyzer:
 
         return False
 
+    def _find_component_across_categories(
+        self,
+        component: Optional[str],
+        primary_system: Optional[str],
+        covered_components: Dict[str, List[str]],
+        excluded_components: Dict[str, List[str]],
+        description: str = "",
+    ) -> Tuple[bool, Optional[str], str]:
+        """Search all covered categories for a component that wasn't found in its primary category.
+
+        When a part maps to category X via part number lookup but is not in X's
+        policy list, this checks every *other* covered category for a match.
+        Example: height_control_valve → suspension (not listed) → found in chassis
+        via "Height control" substring match.
+
+        Returns:
+            (found, category, reason) — found is True if the component was matched
+            in another category; category is the name of that category; reason is
+            a human-readable explanation.
+        """
+        primary_lower = (primary_system or "").lower()
+        for category, parts_list in covered_components.items():
+            if category.lower() == primary_lower:
+                continue
+            if not parts_list:
+                continue
+
+            is_in_list, reason = self._is_component_in_policy_list(
+                component=component,
+                system=category,
+                covered_components=covered_components,
+                description=description,
+            )
+            if is_in_list is True:
+                # Found — but also check if it's excluded in that category
+                is_excluded = self._is_component_excluded_by_policy(
+                    component or "", category, description, excluded_components,
+                )
+                if is_excluded:
+                    logger.debug(
+                        "Cross-category match: '%s' found in '%s' but excluded",
+                        component, category,
+                    )
+                    continue
+                return True, category, (
+                    f"Cross-category match: component not in '{primary_system}' "
+                    f"list but found in '{category}' ({reason})"
+                )
+
+        return False, None, (
+            f"Component '{component}' not found in any other category's policy list"
+        )
+
     def _is_component_in_policy_list(
         self,
         component: Optional[str],
@@ -825,9 +878,12 @@ class CoverageAnalyzer:
             # Use part_number from result (could be item_code or keyword match)
             part_ref = item_code or result.part_number
 
+            exclusion_reason = None  # Set for NOT_COVERED branches
+
             if result.covered is False:
                 # Part is explicitly excluded (e.g., accessory)
                 status = CoverageStatus.NOT_COVERED
+                exclusion_reason = "component_excluded"
                 reasoning = (
                     f"Part {part_ref} is excluded: "
                     f"{result.note or result.component}"
@@ -843,19 +899,42 @@ class CoverageAnalyzer:
                 )
             elif is_category_covered and is_in_policy_list is False:
                 # Category is covered but the component is definitively NOT
-                # in the policy's exhaustive parts list.  Per GCI §2.1A the
-                # insured parts are "exhaustively listed" in the specific
-                # conditions — not on the list means not covered.
-                is_exact_pn = result.lookup_source and "keyword" not in result.lookup_source
-                status = CoverageStatus.NOT_COVERED
-                reasoning = (
-                    f"Part {part_ref} identified as "
-                    f"'{result.component_description or result.component}' "
-                    f"in category '{result.system}' "
-                    f"({'exact part number' if is_exact_pn else 'keyword match'}). "
-                    f"Component not in policy's exhaustive parts list. "
-                    f"Policy list note: {policy_check_reason}"
+                # in the policy's exhaustive parts list.  Before rejecting,
+                # check if the component appears in another covered category's
+                # list (cross-category match).
+                cross_found, cross_category, cross_reason = (
+                    self._find_component_across_categories(
+                        component=result.component,
+                        primary_system=result.system,
+                        covered_components=covered_components,
+                        excluded_components=excluded_components,
+                        description=description,
+                    )
                 )
+                if cross_found:
+                    status = CoverageStatus.COVERED
+                    reasoning = (
+                        f"Part {part_ref} identified as "
+                        f"'{result.component_description or result.component}' "
+                        f"in category '{result.system}' (lookup: {result.lookup_source}). "
+                        f"{cross_reason}"
+                    )
+                    # Override coverage_category to the cross-matched category
+                    result = _dc_replace(result, system=cross_category)
+                else:
+                    # Per GCI §2.1A the insured parts are "exhaustively listed"
+                    # in the specific conditions — not on the list means not covered.
+                    is_exact_pn = result.lookup_source and "keyword" not in result.lookup_source
+                    status = CoverageStatus.NOT_COVERED
+                    exclusion_reason = "component_not_in_list"
+                    reasoning = (
+                        f"Part {part_ref} identified as "
+                        f"'{result.component_description or result.component}' "
+                        f"in category '{result.system}' "
+                        f"({'exact part number' if is_exact_pn else 'keyword match'}). "
+                        f"Component not in policy's exhaustive parts list. "
+                        f"Policy list note: {policy_check_reason}"
+                    )
             elif is_category_covered and is_in_policy_list is None:
                 # Category is covered but we couldn't determine whether the
                 # component is in the policy list (synonym gap, no mapping).
@@ -869,6 +948,7 @@ class CoverageAnalyzer:
                     )
                     if is_excluded:
                         status = CoverageStatus.NOT_COVERED
+                        exclusion_reason = "component_excluded"
                         reasoning = (
                             f"Part {part_ref} identified as "
                             f"'{result.component_description or result.component}' "
@@ -929,6 +1009,7 @@ class CoverageAnalyzer:
                     continue
 
                 status = CoverageStatus.NOT_COVERED
+                exclusion_reason = "category_not_covered"
                 reasoning = (
                     f"Part {part_ref} is '{result.component}' in category "
                     f"'{result.system}' which is not covered by this policy"
@@ -946,6 +1027,7 @@ class CoverageAnalyzer:
                     match_method=MatchMethod.PART_NUMBER,
                     match_confidence=0.95,  # High confidence for part number matches
                     match_reasoning=reasoning,
+                    exclusion_reason=exclusion_reason,
                     covered_amount=(
                         item.get("total_price") or 0.0
                         if status == CoverageStatus.COVERED
@@ -1350,6 +1432,7 @@ class CoverageAnalyzer:
 
             original_category = item.coverage_category
             item.coverage_status = CoverageStatus.NOT_COVERED
+            item.exclusion_reason = "demoted_no_anchor"
             item.covered_amount = 0.0
             item.not_covered_amount = item.total_price
             item.match_reasoning += (
@@ -1653,6 +1736,7 @@ class CoverageAnalyzer:
             else:
                 original_status = item.coverage_status
                 item.coverage_status = CoverageStatus.NOT_COVERED
+                item.exclusion_reason = "component_excluded"
                 item.match_reasoning += " [OVERRIDE: Component is in excluded list]"
                 logger.info(
                     f"LLM validation override: '{item.description}' changed from "
@@ -1723,6 +1807,7 @@ class CoverageAnalyzer:
             if not category_is_covered:
                 # LLM assigned a category that isn't in the policy at all
                 item.coverage_status = CoverageStatus.REVIEW_NEEDED
+                item.exclusion_reason = "category_not_covered"
                 item.match_confidence = 0.45
                 item.match_reasoning += (
                     f" [REVIEW: category '{category}' is not covered by policy]"

@@ -25,6 +25,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
+from context_builder.coverage.explanation_generator import (
+    ExplanationConfig,
+    ExplanationGenerator,
+)
 from context_builder.coverage.schemas import CoverageAnalysisResult
 from context_builder.pipeline.claim_stages.context import ClaimContext
 from context_builder.schemas.reconciliation import ReconciliationReport
@@ -408,6 +412,92 @@ class ScreeningStage:
             logger.error(f"Failed to write screening.json: {e}")
             return None
 
+    @staticmethod
+    def _extract_components_from_facts(
+        aggregated_facts: Optional[Dict[str, Any]],
+        fact_name: str,
+    ) -> Dict[str, List[str]]:
+        """Extract a component dict (covered/excluded) from aggregated facts."""
+        if not aggregated_facts:
+            return {}
+        facts = aggregated_facts.get("facts", [])
+        for f in facts:
+            fname = f.get("name", "")
+            if fname == fact_name or fname.endswith(f".{fact_name}"):
+                val = f.get("structured_value") or f.get("value")
+                if isinstance(val, dict):
+                    return {k: v for k, v in val.items() if v}
+        return {}
+
+    @staticmethod
+    def _create_explanation_llm_client(claim_id: str) -> Any:
+        """Create an audited LLM client for non-covered explanations.
+
+        Returns None if unavailable (falls back to template mode).
+        """
+        try:
+            from context_builder.services.llm_audit import create_audited_client
+
+            client = create_audited_client()
+            client.set_context(
+                claim_id=claim_id,
+                call_purpose="non_covered_explanation",
+            )
+            return client
+        except Exception:
+            logger.warning(
+                "Could not create LLM client for non-covered explanations; "
+                "falling back to template mode",
+                exc_info=True,
+            )
+            return None
+
+    def _enrich_with_explanations(
+        self,
+        coverage_result: CoverageAnalysisResult,
+        workspace_path: Path,
+        aggregated_facts: Optional[Dict[str, Any]] = None,
+        claim_id: Optional[str] = None,
+    ) -> CoverageAnalysisResult:
+        """Add non-covered explanations to coverage result."""
+        try:
+            coverage_dir = workspace_path / "config" / "coverage"
+            config: Optional[ExplanationConfig] = None
+
+            if coverage_dir.exists():
+                matches = list(coverage_dir.glob("*_explanation_templates.yaml"))
+                if matches:
+                    config = ExplanationConfig.from_yaml(matches[0])
+
+            generator = ExplanationGenerator(config or ExplanationConfig.default())
+
+            # Extract policy context for LLM mode
+            covered = self._extract_components_from_facts(
+                aggregated_facts, "covered_components"
+            )
+            excluded = self._extract_components_from_facts(
+                aggregated_facts, "excluded_components"
+            )
+            llm_client = (
+                self._create_explanation_llm_client(claim_id)
+                if claim_id
+                else None
+            )
+
+            explanations, summary = generator.generate(
+                coverage_result,
+                covered_components=covered or None,
+                excluded_components=excluded or None,
+                llm_client=llm_client,
+            )
+            if explanations:
+                coverage_result.non_covered_explanations = explanations
+                coverage_result.non_covered_summary = summary
+        except Exception as e:
+            logger.warning(f"Failed to generate non-covered explanations: {e}")
+
+        return coverage_result
+
     def _write_coverage_analysis(
         self,
         workspace_path: Path,
@@ -501,8 +591,14 @@ class ScreeningStage:
                 screening_result,
             )
 
-            # Write coverage_analysis.json if present
+            # Generate non-covered explanations and write coverage_analysis.json
             if coverage_result is not None:
+                coverage_result = self._enrich_with_explanations(
+                    coverage_result,
+                    context.workspace_path,
+                    aggregated_facts=context.aggregated_facts,
+                    claim_id=context.claim_id,
+                )
                 self._write_coverage_analysis(
                     context.workspace_path,
                     context.claim_id,

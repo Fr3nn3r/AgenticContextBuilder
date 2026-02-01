@@ -63,6 +63,7 @@ class TestRuleEngineDefaults:
         assert result.match_confidence == 1.0
         assert result.not_covered_amount == 50.0
         assert "fee" in result.match_reasoning.lower()
+        assert result.exclusion_reason == "fee"
 
     def test_zero_price_item_covered(self):
         """Zero-price items are marked covered."""
@@ -167,6 +168,7 @@ class TestRuleEngineNSA:
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert result.match_method == MatchMethod.RULE
         assert "ENTSORGUNG" in result.match_reasoning
+        assert result.exclusion_reason == "exclusion_pattern"
 
     def test_exclusion_pattern_ersatzfahrzeug(self, nsa_engine):
         """Rental car pattern triggers not covered."""
@@ -198,6 +200,7 @@ class TestRuleEngineNSA:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert "Consumable" in result.match_reasoning
+        assert result.exclusion_reason == "consumable"
 
     def test_consumable_oil_filter(self, nsa_engine):
         """Oil filter is not covered."""
@@ -324,6 +327,7 @@ class TestRule5NonCoveredLaborPatterns:
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert result.match_method == MatchMethod.RULE
         assert "non-covered pattern" in result.match_reasoning
+        assert result.exclusion_reason == "non_covered_labor"
 
     def test_kontrolle_labor_not_covered(self, nsa_engine):
         """KONTROLLE labor is not covered."""
@@ -402,6 +406,7 @@ class TestRule6GenericDescriptions:
         assert result is not None
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert "Generic description" in result.match_reasoning
+        assert result.exclusion_reason == "generic_description"
 
     def test_generic_with_whitespace(self, nsa_engine):
         """Generic descriptions with surrounding whitespace still match."""

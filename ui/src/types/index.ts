@@ -960,6 +960,73 @@ export interface ServiceEntry {
 }
 
 // =============================================================================
+// COVERAGE ANALYSIS TYPES
+// =============================================================================
+
+export type CoverageStatus = "covered" | "not_covered" | "review_needed";
+export type MatchMethod = "rule" | "part_number" | "keyword" | "llm" | "manual";
+
+export interface LineItemCoverage {
+  item_code: string | null;
+  description: string;
+  item_type: string;
+  total_price: number;
+  coverage_status: CoverageStatus;
+  coverage_category: string | null;
+  matched_component: string | null;
+  match_method: MatchMethod;
+  match_confidence: number;
+  match_reasoning: string;
+  exclusion_reason: string | null;
+  covered_amount: number;
+  not_covered_amount: number;
+}
+
+export interface CoverageSummary {
+  total_claimed: number;
+  total_covered_before_excess: number;
+  total_not_covered: number;
+  excess_amount: number;
+  total_payable: number;
+  items_covered: number;
+  items_not_covered: number;
+  items_review_needed: number;
+  coverage_percent: number | null;
+}
+
+export interface NonCoveredExplanation {
+  exclusion_reason: string;
+  items: string[];
+  item_codes: (string | null)[];
+  category: string | null;
+  total_amount: number;
+  explanation: string;
+  policy_reference: string | null;
+  match_confidence: number;
+}
+
+export interface PrimaryRepairResult {
+  component: string | null;
+  category: string | null;
+  description: string | null;
+  is_covered: boolean | null;
+  confidence: number;
+  determination_method: "deterministic" | "repair_context" | "llm" | "none";
+}
+
+export interface CoverageAnalysisResult {
+  schema_version: string;
+  claim_id: string;
+  claim_run_id: string | null;
+  generated_at: string;
+  line_items: LineItemCoverage[];
+  summary: CoverageSummary;
+  primary_repair: PrimaryRepairResult | null;
+  non_covered_explanations: NonCoveredExplanation[] | null;
+  non_covered_summary: string | null;
+}
+
+// =============================================================================
 // ASSESSMENT TYPES
 // =============================================================================
 

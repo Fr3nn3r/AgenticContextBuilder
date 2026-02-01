@@ -6,19 +6,22 @@ import {
   XCircle,
   AlertTriangle,
   ArrowRightCircle,
-  ShieldAlert,
   Clock,
   Mail,
   ChevronDown,
   Copy,
   CheckCircle,
+  Wrench,
 } from "lucide-react";
 import { getAssessmentHistory, getHistoricalAssessment } from "../../api/client";
 import { cn } from "../../lib/utils";
-import type { ClaimAssessment, AssessmentDecision } from "../../types";
+import type {
+  ClaimAssessment,
+  AssessmentDecision,
+  CoverageAnalysisResult,
+} from "../../types";
 import { formatTimestamp } from "../../lib/formatters";
-import { StatusBadge, ScoreBadge } from "../shared";
-import { AssumptionsPane } from "./AssumptionsPane";
+import { ScoreBadge } from "../shared";
 import { ChecksReviewPanel } from "./ChecksReviewPanel";
 import { WorkflowActionsPanel } from "./WorkflowActionsPanel";
 import { PayoutBreakdownCard } from "./PayoutBreakdownCard";
@@ -29,11 +32,29 @@ import { useAssessmentWebSocket } from "../../hooks/useAssessmentWebSocket";
 interface ClaimAssessmentTabProps {
   claimId: string;
   assessment: ClaimAssessment | null;
+  coverageAnalysis: CoverageAnalysisResult | null;
+  coverageLoading: boolean;
   loading: boolean;
   error: string | null;
   onRunAssessment?: () => Promise<void>;
   onRefreshAssessment?: () => Promise<void>;
   onEvidenceClick?: (ref: string) => void;
+  resolvableRefs?: Set<string>;
+}
+
+// === Helpers ===
+
+function formatCHF(value: number): string {
+  return new Intl.NumberFormat("de-CH", {
+    style: "currency",
+    currency: "CHF",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function componentLabel(component: string): string {
+  return component.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const DECISION_CONFIG: Record<AssessmentDecision, {
@@ -79,16 +100,19 @@ const DECISION_CONFIG: Record<AssessmentDecision, {
 };
 
 /**
- * Assessment tab showing decision, checks, assumptions, and run controls.
+ * Assessment tab: decision, checks, coverage line items, and feedback.
  */
 export function ClaimAssessmentTab({
   claimId,
   assessment,
+  coverageAnalysis,
+  coverageLoading,
   loading,
   error,
   onRunAssessment,
   onRefreshAssessment,
   onEvidenceClick,
+  resolvableRefs,
 }: ClaimAssessmentTabProps) {
   const { progress, startAssessment, isRunning, reset } = useAssessmentWebSocket();
   const [showDraftModal, setShowDraftModal] = useState(false);
@@ -107,7 +131,6 @@ export function ClaimAssessmentTab({
   const [displayedAssessment, setDisplayedAssessment] = useState<ClaimAssessment | null>(assessment);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Reusable function to load assessment history
   const loadHistory = useCallback(async () => {
     if (!claimId) return;
     try {
@@ -118,29 +141,23 @@ export function ClaimAssessmentTab({
     }
   }, [claimId]);
 
-  // Sync displayedAssessment with prop when assessment changes
   useEffect(() => {
     setDisplayedAssessment(assessment);
-    // Reset to current when assessment prop changes
     if (assessment) {
       setSelectedAssessmentId(null);
     }
   }, [assessment]);
 
-  // Fetch assessment history on mount AND when assessment prop changes
   useEffect(() => {
     loadHistory();
   }, [loadHistory, assessment]);
 
-  // Handle selecting a historical assessment
   const handleSelectAssessment = useCallback(async (runId: string | null) => {
     if (runId === null) {
-      // Selecting "current" - use prop assessment
       setSelectedAssessmentId(null);
       setDisplayedAssessment(assessment);
       return;
     }
-
     setSelectedAssessmentId(runId);
     setHistoryLoading(true);
     try {
@@ -158,7 +175,7 @@ export function ClaimAssessmentTab({
   const handleRunAssessment = useCallback(async () => {
     const runId = await startAssessment(claimId);
     if (runId) {
-      // Assessment started - WebSocket will track progress
+      // WebSocket will track progress
     }
   }, [claimId, startAssessment]);
 
@@ -167,7 +184,6 @@ export function ClaimAssessmentTab({
     if (onRefreshAssessment) {
       onRefreshAssessment();
     }
-    // Also refresh history to show the new assessment
     loadHistory();
   }, [reset, onRefreshAssessment, loadHistory]);
 
@@ -177,12 +193,10 @@ export function ClaimAssessmentTab({
       if (onRefreshAssessment) {
         onRefreshAssessment();
       }
-      // Also refresh history to show the new assessment
       loadHistory();
     }
   }, [reset, progress.status, onRefreshAssessment, loadHistory]);
 
-  // Copy assessment ID to clipboard
   const handleCopyId = useCallback(async () => {
     const currentId = selectedAssessmentId || assessmentHistory.find(h => h.is_current)?.run_id;
     if (!currentId) return;
@@ -216,7 +230,6 @@ export function ClaimAssessmentTab({
     );
   }
 
-  // No assessment yet
   if (!displayedAssessment) {
     return (
       <div className="p-4">
@@ -261,22 +274,12 @@ export function ClaimAssessmentTab({
   const decisionConfig = DECISION_CONFIG[displayedAssessment.decision];
   const DecisionIcon = decisionConfig.icon;
 
-  // Count check results
-  const passCount = displayedAssessment.checks.filter((c) => c.result === "PASS").length;
   const failedChecks = displayedAssessment.checks.filter((c) => c.result === "FAIL");
-  const failCount = failedChecks.length;
-  const inconclusiveCount = displayedAssessment.checks.filter((c) => c.result === "INCONCLUSIVE").length;
 
-  // Count high-impact assumptions
-  const criticalAssumptions = displayedAssessment.assumptions.filter((a) => a.impact === "high").length;
-
-  // Generate decision description - include rejection reason for REJECT
   const getDecisionDescription = () => {
     if (displayedAssessment.decision === "REJECT" && failedChecks.length > 0) {
       const reasons = failedChecks.map((c) => c.details).filter(Boolean);
-      if (reasons.length === 1) {
-        return `Claim rejected: ${reasons[0]}`;
-      } else if (reasons.length > 1) {
+      if (reasons.length >= 1) {
         return `Claim rejected: ${reasons[0]}`;
       }
       return "Claim has been rejected due to failed checks";
@@ -284,20 +287,24 @@ export function ClaimAssessmentTab({
     return decisionConfig.description;
   };
 
-  // Shorten run ID for display (matching ClaimRunSelector)
   const shortenRunId = (runId: string) => {
     if (runId.length <= 24) return runId;
     return `${runId.slice(0, 16)}...${runId.slice(-6)}`;
   };
 
-  // Get current assessment entry for timestamp display
   const currentEntry = assessmentHistory.find(h =>
     selectedAssessmentId ? h.run_id === selectedAssessmentId : h.is_current
   );
 
+  // Coverage data
+  const primaryRepair = coverageAnalysis?.primary_repair;
+  const coveredLabor = coverageAnalysis?.line_items?.filter(
+    (li) => li.item_type === "labor" && li.coverage_status === "covered"
+  ) ?? [];
+
   return (
     <div className="p-4 space-y-4">
-      {/* Header Bar - Assessment selector and actions on one line */}
+      {/* Header Bar - Assessment selector and actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Assessment:</span>
@@ -372,13 +379,11 @@ export function ClaimAssessmentTab({
         "rounded-lg border overflow-hidden shadow-sm relative",
         decisionConfig.borderColor
       )}>
-        {/* Left accent bar */}
         <div className={cn(
           "absolute left-0 top-0 bottom-0 w-1",
           decisionConfig.accentBar
         )} />
 
-        {/* Main content with gradient */}
         <div className={cn("p-6 pl-5", decisionConfig.gradient)}>
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4">
@@ -401,20 +406,9 @@ export function ClaimAssessmentTab({
                     Assessed {formatTimestamp(displayedAssessment.assessed_at)}
                   </p>
                 )}
-                {displayedAssessment.decision_rationale && (
-                  <p className={cn(
-                    "text-sm mt-2 italic",
-                    displayedAssessment.decision === "REJECT"
-                      ? "text-destructive font-medium"
-                      : "text-muted-foreground"
-                  )}>
-                    "{displayedAssessment.decision_rationale}"
-                  </p>
-                )}
               </div>
             </div>
 
-            {/* Confidence Score */}
             <div className="text-right">
               <div className="text-2xl font-bold text-foreground">
                 <ScoreBadge value={displayedAssessment.confidence_score} />
@@ -424,38 +418,70 @@ export function ClaimAssessmentTab({
           </div>
         </div>
 
-        {/* Quick Stats section - neutral background */}
-        <div className="px-6 py-4 border-t border-border bg-muted/30 grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="text-center">
-            <div className="text-lg font-semibold text-success">{passCount}</div>
-            <div className="text-xs text-muted-foreground">Checks Passed</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-semibold text-destructive">{failCount}</div>
-            <div className="text-xs text-muted-foreground">Checks Failed</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-semibold text-warning">{inconclusiveCount}</div>
-            <div className="text-xs text-muted-foreground">Inconclusive</div>
-          </div>
-          <div className="text-center">
-            <div className={cn(
-              "text-lg font-semibold",
-              criticalAssumptions > 0 ? "text-warning" : "text-muted-foreground"
-            )}>
-              {displayedAssessment.assumptions.length}
-            </div>
-            <div className="text-xs text-muted-foreground">Assumptions</div>
-          </div>
-          {displayedAssessment.payout !== undefined && (
-            <div className="text-center">
-              <div className="text-lg font-semibold text-foreground">
-                {displayedAssessment.currency || displayedAssessment.payout_breakdown?.currency || "CHF"}{" "}
-                {displayedAssessment.payout.toLocaleString()}
+        {/* Lower section: Primary Repair + Covered Labor + Payout */}
+        <div className="px-6 py-4 border-t border-border bg-muted/30">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {/* Primary Repair */}
+            {primaryRepair && primaryRepair.component ? (
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Primary Repair</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-semibold text-foreground">
+                    {componentLabel(primaryRepair.component)}
+                  </span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                    primaryRepair.is_covered ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+                  )}>
+                    {primaryRepair.is_covered ? "Covered" : "Not Covered"}
+                  </span>
+                </div>
+                {primaryRepair.category && (
+                  <span className="text-xs text-muted-foreground">{componentLabel(primaryRepair.category)}</span>
+                )}
               </div>
-              <div className="text-xs text-muted-foreground">Payout</div>
-            </div>
-          )}
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Primary Repair</span>
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  {coverageLoading ? "Loading..." : "N/A"}
+                </span>
+              </div>
+            )}
+
+            {/* Covered Labor */}
+            {coveredLabor.length > 0 ? (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Covered Labor</div>
+                <div className="text-sm font-semibold text-foreground">
+                  {formatCHF(coveredLabor.reduce((sum, li) => sum + li.covered_amount, 0))}
+                </div>
+                <span className="text-xs text-muted-foreground">{coveredLabor.length} item{coveredLabor.length !== 1 ? "s" : ""}</span>
+              </div>
+            ) : (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Covered Labor</div>
+                <span className="text-sm text-muted-foreground">None</span>
+              </div>
+            )}
+
+            {/* Payout */}
+            {displayedAssessment.payout !== undefined && (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Payout</div>
+                <div className="text-sm font-semibold text-foreground">
+                  {displayedAssessment.currency || displayedAssessment.payout_breakdown?.currency || "CHF"}{" "}
+                  {displayedAssessment.payout.toLocaleString()}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -464,62 +490,16 @@ export function ClaimAssessmentTab({
         <PayoutBreakdownCard breakdown={displayedAssessment.payout_breakdown} />
       )}
 
-      {/* Fraud Indicators (if any) */}
-      {displayedAssessment.fraud_indicators.length > 0 && (
-        <div className="bg-destructive/10 rounded-lg border border-destructive/30 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <ShieldAlert className="h-5 w-5 text-destructive" />
-            <h3 className="font-semibold text-destructive">
-              Fraud Indicators ({displayedAssessment.fraud_indicators.length})
-            </h3>
-          </div>
-          <div className="space-y-2">
-            {displayedAssessment.fraud_indicators.map((indicator, idx) => (
-              <div key={idx} className="flex items-start gap-2 text-sm">
-                <StatusBadge
-                  variant={indicator.severity === "high" ? "error" : indicator.severity === "medium" ? "warning" : "neutral"}
-                  size="sm"
-                >
-                  {indicator.severity}
-                </StatusBadge>
-                <div>
-                  <span className="font-medium text-destructive">{indicator.indicator}</span>
-                  {indicator.details && (
-                    <p className="text-xs text-destructive/80 mt-0.5">{indicator.details}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations (if any) */}
-      {displayedAssessment.recommendations.length > 0 && displayedAssessment.decision !== "APPROVE" && (
-        <div className="bg-info/10 rounded-lg border border-info/30 p-4">
-          <h3 className="font-semibold text-info mb-2">Recommendations</h3>
-          <ul className="list-disc list-inside space-y-1">
-            {displayedAssessment.recommendations.map((rec, idx) => (
-              <li key={idx} className="text-sm text-info">{rec}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Checks Panel */}
       {displayedAssessment.checks.length > 0 && (
         <ChecksReviewPanel
           checks={displayedAssessment.checks}
           onEvidenceClick={onEvidenceClick}
+          resolvableRefs={resolvableRefs}
         />
       )}
 
-      {/* Assumptions Panel */}
-      {displayedAssessment.assumptions.length > 0 && (
-        <AssumptionsPane assumptions={displayedAssessment.assumptions} />
-      )}
-
-      {/* Assessment Feedback */}
+      {/* Assessment Feedback (at the very bottom) */}
       <WorkflowActionsPanel
         readiness={{ readinessPct: 0, blockingIssues: [], criticalAssumptions: 0, canAutoApprove: false, canAutoReject: false }}
         currentDecision={displayedAssessment.decision}
