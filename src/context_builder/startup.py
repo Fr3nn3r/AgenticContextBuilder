@@ -97,8 +97,8 @@ def _load_active_workspace(project_root: Path) -> WorkspaceState:
     workspace_name = None
     is_render = False
 
-    # Check for Render persistent disk environment variable
-    render_workspace = os.getenv("RENDER_WORKSPACE_PATH")
+    # Check for external workspace path (Azure, Render, etc.)
+    render_workspace = os.getenv("WORKSPACE_PATH") or os.getenv("RENDER_WORKSPACE_PATH")
     if render_workspace:
         workspace_path = Path(render_workspace)
         workspace_path.mkdir(parents=True, exist_ok=True)

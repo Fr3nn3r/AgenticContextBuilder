@@ -73,10 +73,15 @@ if _os.getenv("RENDER_WORKSPACE_PATH"):
     # On Render, allow any onrender.com subdomain for preview deploys
     _cors_origins.append("https://*.onrender.com")
 
+# Support extra origins via env var (e.g. Azure deployment URL)
+_extra = _os.getenv("CORS_EXTRA_ORIGINS", "")
+if _extra:
+    _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"https://.*\.onrender\.com",  # Allow all Render preview URLs
+    allow_origin_regex=r"https://.*\.(onrender\.com|azurewebsites\.net)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

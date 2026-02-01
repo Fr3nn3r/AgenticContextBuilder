@@ -1,0 +1,43 @@
+# Version control
+.git/
+.gitignore
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Node (rebuilt in Docker)
+ui/node_modules/
+ui/dist/
+ui/playwright-report/
+ui/test-results/
+
+# Data & workspaces (mounted at runtime)
+workspaces/
+data/
+output/
+runs/
+backup/
+
+# Config & secrets
+.env
+.contextbuilder/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docs & plans (not needed at runtime)
+docs/
+plans/
+wip/
+tests/
+*.md
