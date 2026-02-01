@@ -1344,6 +1344,34 @@ export async function getHistoricalAssessment(
   }
 }
 
+/**
+ * Submit feedback for the current assessment of a claim.
+ */
+export async function submitAssessmentFeedback(
+  claimId: string,
+  data: { rating: string; comment: string; username: string }
+): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Get feedback for the current assessment of a claim.
+ * Returns null if no feedback has been submitted.
+ */
+export async function getAssessmentFeedback(
+  claimId: string
+): Promise<{ rating: string; comment: string; username: string; submitted_at: string } | null> {
+  try {
+    return await fetchJson(`${API_BASE}/claims/${encodeURIComponent(claimId)}/assessment/feedback`);
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // CUSTOMER COMMUNICATION
 // =============================================================================

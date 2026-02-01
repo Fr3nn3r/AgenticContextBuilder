@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ThumbsUp,
   ThumbsDown,
   MessageSquare,
   Send,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useAuth } from "../../context/AuthContext";
+import { submitAssessmentFeedback, getAssessmentFeedback } from "../../api/client";
 import type { DecisionReadiness } from "./DecisionReadinessCard";
 import type { AssessmentDecision } from "../../types";
 
 interface WorkflowActionsPanelProps {
+  claimId: string;
   readiness: DecisionReadiness;
   currentDecision: AssessmentDecision | null;
   onAction?: (action: "approve" | "reject" | "refer", reason: string) => void;
@@ -22,18 +26,63 @@ type FeedbackRating = "good" | "poor" | null;
  * Feedback panel for users to rate assessment quality and provide comments.
  */
 export function WorkflowActionsPanel({
+  claimId,
   currentDecision,
 }: WorkflowActionsPanelProps) {
+  const { user } = useAuth();
   const [rating, setRating] = useState<FeedbackRating>(null);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [previousFeedback, setPreviousFeedback] = useState<{
+    rating: string;
+    comment: string;
+    username: string;
+    submitted_at: string;
+  } | null>(null);
 
-  const handleSubmit = () => {
+  // Load existing feedback on mount or when claimId changes
+  const loadFeedback = useCallback(async () => {
+    if (!claimId) return;
+    const feedback = await getAssessmentFeedback(claimId);
+    if (feedback) {
+      setPreviousFeedback(feedback);
+      setRating(feedback.rating as FeedbackRating);
+      setComment(feedback.comment);
+      setSubmitted(true);
+    }
+  }, [claimId]);
+
+  useEffect(() => {
+    // Reset state when claimId changes
+    setRating(null);
+    setComment("");
+    setSubmitted(false);
+    setPreviousFeedback(null);
+    loadFeedback();
+  }, [loadFeedback]);
+
+  const handleSubmit = async () => {
     if (!rating) return;
-
-    // TODO: Send feedback to backend
-    console.log("Assessment feedback:", { rating, comment, decision: currentDecision });
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      await submitAssessmentFeedback(claimId, {
+        rating,
+        comment,
+        username: user?.username ?? "anonymous",
+      });
+      setPreviousFeedback({
+        rating,
+        comment,
+        username: user?.username ?? "anonymous",
+        submitted_at: new Date().toISOString(),
+      });
+      setSubmitted(true);
+    } catch (err) {
+      console.error("Failed to submit feedback:", err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -49,18 +98,20 @@ export function WorkflowActionsPanel({
           <p className="text-sm font-medium text-foreground">
             Thank you for your feedback!
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Your input helps improve the assessment system.
-          </p>
+          {previousFeedback && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Rated <span className="font-medium">{previousFeedback.rating}</span>
+              {previousFeedback.username && <> by {previousFeedback.username}</>}
+              {previousFeedback.comment && <> &mdash; &ldquo;{previousFeedback.comment}&rdquo;</>}
+            </p>
+          )}
           <button
             onClick={() => {
               setSubmitted(false);
-              setRating(null);
-              setComment("");
             }}
             className="mt-4 text-xs text-primary hover:underline"
           >
-            Submit another response
+            Update feedback
           </button>
         </div>
       </div>
@@ -139,16 +190,25 @@ export function WorkflowActionsPanel({
         {/* Submit Button */}
         <button
           onClick={handleSubmit}
-          disabled={!rating}
+          disabled={!rating || submitting}
           className={cn(
             "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors",
-            rating
+            rating && !submitting
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
         >
-          <Send className="h-4 w-4" />
-          Submit Feedback
+          {submitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Submitting...
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" />
+              Submit Feedback
+            </>
+          )}
         </button>
 
         {/* Help Text */}

@@ -502,6 +502,7 @@ export function ClaimAssessmentTab({
 
       {/* Assessment Feedback (at the very bottom) */}
       <WorkflowActionsPanel
+        claimId={claimId}
         readiness={{ readinessPct: 0, blockingIssues: [], criticalAssumptions: 0, canAutoApprove: false, canAutoReject: false }}
         currentDecision={displayedAssessment.decision}
       />

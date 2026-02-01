@@ -178,6 +178,42 @@ def get_claim_assessment_history(claim_id: str) -> List[Dict[str, Any]]:
     return get_assessment_service().get_assessment_history(claim_id)
 
 
+class AssessmentFeedbackRequest(BaseModel):
+    """Request body for submitting assessment feedback."""
+    rating: str  # "good" | "poor"
+    comment: str = ""
+    username: str
+
+
+@router.post("/api/claims/{claim_id}/assessment/feedback")
+def submit_assessment_feedback(claim_id: str, request: AssessmentFeedbackRequest):
+    """
+    Submit feedback for the current assessment of a claim.
+
+    Persists rating + comment to a JSON file alongside the assessment.
+    Submitting again overwrites previous feedback.
+    """
+    if request.rating not in ("good", "poor"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid rating '{request.rating}'. Must be 'good' or 'poor'."
+        )
+    feedback = get_assessment_service().save_feedback(
+        claim_id, request.model_dump()
+    )
+    return {"status": "ok", "feedback": feedback}
+
+
+@router.get("/api/claims/{claim_id}/assessment/feedback")
+def get_assessment_feedback(claim_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get feedback for the current assessment of a claim.
+
+    Returns the feedback object or null if no feedback has been submitted.
+    """
+    return get_assessment_service().get_feedback(claim_id)
+
+
 @router.get("/api/assessment/evals/latest")
 def get_latest_assessment_eval() -> Optional[Dict[str, Any]]:
     """

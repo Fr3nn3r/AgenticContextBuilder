@@ -337,6 +337,100 @@ class AssessmentService:
             "assessed_at": data.get("assessment_timestamp"),
         }
 
+    def _get_feedback_path(self, claim_id: str) -> Path:
+        """Get the path to a claim's current assessment feedback file."""
+        return self.claims_dir / claim_id / "context" / "assessment_feedback.json"
+
+    def save_feedback(self, claim_id: str, feedback_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Save feedback for the current assessment.
+
+        Writes feedback to both the current assessment feedback file and
+        a versioned copy alongside the assessment in the assessments directory.
+
+        Args:
+            claim_id: The claim ID
+            feedback_data: Dict with rating, comment, username
+
+        Returns:
+            The saved feedback dict
+        """
+        # Load current assessment to get assessment_id
+        assessment_path = self._get_assessment_path(claim_id)
+        assessment_id = None
+        if assessment_path.exists():
+            try:
+                with open(assessment_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                assessment_id = data.get("assessment_id")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # If no legacy assessment, check claim_runs for latest
+        if not assessment_id:
+            claim_runs_dir = self._get_claim_runs_dir(claim_id)
+            if claim_runs_dir.exists():
+                latest_timestamp = ""
+                for run_dir in claim_runs_dir.iterdir():
+                    if not run_dir.is_dir():
+                        continue
+                    af = run_dir / "assessment.json"
+                    if not af.exists():
+                        continue
+                    try:
+                        with open(af, "r", encoding="utf-8") as f:
+                            d = json.load(f)
+                        ts = d.get("assessment_timestamp", "")
+                        if ts > latest_timestamp:
+                            latest_timestamp = ts
+                            assessment_id = d.get("assessment_id") or run_dir.name
+                    except (json.JSONDecodeError, IOError):
+                        continue
+
+        now = datetime.now(timezone.utc)
+        feedback = {
+            "claim_id": claim_id,
+            "assessment_id": assessment_id,
+            "rating": feedback_data["rating"],
+            "comment": feedback_data.get("comment", ""),
+            "username": feedback_data["username"],
+            "submitted_at": now.isoformat(),
+        }
+
+        # Write current feedback file
+        feedback_path = self._get_feedback_path(claim_id)
+        feedback_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(feedback_path, "w", encoding="utf-8") as f:
+            json.dump(feedback, f, indent=2)
+        logger.info(f"Saved assessment feedback to {feedback_path}")
+
+        # Also write versioned feedback alongside the assessment
+        if assessment_id:
+            versioned_path = self._get_assessments_dir(claim_id) / f"{assessment_id}_feedback.json"
+            versioned_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(versioned_path, "w", encoding="utf-8") as f:
+                json.dump(feedback, f, indent=2)
+
+        return feedback
+
+    def get_feedback(self, claim_id: str) -> Optional[Dict[str, Any]]:
+        """Get feedback for the current assessment (if any).
+
+        Args:
+            claim_id: The claim ID
+
+        Returns:
+            Feedback dict or None if no feedback exists
+        """
+        feedback_path = self._get_feedback_path(claim_id)
+        if not feedback_path.exists():
+            return None
+        try:
+            with open(feedback_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load assessment feedback: {e}")
+            return None
+
     def get_assessment(self, claim_id: str) -> Optional[Dict[str, Any]]:
         """Load and transform the latest assessment to frontend format.
 
