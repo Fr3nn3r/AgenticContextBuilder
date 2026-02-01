@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Folder, FileText, AlertTriangle, ChevronRight, ChevronDown } from "lucide-react";
+import { Loader2, Folder, FileText, ChevronRight, ChevronDown } from "lucide-react";
 import type { ClaimSummary, DocSummary } from "../../types";
 import { cn } from "../../lib/utils";
 
@@ -18,21 +18,6 @@ interface ClaimTreeProps {
   onSelectDocument?: (claimId: string, docId: string) => void;
 }
 
-// Status indicator - only show for errors
-function ClaimStatusIcon({ claim }: { claim: ClaimSummary }) {
-  if (claim.gate_fail_count > 0) {
-    return <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />;
-  }
-  return null;
-}
-
-// Document status indicator - only show for errors
-function DocStatusIcon({ doc }: { doc: DocSummary }) {
-  if (doc.quality_status === "fail") {
-    return <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />;
-  }
-  return null;
-}
 
 /**
  * Claims tree with nested documents.
@@ -162,8 +147,7 @@ export function ClaimTree({
                   </div>
                 </div>
 
-                <ClaimStatusIcon claim={claim} />
-              </div>
+                              </div>
 
               {/* Documents (when expanded) */}
               {isExpanded && (
@@ -194,8 +178,7 @@ export function ClaimTree({
                           <span className="truncate flex-1" title={doc.filename}>
                             {doc.filename}
                           </span>
-                          <DocStatusIcon doc={doc} />
-                        </div>
+                                                  </div>
                       );
                     })
                   ) : (

@@ -363,11 +363,12 @@ export function ClaimAssessmentTab({
           )}
         </div>
         <button
-          onClick={() => setShowDraftModal(true)}
+          disabled
           className={cn(
             "inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-            "bg-primary text-primary-foreground hover:bg-primary/90"
+            "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
           )}
+          title="Coming soon"
         >
           <Mail className="h-4 w-4" />
           View Customer Draft

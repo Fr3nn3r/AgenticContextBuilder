@@ -4,7 +4,7 @@ WORKDIR /app/ui
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
 COPY ui/ ./
-RUN npm run build
+RUN npx vite build
 
 # Stage 2: Python backend + serve built frontend
 FROM python:3.11-slim
@@ -15,6 +15,6 @@ COPY src/ src/
 RUN pip install --no-cache-dir -e .
 COPY --from=frontend /app/ui/dist ui/dist/
 COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]

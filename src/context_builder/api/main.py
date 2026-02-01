@@ -156,6 +156,12 @@ if _UI_DIST_DIR.exists() and _UI_DIST_DIR.is_dir():
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             raise HTTPException(status_code=404)
 
+        # Serve static files from dist root (e.g. images from public/)
+        if full_path:
+            static_file = (_UI_DIST_DIR / full_path).resolve()
+            if static_file.is_relative_to(_UI_DIST_DIR) and static_file.is_file():
+                return FileResponse(static_file)
+
         # Serve index.html for SPA routing
         index_path = _UI_DIST_DIR / "index.html"
         if index_path.exists():

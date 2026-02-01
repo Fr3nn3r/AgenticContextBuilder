@@ -337,8 +337,14 @@ class ExplanationGenerator:
                 covered_components=covered_components,
                 excluded_components=excluded_components,
             )
+
+            # Use project's model resolution (handles Azure deployments)
+            from context_builder.services.openai_client import get_default_model
+
+            model = get_default_model()
+
             response = llm_client.chat_completions_create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=messages,
                 temperature=0.0,
                 max_tokens=1500,

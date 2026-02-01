@@ -9,6 +9,7 @@ import {
   Ruler,
   Hash,
   Check,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type {
@@ -38,18 +39,54 @@ function componentLabel(component: string): string {
   return component.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function humanizeReason(reason: string): string {
-  const map: Record<string, string> = {
-    fee: "Fees & Charges",
-    consumable: "Consumable Parts",
-    component_excluded: "Excluded Components",
-    category_not_covered: "Uncovered Category",
-    not_in_category: "Not in Covered Category",
-    wear_and_tear: "Wear & Tear Items",
-    accessory: "Accessories",
-    maintenance: "Maintenance Items",
+const EXCLUSION_INFO: Record<string, { label: string; tooltip: string }> = {
+  fee: {
+    label: "Fees & Charges",
+    tooltip: "Administrative fees, flat-rate charges, and surcharges that are excluded from warranty coverage.",
+  },
+  consumable: {
+    label: "Consumables",
+    tooltip: "Consumable materials such as oils, filters, fluids, and lubricants that are excluded from coverage as regular maintenance items.",
+  },
+  exclusion_pattern: {
+    label: "Standard Exclusions",
+    tooltip: "Items matching standard policy exclusion terms (e.g., disposal, cleaning, environmental fees, replacement vehicle).",
+  },
+  non_covered_labor: {
+    label: "Diagnostic & Investigation Labor",
+    tooltip: "Work classified as diagnostic, fault-finding, or system testing rather than direct repair labor.",
+  },
+  generic_description: {
+    label: "Unidentifiable Items",
+    tooltip: "Items whose description is too vague or generic to match to a specific covered component.",
+  },
+  component_excluded: {
+    label: "Excluded Components",
+    tooltip: "Parts explicitly listed in the policy's exclusion clause and therefore not eligible for coverage.",
+  },
+  component_not_in_list: {
+    label: "Unlisted Components",
+    tooltip: "Components not found in the policy's exhaustive list of covered parts for the matched repair category.",
+  },
+  category_not_covered: {
+    label: "Uncovered System",
+    tooltip: "The repair system or category (e.g., fuel system, turbo) is not included in the covered systems of this policy.",
+  },
+  demoted_no_anchor: {
+    label: "Unanchored Labor",
+    tooltip: "Labor costs that have no associated covered parts. Coverage requires at least one covered component to justify the labor.",
+  },
+  other: {
+    label: "Uncategorized",
+    tooltip: "Items that could not be classified into a specific exclusion category. Manual review recommended.",
+  },
+};
+
+function getExclusionInfo(reason: string): { label: string; tooltip: string } {
+  return EXCLUSION_INFO[reason] || {
+    label: reason.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    tooltip: `Items excluded under the "${reason.replace(/_/g, " ")}" rule.`,
   };
-  return map[reason] || reason.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const STATUS_BADGE: Record<CoverageStatus, { label: string; className: string }> = {
@@ -173,7 +210,7 @@ function buildExplanationText(coverageAnalysis: CoverageAnalysisResult): string 
   if (coverageAnalysis.non_covered_explanations?.length) {
     for (const group of coverageAnalysis.non_covered_explanations) {
       parts.push(
-        `${humanizeReason(group.exclusion_reason)} (${group.items.length} item${group.items.length !== 1 ? "s" : ""}, ${formatCHF(group.total_amount)}):\n${group.explanation}`
+        `${getExclusionInfo(group.exclusion_reason).label} (${group.items.length} item${group.items.length !== 1 ? "s" : ""}, ${formatCHF(group.total_amount)}):\n${group.explanation}`
       );
     }
   }
@@ -266,37 +303,46 @@ export function ClaimCoveragesTab({ coverageAnalysis, loading }: ClaimCoveragesT
           )}
 
           {/* Non-covered explanation groups */}
-          {nonCoveredExplanations.map((group, idx) => (
-            <div key={idx} className="border border-border rounded-md p-3">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">
-                    {humanizeReason(group.exclusion_reason)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    ({group.items.length} item{group.items.length !== 1 ? "s" : ""})
-                  </span>
+          {nonCoveredExplanations.map((group, idx) => {
+            const info = getExclusionInfo(group.exclusion_reason);
+            return (
+              <div key={idx} className="border border-border rounded-md p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">
+                      {info.label}
+                    </span>
+                    <span
+                      className="relative group/tip cursor-help"
+                      title={info.tooltip}
+                    >
+                      <HelpCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      ({group.items.length} item{group.items.length !== 1 ? "s" : ""})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">
+                      {formatCHF(group.total_amount)}
+                    </span>
+                    <CopyButton text={group.explanation} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">
-                    {formatCHF(group.total_amount)}
+                <p className="text-sm text-muted-foreground">{group.explanation}</p>
+                {group.policy_reference && (
+                  <span className="inline-block mt-2 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                    {group.policy_reference}
                   </span>
-                  <CopyButton text={group.explanation} />
-                </div>
+                )}
+                {group.match_confidence < 0.8 && (
+                  <span className="inline-block mt-2 ml-2 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded">
+                    Needs verification
+                  </span>
+                )}
               </div>
-              <p className="text-sm text-muted-foreground">{group.explanation}</p>
-              {group.policy_reference && (
-                <span className="inline-block mt-2 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                  {group.policy_reference}
-                </span>
-              )}
-              {group.match_confidence < 0.8 && (
-                <span className="inline-block mt-2 ml-2 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded">
-                  Needs verification
-                </span>
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           {/* Fallback: per-item reasons when no grouped explanations */}
           {nonCoveredExplanations.length === 0 &&
