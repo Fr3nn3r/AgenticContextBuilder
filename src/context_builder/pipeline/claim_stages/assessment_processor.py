@@ -108,7 +108,7 @@ class AssessmentProcessor:
             "total_claimed": covered + not_covered,
             "non_covered_deductions": not_covered,
             "covered_subtotal": covered,
-            "coverage_percent": int(coverage_pct) if coverage_pct is not None else 0,
+            "coverage_percent": int(coverage_pct) if coverage_pct is not None else None,
             "after_coverage": capped,
             "max_coverage_applied": max_cov_applied,
             "capped_amount": capped if max_cov_applied else None,
@@ -306,6 +306,17 @@ class AssessmentProcessor:
             max_tokens=config.max_tokens,
             on_token_update=on_token_update,
         )
+
+        # Override LLM payout with deterministic screening payout
+        if screening and screening.get("payout"):
+            screening_payout = self._map_screening_payout(screening["payout"])
+            # Preserve LLM's payout as metadata for audit trail
+            result["llm_payout"] = result.get("payout")
+            result["payout"] = screening_payout
+            logger.info(
+                "Replaced LLM payout with screening payout for %s: final=%s",
+                context.claim_id, screening_payout.get("final_payout"),
+            )
 
         # Override APPROVE → REJECT when payout is zero
         final_payout = (result.get("payout") or {}).get("final_payout", 0.0)

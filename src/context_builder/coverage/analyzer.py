@@ -160,6 +160,10 @@ class AnalyzerConfig:
     # Config version for metadata
     config_version: str = "1.0"
 
+    # Default coverage percent when no coverage_scale is extracted
+    # (e.g., policies with full coverage that have no mileage-based tiering)
+    default_coverage_percent: Optional[float] = None
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "AnalyzerConfig":
         """Create config from dictionary."""
@@ -169,6 +173,7 @@ class AnalyzerConfig:
             llm_max_items=config.get("llm_max_items", 35),
             llm_max_concurrent=config.get("llm_max_concurrent", 3),
             config_version=config.get("config_version", "1.0"),
+            default_coverage_percent=config.get("default_coverage_percent"),
         )
 
 
@@ -1163,13 +1168,27 @@ class CoverageAnalyzer:
             coverage_percent_missing=coverage_percent is None,
         )
 
-    # Generic labor descriptions that mean "work" without referencing specific parts
+    # Generic labor descriptions that mean "work" without referencing specific parts.
+    # Matched after stripping trailing punctuation (colon, period) so that
+    # invoice-level variants like "ARBEIT:" or "Arbeit." are recognised.
     _GENERIC_LABOR_DESCRIPTIONS = {
         "main d'oeuvre", "main d'œuvre", "main-d'oeuvre", "main-d'œuvre",
         "arbeit", "arbeitszeit",
         "labor", "labour",
         "travail", "manodopera",
+        "mécanicien", "mecanicien",  # French: "mechanic" (generic labor line)
     }
+
+    @staticmethod
+    def _is_generic_labor_description(description: str) -> bool:
+        """Check if a description is a generic labor term.
+
+        Normalises the description by lower-casing and stripping trailing
+        punctuation so that invoice variants like ``"ARBEIT:"`` match the
+        canonical set entry ``"arbeit"``.
+        """
+        normalized = description.lower().strip().rstrip(":.")
+        return normalized in CoverageAnalyzer._GENERIC_LABOR_DESCRIPTIONS
 
     def _apply_labor_follows_parts(
         self,
@@ -1242,29 +1261,32 @@ class CoverageAnalyzer:
                         break
 
         # Strategy 2: Simple invoice rule
+        # When the invoice has covered parts and generic labor entries
+        # (descriptions that just say "work" / "Arbeit" / "Main d'œuvre"),
+        # promote the labor — it's clearly the labour cost for those parts.
         if covered_parts:
             uncovered_generic_labor = [
                 item for item in items
                 if item.item_type in labor_types
                 and item.coverage_status != CoverageStatus.COVERED
-                and item.description.lower().strip() in self._GENERIC_LABOR_DESCRIPTIONS
+                and self._is_generic_labor_description(item.description)
             ]
 
-            if len(uncovered_generic_labor) == 1:
-                labor_item = uncovered_generic_labor[0]
+            if uncovered_generic_labor:
                 linked_part = covered_parts[0]
-                labor_item.coverage_status = CoverageStatus.COVERED
-                labor_item.coverage_category = linked_part.coverage_category
-                labor_item.matched_component = linked_part.matched_component
-                labor_item.match_confidence = 0.75
-                labor_item.match_reasoning = (
-                    f"Simple invoice rule: generic labor linked to covered part "
-                    f"'{linked_part.description}' ({linked_part.coverage_category})"
-                )
-                logger.debug(
-                    f"Promoted labor '{labor_item.description}' to COVERED "
-                    f"via simple invoice rule (linked to '{linked_part.description}')"
-                )
+                for labor_item in uncovered_generic_labor:
+                    labor_item.coverage_status = CoverageStatus.COVERED
+                    labor_item.coverage_category = linked_part.coverage_category
+                    labor_item.matched_component = linked_part.matched_component
+                    labor_item.match_confidence = 0.75
+                    labor_item.match_reasoning = (
+                        f"Simple invoice rule: generic labor linked to covered part "
+                        f"'{linked_part.description}' ({linked_part.coverage_category})"
+                    )
+                    logger.debug(
+                        f"Promoted labor '{labor_item.description}' to COVERED "
+                        f"via simple invoice rule (linked to '{linked_part.description}')"
+                    )
 
         # Strategy 3: Repair-context keyword matching
         # If labor description matches REPAIR_CONTEXT_KEYWORDS and covered parts
@@ -1923,6 +1945,17 @@ class CoverageAnalyzer:
             vehicle_age_years=vehicle_age_years,
             age_threshold_years=age_threshold_years,
         )
+
+        # Fall back to config default when no coverage_scale was extracted
+        # (e.g., "Elite" policies with full coverage — no mileage tiering)
+        if effective_percent is None and self.config.default_coverage_percent is not None:
+            logger.info(
+                "No coverage_scale for claim %s — using config default %s%%",
+                claim_id,
+                self.config.default_coverage_percent,
+            )
+            mileage_percent = self.config.default_coverage_percent
+            effective_percent = self.config.default_coverage_percent
 
         # Extract covered categories
         covered_categories = self._extract_covered_categories(covered_components)

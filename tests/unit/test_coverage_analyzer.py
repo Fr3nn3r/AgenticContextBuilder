@@ -399,12 +399,16 @@ class TestCoverageAnalyzer:
         assert labor_item.coverage_status != CoverageStatus.COVERED or \
             "simple invoice rule" not in labor_item.match_reasoning.lower()
 
-    def test_simple_invoice_rule_not_applied_multiple_labor_items(self, analyzer, covered_components):
-        """Test that simple invoice rule only applies with exactly 1 generic labor item."""
+    def test_simple_invoice_rule_promotes_multiple_generic_labor_items(self, analyzer, covered_components):
+        """Test that simple invoice rule promotes ALL generic labor items.
+
+        Invoices like Rolls Royce claim 64836 have multiple "Arbeit" lines
+        alongside covered parts.  All generic labor should be promoted.
+        """
         items = [
             {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
             {"description": "Main d'œuvre", "item_type": "labor", "total_price": 100.0},
-            {"description": "Arbeit", "item_type": "labor", "total_price": 60.0},  # Second labor
+            {"description": "Arbeit", "item_type": "labor", "total_price": 60.0},
         ]
 
         result = analyzer.analyze(
@@ -413,13 +417,46 @@ class TestCoverageAnalyzer:
             covered_components=covered_components,
         )
 
-        # Find the labor items
         labor_items = [i for i in result.line_items if i.item_type == "labor"]
 
-        # Neither should be covered via simple invoice rule (multiple labor items)
+        # Both generic labor items should be covered via simple invoice rule
         for labor_item in labor_items:
-            if labor_item.coverage_status == CoverageStatus.COVERED:
-                assert "simple invoice rule" not in labor_item.match_reasoning.lower()
+            assert labor_item.coverage_status == CoverageStatus.COVERED
+            assert "simple invoice rule" in labor_item.match_reasoning.lower()
+
+    def test_simple_invoice_rule_handles_trailing_punctuation(self, analyzer, covered_components):
+        """Test that 'ARBEIT:' (with colon) is recognized as generic labor."""
+        items = [
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
+            {"description": "ARBEIT:", "item_type": "labor", "total_price": 200.0},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        labor_item = next(i for i in result.line_items if i.item_type == "labor")
+        assert labor_item.coverage_status == CoverageStatus.COVERED
+        assert "simple invoice rule" in labor_item.match_reasoning.lower()
+
+    def test_simple_invoice_rule_recognises_mecanicien(self, analyzer, covered_components):
+        """Test that 'Mécanicien' (French for mechanic) is generic labor."""
+        items = [
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
+            {"description": "Mécanicien", "item_type": "labor", "total_price": 500.0},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST001",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        labor_item = next(i for i in result.line_items if i.item_type == "labor")
+        assert labor_item.coverage_status == CoverageStatus.COVERED
+        assert "simple invoice rule" in labor_item.match_reasoning.lower()
 
 
 class TestIsSystemCovered:

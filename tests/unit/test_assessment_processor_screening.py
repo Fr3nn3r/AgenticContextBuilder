@@ -245,10 +245,10 @@ class TestMapScreeningPayout:
         assert result["coverage_percent"] == 80
         assert isinstance(result["coverage_percent"], int)
 
-    def test_coverage_percent_none_defaults_to_zero(self):
+    def test_coverage_percent_none_stays_none(self):
         payout = _make_screening_payout(coverage_percent=None)
         result = AssessmentProcessor._map_screening_payout(payout)
-        assert result["coverage_percent"] == 0
+        assert result["coverage_percent"] is None
 
     def test_after_coverage_equals_capped_amount(self):
         payout = _make_screening_payout(capped_amount=3600.0)
@@ -627,6 +627,107 @@ class TestProcessBranching:
         # LLM should be called
         mock_get_client.assert_called_once()
         assert result["decision"] == "APPROVE"
+
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_llm_audit_service"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
+    )
+    def test_llm_path_uses_screening_payout(
+        self, mock_logs_dir, mock_audit_service, mock_get_client
+    ):
+        """LLM path must replace LLM-computed payout with screening payout."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_audit_service.return_value = MagicMock()
+        mock_logs_dir.return_value = Path("/tmp/logs")
+
+        # LLM returns an intentionally WRONG payout
+        llm_payout = AssessmentProcessor._zero_payout()
+        llm_payout["final_payout"] = 9999.0
+        llm_payout["covered_subtotal"] = 9999.0
+
+        mock_response = {
+            "schema_version": "claims_assessment_v2",
+            "assessment_method": "llm",
+            "claim_id": "CLM-001",
+            "assessment_timestamp": "2026-01-28T10:00:00Z",
+            "decision": "APPROVE",
+            "decision_rationale": "All good",
+            "confidence_score": 0.9,
+            "checks": [],
+            "payout": llm_payout,
+            "data_gaps": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        with patch.object(
+            self.processor, "_call_with_retry", return_value=mock_response
+        ):
+            screening = _make_non_auto_reject_screening()
+            context = self._make_context(screening_result=screening)
+            config = self._make_config()
+            result = self.processor.process(context, config)
+
+        # Screening payout wins (4050 from _make_screening_payout defaults)
+        assert result["payout"]["final_payout"] == 4050.0
+        assert result["payout"]["covered_subtotal"] == 4500.0
+        # LLM payout preserved for audit
+        assert result["llm_payout"]["final_payout"] == 9999.0
+        assert result["llm_payout"]["covered_subtotal"] == 9999.0
+
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_llm_audit_service"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
+    )
+    def test_llm_path_no_screening_keeps_llm_payout(
+        self, mock_logs_dir, mock_audit_service, mock_get_client
+    ):
+        """When no screening result, LLM payout is used as-is (fallback)."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_audit_service.return_value = MagicMock()
+        mock_logs_dir.return_value = Path("/tmp/logs")
+
+        llm_payout = AssessmentProcessor._zero_payout()
+        llm_payout["final_payout"] = 1234.0
+
+        mock_response = {
+            "schema_version": "claims_assessment_v2",
+            "assessment_method": "llm",
+            "claim_id": "CLM-001",
+            "assessment_timestamp": "2026-01-28T10:00:00Z",
+            "decision": "APPROVE",
+            "decision_rationale": "All good",
+            "confidence_score": 0.9,
+            "checks": [],
+            "payout": llm_payout,
+            "data_gaps": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        with patch.object(
+            self.processor, "_call_with_retry", return_value=mock_response
+        ):
+            context = self._make_context(screening_result=None)
+            config = self._make_config()
+            result = self.processor.process(context, config)
+
+        # LLM payout used as-is
+        assert result["payout"]["final_payout"] == 1234.0
+        # No llm_payout key should be present (no override happened)
+        assert "llm_payout" not in result
 
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
