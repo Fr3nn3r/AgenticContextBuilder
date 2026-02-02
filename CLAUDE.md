@@ -5,6 +5,25 @@ Insurance claims document processing: Ingest → Classify → Extract → Qualit
 ## Stack
 Python 3.9+ / FastAPI / Pydantic | React 18 / TypeScript / Tailwind | File-based JSON
 
+## Shell Environment (Windows + Git Bash) — CRITICAL
+
+Claude Code runs Bash tool commands through **Git Bash**, NOT Windows CMD or PowerShell.
+
+**Rules for ALL Bash tool calls:**
+- **NEVER use Windows commands**: no `dir`, `type`, `findstr`, `del`, `copy`, `move`
+- **NEVER use `2>nul`** — use `2>/dev/null` instead
+- **NEVER use backslash paths** — use forward slashes: `C:/Users/fbrun/...` not `C:\Users\fbrun\...`
+- **Use Unix equivalents**: `ls` not `dir`, `cat` not `type`, `rm` not `del`, `cp` not `copy`
+
+**Prefer dedicated tools over Bash for file operations:**
+| Instead of... | Use... |
+|---------------|--------|
+| `ls`, `dir`, `find` (listing files) | `Glob` tool |
+| `cat`, `head`, `tail`, `type` (reading files) | `Read` tool |
+| `grep`, `rg`, `findstr` (searching content) | `Grep` tool |
+
+**Only use Bash for**: `git`, `python`, `npm`, `pytest`, `uvicorn`, and other actual CLI programs.
+
 ## Workspaces
 
 Data is stored in **workspaces** (isolated storage locations). The active workspace determines where the backend reads/writes.
