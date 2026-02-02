@@ -314,6 +314,31 @@ class RuleEngine:
             not_covered_amount=total_price,
         )
 
+    def check_non_covered_labor(self, description: str) -> Optional[LineItemCoverage]:
+        """Check if a labor description matches non-covered patterns.
+
+        This is used by the analyzer to re-check labor items after keyword
+        matching, since the keyword matcher may mark diagnostic labor as
+        COVERED based on the component keyword in the description.
+
+        Args:
+            description: Labor item description
+
+        Returns:
+            LineItemCoverage (NOT_COVERED) if pattern matches, None otherwise
+        """
+        for pattern in self._non_covered_labor_patterns:
+            if pattern.search(description):
+                return self._create_not_covered(
+                    description=description,
+                    item_type="labor",
+                    item_code=None,
+                    total_price=0.0,
+                    reasoning=f"Labor matches non-covered pattern: {pattern.pattern}",
+                    exclusion_reason="non_covered_labor",
+                )
+        return None
+
     def batch_match(
         self,
         items: List[Dict[str, Any]],

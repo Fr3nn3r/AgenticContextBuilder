@@ -310,16 +310,33 @@ class AssessmentProcessor:
         # Override APPROVE → REJECT when payout is zero
         final_payout = (result.get("payout") or {}).get("final_payout", 0.0)
         if result.get("decision") == "APPROVE" and final_payout <= 0:
+            payout_data = result.get("payout") or {}
+            covered = payout_data.get("covered_subtotal", 0.0)
+            deductible = payout_data.get("deductible", 0.0)
+            currency = payout_data.get("currency", "CHF")
             logger.info(
                 f"Overriding APPROVE → REJECT for claim {context.claim_id}: "
                 f"final_payout={final_payout}"
             )
             result["decision"] = "REJECT"
+            override_reason = (
+                f"Covered amount ({currency} {covered:,.2f}) does not exceed "
+                f"the deductible ({currency} {deductible:,.2f}), "
+                f"resulting in zero payout."
+            )
             result["decision_rationale"] = (
-                f"Rejected: covered amount does not exceed deductible "
-                f"(final payout: {final_payout:.2f}). "
+                f"Rejected: {override_reason} "
                 f"Original rationale: {result.get('decision_rationale', '')}"
             )
+
+            # Update final_decision check to reflect the override — without
+            # this, checks show all-PASS while the decision says REJECT,
+            # which is confusing and looks like a bug.
+            for check in result.get("checks", []):
+                if check.get("check_name") == "final_decision":
+                    check["result"] = "FAIL"
+                    check["details"] = override_reason
+                    break
 
         # Zero payout when decision is REJECT (rejected claims must not show positive payout)
         if result.get("decision") == "REJECT" and final_payout > 0:

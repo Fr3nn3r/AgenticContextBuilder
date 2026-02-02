@@ -669,8 +669,76 @@ class TestProcessBranching:
             result = self.processor.process(context, config)
 
         assert result["decision"] == "REJECT"
-        assert "covered amount does not exceed deductible" in result["decision_rationale"]
+        assert "does not exceed" in result["decision_rationale"]
+        assert "deductible" in result["decision_rationale"]
         assert "Original rationale: All good" in result["decision_rationale"]
+        # final_decision check should be updated to FAIL
+        final_checks = [c for c in result.get("checks", []) if c.get("check_name") == "final_decision"]
+        if final_checks:
+            assert final_checks[0]["result"] == "FAIL"
+
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_llm_audit_service"
+    )
+    @patch(
+        "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
+    )
+    def test_zero_payout_override_updates_final_decision_check(
+        self, mock_logs_dir, mock_audit_service, mock_get_client
+    ):
+        """When APPROVE→REJECT override triggers, final_decision check must flip to FAIL."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_audit_service.return_value = MagicMock()
+        mock_logs_dir.return_value = Path("/tmp/logs")
+
+        payout = AssessmentProcessor._zero_payout()
+        payout["covered_subtotal"] = 80.0
+        payout["deductible"] = 150.0
+
+        mock_response = {
+            "schema_version": "claims_assessment_v2",
+            "assessment_method": "llm",
+            "claim_id": "CLM-001",
+            "assessment_timestamp": "2026-01-28T10:00:00Z",
+            "decision": "APPROVE",
+            "decision_rationale": "All checks passed",
+            "confidence_score": 0.95,
+            "checks": [
+                {"check_number": "5", "check_name": "component_coverage", "result": "PASS",
+                 "details": "Covered", "evidence_refs": []},
+                {"check_number": "7", "check_name": "final_decision", "result": "PASS",
+                 "details": "All checks passed", "evidence_refs": []},
+            ],
+            "payout": payout,
+            "data_gaps": [],
+            "fraud_indicators": [],
+            "recommendations": [],
+        }
+
+        with patch.object(
+            self.processor, "_call_with_retry", return_value=mock_response
+        ):
+            context = self._make_context(screening_result=None)
+            config = self._make_config()
+            result = self.processor.process(context, config)
+
+        assert result["decision"] == "REJECT"
+        # final_decision check must be FAIL with explanation
+        final_check = next(
+            c for c in result["checks"] if c["check_name"] == "final_decision"
+        )
+        assert final_check["result"] == "FAIL"
+        assert "80.00" in final_check["details"]
+        assert "150.00" in final_check["details"]
+        # Other checks should remain unchanged
+        comp_check = next(
+            c for c in result["checks"] if c["check_name"] == "component_coverage"
+        )
+        assert comp_check["result"] == "PASS"
 
 
 # ── _build_prompts tests ────────────────────────────────────────────

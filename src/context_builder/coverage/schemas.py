@@ -98,6 +98,9 @@ class CoverageSummary(BaseModel):
     coverage_percent: Optional[float] = Field(
         None, description="Coverage percentage from scale (based on km)"
     )
+    coverage_percent_missing: bool = Field(
+        False, description="True when coverage_percent could not be determined"
+    )
 
 
 class CoverageInputs(BaseModel):

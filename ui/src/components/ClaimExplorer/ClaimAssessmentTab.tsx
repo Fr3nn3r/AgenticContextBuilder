@@ -277,12 +277,22 @@ export function ClaimAssessmentTab({
   const failedChecks = displayedAssessment.checks.filter((c) => c.result === "FAIL");
 
   const getDecisionDescription = () => {
-    if (displayedAssessment.decision === "REJECT" && failedChecks.length > 0) {
-      const reasons = failedChecks.map((c) => c.details).filter(Boolean);
-      if (reasons.length >= 1) {
-        return `Claim rejected: ${reasons[0]}`;
+    if (displayedAssessment.decision === "REJECT") {
+      // Use failed check details as the primary explanation
+      if (failedChecks.length > 0) {
+        const reasons = failedChecks.map((c) => c.details).filter(Boolean);
+        if (reasons.length >= 1) {
+          return `Claim rejected: ${reasons[0]}`;
+        }
+        return "Claim has been rejected due to failed checks";
       }
-      return "Claim has been rejected due to failed checks";
+      // Fallback: use decision_rationale (strip "Original rationale:..." suffix)
+      if (displayedAssessment.decision_rationale) {
+        const raw = displayedAssessment.decision_rationale;
+        const idx = raw.indexOf("Original rationale:");
+        const clean = idx > 0 ? raw.slice(0, idx).trim() : raw;
+        return clean;
+      }
     }
     return decisionConfig.description;
   };

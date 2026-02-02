@@ -734,6 +734,13 @@ class CoverageAnalyzer:
         for variant in (component_lower, underscore_key, space_key):
             variant_norm = _normalize_umlauts(variant)
             for idx, policy_norm in enumerate(policy_parts_norm):
+                # Guard: short names (≤3 chars) must be exact matches,
+                # not accidental substrings in compound words
+                # (e.g. "egr" inside "bremskraftbegrenzer")
+                if len(variant_norm) <= 3:
+                    if variant_norm == policy_norm:
+                        return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
+                    continue
                 if variant_norm in policy_norm or policy_norm in variant_norm:
                     return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
 
@@ -750,6 +757,13 @@ class CoverageAnalyzer:
             for term in synonyms:
                 term_norm = _normalize_umlauts(term.lower())
                 for idx, policy_norm in enumerate(policy_parts_norm):
+                    # Guard: short synonyms (≤3 chars) must be exact matches,
+                    # not accidental substrings in compound words
+                    # (e.g. "egr" inside "bremskraftbegrenzer")
+                    if len(term_norm) <= 3:
+                        if term_norm == policy_norm:
+                            return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
+                        continue
                     if term_norm in policy_norm or policy_norm in term_norm:
                         return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
 
@@ -1015,6 +1029,21 @@ class CoverageAnalyzer:
                     f"'{result.system}' which is not covered by this policy"
                 )
 
+            # Re-check: if keyword match marked a labor item as COVERED,
+            # verify it doesn't match non-covered labor patterns (e.g. diagnostic)
+            item_type_lower = (item.get("item_type") or "").lower()
+            if status == CoverageStatus.COVERED and item_type_lower == "labor":
+                labor_check = self.rule_engine.check_non_covered_labor(description)
+                if labor_check is not None:
+                    status = CoverageStatus.NOT_COVERED
+                    exclusion_reason = "non_covered_labor"
+                    reasoning = (
+                        f"Part {part_ref} keyword-matched as "
+                        f"'{result.component_description or result.component}' "
+                        f"but labor matches non-covered pattern. "
+                        f"{labor_check.match_reasoning}"
+                    )
+
             matched.append(
                 LineItemCoverage(
                     item_code=item_code,
@@ -1084,7 +1113,14 @@ class CoverageAnalyzer:
                 if coverage_percent is not None:
                     covered_amount = item.total_price * (coverage_percent / 100.0)
                 else:
-                    covered_amount = item.total_price
+                    # Unknown rate: don't silently pay 100%.
+                    # Track gross for audit but set covered_amount to 0.
+                    logger.warning(
+                        "coverage_percent is None — item '%s' (%.2f) "
+                        "tracked in gross but covered_amount set to 0",
+                        item.description, item.total_price,
+                    )
+                    covered_amount = 0.0
                 item.covered_amount = covered_amount
                 item.not_covered_amount = item.total_price - covered_amount
                 total_covered_before_excess += covered_amount
@@ -1124,6 +1160,7 @@ class CoverageAnalyzer:
             items_not_covered=items_not_covered,
             items_review_needed=items_review_needed,
             coverage_percent=coverage_percent,
+            coverage_percent_missing=coverage_percent is None,
         )
 
     # Generic labor descriptions that mean "work" without referencing specific parts

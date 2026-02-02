@@ -252,16 +252,22 @@ class TestCoverageAnalyzer:
             {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 1000.0},
         ]
 
+        coverage_scale = [
+            {"km_threshold": 50000, "coverage_percent": 80},
+        ]
+
         result = analyzer.analyze(
             claim_id="TEST001",
             line_items=items,
             covered_components=covered_components,
+            vehicle_km=25000,  # Below first threshold → 100% coverage
+            coverage_scale=coverage_scale,
             excess_percent=10.0,
             excess_minimum=50.0,
         )
 
         summary = result.summary
-        # 10% of 1000 = 100, but minimum is 50, so excess should be 100
+        # 100% coverage on 1000 = 1000 covered, 10% excess = 100, min 50 → excess 100
         assert summary.excess_amount >= 50.0
 
     def test_metadata_tracking(self, analyzer, sample_line_items, covered_components):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "context-builder"
-version = "0.3.0"
+version = "0.3.1"
 description = "Insurance policy processing pipeline and claims runtime (context_builder + policy_compiler)"
 readme = "README.md"
 requires-python = ">=3.9"
