@@ -27,7 +27,7 @@ class FakeStorage:
             return self._doc_bundle
         return None
 
-    def get_doc_text(self, doc_id):
+    def get_doc_text(self, doc_id, claim_id=None):
         if self._doc_text and self._doc_text.doc_id == doc_id:
             return self._doc_text
         return None
@@ -38,7 +38,7 @@ class FakeStorage:
     def get_label(self, doc_id):
         return self._label
 
-    def get_doc_source_path(self, doc_id):
+    def get_doc_source_path(self, doc_id, claim_id=None):
         return None
 
     def save_label(self, doc_id, label_data):

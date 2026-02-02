@@ -538,6 +538,52 @@ export async function clearBaseline(): Promise<{ status: string }> {
 }
 
 // =============================================================================
+// EVAL SHOWCASE API
+// =============================================================================
+
+export interface EvalShowcaseErrorCategory {
+  category: string;
+  count: number;
+}
+
+export interface EvalShowcaseMetrics {
+  decision_accuracy: number;
+  decision_correct: number;
+  decision_wrong: number;
+  approved_correct: number;
+  approved_total: number;
+  denied_correct: number;
+  denied_total: number;
+  false_reject_rate: number;
+  false_approve_rate: number;
+}
+
+export interface EvalShowcaseRun {
+  run_id: string;
+  timestamp: string;
+  description: string;
+  git_commit: string | null;
+  pipeline_version: string | null;
+  metrics: EvalShowcaseMetrics;
+  top_errors: EvalShowcaseErrorCategory[];
+  notes: string;
+}
+
+export interface EvalShowcaseData {
+  schema_version: string;
+  ground_truth_path: string;
+  ground_truth_claims: number;
+  runs: EvalShowcaseRun[];
+}
+
+/**
+ * Get full metrics history for the eval showcase dashboard.
+ */
+export async function getEvalShowcaseData(): Promise<EvalShowcaseData> {
+  return fetchJson<EvalShowcaseData>(`${API_BASE}/eval-showcase/metrics-history`);
+}
+
+// =============================================================================
 // EVOLUTION API
 // =============================================================================
 

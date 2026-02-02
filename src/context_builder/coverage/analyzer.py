@@ -1068,6 +1068,7 @@ class CoverageAnalyzer:
         """
         total_claimed = 0.0
         total_covered_before_excess = 0.0
+        total_covered_gross = 0.0
         total_not_covered = 0.0
         items_covered = 0
         items_not_covered = 0
@@ -1077,6 +1078,8 @@ class CoverageAnalyzer:
             total_claimed += item.total_price
 
             if item.coverage_status == CoverageStatus.COVERED:
+                # Track gross (100%) before coverage_percent reduction
+                total_covered_gross += item.total_price
                 # Apply coverage percentage if available
                 if coverage_percent is not None:
                     covered_amount = item.total_price * (coverage_percent / 100.0)
@@ -1113,6 +1116,7 @@ class CoverageAnalyzer:
         return CoverageSummary(
             total_claimed=total_claimed,
             total_covered_before_excess=total_covered_before_excess,
+            total_covered_gross=total_covered_gross,
             total_not_covered=total_not_covered,
             excess_amount=excess_amount,
             total_payable=total_payable,
@@ -1764,6 +1768,22 @@ class CoverageAnalyzer:
                             if len(synonym) < 4:
                                 continue
                             if synonym in desc_lower or desc_lower in synonym:
+                                # Guard: if description contains a gasket/seal
+                                # indicator, the synonym match is for a sealing
+                                # part (e.g. "joint de soupape") not the
+                                # component itself.  Don't override the LLM.
+                                gasket_hit = any(
+                                    ind.lower() in desc_lower
+                                    for ind in self.component_config.gasket_seal_indicators
+                                )
+                                if gasket_hit:
+                                    logger.info(
+                                        "Synonym override blocked: gasket/seal"
+                                        " indicator in '%s'",
+                                        item.description,
+                                    )
+                                    continue
+
                                 is_in_list, reason = (
                                     self._is_component_in_policy_list(
                                         comp_type,

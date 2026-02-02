@@ -100,6 +100,7 @@ def _make_coverage_result(
         line_items=line_items,
         summary=CoverageSummary(
             total_covered_before_excess=covered_total,
+            total_covered_gross=covered_total,
             total_not_covered=not_covered_total,
             items_covered=1 if covered_total > 0 else 0,
             items_not_covered=1 if not_covered_total > 0 else 0,
@@ -117,7 +118,7 @@ class TestPayoutBasic:
     """Basic payout calculation tests."""
 
     def test_basic_payout_no_cap_no_deductible(self):
-        """No max coverage, no deductible → final = subtotal_with_vat."""
+        """No max coverage, no deductible → final = subtotal_with_vat * rate."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
         )
@@ -130,9 +131,9 @@ class TestPayoutBasic:
         assert payout.capped_amount == 4500.0
         assert payout.max_coverage_applied is False
         assert payout.deductible_amount == 0.0
-        # VAT added before deductible: 4500 * 1.081 = 4864.5
+        # VAT added: 4500 * 1.081 = 4864.5, then coverage_percent 80%
         assert payout.after_deductible == 4864.5
-        assert payout.final_payout == 4864.5
+        assert payout.final_payout == round(4864.5 * 0.80, 2)
         assert payout.policyholder_type == "individual"
         assert payout.vat_adjusted is False
 
@@ -346,9 +347,9 @@ class TestPayoutVAT:
         assert payout.vat_adjusted is True
         assert payout.vat_deduction > 0
 
-        # Verify formula: final = after_deductible / (1 + VAT_RATE)
-        after_ded = payout.after_deductible
-        expected_final = round(after_ded / (1 + SWISS_VAT_RATE), 2)
+        # Formula: after_deductible * rate → remove VAT for company
+        after_rate = payout.after_deductible * payout.coverage_percent / 100.0
+        expected_final = round(after_rate / (1 + SWISS_VAT_RATE), 2)
         assert payout.final_payout == expected_final
 
     def test_individual_no_vat(self):
@@ -362,7 +363,10 @@ class TestPayoutVAT:
         assert payout.policyholder_type == "individual"
         assert payout.vat_adjusted is False
         assert payout.vat_deduction == 0.0
-        assert payout.final_payout == payout.after_deductible
+        # Final = after_deductible * coverage_percent (80%)
+        assert payout.final_payout == round(
+            payout.after_deductible * payout.coverage_percent / 100.0, 2
+        )
 
     def test_company_zero_payout_no_vat(self):
         """Company with zero after_deductible should have no VAT adjustment."""
@@ -385,10 +389,12 @@ class TestPayoutVAT:
         payout = _screener()._calculate_payout(facts, coverage)
 
         # subtotal = 10810 * 1.081 = 11685.61 (no deductible)
-        # vat_deduction = 11685.61 - 11685.61/1.081 = 875.61
+        # after_rate = 11685.61 * 80% = 9348.488
+        # vat_deduction = after_rate - after_rate/1.081
         assert payout.vat_adjusted is True
         assert payout.after_deductible == 11685.61
-        expected_vat = round(payout.after_deductible - (payout.after_deductible / (1 + SWISS_VAT_RATE)), 2)
+        after_rate = payout.after_deductible * payout.coverage_percent / 100.0
+        expected_vat = round(after_rate - (after_rate / (1 + SWISS_VAT_RATE)), 2)
         assert payout.vat_deduction == expected_vat
 
 
@@ -401,7 +407,10 @@ class TestPayoutFullFlow:
     """End-to-end payout calculation scenarios."""
 
     def test_typical_individual_claim(self):
-        """Typical claim: individual, deductible, no cap."""
+        """Typical claim: individual, deductible, no cap.
+
+        Formula: gross → +VAT → -deductible → *rate
+        """
         facts = _make_facts(
             ("policyholder_name", "Anna Muster"),
             ("excess_percent", "10"),
@@ -419,10 +428,14 @@ class TestPayoutFullFlow:
         assert payout.deductible_amount == 486.45
         assert payout.after_deductible == 4378.05
         assert payout.vat_adjusted is False
-        assert payout.final_payout == 4378.05
+        # After deductible, apply 80% coverage rate
+        assert payout.final_payout == round(4378.05 * 0.80, 2)
 
     def test_company_claim_with_cap(self):
-        """Company claim: capped, deductible, VAT deduction."""
+        """Company claim: capped, deductible, VAT deduction.
+
+        Formula: gross → cap → +VAT → -deductible → *rate → -company VAT
+        """
         facts = _make_facts(
             ("policyholder_name", "Muster AG"),
             ("max_coverage", "3000"),
@@ -441,9 +454,10 @@ class TestPayoutFullFlow:
         assert payout.deductible_amount == 324.3
         assert payout.after_deductible == 2918.7
 
-        # Step 3: VAT = 2918.7 - 2918.7/1.081
+        # Step 3: Apply 80% rate, then remove VAT for company
+        after_rate = 2918.7 * 0.80
         assert payout.vat_adjusted is True
-        expected_final = round(2918.7 / (1 + SWISS_VAT_RATE), 2)
+        expected_final = round(after_rate / (1 + SWISS_VAT_RATE), 2)
         assert payout.final_payout == expected_final
 
     def test_payout_is_valid_pydantic_model(self):
@@ -490,7 +504,8 @@ class TestPayoutFullFlow:
         # subtotal = 3000 * 1.081 = 3243.0, deductible = 324.3
         assert result.payout.deductible_amount == 324.3
         assert result.payout.after_deductible == 2918.7
-        assert result.payout.final_payout == 2918.7  # individual, no VAT removal
+        # After deductible, apply 80% coverage rate
+        assert result.payout.final_payout == round(2918.7 * 0.80, 2)
         assert result.payout_error is None
 
     def test_payout_error_captured(self):

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 DOC_INDEX_FILE = "doc_index.jsonl"
 LABEL_INDEX_FILE = "label_index.jsonl"
 RUN_INDEX_FILE = "run_index.jsonl"
+CLAIMS_INDEX_FILE = "claims_index.jsonl"
 REGISTRY_META_FILE = "registry_meta.json"
 
 
@@ -81,6 +82,7 @@ class IndexReader:
         self._run_index: Optional[dict[str, RunRef]] = None
         self._meta: Optional[RegistryMeta] = None
         self._claim_folders: Optional[dict[str, str]] = None  # claim_id -> claim_folder
+        self._claims_index: Optional[list[dict]] = None
 
     @property
     def is_available(self) -> bool:
@@ -266,6 +268,22 @@ class IndexReader:
         self._load_doc_index()
         return self._claim_folders.get(claim_id) if self._claim_folders else None
 
+    def get_all_claim_summaries(self) -> Optional[list[dict]]:
+        """Get pre-computed claim summaries from claims_index.jsonl.
+
+        Returns:
+            List of claim summary dicts if index exists, None otherwise.
+        """
+        if self._claims_index is not None:
+            return self._claims_index
+
+        claims_path = self.registry_dir / CLAIMS_INDEX_FILE
+        if not claims_path.exists():
+            return None
+
+        self._claims_index = list(read_jsonl(claims_path))
+        return self._claims_index
+
     def invalidate(self) -> None:
         """Clear cached indexes (force reload on next access)."""
         self._doc_index = None
@@ -274,3 +292,4 @@ class IndexReader:
         self._run_index = None
         self._meta = None
         self._claim_folders = None
+        self._claims_index = None

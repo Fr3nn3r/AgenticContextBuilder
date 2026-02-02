@@ -1,5 +1,6 @@
 """Claims-focused API services."""
 
+import logging
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -16,6 +17,9 @@ from context_builder.api.services.utils import (
     parse_loss_type_from_folder,
 )
 from context_builder.storage import StorageFacade
+from context_builder.storage.index_reader import IndexReader
+
+logger = logging.getLogger(__name__)
 
 
 class ClaimsService:
@@ -31,6 +35,16 @@ class ClaimsService:
                 status_code=404,
                 detail=f"Data directory not found: {self.data_dir}",
             )
+
+        # Fast path: use pre-computed claims index when no specific run_id
+        if run_id is None:
+            registry_dir = self.data_dir.parent / "registry"
+            reader = IndexReader(registry_dir)
+            cached = reader.get_all_claim_summaries()
+            if cached is not None:
+                logger.debug(f"Using claims index fast-path ({len(cached)} claims)")
+                claims = [ClaimSummary(**rec) for rec in cached]
+                return sorted(claims, key=lambda c: c.risk_score, reverse=True)
 
         storage = self.storage_factory()
         claims = []

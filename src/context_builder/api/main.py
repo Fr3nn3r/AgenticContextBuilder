@@ -47,6 +47,7 @@ from context_builder.api.routers import (
     classification as classification_router,
     compliance as compliance_router,
     documents as documents_router,
+    eval_showcase as eval_showcase_router,
     evolution as evolution_router,
     insights as insights_router,
     pipeline as pipeline_router,
@@ -99,6 +100,7 @@ app.include_router(claims_router.router)
 app.include_router(classification_router.router)
 app.include_router(compliance_router.router)
 app.include_router(documents_router.router)
+app.include_router(eval_showcase_router.router)
 app.include_router(evolution_router.router)
 app.include_router(insights_router.router)
 app.include_router(pipeline_router.router)

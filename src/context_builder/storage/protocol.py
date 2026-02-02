@@ -75,22 +75,24 @@ class Storage(Protocol):
         """
         ...
 
-    def get_doc_text(self, doc_id: str) -> Optional[DocText]:
+    def get_doc_text(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[DocText]:
         """Get document text content (pages.json).
 
         Args:
             doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
 
         Returns:
             DocText with page content, or None if not found.
         """
         ...
 
-    def get_doc_source_path(self, doc_id: str) -> Optional[Path]:
+    def get_doc_source_path(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[Path]:
         """Get path to document source file (PDF/image/txt).
 
         Args:
             doc_id: Document identifier.
+            claim_id: Optional claim_id hint for faster lookup.
 
         Returns:
             Path to source file, or None if not found.
@@ -215,10 +217,10 @@ class DocStore(Protocol):
     def get_doc(self, doc_id: str) -> Optional[DocBundle]:
         ...
 
-    def get_doc_text(self, doc_id: str) -> Optional[DocText]:
+    def get_doc_text(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[DocText]:
         ...
 
-    def get_doc_source_path(self, doc_id: str) -> Optional[Path]:
+    def get_doc_source_path(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[Path]:
         ...
 
     def find_doc_claim(self, doc_id: str) -> Optional[str]:

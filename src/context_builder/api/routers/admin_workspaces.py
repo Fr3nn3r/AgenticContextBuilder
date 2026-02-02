@@ -12,6 +12,7 @@ from context_builder.api.dependencies import (
     get_audit_service,
     get_auth_service,
     get_project_root,
+    get_workspace_path,
     get_workspace_service,
     require_admin,
     set_data_dir,
@@ -254,13 +255,9 @@ def rebuild_index(current_user: CurrentUser = Depends(require_admin)):
     """
     from context_builder.storage.index_builder import build_all_indexes
 
-    workspace_service = get_workspace_service()
-    workspace = workspace_service.get_active_workspace()
-
-    if not workspace:
-        raise HTTPException(status_code=404, detail="No active workspace")
-
-    output_dir = _resolve_workspace_path(workspace.path)
+    # Use get_workspace_path() which respects the WORKSPACE_PATH env var
+    # (critical for Docker/Azure where the env var overrides the registry).
+    output_dir = get_workspace_path()
     if not output_dir.exists():
         raise HTTPException(
             status_code=400,
@@ -272,6 +269,6 @@ def rebuild_index(current_user: CurrentUser = Depends(require_admin)):
 
     return {
         "status": "success",
-        "workspace_id": workspace.workspace_id,
+        "workspace_id": output_dir.name,
         "stats": stats,
     }

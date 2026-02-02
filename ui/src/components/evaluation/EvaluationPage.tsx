@@ -20,16 +20,17 @@ import {
   type RunComparison,
 } from "../../api/client";
 import { EvolutionView } from "./EvolutionView";
+import { EvalShowcaseView } from "./EvalShowcasePage";
 import { AssessmentEvalView, ReconciliationEvalView } from "../assessment";
 
-type EvaluationTab = "compare" | "evolution" | "assessment" | "reconciliation";
+type EvaluationTab = "dashboard" | "compare" | "evolution" | "assessment" | "reconciliation";
 
 export function EvaluationPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Tab state (persisted in URL)
-  const activeTab = (searchParams.get("tab") as EvaluationTab) || "assessment";
+  const activeTab = (searchParams.get("tab") as EvaluationTab) || "dashboard";
 
   const setActiveTab = (tab: EvaluationTab) => {
     setSearchParams({ tab });
@@ -166,6 +167,17 @@ export function EvaluationPage() {
       {/* Tab Navigation - Pipeline Evolution and Compare Runs hidden for now */}
       <div className="flex items-center gap-1 border-b">
         <button
+          onClick={() => setActiveTab("dashboard")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "dashboard"
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Dashboard
+        </button>
+        <button
           onClick={() => setActiveTab("assessment")}
           className={cn(
             "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
@@ -190,7 +202,9 @@ export function EvaluationPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "evolution" ? (
+      {activeTab === "dashboard" ? (
+        <EvalShowcaseView />
+      ) : activeTab === "evolution" ? (
         <EvolutionView />
       ) : activeTab === "assessment" ? (
         <AssessmentEvalView />

@@ -123,8 +123,8 @@ class DocumentsService:
         doc_type = meta.get("doc_type", "unknown")
         language = meta.get("language", "es")
 
-        # Load text using storage layer
-        doc_text = storage.doc_store.get_doc_text(doc_id)
+        # Load text using storage layer (pass claim_id for direct lookup)
+        doc_text = storage.doc_store.get_doc_text(doc_id, claim_id=folder_name)
         pages = doc_text.pages if doc_text else []
 
         # Load extraction - auto-detect latest run if not specified
@@ -164,9 +164,18 @@ class DocumentsService:
             has_image=has_image,
         )
 
-    def get_doc_source(self, doc_id: str) -> Tuple[Path, str, str]:
+    def get_doc_source(self, doc_id: str, claim_id: Optional[str] = None) -> Tuple[Path, str, str]:
         storage = self.storage_factory()
-        source_file = storage.doc_store.get_doc_source_path(doc_id)
+
+        # Resolve folder_name from claim_id for direct lookup
+        folder_name = None
+        if claim_id:
+            for ref in storage.doc_store.list_claims():
+                if ref.claim_folder == claim_id or extract_claim_number(ref.claim_folder) == claim_id:
+                    folder_name = ref.claim_folder
+                    break
+
+        source_file = storage.doc_store.get_doc_source_path(doc_id, claim_id=folder_name)
         if not source_file:
             doc = storage.doc_store.get_doc(doc_id)
             if not doc:

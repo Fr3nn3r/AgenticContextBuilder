@@ -13,7 +13,8 @@ from context_builder.storage import (
     RunRef,
     LabelSummary,
 )
-from context_builder.storage.index_reader import IndexReader
+from context_builder.storage.index_reader import IndexReader, CLAIMS_INDEX_FILE
+from context_builder.storage.index_builder import build_claims_index
 
 
 @pytest.fixture
@@ -310,3 +311,263 @@ class TestFileStorage:
 
         doc = storage.get_doc("nonexistent123")
         assert doc is None
+
+
+@pytest.fixture
+def output_with_run_and_extractions(tmp_path):
+    """Create output structure with per-claim runs and extractions."""
+    claims_dir = tmp_path / "claims"
+    claims_dir.mkdir()
+
+    # Claim 1: with run and extractions
+    claim1 = claims_dir / "24-01-VH-1234567_ROBO_TOTAL"
+    docs1 = claim1 / "docs"
+    doc1_dir = docs1 / "doc_aaa"
+    (doc1_dir / "meta").mkdir(parents=True)
+    (doc1_dir / "text").mkdir(parents=True)
+    with open(doc1_dir / "meta" / "doc.json", "w") as f:
+        json.dump({
+            "doc_id": "doc_aaa",
+            "claim_id": "24-01-VH-1234567",
+            "original_filename": "loss.pdf",
+            "source_type": "pdf",
+            "doc_type": "loss_notice",
+            "language": "es",
+            "page_count": 1,
+        }, f)
+
+    doc2_dir = docs1 / "doc_bbb"
+    (doc2_dir / "meta").mkdir(parents=True)
+    with open(doc2_dir / "meta" / "doc.json", "w") as f:
+        json.dump({
+            "doc_id": "doc_bbb",
+            "claim_id": "24-01-VH-1234567",
+            "original_filename": "police.pdf",
+            "source_type": "pdf",
+            "doc_type": "police_report",
+            "language": "es",
+            "page_count": 2,
+        }, f)
+
+    # Create per-claim run with extractions
+    run_dir = claim1 / "runs" / "run_20260101_100000_abc"
+    extractions_dir = run_dir / "extraction"
+    extractions_dir.mkdir(parents=True)
+    (run_dir / "logs").mkdir(parents=True)
+    with open(run_dir / "logs" / "summary.json", "w") as f:
+        json.dump({"completed_at": "2026-01-01T10:10:00Z", "status": "complete"}, f)
+
+    with open(extractions_dir / "doc_aaa.json", "w") as f:
+        json.dump({
+            "doc_id": "doc_aaa",
+            "quality_gate": {"status": "pass", "missing_required_fields": [], "reasons": []},
+            "fields": [{"name": "valor_asegurado", "value": "50000"}],
+        }, f)
+    with open(extractions_dir / "doc_bbb.json", "w") as f:
+        json.dump({
+            "doc_id": "doc_bbb",
+            "quality_gate": {"status": "warn", "missing_required_fields": ["field_x"], "reasons": []},
+            "fields": [],
+        }, f)
+
+    # Add a label for doc_aaa
+    labels_dir = doc1_dir / "labels"
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    with open(labels_dir / "latest.json", "w") as f:
+        json.dump({"doc_id": "doc_aaa", "field_labels": [{"state": "LABELED"}]}, f)
+
+    # Claim 2: no run, no extractions
+    claim2 = claims_dir / "24-02-VH-9999999_COLISION"
+    docs2 = claim2 / "docs"
+    doc3_dir = docs2 / "doc_ccc"
+    (doc3_dir / "meta").mkdir(parents=True)
+    with open(doc3_dir / "meta" / "doc.json", "w") as f:
+        json.dump({
+            "doc_id": "doc_ccc",
+            "claim_id": "24-02-VH-9999999",
+            "original_filename": "claim.pdf",
+            "source_type": "pdf",
+            "doc_type": "fnol_form",
+            "language": "en",
+            "page_count": 1,
+        }, f)
+
+    # Global runs dir (empty, ok for this test)
+    (tmp_path / "runs").mkdir()
+
+    return tmp_path
+
+
+class TestBuildClaimsIndex:
+    """Tests for build_claims_index."""
+
+    def test_produces_correct_schema(self, output_with_run_and_extractions):
+        """Test that build_claims_index produces records matching ClaimSummary."""
+        tmp = output_with_run_and_extractions
+        records = build_claims_index(tmp / "claims", tmp)
+
+        assert len(records) == 2
+
+        # Find claim 1 (with run)
+        c1 = next(r for r in records if r["folder_name"] == "24-01-VH-1234567_ROBO_TOTAL")
+        assert c1["claim_id"] == "24-01-VH-1234567"
+        assert c1["doc_count"] == 2
+        assert set(c1["doc_types"]) == {"loss_notice", "police_report"}
+        assert c1["extracted_count"] == 2
+        assert c1["labeled_count"] == 1
+        assert c1["lob"] == "MOTOR"
+        assert c1["risk_score"] >= 0
+        assert c1["loss_type"] == "Theft - Total Loss"
+        assert c1["amount"] == 50000.0
+        assert c1["currency"] == "USD"
+        assert c1["status"] == "Reviewed"
+        assert c1["in_run"] is True
+        assert c1["gate_pass_count"] == 1
+        assert c1["gate_warn_count"] == 1
+        assert c1["closed_date"] is not None
+        assert c1["last_processed"] is not None
+
+        # Find claim 2 (no run)
+        c2 = next(r for r in records if r["folder_name"] == "24-02-VH-9999999_COLISION")
+        assert c2["claim_id"] == "24-02-VH-9999999"
+        assert c2["doc_count"] == 1
+        assert c2["extracted_count"] == 0
+        assert c2["labeled_count"] == 0
+        assert c2["loss_type"] == "Collision"
+        assert c2["status"] == "Not Reviewed"
+        assert c2["in_run"] is False
+
+    def test_empty_claims_dir(self, tmp_path):
+        """Test with non-existent claims dir."""
+        records = build_claims_index(tmp_path / "nonexistent", tmp_path)
+        assert records == []
+
+    def test_build_all_indexes_writes_claims_index(self, output_with_run_and_extractions):
+        """Test that build_all_indexes creates claims_index.jsonl."""
+        tmp = output_with_run_and_extractions
+        stats = build_all_indexes(tmp)
+
+        registry = tmp / "registry"
+        assert (registry / CLAIMS_INDEX_FILE).exists()
+
+        # Read it back
+        import json
+        lines = []
+        with open(registry / CLAIMS_INDEX_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    lines.append(json.loads(line))
+        assert len(lines) == 2
+
+
+class TestIndexReaderClaimsIndex:
+    """Tests for IndexReader.get_all_claim_summaries."""
+
+    def test_returns_none_without_index(self, tmp_path):
+        """Test returns None when claims_index.jsonl doesn't exist."""
+        registry = tmp_path / "registry"
+        registry.mkdir()
+        reader = IndexReader(registry)
+        assert reader.get_all_claim_summaries() is None
+
+    def test_returns_data_with_index(self, output_with_run_and_extractions):
+        """Test returns data when index exists."""
+        tmp = output_with_run_and_extractions
+        build_all_indexes(tmp)
+
+        reader = IndexReader(tmp / "registry")
+        summaries = reader.get_all_claim_summaries()
+        assert summaries is not None
+        assert len(summaries) == 2
+        assert all(isinstance(s, dict) for s in summaries)
+
+    def test_caches_result(self, output_with_run_and_extractions):
+        """Test that repeated calls return cached data."""
+        tmp = output_with_run_and_extractions
+        build_all_indexes(tmp)
+
+        reader = IndexReader(tmp / "registry")
+        first = reader.get_all_claim_summaries()
+        second = reader.get_all_claim_summaries()
+        assert first is second  # Same object reference
+
+    def test_invalidate_clears_cache(self, output_with_run_and_extractions):
+        """Test that invalidate clears the claims index cache."""
+        tmp = output_with_run_and_extractions
+        build_all_indexes(tmp)
+
+        reader = IndexReader(tmp / "registry")
+        reader.get_all_claim_summaries()
+        reader.invalidate()
+        assert reader._claims_index is None
+
+
+class TestClaimsServiceFastPath:
+    """Tests for the fast-path in ClaimsService.list_claims."""
+
+    def test_fast_path_used_when_index_exists(self, output_with_run_and_extractions):
+        """Test that fast-path returns ClaimSummary objects from index."""
+        from context_builder.api.models import ClaimSummary
+        from context_builder.api.services.claims import ClaimsService
+
+        tmp = output_with_run_and_extractions
+        build_all_indexes(tmp)
+
+        service = ClaimsService(
+            data_dir=tmp / "claims",
+            storage_factory=lambda: None,  # Should not be called
+        )
+        claims = service.list_claims(run_id=None)
+
+        assert len(claims) == 2
+        assert all(isinstance(c, ClaimSummary) for c in claims)
+        # Should be sorted by risk_score descending
+        assert claims[0].risk_score >= claims[1].risk_score
+
+    def test_fallback_when_index_missing(self, output_with_run_and_extractions):
+        """Test that missing index falls through to existing code."""
+        from context_builder.api.services.claims import ClaimsService
+        from context_builder.storage import FileStorage, StorageFacade
+
+        tmp = output_with_run_and_extractions
+        # Don't build indexes — no claims_index.jsonl
+
+        storage = FileStorage(tmp)
+        facade = StorageFacade.from_storage(storage)
+        service = ClaimsService(
+            data_dir=tmp / "claims",
+            storage_factory=lambda: facade,
+        )
+        claims = service.list_claims(run_id=None)
+
+        # Should still work via filesystem path
+        assert len(claims) == 2
+
+    def test_run_id_bypasses_fast_path(self, output_with_run_and_extractions):
+        """Test that explicit run_id skips fast-path and calls storage_factory."""
+        from context_builder.api.services.claims import ClaimsService
+        from context_builder.storage import FileStorage, StorageFacade
+
+        tmp = output_with_run_and_extractions
+        build_all_indexes(tmp)
+
+        storage = FileStorage(tmp)
+        facade = StorageFacade.from_storage(storage)
+        factory_called = []
+
+        def tracking_factory():
+            factory_called.append(True)
+            return facade
+
+        service = ClaimsService(
+            data_dir=tmp / "claims",
+            storage_factory=tracking_factory,
+        )
+        # With run_id=None and index present, fast-path is used (factory NOT called)
+        service.list_claims(run_id=None)
+        assert len(factory_called) == 0, "Fast-path should not call storage_factory"
+
+        # With explicit run_id, fast-path is bypassed (factory IS called)
+        service.list_claims(run_id="run_20260101_100000_abc")
+        assert len(factory_called) == 1, "Fallback path should call storage_factory"

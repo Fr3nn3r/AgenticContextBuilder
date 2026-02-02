@@ -20,46 +20,6 @@ const DECISION_ICONS: Record<AssessmentDecision, typeof CheckCircle2> = {
   REFER_TO_HUMAN: ArrowRightCircle,
 };
 
-// =====================
-// MOCK DATA - Evaluation
-// =====================
-const MOCK_EVALUATION: AssessmentEvaluation = {
-  eval_id: "eval-20240115-150000",
-  timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-  run_id: "run-20240115-143022",
-  summary: {
-    total_claims: 12,
-    correct_count: 9,
-    accuracy_rate: 75,
-    approve_precision: 82,
-    reject_precision: 67,
-    refer_rate: 25,
-    avg_confidence: 74,
-  },
-  confusion_matrix: {
-    matrix: {
-      APPROVE: { APPROVE: 5, REJECT: 1, REFER_TO_HUMAN: 0 },
-      REJECT: { APPROVE: 1, REJECT: 2, REFER_TO_HUMAN: 1 },
-      REFER_TO_HUMAN: { APPROVE: 0, REJECT: 0, REFER_TO_HUMAN: 2 },
-    },
-    total_evaluated: 12,
-    decision_accuracy: 75,
-  },
-  results: [
-    { claim_id: "CLM-2024-001847", predicted: "REFER_TO_HUMAN", actual: "REFER_TO_HUMAN", is_correct: true, confidence_score: 72, assumption_count: 3 },
-    { claim_id: "CLM-2024-001892", predicted: "APPROVE", actual: "APPROVE", is_correct: true, confidence_score: 89, assumption_count: 1 },
-    { claim_id: "CLM-2024-001903", predicted: "APPROVE", actual: "REJECT", is_correct: false, confidence_score: 65, assumption_count: 4 },
-    { claim_id: "CLM-2024-001915", predicted: "REJECT", actual: "REJECT", is_correct: true, confidence_score: 91, assumption_count: 0 },
-    { claim_id: "CLM-2024-001928", predicted: "REFER_TO_HUMAN", actual: "REJECT", is_correct: false, confidence_score: 58, assumption_count: 3 },
-    { claim_id: "CLM-2024-001934", predicted: "APPROVE", actual: "APPROVE", is_correct: true, confidence_score: 85, assumption_count: 1 },
-    { claim_id: "CLM-2024-001941", predicted: "REJECT", actual: "APPROVE", is_correct: false, confidence_score: 52, assumption_count: 5 },
-    { claim_id: "CLM-2024-001955", predicted: "APPROVE", actual: "APPROVE", is_correct: true, confidence_score: 88, assumption_count: 0 },
-    { claim_id: "CLM-2024-001968", predicted: "APPROVE", actual: "APPROVE", is_correct: true, confidence_score: 79, assumption_count: 2 },
-    { claim_id: "CLM-2024-001972", predicted: "REJECT", actual: "REJECT", is_correct: true, confidence_score: 84, assumption_count: 1 },
-    { claim_id: "CLM-2024-001985", predicted: "APPROVE", actual: "APPROVE", is_correct: true, confidence_score: 92, assumption_count: 0 },
-    { claim_id: "CLM-2024-001991", predicted: "REFER_TO_HUMAN", actual: "REFER_TO_HUMAN", is_correct: true, confidence_score: 68, assumption_count: 4 },
-  ],
-};
 
 /**
  * Full assessment evaluation view with confusion matrix and per-claim results.
@@ -81,12 +41,10 @@ export function AssessmentEvalView() {
     setError(null);
     try {
       const data = await getLatestAssessmentEval();
-      // Use mock data if API returns null
-      setEvaluation(data || MOCK_EVALUATION);
+      setEvaluation(data);
     } catch (err) {
-      // On error, still show mock data for demo purposes
-      console.warn("Evaluation API error, using mock data:", err);
-      setEvaluation(MOCK_EVALUATION);
+      console.error("Failed to load evaluation:", err);
+      setError(err instanceof Error ? err.message : "Failed to load evaluation data");
     } finally {
       setLoading(false);
     }
@@ -185,67 +143,74 @@ export function AssessmentEvalView() {
       {/* Confusion Matrix */}
       <ConfusionMatrixChart matrix={confusion_matrix} />
 
-      {/* Results Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Per-Claim Results ({filteredResults.length})
-          </h3>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={showOnlyErrors}
-                onChange={(e) => setShowOnlyErrors(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              <span className="text-slate-600 dark:text-slate-300">Errors only</span>
-            </label>
-            <select
-              value={filterDecision}
-              onChange={(e) => setFilterDecision(e.target.value as AssessmentDecision | "all")}
-              className="text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800"
-            >
-              <option value="all">All Decisions</option>
-              <option value="APPROVE">Approve</option>
-              <option value="REJECT">Reject</option>
-              <option value="REFER_TO_HUMAN">Refer to Human</option>
-            </select>
+      {/* Results Table - only shown when per-claim data is available */}
+      {results.length > 0 ? (
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Per-Claim Results ({filteredResults.length})
+            </h3>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={showOnlyErrors}
+                  onChange={(e) => setShowOnlyErrors(e.target.checked)}
+                  className="rounded border-slate-300"
+                />
+                <span className="text-slate-600 dark:text-slate-300">Errors only</span>
+              </label>
+              <select
+                value={filterDecision}
+                onChange={(e) => setFilterDecision(e.target.value as AssessmentDecision | "all")}
+                className="text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800"
+              >
+                <option value="all">All Decisions</option>
+                <option value="APPROVE">Approve</option>
+                <option value="REJECT">Reject</option>
+                <option value="REFER_TO_HUMAN">Refer to Human</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                  <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Claim ID</th>
+                  <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Predicted</th>
+                  <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Actual</th>
+                  <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Result</th>
+                  <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Confidence</th>
+                  <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Assumptions</th>
+                  <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300 w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredResults.map((result, idx) => (
+                  <ResultRow
+                    key={`${result.claim_id}-${idx}`}
+                    result={result}
+                    onViewClaim={() => navigate(`/claims/explorer?claim=${result.claim_id}`)}
+                  />
+                ))}
+                {filteredResults.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                      No results match the current filters
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Claim ID</th>
-                <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Predicted</th>
-                <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Actual</th>
-                <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Result</th>
-                <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Confidence</th>
-                <th className="text-center px-4 py-2 font-medium text-slate-600 dark:text-slate-300">Assumptions</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600 dark:text-slate-300 w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredResults.map((result, idx) => (
-                <ResultRow
-                  key={`${result.claim_id}-${idx}`}
-                  result={result}
-                  onViewClaim={() => navigate(`/claims/explorer?claim=${result.claim_id}`)}
-                />
-              ))}
-              {filteredResults.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
-                    No results match the current filters
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      ) : (
+        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-6 text-center text-slate-500 dark:text-slate-400 text-sm">
+          Per-claim results are not available for this evaluation run.
+          Run a legacy assessment evaluation to see per-claim details.
         </div>
-      </div>
+      )}
     </div>
   );
 }

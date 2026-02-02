@@ -276,9 +276,20 @@ class FileStorage:
             doc_root=doc_folder,
         )
 
-    def get_doc_text(self, doc_id: str) -> Optional[DocText]:
+    def get_doc_text(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[DocText]:
         """Get document text content (pages.json)."""
-        doc_folder = self._find_doc_folder(doc_id)
+        # If claim_id provided, look directly in that claim folder
+        doc_folder = None
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                candidate = claim_folder / "docs" / doc_id
+                if candidate.exists():
+                    doc_folder = candidate
+
+        # Fallback to scanning all claims
+        if not doc_folder:
+            doc_folder = self._find_doc_folder(doc_id)
         if not doc_folder:
             return None
 
@@ -297,9 +308,20 @@ class FileStorage:
             pages=data.get("pages", []),
         )
 
-    def get_doc_source_path(self, doc_id: str) -> Optional[Path]:
+    def get_doc_source_path(self, doc_id: str, claim_id: Optional[str] = None) -> Optional[Path]:
         """Get path to document source file (PDF/image/txt)."""
-        doc_folder = self._find_doc_folder(doc_id)
+        # If claim_id provided, look directly in that claim folder
+        doc_folder = None
+        if claim_id:
+            claim_folder = self._find_claim_folder(claim_id)
+            if claim_folder:
+                candidate = claim_folder / "docs" / doc_id
+                if candidate.exists():
+                    doc_folder = candidate
+
+        # Fallback to scanning all claims
+        if not doc_folder:
+            doc_folder = self._find_doc_folder(doc_id)
         if not doc_folder:
             return None
 

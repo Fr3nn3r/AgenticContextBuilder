@@ -6,6 +6,7 @@ Supports both full rebuilds and incremental updates.
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,7 @@ from .index_reader import (
     DOC_INDEX_FILE,
     LABEL_INDEX_FILE,
     RUN_INDEX_FILE,
+    CLAIMS_INDEX_FILE,
     REGISTRY_META_FILE,
     write_jsonl,
     read_jsonl,
@@ -393,6 +395,254 @@ def build_run_index(output_dir: Path) -> list[dict]:
     return records
 
 
+def _is_run_dir(name: str) -> bool:
+    """Check if directory name matches a run naming convention."""
+    return name.startswith("run_") or name.startswith("BATCH-")
+
+
+def _get_latest_run_id(claim_dir: Path) -> Optional[str]:
+    """Get the latest run ID for a claim directory."""
+    runs_dir = claim_dir / "runs"
+    if not runs_dir.exists():
+        return None
+    run_dirs = sorted(
+        [d for d in runs_dir.iterdir() if d.is_dir() and _is_run_dir(d.name)],
+        reverse=True,
+    )
+    return run_dirs[0].name if run_dirs else None
+
+
+def _extract_claim_number(folder_name: str) -> str:
+    """Extract claim number from folder name."""
+    match = re.search(r"(\d{2}-\d{2}-VH-\d+)", folder_name)
+    return match.group(1) if match else folder_name
+
+
+def _parse_loss_type(folder_name: str) -> str:
+    """Extract loss type from claim folder name."""
+    upper = folder_name.upper()
+    if "ROBO_TOTAL" in upper or "ROBO TOTAL" in upper:
+        return "Theft - Total Loss"
+    if "ROBO_PARCIAL" in upper:
+        return "Theft - Partial"
+    if "COLISION" in upper or "COLLISION" in upper:
+        return "Collision"
+    if "INCENDIO" in upper:
+        return "Fire"
+    if "VANDALISMO" in upper:
+        return "Vandalism"
+    return "Other"
+
+
+def _calculate_risk_score(extraction_data: dict) -> int:
+    """Calculate risk score based on extraction quality."""
+    if not extraction_data:
+        return 50
+    quality = extraction_data.get("quality_gate", {})
+    status = quality.get("status", "warn")
+    if status == "pass":
+        base = 20
+    elif status == "warn":
+        base = 45
+    else:
+        base = 70
+    base += len(quality.get("missing_required_fields", [])) * 5
+    base += len(quality.get("reasons", [])) * 3
+    return min(100, max(0, base))
+
+
+def _extract_amount(extraction_data: dict) -> Optional[float]:
+    """Extract monetary amount from extraction fields."""
+    if not extraction_data:
+        return None
+    fields = extraction_data.get("fields", [])
+    amount_fields = ["valor_asegurado", "valor_item", "sum_insured", "amount", "value"]
+    for field in fields:
+        name = field.get("name", "").lower()
+        if any(af in name for af in amount_fields):
+            value = field.get("normalized_value") or field.get("value")
+            if value:
+                try:
+                    cleaned = re.sub(r"[^\d.]", "", str(value))
+                    return float(cleaned)
+                except (ValueError, TypeError):
+                    continue
+    return None
+
+
+def _format_completed_date(timestamp: str) -> dict:
+    """Format run completion timestamp for UI display."""
+    if not timestamp:
+        return {"closed_date": None, "last_processed": None}
+    try:
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return {
+            "closed_date": dt.strftime("%d %b %Y"),
+            "last_processed": dt.strftime("%Y-%m-%d %H:%M"),
+        }
+    except Exception:
+        return {"closed_date": None, "last_processed": None}
+
+
+def build_claims_index(claims_dir: Path, output_dir: Path) -> list[dict]:
+    """Build claims index with fully-computed ClaimSummary records.
+
+    Pre-computes all per-claim data (risk scores, amounts, flags, gate counts,
+    label counts) so that the /api/claims endpoint can read a single file
+    instead of performing N+1 filesystem operations.
+
+    Args:
+        claims_dir: Path to claims directory (output/claims/).
+        output_dir: Path to output directory (output/).
+
+    Returns:
+        List of claim summary dicts matching ClaimSummary schema.
+    """
+    records = []
+
+    if not claims_dir.exists():
+        return records
+
+    for claim_folder in sorted(claims_dir.iterdir()):
+        if not claim_folder.is_dir() or claim_folder.name.startswith("."):
+            continue
+
+        docs_dir = claim_folder / "docs"
+        if not docs_dir.exists():
+            continue
+
+        # Collect doc info
+        doc_types = set()
+        doc_count = 0
+        for doc_dir in docs_dir.iterdir():
+            if not doc_dir.is_dir():
+                continue
+            doc_json = doc_dir / "meta" / "doc.json"
+            if not doc_json.exists():
+                continue
+            doc_count += 1
+            try:
+                with open(doc_json, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                doc_types.add(meta.get("doc_type", "unknown"))
+            except (json.JSONDecodeError, IOError):
+                doc_types.add("unknown")
+
+        if doc_count == 0:
+            continue
+
+        folder_name = claim_folder.name
+        claim_number = _extract_claim_number(folder_name)
+
+        # Find latest run
+        run_id = _get_latest_run_id(claim_folder)
+
+        extracted_count = 0
+        total_risk_score = 0
+        total_amount = 0.0
+        flags_count = 0
+        closed_date = None
+        last_processed = None
+        gate_pass_count = 0
+        gate_warn_count = 0
+        gate_fail_count = 0
+
+        if run_id:
+            run_dir = claim_folder / "runs" / run_id
+
+            # Read run summary for dates (check logs/summary.json first, then manifest.json)
+            completed_at = ""
+            summary_path = run_dir / "logs" / "summary.json"
+            if summary_path.exists():
+                try:
+                    with open(summary_path, "r", encoding="utf-8") as f:
+                        summary = json.load(f)
+                    completed_at = summary.get("completed_at", "")
+                except (json.JSONDecodeError, IOError):
+                    pass
+            if not completed_at:
+                manifest_path = run_dir / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        with open(manifest_path, "r", encoding="utf-8") as f:
+                            manifest = json.load(f)
+                        completed_at = manifest.get("ended_at", "")
+                    except (json.JSONDecodeError, IOError):
+                        pass
+            if completed_at:
+                dates = _format_completed_date(completed_at)
+                closed_date = dates["closed_date"]
+                last_processed = dates["last_processed"]
+
+            # Read extractions
+            extractions_dir = run_dir / "extraction"
+            if extractions_dir.exists():
+                for ext_file in extractions_dir.iterdir():
+                    if not ext_file.name.endswith(".json"):
+                        continue
+                    try:
+                        with open(ext_file, "r", encoding="utf-8") as f:
+                            ext_data = json.load(f)
+                    except (json.JSONDecodeError, IOError):
+                        continue
+
+                    extracted_count += 1
+                    total_risk_score += _calculate_risk_score(ext_data)
+
+                    quality = ext_data.get("quality_gate", {})
+                    status = quality.get("status", "unknown")
+                    if status == "pass":
+                        gate_pass_count += 1
+                    elif status == "warn":
+                        gate_warn_count += 1
+                        flags_count += 1
+                    elif status == "fail":
+                        gate_fail_count += 1
+                        flags_count += 2
+                    flags_count += len(quality.get("missing_required_fields", []))
+
+                    amount = _extract_amount(ext_data)
+                    if amount:
+                        total_amount = max(total_amount, amount)
+
+        # Count labels
+        labeled_count = 0
+        for doc_dir in docs_dir.iterdir():
+            if not doc_dir.is_dir():
+                continue
+            if (doc_dir / "labels" / "latest.json").exists():
+                labeled_count += 1
+
+        avg_risk = total_risk_score // max(extracted_count, 1)
+        status = "Reviewed" if labeled_count > 0 else "Not Reviewed"
+        in_run = run_id is not None and extracted_count > 0
+
+        records.append({
+            "claim_id": claim_number,
+            "folder_name": folder_name,
+            "doc_count": doc_count,
+            "doc_types": sorted(doc_types),
+            "extracted_count": extracted_count,
+            "labeled_count": labeled_count,
+            "lob": "MOTOR",
+            "risk_score": avg_risk,
+            "loss_type": _parse_loss_type(folder_name),
+            "amount": total_amount if total_amount > 0 else None,
+            "currency": "USD",
+            "flags_count": flags_count,
+            "status": status,
+            "closed_date": closed_date,
+            "gate_pass_count": gate_pass_count,
+            "gate_warn_count": gate_warn_count,
+            "gate_fail_count": gate_fail_count,
+            "last_processed": last_processed,
+            "in_run": in_run,
+        })
+
+    logger.info(f"Built claims index with {len(records)} claims")
+    return records
+
+
 def build_all_indexes(
     output_dir: Path,
     registry_dir: Optional[Path] = None,
@@ -421,6 +671,7 @@ def build_all_indexes(
     doc_records = build_doc_index(claims_dir)
     label_records = build_label_index(claims_dir)
     run_records = build_run_index(output_dir)
+    claims_records = build_claims_index(claims_dir, output_dir)
 
     # Count unique claims
     claim_ids = set()
@@ -431,11 +682,13 @@ def build_all_indexes(
     doc_path = registry_dir / DOC_INDEX_FILE
     label_path = registry_dir / LABEL_INDEX_FILE
     run_path = registry_dir / RUN_INDEX_FILE
+    claims_path = registry_dir / CLAIMS_INDEX_FILE
     meta_path = registry_dir / REGISTRY_META_FILE
 
     write_jsonl(doc_path, doc_records)
     write_jsonl(label_path, label_records)
     write_jsonl(run_path, run_records)
+    write_jsonl(claims_path, claims_records)
 
     # Write registry metadata
     meta = {

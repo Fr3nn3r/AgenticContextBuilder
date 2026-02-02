@@ -628,8 +628,8 @@ class AssessmentService:
     def get_latest_evaluation(self) -> Optional[Dict[str, Any]]:
         """Load most recent assessment evaluation file and transform for frontend.
 
-        Reads from {workspace}/eval/assessment_eval_*.json and transforms
-        the data to match the frontend AssessmentEvaluation type.
+        Checks both legacy assessment_eval_*.json files and newer
+        eval_*/summary.json directories, returning whichever is most recent.
 
         Returns:
             Transformed evaluation matching frontend AssessmentEvaluation type,
@@ -640,25 +640,129 @@ class AssessmentService:
             logger.debug(f"Eval directory not found: {eval_dir}")
             return None
 
-        # Find latest eval file (sorted by name = sorted by timestamp)
-        eval_files = sorted(eval_dir.glob("assessment_eval_*.json"), reverse=True)
-        if not eval_files:
+        # Candidate 1: legacy assessment_eval_*.json files
+        legacy_files = sorted(eval_dir.glob("assessment_eval_*.json"), reverse=True)
+        legacy_ts = ""
+        if legacy_files:
+            # Extract timestamp from filename: assessment_eval_YYYYMMDD_HHMMSS.json
+            legacy_ts = legacy_files[0].stem.replace("assessment_eval_", "")
+
+        # Candidate 2: newer eval_*/summary.json directories
+        eval_dirs = sorted(
+            [
+                d
+                for d in eval_dir.iterdir()
+                if d.is_dir()
+                and d.name.startswith("eval_")
+                and (d / "summary.json").exists()
+            ],
+            key=lambda d: d.name,
+            reverse=True,
+        )
+        eval_dir_ts = ""
+        if eval_dirs:
+            # Extract timestamp from dirname: eval_YYYYMMDD_HHMMSS
+            eval_dir_ts = eval_dirs[0].name.replace("eval_", "")
+
+        # Pick whichever is newer (timestamps are sortable strings)
+        if not legacy_ts and not eval_dir_ts:
             logger.debug("No assessment eval files found")
             return None
 
-        latest_file = eval_files[0]
-        logger.info(f"Loading latest evaluation: {latest_file.name}")
+        if eval_dir_ts > legacy_ts:
+            # Use newer eval directory format
+            summary_path = eval_dirs[0] / "summary.json"
+            logger.info(f"Loading latest evaluation (dir): {eval_dirs[0].name}")
+            try:
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return self._transform_eval_dir_summary(data, eval_dirs[0].name)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to read eval dir summary {summary_path}: {e}")
+                return None
+        else:
+            # Use legacy assessment_eval_*.json format
+            latest_file = legacy_files[0]
+            logger.info(f"Loading latest evaluation (legacy): {latest_file.name}")
+            try:
+                with open(latest_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return self._transform_evaluation(data, latest_file.stem)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to read evaluation file {latest_file}: {e}")
+                return None
 
+    def _transform_eval_dir_summary(
+        self, data: Dict[str, Any], eval_id: str
+    ) -> Dict[str, Any]:
+        """Transform eval_*/summary.json data to frontend AssessmentEvaluation format.
+
+        The newer eval format stores aggregate stats (no per-claim results).
+        Maps APPROVE/DENY to APPROVE/REJECT for frontend compatibility.
+
+        Args:
+            data: Raw data from eval_*/summary.json
+            eval_id: Evaluation ID (directory name)
+
+        Returns:
+            Transformed evaluation matching frontend AssessmentEvaluation type
+        """
+        total = data.get("total_claims", data.get("processed_claims", 0))
+        accuracy = data.get("decision_accuracy", 0.0)
+
+        # Build 3x3 confusion matrix from 2x2 approve/deny data
+        approve_correct = data.get("gt_approved_correct", 0)
+        approve_wrong = data.get("gt_approved_wrong", 0)
+        deny_correct = data.get("gt_denied_correct", 0)
+        deny_wrong = data.get("gt_denied_wrong", 0)
+
+        matrix = {
+            "APPROVE": {
+                "APPROVE": approve_correct,
+                "REJECT": approve_wrong,
+                "REFER_TO_HUMAN": 0,
+            },
+            "REJECT": {
+                "APPROVE": deny_wrong,
+                "REJECT": deny_correct,
+                "REFER_TO_HUMAN": 0,
+            },
+            "REFER_TO_HUMAN": {
+                "APPROVE": 0,
+                "REJECT": 0,
+                "REFER_TO_HUMAN": 0,
+            },
+        }
+
+        # Compute precision from the matrix
+        approve_precision = self._compute_precision(matrix, "APPROVE")
+        reject_precision = self._compute_precision(matrix, "REJECT")
+
+        # Parse timestamp from eval_id (eval_YYYYMMDD_HHMMSS)
+        ts_str = eval_id.replace("eval_", "")
         try:
-            with open(latest_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return self._transform_evaluation(data, latest_file.stem)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse evaluation file {latest_file}: {e}")
-            return None
-        except IOError as e:
-            logger.warning(f"Failed to read evaluation file {latest_file}: {e}")
-            return None
+            ts = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+            timestamp = ts.isoformat()
+        except ValueError:
+            timestamp = ""
+
+        return {
+            "eval_id": eval_id,
+            "timestamp": timestamp,
+            "confusion_matrix": {
+                "matrix": matrix,
+                "total_evaluated": total,
+                "decision_accuracy": round(accuracy * 100, 1) if accuracy <= 1 else accuracy,
+            },
+            "results": [],  # No per-claim results in this format
+            "summary": {
+                "total_claims": total,
+                "accuracy_rate": round(accuracy * 100, 1) if accuracy <= 1 else accuracy,
+                "approve_precision": round(approve_precision * 100, 1),
+                "reject_precision": round(reject_precision * 100, 1),
+                "refer_rate": 0.0,
+            },
+        }
 
     def _transform_evaluation(
         self, data: Dict[str, Any], eval_id: str

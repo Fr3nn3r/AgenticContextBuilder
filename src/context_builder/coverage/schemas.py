@@ -79,6 +79,10 @@ class CoverageSummary(BaseModel):
     total_covered_before_excess: float = Field(
         0.0, description="Total covered amount before applying excess"
     )
+    total_covered_gross: float = Field(
+        0.0,
+        description="Sum of covered item prices at 100% (before coverage_percent)",
+    )
     total_not_covered: float = Field(
         0.0, description="Total of not-covered items"
     )

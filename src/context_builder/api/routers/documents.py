@@ -2,8 +2,10 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Query
-from fastapi.responses import FileResponse
+import logging
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse
 
 from context_builder.api.dependencies import (
     get_documents_service,
@@ -16,6 +18,8 @@ from context_builder.api.models import (
     SaveLabelsRequest,
     TemplateSpec,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["documents"])
 
@@ -61,7 +65,16 @@ def get_doc(doc_id: str, claim_id: Optional[str] = Query(None), run_id: Optional
     - Extraction results (if available)
     - Labels (if available)
     """
-    return get_documents_service().get_doc(doc_id, run_id, claim_id)
+    try:
+        return get_documents_service().get_doc(doc_id, run_id, claim_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error loading document {doc_id}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Failed to load document: {e}"},
+        )
 
 
 @router.post("/api/docs/{doc_id}/labels")
@@ -164,12 +177,23 @@ def get_doc_source(doc_id: str, claim_id: Optional[str] = Query(None)):
     Returns the file from docs/{doc_id}/source/ with correct content-type.
     Uses Storage abstraction for O(1) document lookup.
     """
-    source_file, media_type, filename = get_documents_service().get_doc_source(doc_id)
-    return FileResponse(
-        path=source_file,
-        media_type=media_type,
-        filename=filename,
-    )
+    try:
+        source_file, media_type, filename = get_documents_service().get_doc_source(
+            doc_id, claim_id=claim_id
+        )
+        return FileResponse(
+            path=source_file,
+            media_type=media_type,
+            filename=filename,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error loading source for document {doc_id}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Failed to load document source: {e}"},
+        )
 
 
 @router.get("/api/docs/{doc_id}/azure-di")
