@@ -808,9 +808,9 @@ class TestScreenFullFlow:
         }
         result, coverage = screener.screen("CLM-TEST", facts)
 
-        assert len(result.checks) == 9
+        assert len(result.checks) == 10
         check_ids = {c.check_id for c in result.checks}
-        assert check_ids == {"1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
+        assert check_ids == {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
 
     def test_auto_reject_on_hard_fail(self):
         """A hard-fail check should trigger auto_reject."""
@@ -873,7 +873,7 @@ class TestScreenFullFlow:
 
         total = result.checks_passed + result.checks_failed + result.checks_inconclusive
         skipped = sum(1 for c in result.checks if c.verdict == CheckVerdict.SKIPPED)
-        assert total + skipped == 9
+        assert total + skipped == 10
 
 
 # ═══════════════════════════════════════════════════════════════════════

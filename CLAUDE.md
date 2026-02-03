@@ -234,3 +234,19 @@ When entering plan mode, save the plan file to the `plans/` folder (e.g., `plans
 - Frontend: `ui/src/` (App.tsx, components/, pages/)
 - Specs: `extraction/specs/doc_type_catalog.yaml` (doc types SSOT)
 - Workspace service: `api/services/workspace.py`
+
+## Codex CLI (this agent) — How to Request a Code Review
+
+Ask directly and scope the review to files, commits, or a diff range. Examples:
+
+```
+Please review src/context_builder/storage/claims.py for bugs and missing tests.
+Code review the last commit.
+Review the diff between main and my branch feature/x.
+Review changes in ui/src/pages/Claims.tsx and ui/src/components/ClaimTable.tsx.
+```
+
+To get a higher‑quality review, include:
+- What changed and why
+- Any files or risks to emphasize
+- How to run tests (if relevant)

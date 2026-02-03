@@ -1519,15 +1519,20 @@ class CoverageAnalyzer:
     ) -> List[LineItemCoverage]:
         """Promote line items when the primary repair is confirmed covered.
 
-        When the repair context identifies a covered primary component but
-        the per-item LLM analysis didn't recognise individual items as covered
-        (because the specific part isn't in the policy's explicit list), this
-        step corrects that by promoting LLM-classified items.
+        Two modes of operation:
 
-        Only activates when **zero** non-trivial items are currently covered,
-        ensuring it doesn't interfere with claims that already have correct
-        per-item coverage.  This is the logical complement of
-        ``_demote_labor_without_covered_parts``.
+        **Mode 1 — Zero-payout rescue:** When the repair context identifies a
+        covered primary component but the per-item LLM analysis didn't
+        recognise individual items as covered (because the specific part isn't
+        in the policy's explicit list), this step promotes ALL LLM-classified
+        items.  Only activates when **zero** non-trivial items are currently
+        covered.
+
+        **Mode 2 — Labor-follows-parts:** When some parts ARE covered but
+        labor items were classified as NOT_COVERED by the LLM (because it
+        couldn't associate generic labor descriptions with the covered
+        repair), this step promotes those orphaned labor items.  Only
+        overrides LLM decisions, not deterministic rule exclusions.
 
         Args:
             items: List of analysed line items (after all stages).
@@ -1542,41 +1547,81 @@ class CoverageAnalyzer:
         if not primary_repair.category:
             return items
 
-        # Only activate when no items are currently covered (zero-payout).
+        category = primary_repair.category
+        labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
+
         has_covered = any(
             item.coverage_status == CoverageStatus.COVERED
             and item.total_price > 0
             for item in items
         )
-        if has_covered:
-            return items
 
-        category = primary_repair.category
+        if not has_covered:
+            # Mode 1: Zero-payout rescue — promote all LLM-classified items
+            for item in items:
+                if item.coverage_status != CoverageStatus.NOT_COVERED:
+                    continue
+                if item.match_method != MatchMethod.LLM:
+                    continue
 
-        for item in items:
-            if item.coverage_status != CoverageStatus.NOT_COVERED:
-                continue
-            # Only override LLM decisions, not deterministic rules
-            if item.match_method != MatchMethod.LLM:
-                continue
-
-            item.coverage_status = CoverageStatus.COVERED
-            item.coverage_category = category
-            if not item.matched_component:
-                item.matched_component = primary_repair.component
-            item.covered_amount = item.total_price
-            item.not_covered_amount = 0.0
-            item.match_reasoning += (
-                f" [PROMOTED: primary repair '{primary_repair.component}' "
-                f"in '{category}' is covered by policy]"
+                item.coverage_status = CoverageStatus.COVERED
+                item.coverage_category = category
+                if not item.matched_component:
+                    item.matched_component = primary_repair.component
+                item.covered_amount = item.total_price
+                item.not_covered_amount = 0.0
+                item.match_reasoning += (
+                    f" [PROMOTED: primary repair '{primary_repair.component}' "
+                    f"in '{category}' is covered by policy]"
+                )
+                logger.info(
+                    "Promoted '%s' to COVERED via primary repair anchor "
+                    "(%s in %s)",
+                    item.description,
+                    primary_repair.component,
+                    category,
+                )
+        else:
+            # Mode 2: Labor-follows-parts — promote orphaned labor when
+            # covered parts exist but the LLM couldn't link the labor.
+            has_covered_parts = any(
+                item.coverage_status == CoverageStatus.COVERED
+                and item.item_type in ("parts", "part", "piece")
+                for item in items
             )
-            logger.info(
-                "Promoted '%s' to COVERED via primary repair anchor "
-                "(%s in %s)",
-                item.description,
-                primary_repair.component,
-                category,
-            )
+            if not has_covered_parts:
+                return items
+
+            for item in items:
+                if item.item_type not in labor_types:
+                    continue
+                if item.coverage_status != CoverageStatus.NOT_COVERED:
+                    continue
+                # Only override LLM decisions, not deterministic rules
+                if item.match_method != MatchMethod.LLM:
+                    continue
+                # Skip items that were explicitly excluded by a prior stage
+                if item.exclusion_reason:
+                    continue
+
+                item.coverage_status = CoverageStatus.COVERED
+                item.coverage_category = category
+                if not item.matched_component:
+                    item.matched_component = primary_repair.component
+                item.covered_amount = item.total_price
+                item.not_covered_amount = 0.0
+                item.match_reasoning += (
+                    f" [PROMOTED: labor for primary repair "
+                    f"'{primary_repair.component}' in '{category}' "
+                    f"— parts covered, labor follows]"
+                )
+                logger.info(
+                    "Promoted labor '%s' to COVERED via primary repair "
+                    "(%s in %s) — parts covered, labor follows",
+                    item.description,
+                    primary_repair.component,
+                    category,
+                )
 
         return items
 

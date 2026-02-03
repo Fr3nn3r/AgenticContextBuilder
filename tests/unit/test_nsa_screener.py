@@ -96,6 +96,46 @@ SWISS_VAT_RATE = 0.081
 # ── Reimplemented check functions ─────────────────────────────────────
 
 
+def _normalize_policy_number(value: str) -> str:
+    """Normalize a policy number: strip to digits, remove leading zeros."""
+    digits = re.sub(r"[^0-9]", "", value)
+    return digits.lstrip("0") or "0"
+
+
+def check_0_policy_enforcement(
+    facts: List[Dict], rejected_policies: set
+) -> ScreeningCheck:
+    """Check 0: Policy enforcement."""
+    policy_number = _get_fact(facts, "policy_number")
+
+    evidence = {"policy_number": policy_number}
+
+    if not policy_number:
+        return ScreeningCheck(
+            check_id="0", check_name="policy_enforcement",
+            verdict=CheckVerdict.SKIPPED, reason="No policy number available",
+            evidence=evidence, is_hard_fail=True,
+        )
+
+    normalized = _normalize_policy_number(policy_number)
+    evidence["normalized_policy_number"] = normalized
+
+    if normalized in rejected_policies:
+        return ScreeningCheck(
+            check_id="0", check_name="policy_enforcement",
+            verdict=CheckVerdict.FAIL,
+            reason=f"Policy {policy_number} is not enforced",
+            evidence=evidence, is_hard_fail=True,
+        )
+
+    return ScreeningCheck(
+        check_id="0", check_name="policy_enforcement",
+        verdict=CheckVerdict.PASS,
+        reason=f"Policy {policy_number} is enforced",
+        evidence=evidence, is_hard_fail=True,
+    )
+
+
 def check_1_policy_validity(facts: List[Dict]) -> ScreeningCheck:
     """Check 1: Policy validity."""
     policy_start = _parse_date(_get_fact(facts, "start_date"))
@@ -401,6 +441,101 @@ def calculate_payout(
 
 
 # ── Test classes ──────────────────────────────────────────────────────
+
+
+class TestNormalizePolicyNumber:
+    """Tests for policy number normalization."""
+
+    def test_plain_digits(self):
+        assert _normalize_policy_number("619533") == "619533"
+
+    def test_leading_zeros_stripped(self):
+        assert _normalize_policy_number("00619533") == "619533"
+
+    def test_dashes_stripped(self):
+        assert _normalize_policy_number("619-533") == "619533"
+
+    def test_dots_stripped(self):
+        assert _normalize_policy_number("619.533") == "619533"
+
+    def test_spaces_stripped(self):
+        assert _normalize_policy_number("619 533") == "619533"
+
+    def test_whitespace_trimmed(self):
+        assert _normalize_policy_number("  619533  ") == "619533"
+
+    def test_mixed_separators(self):
+        assert _normalize_policy_number("0-619.533 ") == "619533"
+
+    def test_all_zeros(self):
+        assert _normalize_policy_number("000") == "0"
+
+    def test_single_zero(self):
+        assert _normalize_policy_number("0") == "0"
+
+    def test_letters_stripped(self):
+        assert _normalize_policy_number("POL-619533") == "619533"
+
+
+class TestCheck0PolicyEnforcement:
+    """Tests for Check 0: Policy enforcement status."""
+
+    REJECTED = {"619533", "615796"}
+
+    def test_pass_valid_policy(self):
+        facts = [{"name": "policy_number", "value": "700001"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.PASS
+        assert result.is_hard_fail is True
+        assert result.check_id == "0"
+
+    def test_fail_rejected_619533(self):
+        facts = [{"name": "policy_number", "value": "619533"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.FAIL
+        assert result.is_hard_fail is True
+
+    def test_fail_rejected_615796(self):
+        facts = [{"name": "policy_number", "value": "615796"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.FAIL
+        assert result.is_hard_fail is True
+
+    def test_skipped_no_policy_number(self):
+        facts = []
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.SKIPPED
+        assert result.is_hard_fail is True
+
+    def test_normalization_with_leading_zeros(self):
+        facts = [{"name": "policy_number", "value": "00619533"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.FAIL
+
+    def test_normalization_with_dashes(self):
+        facts = [{"name": "policy_number", "value": "619-533"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.FAIL
+
+    def test_normalization_with_spaces(self):
+        facts = [{"name": "policy_number", "value": "619 533"}]
+        result = check_0_policy_enforcement(facts, self.REJECTED)
+        assert result.verdict == CheckVerdict.FAIL
+
+    def test_hard_fail_triggers_auto_reject(self):
+        """Check 0 FAIL should trigger auto-reject in ScreeningResult."""
+        facts = [{"name": "policy_number", "value": "619533"}]
+        check = check_0_policy_enforcement(facts, self.REJECTED)
+        assert check.verdict == CheckVerdict.FAIL
+
+        result = ScreeningResult(
+            claim_id="CLM-TEST",
+            screening_timestamp="2026-02-03T10:00:00Z",
+            checks=[check],
+        )
+        result.recompute_counts()
+        assert result.auto_reject is True
+        assert "0" in result.hard_fails
 
 
 class TestCheck1PolicyValidity:

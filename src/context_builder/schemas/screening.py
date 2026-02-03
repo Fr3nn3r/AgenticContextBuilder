@@ -13,9 +13,10 @@ from pydantic import BaseModel, Field
 
 # ── Constants ────────────────────────────────────────────────────────
 
-SCREENING_CHECK_IDS = {"1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
+SCREENING_CHECK_IDS = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
 
-HARD_FAIL_CHECK_IDS = {"1", "1b", "3", "5"}
+HARD_FAIL_CHECK_IDS = {"0", "1", "1b", "3", "5"}
+# 0  = policy_enforcement
 # 1  = policy_validity
 # 1b = damage_date (clear-cut)
 # 3  = mileage
@@ -39,7 +40,7 @@ class ScreeningCheck(BaseModel):
     """Result of a single deterministic screening check."""
 
     check_id: str = Field(
-        description="Check identifier, e.g. '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b'",
+        description="Check identifier, e.g. '0', '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b'",
     )
     check_name: str = Field(description="Human-readable check name")
     verdict: CheckVerdict = Field(description="Deterministic verdict")

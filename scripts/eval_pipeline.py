@@ -114,7 +114,7 @@ def categorize_error(gt: dict, pred: dict, decision_match: bool) -> str:
     """Categorize the type of error."""
     if decision_match:
         # Decision correct but amounts differ
-        gt_amount = gt.get("total_approved_amount")
+        gt_amount = gt.get("total_approved_amount") or gt.get("approved_amount")
         pred_amount = pred.get("payout", {}).get("final_payout", 0)
         if gt_amount and pred_amount:
             diff_pct = abs(gt_amount - pred_amount) / gt_amount * 100
@@ -166,10 +166,13 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
     for claim_id, gt in ground_truth.items():
         assessment = find_latest_assessment(claim_id, target_run_id=target_run_id, target_run_ids=target_run_ids)
 
+        # Support both v1 (total_approved_amount) and v2 (approved_amount) ground truth schemas
+        gt_amount = gt.get("total_approved_amount") or gt.get("approved_amount")
+
         row = {
             "claim_id": claim_id,
             "gt_decision": gt.get("decision"),
-            "gt_amount": gt.get("total_approved_amount"),
+            "gt_amount": gt_amount,
             "gt_deductible": gt.get("deductible"),
             "gt_denial_reason": gt.get("denial_reason"),
             "gt_vehicle": gt.get("vehicle"),
@@ -198,7 +201,7 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
             pred_deductible = assessment.get("payout", {}).get("deductible", 0)
 
             # Amount comparison (only meaningful for approved claims)
-            gt_amount = gt.get("total_approved_amount")
+            gt_amount = gt.get("total_approved_amount") or gt.get("approved_amount")
             if gt_amount and gt_amount > 0:
                 amount_diff = pred_amount - gt_amount
                 amount_diff_pct = (amount_diff / gt_amount) * 100
