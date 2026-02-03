@@ -1,6 +1,6 @@
 # NSA Pipeline Evaluation Process
 
-**Status**: 27 iterations complete, best accuracy **100%** (eval #25), latest **96%** (eval #27)
+**Status**: 47 iterations complete, best accuracy **100%** (eval #35), latest **96%** (eval #47)
 
 ## Quick Start
 
@@ -221,6 +221,7 @@ Both repos are tagged on each eval for reproducibility.
 | #25 | **100%** | `eval-25-100pct` (203b11e) | `eval-25-100pct` (0555537) | Perfect decision accuracy (50/50). 17 amount_mismatch remain. |
 | #26 | 98% | `eval-26-98pct` (06eb159) | `eval-26-98pct` (d862195) | 49/50 correct. 1 false_reject:other. |
 | #27 | 96% | `eval-27-96pct` (9c6b7b4) | `eval-27-96pct` (d862195) | Cross-category component matching. 2 false_approve (EGR valve/module). 0% FRR. |
+| #47 | 96% | `eval-47-96pct` (eea5334) | `eval-47-96pct` (b1b2182) | Policy enforcement check, labor-follows-parts promotion. 1 false_reject:other (65150 hybrid exclusion), 1 false_approve (65288 EGR module). |
 
 **Process**: After every future eval:
 1. Sync customer config: `powershell -ExecutionPolicy Bypass -File "C:\Users\fbrun\Documents\GitHub\context-builder-nsa\copy-from-workspace.ps1"`

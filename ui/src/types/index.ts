@@ -1286,3 +1286,68 @@ export interface CostByModel {
   call_count: number;
   percentage: number;
 }
+
+// =============================================================================
+// DASHBOARD TYPES
+// =============================================================================
+
+export interface DashboardClaimDoc {
+  doc_id: string;
+  filename: string;
+  doc_type: string;
+  extraction_run_id: string | null;
+}
+
+export interface DashboardClaim {
+  claim_id: string;
+  folder_name: string;
+  claim_date: string | null;
+  doc_count: number;
+  // Assessment
+  decision: string | null;
+  confidence: number | null;
+  result_code: string | null;
+  inconclusive_warnings: string[];
+  checks_passed: number;
+  checks_failed: number;
+  checks_inconclusive: number;
+  payout: number | null;
+  currency: string;
+  assessment_method: string | null;
+  claim_run_id: string | null;
+  // Ground truth
+  gt_decision: string | null;
+  gt_payout: number | null;
+  gt_denial_reason: string | null;
+  gt_vehicle: string | null;
+  gt_coverage_notes: string | null;
+  decision_match: boolean | null;
+  payout_diff: number | null;
+  has_ground_truth_doc: boolean;
+  // Documents
+  documents: DashboardClaimDoc[];
+}
+
+export interface DashboardClaimDetail {
+  claim_id: string;
+  coverage_items: Array<Record<string, unknown>>;
+  coverage_summary: Record<string, unknown> | null;
+  payout_calculation: Record<string, unknown> | null;
+  gt_parts_approved: number | null;
+  gt_labor_approved: number | null;
+  gt_total_material_labor: number | null;
+  gt_vat_rate_pct: number | null;
+  gt_deductible: number | null;
+  gt_total_approved: number | null;
+  gt_reimbursement_rate_pct: number | null;
+  screening_checks: Array<Record<string, unknown>>;
+  assessment_checks: Array<Record<string, unknown>>;
+  // Parts/labor breakdown (computed at read time)
+  sys_parts_gross: number | null;
+  sys_labor_gross: number | null;
+  sys_parts_adjusted: number | null;
+  sys_labor_adjusted: number | null;
+  sys_total_adjusted: number | null;
+  sys_vat_rate_pct: number | null;
+  screening_payout: Record<string, unknown> | null;
+}

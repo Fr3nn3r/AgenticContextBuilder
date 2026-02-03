@@ -489,7 +489,11 @@ class TestCheck4bServiceCompliance:
     """Tests for _check_4b_service_compliance."""
 
     def test_pass_recent_service(self):
-        facts = _make_facts(("document_date", "2026-06-15"))
+        facts = _make_facts(
+            ("document_date", "2026-06-15"),
+            ("vehicle_make", "BMW"),
+            ("vehicle_fuel_type", "Diesel"),
+        )
         structured = {
             "service_entries": [
                 {"service_date": "2026-01-10"},
@@ -500,16 +504,21 @@ class TestCheck4bServiceCompliance:
         assert check.verdict == CheckVerdict.PASS
         assert check.check_id == "4b"
 
-    def test_pass_service_gap_exceeds_36_months(self):
-        """Large service gap returns PASS (non-blocking) in current screener."""
-        facts = _make_facts(("document_date", "2026-06-15"))
+    def test_fail_service_gap_exceeds_interval(self):
+        """Large service gap with known brand → FAIL."""
+        facts = _make_facts(
+            ("document_date", "2026-06-15"),
+            ("vehicle_make", "Volkswagen"),
+            ("vehicle_fuel_type", "Diesel"),
+        )
         structured = {
             "service_entries": [
                 {"service_date": "2022-01-01"},
             ]
         }
         check = _screener()._check_4b_service_compliance(facts, structured)
-        assert check.verdict == CheckVerdict.PASS
+        # VW fixed=12mo, gap=54mo, ratio=4.5x → FAIL
+        assert check.verdict == CheckVerdict.FAIL
         assert check.check_id == "4b"
 
     def test_skipped_no_service_entries(self):
@@ -537,7 +546,11 @@ class TestCheck4bServiceCompliance:
 
     def test_uses_most_recent_service(self):
         """Should use the most recent service date, not the first one."""
-        facts = _make_facts(("document_date", "2026-06-15"))
+        facts = _make_facts(
+            ("document_date", "2026-06-15"),
+            ("vehicle_make", "Toyota"),
+            ("vehicle_fuel_type", "Petrol"),
+        )
         structured = {
             "service_entries": [
                 {"service_date": "2024-01-01"},  # Old
@@ -546,7 +559,7 @@ class TestCheck4bServiceCompliance:
             ]
         }
         check = _screener()._check_4b_service_compliance(facts, structured)
-        assert check.verdict == CheckVerdict.PASS  # 2026-06-15 - 2026-03-01 = ~106 days
+        assert check.verdict == CheckVerdict.PASS  # 2026-06-15 - 2026-03-01 = ~3.5 months
 
     def test_evidence_contains_gap_days(self):
         facts = _make_facts(("document_date", "2026-06-15"))
@@ -780,6 +793,123 @@ class TestCheck5bAssistanceItems:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# CHECK 5c: HYBRID VEHICLE EXCLUSION
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestCheck5cHybridExclusion:
+    """Tests for _check_5c_hybrid_exclusion."""
+
+    def _make_coverage_with_category(self, category: str):
+        """Build a minimal CoverageAnalysisResult with a primary repair category."""
+        from context_builder.coverage.schemas import (
+            CoverageAnalysisResult,
+            CoverageSummary,
+            PrimaryRepairResult,
+        )
+
+        return CoverageAnalysisResult(
+            claim_id="CLM-TEST",
+            line_items=[],
+            summary=CoverageSummary(
+                items_covered=1,
+                items_not_covered=0,
+                items_review_needed=0,
+                total_covered_before_excess=1000.0,
+                total_not_covered=0.0,
+            ),
+            primary_repair=PrimaryRepairResult(
+                component="test_component",
+                category=category,
+                description="Test repair",
+                is_covered=True,
+                confidence=0.9,
+                determination_method="deterministic",
+            ),
+        )
+
+    def test_skipped_no_hybrid_covered_fact(self):
+        """No hybrid_covered fact → SKIPPED."""
+        facts = _make_facts(
+            ("vehicle_fuel_type", "Hybrid"),
+        )
+        check = _screener()._check_5c_hybrid_exclusion(facts, None)
+        assert check.verdict == CheckVerdict.SKIPPED
+        assert check.check_id == "5c"
+        assert check.is_hard_fail is True
+
+    def test_pass_hybrid_covered_gedeckt(self):
+        """hybrid_covered = 'Gedeckt' → PASS regardless of vehicle type."""
+        facts = _make_facts(
+            ("hybrid_covered", "Gedeckt"),
+            ("vehicle_fuel_type", "Hybrid"),
+        )
+        check = _screener()._check_5c_hybrid_exclusion(facts, None)
+        assert check.verdict == CheckVerdict.PASS
+
+    def test_pass_not_hybrid_vehicle(self):
+        """Non-hybrid vehicle with hybrid exclusion → PASS."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Diesel"),
+        )
+        check = _screener()._check_5c_hybrid_exclusion(facts, None)
+        assert check.verdict == CheckVerdict.PASS
+
+    def test_pass_hybrid_vehicle_conventional_repair(self):
+        """Hybrid vehicle, hybrid excluded, but repair is conventional → PASS."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Hybrid"),
+        )
+        coverage = self._make_coverage_with_category("engine")
+        check = _screener()._check_5c_hybrid_exclusion(facts, coverage)
+        assert check.verdict == CheckVerdict.PASS
+        assert "engine" in check.reason
+
+    def test_fail_hybrid_vehicle_hybrid_specific_repair(self):
+        """Hybrid vehicle, hybrid excluded, repair is electric_motor → FAIL."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Hybrid"),
+        )
+        coverage = self._make_coverage_with_category("electric_motor")
+        check = _screener()._check_5c_hybrid_exclusion(facts, coverage)
+        assert check.verdict == CheckVerdict.FAIL
+        assert check.is_hard_fail is True
+
+    def test_fail_high_voltage_battery(self):
+        """Hybrid vehicle, hybrid excluded, high_voltage_battery → FAIL."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Hybride Essence"),
+        )
+        coverage = self._make_coverage_with_category("high_voltage_battery")
+        check = _screener()._check_5c_hybrid_exclusion(facts, coverage)
+        assert check.verdict == CheckVerdict.FAIL
+
+    def test_pass_hybrid_vehicle_no_coverage_result(self):
+        """Hybrid vehicle, hybrid excluded, no coverage result → PASS."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Hybrid"),
+        )
+        check = _screener()._check_5c_hybrid_exclusion(facts, None)
+        assert check.verdict == CheckVerdict.PASS
+        assert "unknown" in check.reason
+
+    def test_pass_hybrid_vehicle_mirror_repair(self):
+        """Claim 65150 scenario: hybrid PHEV with mirror repair → PASS."""
+        facts = _make_facts(
+            ("hybrid_covered", "Nicht gedeckt"),
+            ("vehicle_fuel_type", "Hybride Essence"),
+        )
+        coverage = self._make_coverage_with_category("exterior")
+        check = _screener()._check_5c_hybrid_exclusion(facts, coverage)
+        assert check.verdict == CheckVerdict.PASS
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # FULL SCREENING FLOW (screen method)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -788,7 +918,7 @@ class TestScreenFullFlow:
     """Tests for NSAScreener.screen() top-level orchestration."""
 
     def test_all_checks_present(self):
-        """screen() should produce exactly 9 checks."""
+        """screen() should produce exactly 11 checks."""
         screener = _screener()
         # Prevent actual coverage analysis
         screener._run_coverage_analysis = MagicMock(return_value=None)
@@ -808,9 +938,9 @@ class TestScreenFullFlow:
         }
         result, coverage = screener.screen("CLM-TEST", facts)
 
-        assert len(result.checks) == 10
+        assert len(result.checks) == 11
         check_ids = {c.check_id for c in result.checks}
-        assert check_ids == {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
+        assert check_ids == {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c"}
 
     def test_auto_reject_on_hard_fail(self):
         """A hard-fail check should trigger auto_reject."""
@@ -873,7 +1003,7 @@ class TestScreenFullFlow:
 
         total = result.checks_passed + result.checks_failed + result.checks_inconclusive
         skipped = sum(1 for c in result.checks if c.verdict == CheckVerdict.SKIPPED)
-        assert total + skipped == 10
+        assert total + skipped == 11
 
 
 # ═══════════════════════════════════════════════════════════════════════

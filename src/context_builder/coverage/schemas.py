@@ -83,6 +83,12 @@ class CoverageSummary(BaseModel):
         0.0,
         description="Sum of covered item prices at 100% (before coverage_percent)",
     )
+    parts_covered_gross: float = Field(
+        0.0, description="Covered parts at 100% (before coverage_percent)"
+    )
+    labor_covered_gross: float = Field(
+        0.0, description="Covered labor at 100% (before coverage_percent)"
+    )
     total_not_covered: float = Field(
         0.0, description="Total of not-covered items"
     )

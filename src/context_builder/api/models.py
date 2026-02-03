@@ -159,3 +159,83 @@ class TemplateSpec(BaseModel):
     optional_fields: List[str]
     field_rules: Dict[str, Dict[str, Any]]
     quality_gate: Dict[str, List[str]]
+
+
+# =============================================================================
+# DASHBOARD MODELS
+# =============================================================================
+
+
+class DashboardClaimDoc(BaseModel):
+    """Document summary for the dashboard."""
+
+    doc_id: str
+    filename: str
+    doc_type: str
+    extraction_run_id: Optional[str] = None
+
+
+class DashboardClaim(BaseModel):
+    """Enriched claim data for the claims dashboard."""
+
+    claim_id: str
+    folder_name: str
+    claim_date: Optional[str] = None
+    doc_count: int = 0
+
+    # Assessment (latest)
+    decision: Optional[str] = None
+    confidence: Optional[float] = None
+    result_code: Optional[str] = None
+    inconclusive_warnings: List[str] = []
+    checks_passed: int = 0
+    checks_failed: int = 0
+    checks_inconclusive: int = 0
+    payout: Optional[float] = None
+    currency: str = "CHF"
+    assessment_method: Optional[str] = None
+    claim_run_id: Optional[str] = None
+
+    # Ground truth
+    gt_decision: Optional[str] = None
+    gt_payout: Optional[float] = None
+    gt_denial_reason: Optional[str] = None
+    gt_vehicle: Optional[str] = None
+    gt_coverage_notes: Optional[str] = None
+    decision_match: Optional[bool] = None
+    payout_diff: Optional[float] = None
+    has_ground_truth_doc: bool = False
+
+    # Documents
+    documents: List[DashboardClaimDoc] = []
+
+
+class DashboardClaimDetail(BaseModel):
+    """Expanded detail data for a single claim."""
+
+    claim_id: str
+    # Coverage analysis
+    coverage_items: List[Dict[str, Any]] = []
+    coverage_summary: Optional[Dict[str, Any]] = None
+    # Assessment payout breakdown
+    payout_calculation: Optional[Dict[str, Any]] = None
+    # Ground truth breakdown
+    gt_parts_approved: Optional[float] = None
+    gt_labor_approved: Optional[float] = None
+    gt_total_material_labor: Optional[float] = None
+    gt_vat_rate_pct: Optional[float] = None
+    gt_deductible: Optional[float] = None
+    gt_total_approved: Optional[float] = None
+    gt_reimbursement_rate_pct: Optional[float] = None
+    # Screening checks
+    screening_checks: List[Dict[str, Any]] = []
+    # Assessment checks
+    assessment_checks: List[Dict[str, Any]] = []
+    # Parts/labor breakdown (computed at read time)
+    sys_parts_gross: Optional[float] = None
+    sys_labor_gross: Optional[float] = None
+    sys_parts_adjusted: Optional[float] = None
+    sys_labor_adjusted: Optional[float] = None
+    sys_total_adjusted: Optional[float] = None
+    sys_vat_rate_pct: Optional[float] = None
+    screening_payout: Optional[Dict[str, Any]] = None

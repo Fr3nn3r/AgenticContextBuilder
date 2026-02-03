@@ -119,6 +119,9 @@ class AssessmentProcessor:
             "policyholder_type": payout_data.get("policyholder_type", "individual"),
             "final_payout": payout_data.get("final_payout", 0.0),
             "currency": payout_data.get("currency", "CHF"),
+            "parts_covered_gross": payout_data.get("parts_covered_gross"),
+            "labor_covered_gross": payout_data.get("labor_covered_gross"),
+            "vat_rate_pct": payout_data.get("vat_rate_pct"),
         }
 
     @staticmethod
@@ -139,6 +142,9 @@ class AssessmentProcessor:
             "policyholder_type": "individual",
             "final_payout": 0.0,
             "currency": "CHF",
+            "parts_covered_gross": None,
+            "labor_covered_gross": None,
+            "vat_rate_pct": None,
         }
 
     @staticmethod

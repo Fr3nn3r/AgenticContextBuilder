@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { BatchWorkspace } from "./components/BatchWorkspace";
 import { ClaimsTable } from "./components/ClaimsTable";
 import { ClaimReview } from "./components/ClaimReview";
+import { ClaimsDashboardPage } from "./components/dashboard/ClaimsDashboardPage";
 import { ClassificationReview } from "./components/ClassificationReview";
 import { DocumentReview } from "./components/DocumentReview";
 import { ExtractionPage } from "./components/ExtractionPage";
@@ -138,7 +139,7 @@ export function AppRoutes() {
       />
       <Route
         path="/claims/all"
-        element={<ClaimsTable showAllClaims />}
+        element={<ClaimsDashboardPage />}
       />
       <Route
         path="/claims/explorer"

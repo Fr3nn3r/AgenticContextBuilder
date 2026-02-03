@@ -739,10 +739,10 @@ class CoverageAnalyzer:
         for variant in (component_lower, underscore_key, space_key):
             variant_norm = _normalize_umlauts(variant)
             for idx, policy_norm in enumerate(policy_parts_norm):
-                # Guard: short names (≤3 chars) must be exact matches,
-                # not accidental substrings in compound words
-                # (e.g. "egr" inside "bremskraftbegrenzer")
-                if len(variant_norm) <= 3:
+                # Guard: short strings (≤3 chars) on EITHER side must be exact
+                # matches — prevents cross-category false positives like
+                # "asr" (3 chars) substring-matching "abgasrueckfuehrung"
+                if len(variant_norm) <= 3 or len(policy_norm) <= 3:
                     if variant_norm == policy_norm:
                         return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
                     continue
@@ -762,10 +762,10 @@ class CoverageAnalyzer:
             for term in synonyms:
                 term_norm = _normalize_umlauts(term.lower())
                 for idx, policy_norm in enumerate(policy_parts_norm):
-                    # Guard: short synonyms (≤3 chars) must be exact matches,
-                    # not accidental substrings in compound words
-                    # (e.g. "egr" inside "bremskraftbegrenzer")
-                    if len(term_norm) <= 3:
+                    # Guard: short strings (≤3 chars) on EITHER side must be exact
+                    # matches — prevents cross-category false positives like
+                    # "asr" (3 chars) substring-matching "abgasrueckfuehrung"
+                    if len(term_norm) <= 3 or len(policy_norm) <= 3:
                         if term_norm == policy_norm:
                             return True, f"Component '{component}' found in policy list as '{policy_parts_lower[idx]}'"
                         continue
@@ -1103,6 +1103,8 @@ class CoverageAnalyzer:
         total_claimed = 0.0
         total_covered_before_excess = 0.0
         total_covered_gross = 0.0
+        parts_covered_gross = 0.0
+        labor_covered_gross = 0.0
         total_not_covered = 0.0
         items_covered = 0
         items_not_covered = 0
@@ -1114,6 +1116,10 @@ class CoverageAnalyzer:
             if item.coverage_status == CoverageStatus.COVERED:
                 # Track gross (100%) before coverage_percent reduction
                 total_covered_gross += item.total_price
+                if item.item_type == "parts":
+                    parts_covered_gross += item.total_price
+                elif item.item_type == "labor":
+                    labor_covered_gross += item.total_price
                 # Apply coverage percentage if available
                 if coverage_percent is not None:
                     covered_amount = item.total_price * (coverage_percent / 100.0)
@@ -1158,6 +1164,8 @@ class CoverageAnalyzer:
             total_claimed=total_claimed,
             total_covered_before_excess=total_covered_before_excess,
             total_covered_gross=total_covered_gross,
+            parts_covered_gross=parts_covered_gross,
+            labor_covered_gross=labor_covered_gross,
             total_not_covered=total_not_covered,
             excess_amount=excess_amount,
             total_payable=total_payable,

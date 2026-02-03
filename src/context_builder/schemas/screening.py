@@ -13,9 +13,9 @@ from pydantic import BaseModel, Field
 
 # ── Constants ────────────────────────────────────────────────────────
 
-SCREENING_CHECK_IDS = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
+SCREENING_CHECK_IDS = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c"}
 
-HARD_FAIL_CHECK_IDS = {"0", "1", "1b", "3", "5"}
+HARD_FAIL_CHECK_IDS = {"0", "1", "1b", "3", "5", "5c"}
 # 0  = policy_enforcement
 # 1  = policy_validity
 # 1b = damage_date (clear-cut)
@@ -40,7 +40,7 @@ class ScreeningCheck(BaseModel):
     """Result of a single deterministic screening check."""
 
     check_id: str = Field(
-        description="Check identifier, e.g. '0', '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b'",
+        description="Check identifier, e.g. '0', '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b', '5c'",
     )
     check_name: str = Field(description="Human-readable check name")
     verdict: CheckVerdict = Field(description="Deterministic verdict")
@@ -67,6 +67,15 @@ class ScreeningPayoutCalculation(BaseModel):
     )
     not_covered_total: float = Field(
         description="Total not-covered amount (from CoverageSummary)",
+    )
+    parts_covered_gross: Optional[float] = Field(
+        default=None, description="Covered parts at 100% (before rate)"
+    )
+    labor_covered_gross: Optional[float] = Field(
+        default=None, description="Covered labor at 100% (before rate)"
+    )
+    vat_rate_pct: Optional[float] = Field(
+        default=None, description="VAT rate percentage applied (e.g. 8.1)"
     )
     coverage_percent: Optional[float] = Field(
         default=None, description="Coverage percentage from policy scale"

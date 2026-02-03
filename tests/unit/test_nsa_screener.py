@@ -9,7 +9,7 @@ verdicts, hard-fail flags, and evidence.
 
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
@@ -22,6 +22,11 @@ from context_builder.schemas.screening import (
 
 
 # ── Reimplemented helpers (matching workspace screener) ───────────────
+
+
+def _make_facts(*name_value_pairs):
+    """Build a list of fact dicts from (name, value) pairs."""
+    return [{"name": n, "value": v} for n, v in name_value_pairs]
 
 
 def _get_fact(facts: List[Dict], name: str) -> Optional[str]:
@@ -91,6 +96,154 @@ ASSISTANCE_KEYWORDS = [
 ]
 
 SWISS_VAT_RATE = 0.081
+
+# ── Brand normalization (mirrors screener.py) ────────────────────────
+
+BRAND_NORMALIZATION: Dict[str, str] = {
+    "volkswagen": "volkswagen",
+    "vw": "volkswagen",
+    "mercedes": "mercedes_benz",
+    "mercedes-benz": "mercedes_benz",
+    "cupra": "seat_cupra",
+    "seat": "seat_cupra",
+    "škoda": "skoda",
+    "skoda": "skoda",
+    "bmw": "bmw",
+    "audi": "audi",
+    "opel": "opel",
+    "ford": "ford",
+    "hyundai": "hyundai",
+    "toyota": "toyota",
+    "dacia": "dacia",
+    "renault": "renault",
+    "kia": "kia",
+    "peugeot": "peugeot",
+    "citroen": "citroen",
+    "citroën": "citroen",
+    "volvo": "volvo",
+    "fiat": "fiat",
+    "nissan": "nissan",
+    "mazda": "mazda",
+    "mini": "mini",
+}
+
+FUEL_TYPE_NORMALIZATION: Dict[str, str] = {
+    "bleifrei": "petrol",
+    "sans plomb": "petrol",
+    "essence": "petrol",
+    "benzin": "petrol",
+    "super": "petrol",
+    "petrol": "petrol",
+    "diesel": "diesel",
+    "electrique": "electric",
+    "électrique": "electric",
+    "elektrisch": "electric",
+    "elektro": "electric",
+    "electric": "electric",
+    "hybride": "hybrid",
+    "hybride essence": "hybrid",
+    "hybrid": "hybrid",
+}
+
+_FALLBACK_INTERVAL = {"km_max": 30000, "months_max": 24, "system_type": "fallback"}
+
+
+def _normalize_brand(make: Optional[str]) -> Optional[str]:
+    """Normalize vehicle make to service_requirements key."""
+    if not make:
+        return None
+    make_lower = make.strip().lower()
+    if make_lower in BRAND_NORMALIZATION:
+        return BRAND_NORMALIZATION[make_lower]
+    for key, value in BRAND_NORMALIZATION.items():
+        if key in make_lower:
+            return value
+    return None
+
+
+def _normalize_fuel_type(fuel: Optional[str]) -> str:
+    """Normalize fuel type to interval key."""
+    if not fuel:
+        return "petrol"
+    fuel_lower = fuel.strip().lower()
+    if fuel_lower in FUEL_TYPE_NORMALIZATION:
+        return FUEL_TYPE_NORMALIZATION[fuel_lower]
+    for key, value in FUEL_TYPE_NORMALIZATION.items():
+        if key in fuel_lower:
+            return value
+    return "petrol"
+
+
+def _resolve_service_interval(
+    brand_data: Dict[str, Any], fuel_type: str
+) -> Dict[str, Any]:
+    """Navigate brand JSON to get {km_max, months_max, system_type}."""
+    intervals = brand_data.get("intervals", {})
+    system_type = brand_data.get("service_system", "fixed")
+
+    if fuel_type == "electric" and "electric" in intervals:
+        iv = intervals["electric"]
+        return {
+            "km_max": iv.get("km", iv.get("km_max", 30000)),
+            "months_max": iv.get("months", iv.get("months_max", 24)),
+            "system_type": "electric",
+        }
+    if fuel_type == "hybrid" and "hybrid" in intervals:
+        iv = intervals["hybrid"]
+        return {
+            "km_max": iv.get("km", iv.get("km_max", 15000)),
+            "months_max": iv.get("months", iv.get("months_max", 12)),
+            "system_type": "hybrid",
+        }
+    if system_type == "dual" and "fixed" in intervals:
+        iv = intervals["fixed"]
+        return {
+            "km_max": iv.get("km", 15000),
+            "months_max": iv.get("months", 12),
+            "system_type": "dual",
+        }
+    if "service_a" in intervals:
+        iv = intervals["service_a"]
+        return {
+            "km_max": iv.get("km", 25000),
+            "months_max": iv.get("months", 12),
+            "system_type": "flexible",
+        }
+    if fuel_type == "petrol" and "ecoboost_petrol" in intervals:
+        iv = intervals["ecoboost_petrol"]
+        return {
+            "km_max": iv.get("km_max", iv.get("km", 24000)),
+            "months_max": iv.get("months", iv.get("months_max", 12)),
+            "system_type": "flexible",
+        }
+    if fuel_type in intervals:
+        iv = intervals[fuel_type]
+        return {
+            "km_max": iv.get("km", iv.get("km_max", 20000)),
+            "months_max": iv.get("months", iv.get("months_max", 12)),
+            "system_type": system_type,
+        }
+    if system_type == "flexible":
+        max_km = 0
+        max_months = 0
+        for key, iv in intervals.items():
+            if key == "electric":
+                continue
+            km = iv.get("km_max", iv.get("km", 0))
+            months = iv.get("months_max", iv.get("months", 0))
+            max_km = max(max_km, km)
+            max_months = max(max_months, months)
+        if max_km > 0 and max_months > 0:
+            return {"km_max": max_km, "months_max": max_months, "system_type": "flexible"}
+    for key, iv in intervals.items():
+        if key == "electric":
+            continue
+        return {
+            "km_max": iv.get("km", iv.get("km_max", 20000)),
+            "months_max": iv.get("months", iv.get("months_max", 12)),
+            "system_type": system_type,
+        }
+    return dict(_FALLBACK_INTERVAL)
 
 
 # ── Reimplemented check functions ─────────────────────────────────────
@@ -306,10 +459,20 @@ def check_4a_shop_auth(shop_auth: Dict) -> ScreeningCheck:
 
 
 def check_4b_service_compliance(
-    facts: List[Dict], service_entries: List[Dict]
+    facts: List[Dict],
+    service_entries: List[Dict],
+    brands: Optional[Dict[str, Any]] = None,
 ) -> ScreeningCheck:
-    """Check 4b: Service compliance."""
+    """Check 4b: Service compliance (manufacturer-aware).
+
+    Uses brand + fuel type to resolve manufacturer interval.
+    Tolerance: PASS <=1.0x, INCONCLUSIVE 1.0-1.5x, FAIL >1.5x.
+    Unknown brand auto-downgrades PASS → INCONCLUSIVE.
+    """
     claim_date = _parse_date(_get_fact(facts, "document_date"))
+    vehicle_make = _get_fact(facts, "vehicle_make")
+    vehicle_fuel_type = _get_fact(facts, "vehicle_fuel_type")
+
     if not service_entries:
         return ScreeningCheck(
             check_id="4b", check_name="service_compliance",
@@ -322,30 +485,113 @@ def check_4b_service_compliance(
             verdict=CheckVerdict.SKIPPED, reason="No claim date",
             is_hard_fail=False,
         )
-    most_recent = None
+
+    # Parse and sort
+    parsed: List[Tuple[date, Dict]] = []
     for entry in service_entries:
         svc_date = _parse_date(entry.get("service_date"))
-        if svc_date and (most_recent is None or svc_date > most_recent):
-            most_recent = svc_date
-    if most_recent is None:
+        if svc_date:
+            parsed.append((svc_date, entry))
+    parsed.sort(key=lambda x: x[0])
+
+    if not parsed:
         return ScreeningCheck(
             check_id="4b", check_name="service_compliance",
             verdict=CheckVerdict.SKIPPED, reason="Unparseable service dates",
             is_hard_fail=False,
         )
+
+    # Find last service before claim
+    last_before: Optional[Tuple[date, Dict]] = None
+    for svc_date, entry in parsed:
+        if svc_date <= claim_date:
+            last_before = (svc_date, entry)
+    if last_before is None:
+        last_before = parsed[0]
+
+    most_recent = last_before[0]
+    most_recent_entry = last_before[1]
+
+    # Resolve interval
+    brand_key = _normalize_brand(vehicle_make)
+    fuel_key = _normalize_fuel_type(vehicle_fuel_type)
+    brand_known = brand_key is not None
+    fallback_used = False
+
+    if brands is None:
+        brands = {}
+
+    if brand_key and brand_key in brands:
+        interval = _resolve_service_interval(brands[brand_key], fuel_key)
+    else:
+        interval = dict(_FALLBACK_INTERVAL)
+        fallback_used = True
+
+    months_max = interval["months_max"]
+    km_max = interval["km_max"]
+
+    # Time compliance
     days_gap = (claim_date - most_recent).days
-    if days_gap <= 365:
-        return ScreeningCheck(
-            check_id="4b", check_name="service_compliance",
-            verdict=CheckVerdict.PASS,
-            reason=f"Service {days_gap} days ago",
-            is_hard_fail=False,
-        )
+    months_gap = round(days_gap / 30.44, 1)
+    time_ratio = round(months_gap / months_max, 2) if months_max > 0 else 999.0
+
+    if time_ratio <= 1.0:
+        time_verdict = CheckVerdict.PASS
+    elif time_ratio <= 1.5:
+        time_verdict = CheckVerdict.INCONCLUSIVE
+    else:
+        time_verdict = CheckVerdict.FAIL
+
+    # Mileage compliance
+    mileage_verdict = None
+    odometer = _parse_int(
+        _get_fact(facts, "odometer_km") or _get_fact(facts, "vehicle_current_km")
+    )
+    service_km = _parse_int(most_recent_entry.get("mileage_km"))
+    if odometer is not None and service_km is not None and km_max > 0:
+        km_gap = odometer - service_km
+        km_ratio = round(km_gap / km_max, 2) if km_max > 0 else 999.0
+        if km_ratio <= 1.0:
+            mileage_verdict = CheckVerdict.PASS
+        elif km_ratio <= 1.5:
+            mileage_verdict = CheckVerdict.INCONCLUSIVE
+        else:
+            mileage_verdict = CheckVerdict.FAIL
+
+    # Combined verdict
+    verdict_order = {CheckVerdict.PASS: 0, CheckVerdict.INCONCLUSIVE: 1, CheckVerdict.FAIL: 2}
+    combined = time_verdict
+    if mileage_verdict is not None:
+        if verdict_order.get(mileage_verdict, 0) > verdict_order.get(combined, 0):
+            combined = mileage_verdict
+
+    # Unknown brand: PASS → INCONCLUSIVE
+    if not brand_known and combined == CheckVerdict.PASS:
+        combined = CheckVerdict.INCONCLUSIVE
+
+    # Inter-service gap analysis
+    chronic_non_maintenance = False
+    if len(parsed) >= 2:
+        excessive = 0
+        for i in range(1, len(parsed)):
+            gap_days = (parsed[i][0] - parsed[i - 1][0]).days
+            gap_months = round(gap_days / 30.44, 1)
+            gap_ratio = round(gap_months / months_max, 2) if months_max > 0 else 0
+            if gap_ratio > 2.0:
+                excessive += 1
+        chronic_non_maintenance = excessive >= 2
+
+    requires_llm = combined != CheckVerdict.PASS
+
     return ScreeningCheck(
         check_id="4b", check_name="service_compliance",
-        verdict=CheckVerdict.FAIL,
-        reason=f"Service gap {days_gap} days",
-        is_hard_fail=False, requires_llm=True,
+        verdict=combined, reason="service compliance",
+        is_hard_fail=False, requires_llm=requires_llm,
+        evidence={
+            "brand_known": brand_known,
+            "fallback_interval_used": fallback_used,
+            "chronic_non_maintenance": chronic_non_maintenance,
+        },
     )
 
 
@@ -830,21 +1076,176 @@ class TestCheck4aShopAuth:
         assert result.verdict == CheckVerdict.SKIPPED
 
 
+class TestBrandNormalization:
+    """Tests for _normalize_brand helper."""
+
+    def test_exact_volkswagen(self):
+        assert _normalize_brand("Volkswagen") == "volkswagen"
+
+    def test_vw_abbreviation(self):
+        assert _normalize_brand("VW") == "volkswagen"
+
+    def test_mercedes_benz(self):
+        assert _normalize_brand("Mercedes-Benz") == "mercedes_benz"
+
+    def test_mercedes_short(self):
+        assert _normalize_brand("Mercedes") == "mercedes_benz"
+
+    def test_skoda_with_diacritic(self):
+        assert _normalize_brand("Škoda") == "skoda"
+
+    def test_substring_fallback(self):
+        assert _normalize_brand("Volkswagen AG") == "volkswagen"
+
+    def test_unknown_brand(self):
+        assert _normalize_brand("Lamborghini") is None
+
+    def test_none_input(self):
+        assert _normalize_brand(None) is None
+
+    def test_empty_string(self):
+        assert _normalize_brand("") is None
+
+    def test_cupra(self):
+        assert _normalize_brand("CUPRA") == "seat_cupra"
+
+    def test_seat(self):
+        assert _normalize_brand("Seat") == "seat_cupra"
+
+
+class TestFuelTypeNormalization:
+    """Tests for _normalize_fuel_type helper."""
+
+    def test_diesel(self):
+        assert _normalize_fuel_type("Diesel") == "diesel"
+
+    def test_bleifrei(self):
+        assert _normalize_fuel_type("Bleifrei") == "petrol"
+
+    def test_sans_plomb(self):
+        assert _normalize_fuel_type("Sans Plomb") == "petrol"
+
+    def test_electrique(self):
+        assert _normalize_fuel_type("Électrique") == "electric"
+
+    def test_hybride(self):
+        assert _normalize_fuel_type("Hybride") == "hybrid"
+
+    def test_none_defaults_petrol(self):
+        assert _normalize_fuel_type(None) == "petrol"
+
+    def test_unknown_defaults_petrol(self):
+        assert _normalize_fuel_type("LPG") == "petrol"
+
+    def test_substring_match(self):
+        assert _normalize_fuel_type("Super Bleifrei 98") == "petrol"
+
+
+class TestResolveServiceInterval:
+    """Tests for _resolve_service_interval helper."""
+
+    VW_BRAND = {
+        "service_system": "dual",
+        "intervals": {
+            "fixed": {"km": 15000, "months": 12},
+            "longlife_petrol": {"km_min": 15000, "km_max": 30000, "months_max": 24},
+            "electric": {"km": 30000, "months": 24},
+        },
+    }
+
+    MERCEDES_BRAND = {
+        "service_system": "flexible",
+        "intervals": {
+            "service_a": {"km": 25000, "months": 12},
+            "service_b": {"km": 25000, "months": 12},
+            "electric": {"km": 25000, "months": 24},
+        },
+    }
+
+    FORD_BRAND = {
+        "service_system": "flexible",
+        "intervals": {
+            "ecoboost_petrol": {"km_min": 10000, "km_max": 24000, "months": 12},
+            "diesel": {"km": 20000, "months": 12},
+            "electric": {"km": 30000, "months": 24},
+        },
+    }
+
+    TOYOTA_BRAND = {
+        "service_system": "fixed",
+        "intervals": {
+            "petrol": {"km": 15000, "months": 12},
+            "diesel": {"km": 15000, "months": 12},
+            "hybrid": {"km": 15000, "months": 12},
+        },
+    }
+
+    def test_vw_dual_uses_fixed(self):
+        result = _resolve_service_interval(self.VW_BRAND, "petrol")
+        assert result["km_max"] == 15000
+        assert result["months_max"] == 12
+        assert result["system_type"] == "dual"
+
+    def test_vw_electric(self):
+        result = _resolve_service_interval(self.VW_BRAND, "electric")
+        assert result["km_max"] == 30000
+        assert result["months_max"] == 24
+        assert result["system_type"] == "electric"
+
+    def test_mercedes_uses_service_a(self):
+        result = _resolve_service_interval(self.MERCEDES_BRAND, "diesel")
+        assert result["km_max"] == 25000
+        assert result["months_max"] == 12
+        assert result["system_type"] == "flexible"
+
+    def test_ford_petrol_uses_ecoboost(self):
+        result = _resolve_service_interval(self.FORD_BRAND, "petrol")
+        assert result["km_max"] == 24000
+        assert result["months_max"] == 12
+
+    def test_ford_diesel_direct(self):
+        result = _resolve_service_interval(self.FORD_BRAND, "diesel")
+        assert result["km_max"] == 20000
+        assert result["months_max"] == 12
+
+    def test_toyota_hybrid(self):
+        result = _resolve_service_interval(self.TOYOTA_BRAND, "hybrid")
+        assert result["km_max"] == 15000
+        assert result["months_max"] == 12
+        assert result["system_type"] == "hybrid"
+
+    def test_empty_intervals_returns_fallback(self):
+        result = _resolve_service_interval({"intervals": {}}, "petrol")
+        assert result["km_max"] == 30000
+        assert result["months_max"] == 24
+
+
 class TestCheck4bServiceCompliance:
-    """Tests for Check 4b: Service compliance."""
+    """Tests for Check 4b: Service compliance (manufacturer-aware)."""
 
-    def test_pass_recent_service(self):
-        facts = [{"name": "document_date", "value": "15.06.2025"}]
-        entries = [{"service_date": "2025-01-15"}]
-        result = check_4b_service_compliance(facts, entries)
-        assert result.verdict == CheckVerdict.PASS
+    # Sample brand data for tests
+    VW_BRANDS = {
+        "volkswagen": {
+            "service_system": "dual",
+            "intervals": {
+                "fixed": {"km": 15000, "months": 12},
+                "electric": {"km": 30000, "months": 24},
+            },
+        },
+    }
 
-    def test_fail_service_gap(self):
-        facts = [{"name": "document_date", "value": "15.06.2025"}]
-        entries = [{"service_date": "2023-01-01"}]
-        result = check_4b_service_compliance(facts, entries)
-        assert result.verdict == CheckVerdict.FAIL
-        assert result.requires_llm is True
+    BMW_BRANDS = {
+        "bmw": {
+            "service_system": "flexible",
+            "intervals": {
+                "petrol": {"km_min": 15000, "km_max": 25000, "months_max": 24},
+                "diesel": {"km_min": 10000, "km_max": 25000, "months_max": 24},
+                "electric": {"km": 30000, "months": 24},
+            },
+        },
+    }
+
+    # ── SKIPPED tests (unchanged) ───────────────────────────────────
 
     def test_skipped_no_entries(self):
         facts = [{"name": "document_date", "value": "15.06.2025"}]
@@ -856,6 +1257,178 @@ class TestCheck4bServiceCompliance:
         entries = [{"service_date": "2025-01-15"}]
         result = check_4b_service_compliance(facts, entries)
         assert result.verdict == CheckVerdict.SKIPPED
+
+    def test_skipped_unparseable_dates(self):
+        facts = [{"name": "document_date", "value": "15.06.2025"}]
+        entries = [{"service_date": "not-a-date"}]
+        result = check_4b_service_compliance(facts, entries)
+        assert result.verdict == CheckVerdict.SKIPPED
+
+    # ── Known brand: VW (dual, 12mo) ────────────────────────────────
+
+    def test_vw_pass_within_12_months(self):
+        """VW fixed=12 months. Service 6 months ago → PASS."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Volkswagen"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+        ]
+        entries = [{"service_date": "2025-01-15"}]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.verdict == CheckVerdict.PASS
+        assert result.evidence["brand_known"] is True
+
+    def test_vw_inconclusive_13_months(self):
+        """VW fixed=12mo. Service 13mo ago → ratio ~1.08 → INCONCLUSIVE."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "VW"},
+            {"name": "vehicle_fuel_type", "value": "Benzin"},
+        ]
+        entries = [{"service_date": "2024-05-01"}]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+
+    def test_vw_fail_20_months(self):
+        """VW fixed=12mo. Service 20mo ago → ratio ~1.67 → FAIL."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "VW"},
+            {"name": "vehicle_fuel_type", "value": "Bleifrei"},
+        ]
+        entries = [{"service_date": "2023-10-15"}]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.verdict == CheckVerdict.FAIL
+        assert result.requires_llm is True
+
+    # ── Known brand: BMW (flexible, 24mo) ───────────────────────────
+
+    def test_bmw_pass_within_24_months(self):
+        """BMW CBS=24mo max. Service 18mo ago → PASS."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "BMW"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+        ]
+        entries = [{"service_date": "2024-01-01"}]
+        result = check_4b_service_compliance(facts, entries, self.BMW_BRANDS)
+        assert result.verdict == CheckVerdict.PASS
+
+    def test_bmw_inconclusive_30_months(self):
+        """BMW CBS=24mo. Service 30mo ago → ratio ~1.25 → INCONCLUSIVE."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "BMW"},
+            {"name": "vehicle_fuel_type", "value": "Benzin"},
+        ]
+        entries = [{"service_date": "2022-12-15"}]
+        result = check_4b_service_compliance(facts, entries, self.BMW_BRANDS)
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+
+    def test_bmw_fail_40_months(self):
+        """BMW CBS=24mo. Service 40mo ago → ratio ~1.67 → FAIL."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "BMW"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+        ]
+        entries = [{"service_date": "2022-02-15"}]
+        result = check_4b_service_compliance(facts, entries, self.BMW_BRANDS)
+        assert result.verdict == CheckVerdict.FAIL
+
+    # ── Unknown brand: fallback 24mo, auto-downgrade ────────────────
+
+    def test_unknown_brand_downgrades_pass_to_inconclusive(self):
+        """Unknown brand uses 24mo fallback. 6mo gap → PASS downgraded to INCONCLUSIVE."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Lamborghini"},
+        ]
+        entries = [{"service_date": "2025-01-15"}]
+        result = check_4b_service_compliance(facts, entries)
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.evidence["brand_known"] is False
+        assert result.evidence["fallback_interval_used"] is True
+
+    def test_unknown_brand_fail_stays_fail(self):
+        """Unknown brand, 40mo gap → FAIL (not downgraded)."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Lamborghini"},
+        ]
+        entries = [{"service_date": "2022-02-15"}]
+        result = check_4b_service_compliance(facts, entries)
+        assert result.verdict == CheckVerdict.FAIL
+
+    def test_no_make_uses_fallback(self):
+        """No vehicle_make at all → fallback + INCONCLUSIVE."""
+        facts = [{"name": "document_date", "value": "15.06.2025"}]
+        entries = [{"service_date": "2025-01-15"}]
+        result = check_4b_service_compliance(facts, entries)
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert result.evidence["brand_known"] is False
+
+    # ── Mileage compliance ──────────────────────────────────────────
+
+    def test_mileage_overrides_time_verdict(self):
+        """Time PASS but mileage FAIL → combined FAIL."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Volkswagen"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+            {"name": "odometer_km", "value": "50000"},
+        ]
+        # Service was 6mo ago (time PASS) but only 10,000 km at service
+        # km_gap = 50000 - 10000 = 40000, ratio = 40000/15000 = 2.67 → FAIL
+        entries = [{"service_date": "2025-01-15", "mileage_km": "10000"}]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.verdict == CheckVerdict.FAIL
+
+    def test_mileage_within_limit(self):
+        """Both time and mileage within limits → PASS."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Volkswagen"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+            {"name": "odometer_km", "value": "55000"},
+        ]
+        entries = [{"service_date": "2025-01-15", "mileage_km": "45000"}]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.verdict == CheckVerdict.PASS
+
+    # ── Chronic non-maintenance ─────────────────────────────────────
+
+    def test_chronic_non_maintenance_detected(self):
+        """2+ inter-service gaps > 2x interval → chronic flag."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Volkswagen"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+        ]
+        # VW fixed=12mo. Gaps: 30mo, 30mo, 6mo → 2 gaps > 24mo (2x12)
+        entries = [
+            {"service_date": "2020-01-01"},
+            {"service_date": "2022-07-01"},
+            {"service_date": "2025-01-01"},
+            {"service_date": "2025-06-01"},  # last before claim
+        ]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.evidence["chronic_non_maintenance"] is True
+
+    def test_no_chronic_with_regular_service(self):
+        """Regular 11-month services → no chronic flag."""
+        facts = [
+            {"name": "document_date", "value": "15.06.2025"},
+            {"name": "vehicle_make", "value": "Volkswagen"},
+            {"name": "vehicle_fuel_type", "value": "Diesel"},
+        ]
+        entries = [
+            {"service_date": "2024-01-01"},
+            {"service_date": "2024-06-01"},
+            {"service_date": "2025-01-15"},
+        ]
+        result = check_4b_service_compliance(facts, entries, self.VW_BRANDS)
+        assert result.evidence["chronic_non_maintenance"] is False
 
 
 class TestCheck5bAssistance:

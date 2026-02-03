@@ -49,7 +49,7 @@ export const ROUTE_CONFIG: RouteConfig[] = [
   { id: "new-claim", path: "/claims/new", label: "New Claim", title: "New Claim", showInNav: true, authScreen: "new-claim" },
   { id: "batches", path: "/batches", label: "Batches", title: "Batches", matchPrefix: true, showInNav: true, authScreen: "batches" },
   { id: "evaluation", path: "/evaluation", label: "Evaluation", title: "Evaluation", showInNav: true, authScreen: "evaluation" },
-  { id: "all-claims", path: "/claims/all", label: "All Claims", title: "All Claims", showInNav: true, authScreen: "all-claims" },
+  { id: "all-claims", path: "/claims/all", label: "Dashboard", title: "Claims Dashboard", showInNav: true, authScreen: "all-claims" },
   { id: "claims-explorer", path: "/claims/explorer", label: "Claim Explorer", title: "Claim Explorer", showInNav: true, authScreen: "claims-explorer" },
   { id: "documents", path: "/documents", label: "Documents", title: "Documents", showInNav: true, authScreen: "documents" },
   { id: "truth", path: "/truth", label: "Ground Truth", title: "Ground Truth", showInNav: true, authScreen: "ground-truth" },

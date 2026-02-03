@@ -16,8 +16,8 @@ export interface BarChartDataPoint {
 // Chart color palette - direct colors that work with recharts
 // These are theme-aware colors that match the Northern Lights theme
 export const CHART_COLORS = {
-  success: "#22c55e",      // Green for correct/success
-  error: "#ef4444",        // Red for errors/incorrect
+  success: "#3b82f6",      // Blue for correct/success (professional, calm)
+  error: "#e11d48",        // Rose for errors/incorrect (warm, less harsh than red)
   warning: "#f59e0b",      // Amber for warnings/missing
   info: "#3b82f6",         // Blue for info
   muted: "#9ca3af",        // Gray for muted

@@ -175,6 +175,40 @@ class TestScreeningPayoutCalculation:
         assert payout.vat_adjusted is True
         assert payout.vat_deduction == 308.0
 
+    def test_new_optional_fields_default_none(self):
+        """parts_covered_gross, labor_covered_gross, vat_rate_pct default to None."""
+        payout = _make_payout()
+        assert payout.parts_covered_gross is None
+        assert payout.labor_covered_gross is None
+        assert payout.vat_rate_pct is None
+
+    def test_new_optional_fields_populated(self):
+        """parts_covered_gross, labor_covered_gross, vat_rate_pct can be set."""
+        payout = _make_payout(
+            parts_covered_gross=3000.0,
+            labor_covered_gross=1500.0,
+            vat_rate_pct=8.1,
+        )
+        assert payout.parts_covered_gross == 3000.0
+        assert payout.labor_covered_gross == 1500.0
+        assert payout.vat_rate_pct == 8.1
+
+    def test_backward_compat_old_json_without_new_fields(self):
+        """Old JSON without new fields should still deserialize."""
+        old_json = {
+            "covered_total": 4500.0,
+            "not_covered_total": 500.0,
+            "capped_amount": 4500.0,
+            "deductible_amount": 450.0,
+            "after_deductible": 4050.0,
+            "policyholder_type": "individual",
+            "final_payout": 4050.0,
+        }
+        payout = ScreeningPayoutCalculation(**old_json)
+        assert payout.parts_covered_gross is None
+        assert payout.labor_covered_gross is None
+        assert payout.vat_rate_pct is None
+
 
 # ── ScreeningResult ──────────────────────────────────────────────────
 
@@ -353,7 +387,7 @@ class TestConstants:
     """Tests for module-level constants."""
 
     def test_screening_check_ids(self):
-        expected = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b"}
+        expected = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c"}
         assert SCREENING_CHECK_IDS == expected
 
     def test_hard_fail_subset(self):

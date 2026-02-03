@@ -2,6 +2,8 @@
 
 import type {
   ClaimSummary,
+  DashboardClaim,
+  DashboardClaimDetail,
   DocSummary,
   DocPayload,
   BatchSummary,
@@ -1445,4 +1447,33 @@ export async function generateCustomerDraft(
       body: JSON.stringify({ language }),
     }
   );
+}
+
+// =============================================================================
+// DASHBOARD API
+// =============================================================================
+
+/**
+ * Get enriched claim data for all claims in the workspace.
+ */
+export async function getDashboardClaims(): Promise<DashboardClaim[]> {
+  return fetchJson<DashboardClaim[]>(`${API_BASE}/dashboard/claims`);
+}
+
+/**
+ * Get expanded detail data for a single claim.
+ */
+export async function getDashboardClaimDetail(
+  claimId: string
+): Promise<DashboardClaimDetail> {
+  return fetchJson<DashboardClaimDetail>(
+    `${API_BASE}/dashboard/claims/${encodeURIComponent(claimId)}/detail`
+  );
+}
+
+/**
+ * Get URL for ground truth document PDF.
+ */
+export function getGroundTruthDocUrl(claimId: string): string {
+  return `${API_BASE}/dashboard/claims/${encodeURIComponent(claimId)}/ground-truth-doc`;
 }
