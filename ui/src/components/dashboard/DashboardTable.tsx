@@ -9,13 +9,13 @@ interface DashboardTableProps {
 
 type SortKey =
   | "claim_id"
+  | "dataset"
   | "claim_date"
   | "decision"
   | "result_code"
   | "confidence"
   | "payout"
   | "gt_decision"
-  | "gt_payout"
   | "decision_match";
 
 type SortDir = "asc" | "desc";
@@ -30,16 +30,16 @@ function parseDate(d: string | null): number {
   return new Date(d).getTime() || 0;
 }
 
-/** Format the "Reason" column based on decision and check results. */
-function formatReason(claim: DashboardClaim): React.ReactNode {
+/** Format the "Rationale" column based on decision and check results. */
+function formatRationale(claim: DashboardClaim): React.ReactNode {
   const d = claim.decision?.toUpperCase();
   if (d === "APPROVE" || d === "APPROVED") {
     const total = claim.checks_passed + claim.checks_failed + claim.checks_inconclusive;
-    if (total === 0) return <span className="text-slate-400">-</span>;
+    if (total === 0) return <span className="text-slate-400">N/A</span>;
     const parts: string[] = [];
-    parts.push(`${claim.checks_passed}/${total} passed`);
+    parts.push(`${claim.checks_passed} passed`);
     if (claim.checks_inconclusive > 0) {
-      parts.push(`${claim.checks_inconclusive} warning${claim.checks_inconclusive > 1 ? "s" : ""}`);
+      parts.push(`${claim.checks_inconclusive} skipped`);
     }
     return (
       <span className="text-slate-600 dark:text-slate-400">{parts.join(", ")}</span>
@@ -49,7 +49,7 @@ function formatReason(claim: DashboardClaim): React.ReactNode {
   if (claim.result_code && claim.result_code !== "Rejected" && claim.result_code !== "Refer to human") {
     return <span>{claim.result_code}</span>;
   }
-  return <span className="text-slate-400">-</span>;
+  return <span className="text-slate-400">N/A</span>;
 }
 
 export function DashboardTable({ claims }: DashboardTableProps) {
@@ -80,6 +80,10 @@ export function DashboardTable({ claims }: DashboardTableProps) {
           va = Number(a.claim_id) || a.claim_id;
           vb = Number(b.claim_id) || b.claim_id;
           break;
+        case "dataset":
+          va = a.dataset_label || "";
+          vb = b.dataset_label || "";
+          break;
         case "claim_date":
           va = parseDate(a.claim_date);
           vb = parseDate(b.claim_date);
@@ -103,10 +107,6 @@ export function DashboardTable({ claims }: DashboardTableProps) {
         case "gt_decision":
           va = a.gt_decision || "";
           vb = b.gt_decision || "";
-          break;
-        case "gt_payout":
-          va = a.gt_payout ?? -1;
-          vb = b.gt_payout ?? -1;
           break;
         case "decision_match":
           va = a.decision_match === true ? 1 : a.decision_match === false ? 0 : -1;
@@ -153,7 +153,7 @@ export function DashboardTable({ claims }: DashboardTableProps) {
     const d = decision.toUpperCase();
     const color =
       d === "APPROVE" || d === "APPROVED"
-        ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
         : d === "REJECT" || d === "DENIED"
           ? "bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
           : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
@@ -185,17 +185,14 @@ export function DashboardTable({ claims }: DashboardTableProps) {
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs">
                 <SortHeader label="Claim ID" sortKeyName="claim_id" className="text-left" />
+                <SortHeader label="Dataset" sortKeyName="dataset" className="text-left" />
                 <SortHeader label="Date" sortKeyName="claim_date" className="text-left" />
                 <SortHeader label="Decision" sortKeyName="decision" className="text-center" />
-                <SortHeader label="Reason" sortKeyName="result_code" className="text-left" />
+                <SortHeader label="Rationale" sortKeyName="result_code" className="text-left" />
                 <SortHeader label="Conf." sortKeyName="confidence" className="text-right" />
                 <SortHeader label="Payout (CHF)" sortKeyName="payout" className="text-right" />
                 <SortHeader label="GT Decision" sortKeyName="gt_decision" className="text-center" />
-                <SortHeader label="GT Payout" sortKeyName="gt_payout" className="text-right" />
                 <SortHeader label="Match" sortKeyName="decision_match" className="text-center" />
-                <th className="py-2 px-2 font-medium text-slate-600 dark:text-slate-300 text-center text-xs">
-                  Docs
-                </th>
                 <th className="py-2 px-2 font-medium text-slate-600 dark:text-slate-300 text-left text-xs">
                   Run ID
                 </th>
@@ -252,6 +249,17 @@ function TableRow({
   decisionBadge: (d: string | null) => React.ReactNode;
   confidenceColor: (c: number | null) => string;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyRunId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (claim.claim_run_id) {
+      navigator.clipboard.writeText(claim.claim_run_id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
   return (
     <>
       <tr
@@ -262,20 +270,25 @@ function TableRow({
             : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
         }`}
       >
-        <td className="py-2 px-2 font-medium text-slate-900 dark:text-slate-100">
-          <span className="inline-flex items-center gap-1">
+        <td className="py-2 px-2">
+          <span className="inline-flex items-center gap-1.5">
             <span className="text-[10px] text-slate-400">
               {isExpanded ? "\u25BC" : "\u25B6"}
             </span>
-            {claim.claim_id}
+            <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm tracking-tight">
+              {claim.claim_id}
+            </span>
           </span>
+        </td>
+        <td className="py-2 px-2 text-slate-500 dark:text-slate-400 text-xs">
+          {claim.dataset_label || "-"}
         </td>
         <td className="py-2 px-2 text-slate-600 dark:text-slate-300 text-xs">
           {claim.claim_date || "-"}
         </td>
         <td className="py-2 px-2 text-center">{decisionBadge(claim.decision)}</td>
         <td className="py-2 px-2 text-xs max-w-[200px] truncate">
-          {formatReason(claim)}
+          {formatRationale(claim)}
         </td>
         <td
           className={`py-2 px-2 text-right font-mono text-xs ${confidenceColor(claim.confidence)}`}
@@ -306,12 +319,9 @@ function TableRow({
             "-"
           )}
         </td>
-        <td className="py-2 px-2 text-right font-mono text-xs text-slate-700 dark:text-slate-200">
-          {claim.gt_payout != null ? claim.gt_payout.toFixed(2) : "-"}
-        </td>
         <td className="py-2 px-2 text-center">
           {claim.decision_match === true ? (
-            <span className="text-blue-600 dark:text-blue-400 font-bold" title="Match">
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold" title="Match">
               &#10003;
             </span>
           ) : claim.decision_match === false ? (
@@ -322,22 +332,40 @@ function TableRow({
             <span className="text-slate-400">-</span>
           )}
         </td>
-        <td className="py-2 px-2 text-center text-xs text-slate-600 dark:text-slate-300">
-          {claim.doc_count}
-        </td>
-        <td className="py-2 px-2 text-xs text-slate-500 dark:text-slate-400 font-mono max-w-[120px] truncate">
+        <td className="py-2 px-2 text-xs font-mono max-w-[140px]">
           {claim.claim_run_id ? (
-            <span title={claim.claim_run_id}>
-              {claim.claim_run_id.slice(0, 16)}...
+            <span className="inline-flex items-center gap-1">
+              <span
+                className="text-slate-500 dark:text-slate-400 truncate"
+                title={claim.claim_run_id}
+              >
+                {claim.claim_run_id.slice(0, 16)}...
+              </span>
+              <button
+                onClick={handleCopyRunId}
+                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex-shrink-0"
+                title={copied ? "Copied!" : "Copy run ID"}
+              >
+                {copied ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                )}
+              </button>
             </span>
           ) : (
-            "-"
+            <span className="text-slate-400">-</span>
           )}
         </td>
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={11} className="p-0">
+          <td colSpan={10} className="p-0">
             <div className="px-4 py-3">
               <DashboardClaimDetail claimId={claim.claim_id} documents={claim.documents} />
             </div>

@@ -1,7 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  ExternalLink,
+  Database,
+} from "lucide-react";
 import { getDashboardClaimDetail, getClaimFacts, listDocs } from "../../api/client";
 import { DocumentSlidePanel } from "../ClaimExplorer/DocumentSlidePanel";
 import type { EvidenceLocation } from "../ClaimExplorer/DocumentSlidePanel";
+import { cn } from "../../lib/utils";
 import type {
   DashboardClaimDetail as DetailType,
   DashboardClaimDoc,
@@ -15,7 +23,39 @@ interface DashboardClaimDetailProps {
   documents: DashboardClaimDoc[];
 }
 
-type Tab = "checks" | "coverage" | "payout" | "documents" | "facts";
+type Tab = "checks" | "coverage" | "payout" | "facts";
+
+const CHECK_LABELS: Record<string, string> = {
+  policy_enforcement: "Policy Enforcement",
+  policy_validity: "Policy Validity",
+  damage_date: "Damage Date",
+  damage_date_validity: "Damage Date",
+  vin_consistency: "VIN Consistency",
+  vehicle_id: "VIN Consistency",
+  vehicle_id_consistency: "VIN Consistency",
+  owner_match: "Owner / Policyholder Match",
+  owner_policyholder_match: "Owner / Policyholder Match",
+  mileage: "Mileage Compliance",
+  mileage_compliance: "Mileage Compliance",
+  shop_authorization: "Shop Authorization",
+  service_compliance: "Service Compliance",
+  component_coverage: "Component Coverage",
+  assistance_items: "Assistance Items",
+  assistance_package_items: "Assistance Items",
+  hybrid_exclusion: "Hybrid / EV Exclusion",
+  payout_calculation: "Payout Calculation",
+  final_decision: "Final Decision",
+};
+
+function getCheckLabel(checkName: string): string {
+  return (
+    CHECK_LABELS[checkName] ||
+    checkName
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
+  );
+}
 
 function formatDocType(docType: string): string {
   return docType
@@ -118,21 +158,21 @@ export function DashboardClaimDetail({ claimId, documents }: DashboardClaimDetai
         <button onClick={() => setTab("payout")} className={tabClass("payout")}>
           Payout Comparison
         </button>
-        <button onClick={() => setTab("documents")} className={tabClass("documents")}>
-          Documents ({documents.length})
-        </button>
         <button onClick={() => setTab("facts")} className={tabClass("facts")}>
           Facts
         </button>
       </div>
 
       <div className="p-4">
-        {tab === "checks" && <ChecksTab detail={detail} />}
+        {tab === "checks" && (
+          <ChecksTab
+            detail={detail}
+            documents={documents}
+            onViewSource={handleViewSource}
+          />
+        )}
         {tab === "coverage" && <CoverageTab detail={detail} />}
         {tab === "payout" && <PayoutTab detail={detail} />}
-        {tab === "documents" && (
-          <DocumentsTab documents={documents} onViewSource={handleViewSource} />
-        )}
         {tab === "facts" && (
           <FactsTab claimId={claimId} onViewSource={handleViewSource} />
         )}
@@ -150,31 +190,38 @@ export function DashboardClaimDetail({ claimId, documents }: DashboardClaimDetai
 }
 
 /* ============================================================
-   Assessment Checks Tab
+   Assessment Checks Tab — two-column layout (checks + documents)
    ============================================================ */
-function ChecksTab({ detail }: { detail: DetailType }) {
-  const checks = [
-    ...(detail.screening_checks.length > 0
-      ? [{ section: "Screening Checks", items: detail.screening_checks }]
-      : []),
-    ...(detail.assessment_checks.length > 0
-      ? [{ section: "Assessment Checks", items: detail.assessment_checks }]
-      : []),
-  ];
-
-  if (checks.length === 0) {
-    return <p className="text-sm text-slate-500 dark:text-slate-400">No check data.</p>;
-  }
+function ChecksTab({
+  detail,
+  documents,
+  onViewSource,
+}: {
+  detail: DetailType;
+  documents: DashboardClaimDoc[];
+  onViewSource: (
+    docId: string,
+    page: number | null,
+    charStart: number | null,
+    charEnd: number | null
+  ) => void;
+}) {
+  const checks = detail.assessment_checks;
 
   return (
-    <div className="space-y-4">
-      {checks.map((group) => (
-        <div key={group.section}>
-          <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
-            {group.section}
-          </h4>
-          <div className="space-y-1">
-            {group.items.map((check, i) => {
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Left: Assessment Checks */}
+      <div>
+        <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+          Assessment Checks
+        </h4>
+        {checks.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No check data.
+          </p>
+        ) : (
+          <div className="space-y-0.5">
+            {checks.map((check, i) => {
               const result = String(
                 check.result || check.verdict || ""
               ).toUpperCase();
@@ -183,73 +230,204 @@ function ChecksTab({ detail }: { detail: DetailType }) {
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                   : result === "FAIL"
                     ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                    : result === "SKIPPED"
-                      ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                    : result === "SKIPPED" || result === "NOT_CHECKED"
+                      ? "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400"
                       : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+              const rawName = String(
+                check.check_name || check.check_id || `check_${i + 1}`
+              );
+              const checkNum =
+                check.check_number != null ? `${check.check_number}. ` : "";
+
               return (
                 <div
                   key={i}
-                  className="flex items-start gap-2 py-1.5 text-sm"
+                  className="flex items-start gap-3 py-2.5 px-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
                 >
-                  <span
-                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${badgeColor}`}
-                  >
-                    {result || "N/A"}
-                  </span>
-                  <span className="text-slate-700 dark:text-slate-200 font-medium">
-                    {String(check.check_name || check.check_id || `Check ${i + 1}`)}
-                  </span>
-                  <span className="text-slate-500 dark:text-slate-400 text-xs">
-                    {String(check.details || check.reason || "")}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        {checkNum}
+                        {getCheckLabel(rawName)}
+                      </span>
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${badgeColor}`}
+                      >
+                        {result === "NOT_CHECKED"
+                          ? "SKIPPED"
+                          : result || "N/A"}
+                      </span>
+                    </div>
+                    {(check.details || check.reason) && (
+                      <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 leading-relaxed">
+                        {String(check.details || check.reason || "")}
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      ))}
+        )}
+      </div>
+
+      {/* Right: Documents */}
+      <div>
+        <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+          Documents
+        </h4>
+        {documents.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No documents.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {documents.map((doc) => (
+              <button
+                key={doc.doc_id}
+                onClick={() => onViewSource(doc.doc_id, null, null, null)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/50"
+              >
+                <span className="text-slate-400 dark:text-slate-500">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                    {doc.filename}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {formatDocType(doc.doc_type)}
+                  </p>
+                </div>
+                <span className="text-xs text-primary">View</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 /* ============================================================
-   Coverage Details Tab
+   Coverage Details Tab — with sortable columns
    ============================================================ */
+type CoverageSortKey =
+  | "item_code"
+  | "description"
+  | "item_type"
+  | "total_price"
+  | "coverage_status"
+  | "matched_component"
+  | "match_reasoning";
+
 function CoverageTab({ detail }: { detail: DetailType }) {
+  const [sortCol, setSortCol] = useState<CoverageSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (col: CoverageSortKey) => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedItems = useMemo(() => {
+    if (!sortCol) return detail.coverage_items;
+    return [...detail.coverage_items].sort((a, b) => {
+      const va = a[sortCol];
+      const vb = b[sortCol];
+      if (va === vb) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      const cmp =
+        typeof va === "number" && typeof vb === "number"
+          ? va - vb
+          : String(va).localeCompare(String(vb));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [detail.coverage_items, sortCol, sortDir]);
+
   if (detail.coverage_items.length === 0) {
-    return <p className="text-sm text-slate-500 dark:text-slate-400">No coverage data.</p>;
+    return (
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        No coverage data.
+      </p>
+    );
   }
+
+  const SortableTh = ({
+    label,
+    colKey,
+    className = "",
+  }: {
+    label: string;
+    colKey: CoverageSortKey;
+    className?: string;
+  }) => (
+    <th
+      onClick={() => handleSort(colKey)}
+      className={`py-2 px-2 font-medium text-slate-600 dark:text-slate-300 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100 select-none ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortCol === colKey && (
+          <span className="text-primary">
+            {sortDir === "asc" ? "\u2191" : "\u2193"}
+          </span>
+        )}
+      </span>
+    </th>
+  );
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-700">
-            <th className="text-left py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Code
-            </th>
-            <th className="text-left py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Description
-            </th>
-            <th className="text-left py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Type
-            </th>
-            <th className="text-right py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Price
-            </th>
-            <th className="text-center py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Status
-            </th>
-            <th className="text-left py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Component
-            </th>
-            <th className="text-left py-2 px-2 font-medium text-slate-600 dark:text-slate-300">
-              Reasoning
-            </th>
+            <SortableTh label="Code" colKey="item_code" className="text-left" />
+            <SortableTh
+              label="Description"
+              colKey="description"
+              className="text-left"
+            />
+            <SortableTh label="Type" colKey="item_type" className="text-left" />
+            <SortableTh
+              label="Price"
+              colKey="total_price"
+              className="text-right"
+            />
+            <SortableTh
+              label="Status"
+              colKey="coverage_status"
+              className="text-center"
+            />
+            <SortableTh
+              label="Component"
+              colKey="matched_component"
+              className="text-left"
+            />
+            <SortableTh
+              label="Reasoning"
+              colKey="match_reasoning"
+              className="text-left"
+            />
           </tr>
         </thead>
         <tbody>
-          {detail.coverage_items.map((item, i) => {
+          {sortedItems.map((item, i) => {
             const status = String(item.coverage_status || "");
             const statusColor =
               status === "covered"
@@ -276,7 +454,9 @@ function CoverageTab({ detail }: { detail: DetailType }) {
                     ? item.total_price.toFixed(2)
                     : ""}
                 </td>
-                <td className={`py-1.5 px-2 text-center font-medium ${statusColor}`}>
+                <td
+                  className={`py-1.5 px-2 text-center font-medium ${statusColor}`}
+                >
                   {status === "covered"
                     ? "Covered"
                     : status === "not_covered"
@@ -355,8 +535,12 @@ function PayoutTab({ detail }: { detail: DetailType }) {
   ];
 
   // Compute diff and color for numeric rows
-  const getDiff = (sys: unknown, gt: unknown): { text: string; color: string } => {
-    if (typeof sys !== "number" || typeof gt !== "number") return { text: "", color: "" };
+  const getDiff = (
+    sys: unknown,
+    gt: unknown
+  ): { text: string; color: string } => {
+    if (typeof sys !== "number" || typeof gt !== "number")
+      return { text: "", color: "" };
     const diff = sys - gt;
     const abs = Math.abs(diff);
     const color =
@@ -405,7 +589,9 @@ function PayoutTab({ detail }: { detail: DetailType }) {
                 <td className="py-1.5 px-2 text-right font-mono text-slate-700 dark:text-slate-200">
                   {fmt(r.gt)}
                 </td>
-                <td className={`py-1.5 px-2 text-right font-mono ${diff.color}`}>
+                <td
+                  className={`py-1.5 px-2 text-right font-mono ${diff.color}`}
+                >
                   {diff.text}
                 </td>
               </tr>
@@ -418,71 +604,8 @@ function PayoutTab({ detail }: { detail: DetailType }) {
 }
 
 /* ============================================================
-   Documents Tab — just a list, clicking opens the shared slide panel
+   Facts Tab — matches ClaimExplorer Data tab style exactly
    ============================================================ */
-function DocumentsTab({
-  documents,
-  onViewSource,
-}: {
-  documents: DashboardClaimDoc[];
-  onViewSource: (docId: string, page: number | null, charStart: number | null, charEnd: number | null) => void;
-}) {
-  if (documents.length === 0) {
-    return (
-      <p className="text-sm text-slate-500 dark:text-slate-400">
-        No documents for this claim.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      {documents.map((doc) => (
-        <button
-          key={doc.doc_id}
-          onClick={() => onViewSource(doc.doc_id, null, null, null)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/50"
-        >
-          <span className="text-slate-400 dark:text-slate-500">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-              {doc.filename}
-            </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {formatDocType(doc.doc_type)}
-            </p>
-          </div>
-          <span className="text-xs text-primary">View</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ============================================================
-   Facts Tab — with onViewSource for evidence highlighting
-   ============================================================ */
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  vehicle_registration: "Vehicle Information",
-  service_history: "Service History",
-  nsa_guarantee: "Policy Details",
-  cost_estimate: "Cost Estimate",
-  fnol_form: "First Notice of Loss",
-  police_report: "Police Report",
-  damage_assessment: "Damage Assessment",
-  invoice: "Invoice",
-  unknown: "Other",
-};
-
-function getDocTypeLabel(docType: string): string {
-  return DOC_TYPE_LABELS[docType] || formatDocType(docType);
-}
 
 function formatFieldName(name: string): string {
   return name
@@ -491,39 +614,30 @@ function formatFieldName(name: string): string {
     .join(" ");
 }
 
-function formatValue(value: string | string[] | null): string {
-  if (value === null || value === undefined) return "\u2014";
-  if (Array.isArray(value)) return value.join(", ");
-  return value;
-}
-
 function FactsTab({
   claimId,
   onViewSource,
 }: {
   claimId: string;
-  onViewSource: (docId: string, page: number | null, charStart: number | null, charEnd: number | null) => void;
+  onViewSource: (
+    docId: string,
+    page: number | null,
+    charStart: number | null,
+    charEnd: number | null
+  ) => void;
 }) {
   const [facts, setFacts] = useState<ClaimFacts | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(["all"])
+  );
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     getClaimFacts(claimId)
       .then((d) => {
-        if (!cancelled) {
-          setFacts(d);
-          if (d && d.facts.length > 0) {
-            const docTypes = new Set<string>();
-            for (const fact of d.facts) {
-              docTypes.add(fact.selected_from?.doc_type || "unknown");
-            }
-            const sorted = [...docTypes];
-            setExpandedGroups(new Set(sorted.slice(0, 3)));
-          }
-        }
+        if (!cancelled) setFacts(d);
       })
       .catch(() => {
         if (!cancelled) setFacts(null);
@@ -538,50 +652,40 @@ function FactsTab({
 
   if (loading) {
     return (
-      <p className="text-sm text-slate-500 dark:text-slate-400">Loading facts...</p>
+      <p className="text-sm text-muted-foreground">Loading facts...</p>
     );
   }
 
   if (!facts || facts.facts.length === 0) {
     return (
-      <p className="text-sm text-slate-500 dark:text-slate-400">
+      <p className="text-sm text-muted-foreground">
         No facts aggregated for this claim.
       </p>
     );
   }
 
   // Group facts by source doc_type
-  const grouped: Record<string, AggregatedFact[]> = {};
+  const factsByDocType = new Map<string, AggregatedFact[]>();
   for (const fact of facts.facts) {
     const docType = fact.selected_from?.doc_type || "unknown";
-    if (!grouped[docType]) grouped[docType] = [];
-    grouped[docType].push(fact);
+    if (!factsByDocType.has(docType)) factsByDocType.set(docType, []);
+    factsByDocType.get(docType)!.push(fact);
   }
 
-  const docTypePriority = [
-    "vehicle_registration",
-    "nsa_guarantee",
-    "service_history",
-    "cost_estimate",
-    "fnol_form",
-    "police_report",
-    "damage_assessment",
-    "invoice",
-  ];
-
-  const sortedDocTypes = Object.keys(grouped).sort((a, b) => {
-    const aIndex = docTypePriority.indexOf(a);
-    const bIndex = docTypePriority.indexOf(b);
-    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
-    if (aIndex === -1) return 1;
-    if (bIndex === -1) return -1;
-    return aIndex - bIndex;
-  });
+  const groups = Array.from(factsByDocType.entries()).sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
 
   const toggleGroup = (docType: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(docType)) {
+      if (next.has("all")) {
+        // First toggle: collapse "all" and expand everything except the clicked one
+        next.delete("all");
+        for (const [dt] of groups) {
+          if (dt !== docType) next.add(dt);
+        }
+      } else if (next.has(docType)) {
         next.delete(docType);
       } else {
         next.add(docType);
@@ -591,41 +695,72 @@ function FactsTab({
   };
 
   return (
-    <div>
-      {sortedDocTypes.map((docType) => {
-        const isExpanded = expandedGroups.has(docType);
-        const groupFacts = grouped[docType];
-        return (
-          <div key={docType} className="mb-3 last:mb-0">
-            <button
-              onClick={() => toggleGroup(docType)}
-              className="flex items-center gap-2 w-full text-left py-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/30 rounded -mx-1 px-1 transition-colors"
-            >
-              <span className="text-xs text-slate-400">
-                {isExpanded ? "\u25BC" : "\u25B6"}
-              </span>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                {getDocTypeLabel(docType)}
-              </span>
-              <span className="text-[10px] text-slate-400">
-                ({groupFacts.length})
-              </span>
-            </button>
-            {isExpanded && (
-              <div className="ml-5 mt-1 border-l-2 border-slate-200 dark:border-slate-700/50 pl-3">
-                {groupFacts.map((fact) => (
-                  <FactRow
-                    key={fact.name}
-                    fact={fact}
-                    onViewSource={onViewSource}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <div className="text-[10px] text-slate-400 mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-muted-foreground" />
+          <h3 className="font-semibold text-foreground">All Facts</h3>
+          <span className="text-xs text-muted-foreground">
+            ({facts.facts.length} facts from {groups.length} document types)
+          </span>
+        </div>
+      </div>
+
+      {/* Groups */}
+      <div className="divide-y divide-border">
+        {groups.map(([docType, groupFacts]) => {
+          const isExpanded =
+            expandedGroups.has(docType) || expandedGroups.has("all");
+          const source = facts.sources.find((s) => s.doc_type === docType);
+
+          return (
+            <div key={docType}>
+              {/* Group Header */}
+              <button
+                onClick={() => toggleGroup(docType)}
+                className="w-full px-4 py-2 flex items-center gap-2 hover:bg-muted transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                )}
+                <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <span className="font-medium text-sm text-foreground">
+                  {docType.replace(/_/g, " ")}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  ({groupFacts.length} facts)
+                </span>
+                {source && (
+                  <span className="text-xs text-muted-foreground/70 ml-auto truncate max-w-[200px]">
+                    {source.filename}
+                  </span>
+                )}
+              </button>
+
+              {/* Facts in 2-column grid */}
+              {isExpanded && (
+                <div className="px-4 pb-3 pl-10">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                    {groupFacts.map((fact) => (
+                      <FactRow
+                        key={fact.name}
+                        fact={fact}
+                        onViewSource={onViewSource}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="text-[10px] text-muted-foreground px-4 py-2 border-t border-border">
         Generated {new Date(facts.generated_at).toLocaleString()} from{" "}
         {facts.sources.length} source{facts.sources.length !== 1 ? "s" : ""}
       </div>
@@ -633,19 +768,32 @@ function FactsTab({
   );
 }
 
-/** Single fact row with optional "view source" button */
+/** Single fact row — matches ClaimExplorer FactRow pattern */
 function FactRow({
   fact,
   onViewSource,
 }: {
   fact: AggregatedFact;
-  onViewSource: (docId: string, page: number | null, charStart: number | null, charEnd: number | null) => void;
+  onViewSource: (
+    docId: string,
+    page: number | null,
+    charStart: number | null,
+    charEnd: number | null
+  ) => void;
 }) {
-  const hasProvenance = !!fact.selected_from?.doc_id;
+  const hasSource = !!fact.selected_from?.doc_id;
 
-  const handleViewSource = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (fact.selected_from) {
+  const displayValue = Array.isArray(fact.value)
+    ? fact.value.join(", ")
+    : fact.value !== null && fact.value !== undefined
+      ? String(fact.value)
+      : "\u2014";
+
+  const truncatedValue =
+    displayValue.length > 50 ? displayValue.slice(0, 47) + "..." : displayValue;
+
+  const handleClick = () => {
+    if (onViewSource && fact.selected_from) {
       onViewSource(
         fact.selected_from.doc_id,
         fact.selected_from.page,
@@ -655,59 +803,23 @@ function FactRow({
     }
   };
 
-  const hasStructured =
-    fact.structured_value !== undefined && fact.structured_value !== null;
-
-  if (hasStructured) {
-    return (
-      <div className="py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
-            {formatFieldName(fact.name)}
-          </span>
-          {hasProvenance && (
-            <button
-              onClick={handleViewSource}
-              className="text-slate-400 hover:text-primary transition-colors"
-              title="View source document"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded overflow-x-auto ml-3 mt-1">
-          <pre className="whitespace-pre-wrap">
-            {JSON.stringify(fact.structured_value, null, 2)}
-          </pre>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-2 py-1.5 group">
-      <span className="text-xs text-slate-500 dark:text-slate-400 min-w-[100px] flex-shrink-0">
+    <div
+      className={cn(
+        "flex items-center gap-2 py-1 px-2 rounded transition-colors",
+        hasSource && onViewSource ? "hover:bg-muted cursor-pointer" : ""
+      )}
+      onClick={hasSource ? handleClick : undefined}
+      title={displayValue}
+    >
+      <span className="text-xs text-muted-foreground min-w-[120px] flex-shrink-0">
         {formatFieldName(fact.name)}
       </span>
-      <span className="text-xs font-medium text-slate-700 dark:text-slate-200 flex-1 truncate">
-        {formatValue(fact.value)}
+      <span className="text-sm text-foreground truncate flex-1">
+        {truncatedValue}
       </span>
-      {hasProvenance && (
-        <button
-          onClick={handleViewSource}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-primary flex-shrink-0"
-          title="View source document"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            <polyline points="15 3 21 3 21 9" />
-            <line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
-        </button>
+      {hasSource && onViewSource && (
+        <ExternalLink className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
       )}
     </div>
   );

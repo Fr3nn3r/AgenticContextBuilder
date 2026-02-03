@@ -5,10 +5,8 @@ export interface DashboardFilterValues {
   search: string;
   decision: string;
   gtDecision: string;
-  matchStatus: string;
   resultCode: string;
-  dateFrom: string;
-  dateTo: string;
+  dataset: string;
 }
 
 interface DashboardFiltersProps {
@@ -26,6 +24,16 @@ export function DashboardFilters({ filters, onChange, claims }: DashboardFilters
     return Array.from(codes).sort();
   }, [claims]);
 
+  const datasetOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of claims) {
+      if (c.dataset_id && c.dataset_label) {
+        map.set(c.dataset_id, c.dataset_label);
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [claims]);
+
   const update = (key: keyof DashboardFilterValues, value: string) => {
     onChange({ ...filters, [key]: value });
   };
@@ -38,18 +46,11 @@ export function DashboardFilters({ filters, onChange, claims }: DashboardFilters
   return (
     <div className="flex flex-wrap items-center gap-3">
       <input
-        type="date"
-        value={filters.dateFrom}
-        onChange={(e) => update("dateFrom", e.target.value)}
-        className={inputClass}
-        title="Date from"
-      />
-      <input
-        type="date"
-        value={filters.dateTo}
-        onChange={(e) => update("dateTo", e.target.value)}
-        className={inputClass}
-        title="Date to"
+        type="text"
+        value={filters.search}
+        onChange={(e) => update("search", e.target.value)}
+        placeholder="Search claim ID..."
+        className={`${inputClass} w-44`}
       />
       <select
         value={filters.decision}
@@ -71,15 +72,6 @@ export function DashboardFilters({ filters, onChange, claims }: DashboardFilters
         <option value="DENIED">Denied</option>
       </select>
       <select
-        value={filters.matchStatus}
-        onChange={(e) => update("matchStatus", e.target.value)}
-        className={selectClass}
-      >
-        <option value="">All Match Status</option>
-        <option value="match">Match</option>
-        <option value="mismatch">Mismatch</option>
-      </select>
-      <select
         value={filters.resultCode}
         onChange={(e) => update("resultCode", e.target.value)}
         className={selectClass}
@@ -91,13 +83,20 @@ export function DashboardFilters({ filters, onChange, claims }: DashboardFilters
           </option>
         ))}
       </select>
-      <input
-        type="text"
-        value={filters.search}
-        onChange={(e) => update("search", e.target.value)}
-        placeholder="Search claim ID..."
-        className={`${inputClass} w-44`}
-      />
+      {datasetOptions.length > 0 && (
+        <select
+          value={filters.dataset}
+          onChange={(e) => update("dataset", e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All Datasets</option>
+          {datasetOptions.map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
+        </select>
+      )}
       {Object.values(filters).some((v) => v !== "") && (
         <button
           onClick={() =>
@@ -105,10 +104,8 @@ export function DashboardFilters({ filters, onChange, claims }: DashboardFilters
               search: "",
               decision: "",
               gtDecision: "",
-              matchStatus: "",
               resultCode: "",
-              dateFrom: "",
-              dateTo: "",
+              dataset: "",
             })
           }
           className="h-9 px-3 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"

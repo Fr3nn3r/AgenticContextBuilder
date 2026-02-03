@@ -206,6 +206,10 @@ class DashboardClaim(BaseModel):
     payout_diff: Optional[float] = None
     has_ground_truth_doc: bool = False
 
+    # Dataset
+    dataset_id: Optional[str] = None
+    dataset_label: Optional[str] = None
+
     # Documents
     documents: List[DashboardClaimDoc] = []
 

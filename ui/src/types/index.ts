@@ -1324,6 +1324,9 @@ export interface DashboardClaim {
   decision_match: boolean | null;
   payout_diff: number | null;
   has_ground_truth_doc: boolean;
+  // Dataset
+  dataset_id: string | null;
+  dataset_label: string | null;
   // Documents
   documents: DashboardClaimDoc[];
 }

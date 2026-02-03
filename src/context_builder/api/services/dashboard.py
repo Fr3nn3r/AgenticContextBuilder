@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,26 @@ class DashboardService:
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Failed to load ground truth: {e}")
             return {}
+
+    def _load_datasets(self) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Load dataset assignments and labels.
+
+        Returns (assignments, labels) where:
+          assignments maps claim_id -> dataset_id
+          labels maps dataset_id -> human-readable label
+        If file is missing or malformed, returns ({}, {}).
+        """
+        ds_path = self.workspace_path / "config" / "datasets.json"
+        if not ds_path.exists():
+            return {}, {}
+        try:
+            with open(ds_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            labels = {d["id"]: d["label"] for d in data.get("datasets", [])}
+            assignments = data.get("assignments", {})
+            return assignments, labels
+        except (json.JSONDecodeError, IOError, KeyError):
+            return {}, {}
 
     def _load_latest_assessment(
         self, claim_id: str
@@ -164,6 +184,7 @@ class DashboardService:
             return []
 
         gt_data = self._load_ground_truth()
+        ds_assignments, ds_labels = self._load_datasets()
         results = []
 
         for claim_dir in sorted(self.claims_dir.iterdir()):
@@ -266,6 +287,8 @@ class DashboardService:
                 "decision_match": decision_match,
                 "payout_diff": payout_diff,
                 "has_ground_truth_doc": has_gt_doc,
+                "dataset_id": ds_assignments.get(claim_id),
+                "dataset_label": ds_labels.get(ds_assignments.get(claim_id, ""), None),
                 "documents": docs,
             })
 

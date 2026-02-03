@@ -1,26 +1,16 @@
 import {
-  PieChart,
-  Pie,
-  Cell,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import { CHART_COLORS } from "../../lib/chartUtils";
 import type { DashboardClaim } from "../../types";
 
 interface DashboardChartsProps {
   claims: DashboardClaim[];
-}
-
-interface ChartPoint {
-  name: string;
-  value: number;
-  fill: string;
 }
 
 const TOOLTIP_STYLE = {
@@ -30,23 +20,31 @@ const TOOLTIP_STYLE = {
   fontSize: "12px",
 };
 
+function extractMake(vehicle: string | null): string {
+  if (!vehicle) return "Unknown";
+  const words = vehicle.trim().split(/\s+/);
+  if (words.length === 0) return "Unknown";
+  const first = words[0].toLowerCase();
+  // Multi-word makes
+  if (first === "land" && words.length > 1 && words[1].toLowerCase() === "rover") return "Land Rover";
+  if (first === "alfa" && words.length > 1 && words[1].toLowerCase() === "romeo") return "Alfa Romeo";
+  // Keep short all-caps (BMW, VW, MG, etc.)
+  if (words[0].length <= 3 && words[0] === words[0].toUpperCase()) return words[0];
+  return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+}
+
 export function DashboardCharts({ claims }: DashboardChartsProps) {
-  // Decision donut data
-  const decisionCounts = { approve: 0, reject: 0, refer: 0 };
+  // Car manufacturer bar chart data
+  const makeCounts: Record<string, number> = {};
   for (const c of claims) {
-    const d = c.decision?.toUpperCase();
-    if (d === "APPROVE" || d === "APPROVED") decisionCounts.approve++;
-    else if (d === "REJECT" || d === "DENIED") decisionCounts.reject++;
-    else if (d === "REFER_TO_HUMAN") decisionCounts.refer++;
+    const make = extractMake(c.gt_vehicle);
+    makeCounts[make] = (makeCounts[make] || 0) + 1;
   }
 
-  const donutData: ChartPoint[] = [
-    { name: "Approved", value: decisionCounts.approve, fill: CHART_COLORS.success },
-    { name: "Rejected", value: decisionCounts.reject, fill: CHART_COLORS.error },
-    { name: "Refer", value: decisionCounts.refer, fill: CHART_COLORS.warning },
-  ].filter((d) => d.value > 0);
-
-  const donutTotal = donutData.reduce((s, d) => s + d.value, 0);
+  const makeData = Object.entries(makeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, value]) => ({ name, value }));
 
   // Denial reason bar chart data
   const reasonCounts: Record<string, number> = {};
@@ -65,57 +63,44 @@ export function DashboardCharts({ claims }: DashboardChartsProps) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Donut chart */}
+      {/* Car Manufacturer chart */}
       <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
         <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3">
-          Decision Distribution
+          Vehicle Manufacturer
         </h3>
         <div className="h-64">
-          {donutData.length === 0 ? (
+          {makeData.length === 0 ? (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              No assessment data
+              No vehicle data
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={donutData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
+              <BarChart
+                data={makeData}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+              >
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={100}
+                  tick={{ fontSize: 11 }}
+                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Bar
                   dataKey="value"
-                  label={({ name, percent }) =>
-                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {donutData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  formatter={(value, name) => [
-                    `${value} (${((Number(value) / donutTotal) * 100).toFixed(1)}%)`,
-                    name,
-                  ]}
+                  fill={CHART_COLORS.chart1}
+                  radius={[0, 4, 4, 0]}
+                  name="Claims"
                 />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  formatter={(value) => (
-                    <span className="text-xs text-foreground">{value}</span>
-                  )}
-                />
-              </PieChart>
+              </BarChart>
             </ResponsiveContainer>
           )}
         </div>
       </div>
 
-      {/* Horizontal bar chart */}
+      {/* Denial reason bar chart */}
       <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
         <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3">
           Denial Reasons

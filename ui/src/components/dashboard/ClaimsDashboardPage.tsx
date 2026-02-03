@@ -6,32 +6,19 @@ import { DashboardFilters, type DashboardFilterValues } from "./DashboardFilters
 import { DashboardCharts } from "./DashboardCharts";
 import { DashboardTable } from "./DashboardTable";
 
-function parseDate(d: string | null): number {
-  if (!d) return 0;
-  const parts = d.split(/[./]/);
-  if (parts.length === 3) {
-    const [day, month, year] = parts;
-    return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
-  }
-  return new Date(d).getTime() || 0;
-}
-
 export function ClaimsDashboardPage() {
   const [claims, setClaims] = useState<DashboardClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Read filters from URL
   const filters: DashboardFilterValues = useMemo(
     () => ({
       search: searchParams.get("search") || "",
       decision: searchParams.get("decision") || "",
       gtDecision: searchParams.get("gtDecision") || "",
-      matchStatus: searchParams.get("matchStatus") || "",
       resultCode: searchParams.get("resultCode") || "",
-      dateFrom: searchParams.get("dateFrom") || "",
-      dateTo: searchParams.get("dateTo") || "",
+      dataset: searchParams.get("dataset") || "",
     }),
     [searchParams]
   );
@@ -64,13 +51,10 @@ export function ClaimsDashboardPage() {
     loadData();
   }, [loadData]);
 
-  // Apply filters
   const filteredClaims = useMemo(() => {
     return claims.filter((c) => {
-      // Search
       if (filters.search && !c.claim_id.includes(filters.search)) return false;
 
-      // Decision
       if (filters.decision) {
         const d = c.decision?.toUpperCase();
         if (filters.decision === "APPROVE" && d !== "APPROVE" && d !== "APPROVED")
@@ -81,39 +65,19 @@ export function ClaimsDashboardPage() {
           return false;
       }
 
-      // GT Decision
       if (filters.gtDecision) {
         if (c.gt_decision?.toUpperCase() !== filters.gtDecision.toUpperCase())
           return false;
       }
 
-      // Match status
-      if (filters.matchStatus === "match" && c.decision_match !== true) return false;
-      if (filters.matchStatus === "mismatch" && c.decision_match !== false)
-        return false;
-
-      // Result code
       if (filters.resultCode && c.result_code !== filters.resultCode) return false;
 
-      // Date range
-      if (filters.dateFrom || filters.dateTo) {
-        const claimTs = parseDate(c.claim_date);
-        if (claimTs === 0) return false;
-        if (filters.dateFrom) {
-          const from = new Date(filters.dateFrom).getTime();
-          if (claimTs < from) return false;
-        }
-        if (filters.dateTo) {
-          const to = new Date(filters.dateTo).getTime() + 86400000; // end of day
-          if (claimTs >= to) return false;
-        }
-      }
+      if (filters.dataset && c.dataset_id !== filters.dataset) return false;
 
       return true;
     });
   }, [claims, filters]);
 
-  // Summary stats
   const stats = useMemo(() => {
     const total = filteredClaims.length;
     const withAssessment = filteredClaims.filter((c) => c.decision).length;

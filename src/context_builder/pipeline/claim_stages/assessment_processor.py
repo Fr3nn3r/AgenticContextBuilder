@@ -324,6 +324,49 @@ class AssessmentProcessor:
                 context.claim_id, screening_payout.get("final_payout"),
             )
 
+        # Override REJECT → APPROVE when only soft checks (non-hard-fail) caused rejection.
+        # Check 4b (service_compliance) is a soft/informational check that should never
+        # cause rejection on its own. If the LLM rejected solely because of soft checks,
+        # override to APPROVE and restore the screening payout.
+        SOFT_CHECK_IDS = {"4b"}
+        if result.get("decision") == "REJECT" and screening and not screening.get("auto_reject"):
+            failing_checks = [
+                c for c in result.get("checks", [])
+                if isinstance(c, dict)
+                and c.get("result") == "FAIL"
+                and c.get("check_number") not in ("7",)  # exclude final_decision
+            ]
+            all_soft = failing_checks and all(
+                c.get("check_number") in SOFT_CHECK_IDS for c in failing_checks
+            )
+            if all_soft:
+                soft_names = ", ".join(
+                    c.get("check_name", c.get("check_number", "?"))
+                    for c in failing_checks
+                )
+                logger.info(
+                    "Overriding REJECT → APPROVE for claim %s: "
+                    "only soft checks failed (%s)",
+                    context.claim_id, soft_names,
+                )
+                result["decision"] = "APPROVE"
+                result["decision_rationale"] = (
+                    f"Approved: soft check(s) ({soft_names}) noted but do not block approval. "
+                    f"Original LLM rationale: {result.get('decision_rationale', '')}"
+                )
+                # Restore screening payout (may have been zeroed by LLM)
+                if screening.get("payout"):
+                    result["payout"] = self._map_screening_payout(screening["payout"])
+                # Fix final_decision check
+                for check in result.get("checks", []):
+                    if check.get("check_name") == "final_decision":
+                        check["result"] = "PASS"
+                        check["details"] = (
+                            f"Approved despite soft check failure(s): {soft_names}. "
+                            "Service compliance is informational only."
+                        )
+                        break
+
         # Override APPROVE → REJECT when payout is zero
         final_payout = (result.get("payout") or {}).get("final_payout", 0.0)
         if result.get("decision") == "APPROVE" and final_payout <= 0:

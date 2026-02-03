@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { getGroundTruthDocUrl } from "../../api/client";
@@ -9,7 +10,12 @@ interface GroundTruthDocPanelProps {
 }
 
 export function GroundTruthDocPanel({ claimId, onClose }: GroundTruthDocPanelProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const pdfUrl = getGroundTruthDocUrl(claimId);
+
+  useEffect(() => {
+    requestAnimationFrame(() => setIsOpen(true));
+  }, []);
 
   return (
     <>
@@ -17,7 +23,7 @@ export function GroundTruthDocPanel({ claimId, onClose }: GroundTruthDocPanelPro
       <div
         className={cn(
           "fixed inset-0 bg-black/30 z-40 transition-opacity duration-300",
-          "opacity-100"
+          isOpen ? "opacity-100" : "opacity-0"
         )}
         onClick={onClose}
       />
@@ -28,7 +34,7 @@ export function GroundTruthDocPanel({ claimId, onClose }: GroundTruthDocPanelPro
           "fixed top-0 right-0 h-full w-full max-w-3xl bg-card shadow-2xl z-50",
           "transform transition-transform duration-300 ease-out",
           "flex flex-col",
-          "translate-x-0"
+          isOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
         {/* Header */}
