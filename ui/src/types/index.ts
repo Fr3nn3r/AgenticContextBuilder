@@ -1352,5 +1352,7 @@ export interface DashboardClaimDetail {
   sys_labor_adjusted: number | null;
   sys_total_adjusted: number | null;
   sys_vat_rate_pct: number | null;
+  sys_vat_amount: number | null;
+  gt_vat_amount: number | null;
   screening_payout: Record<string, unknown> | null;
 }

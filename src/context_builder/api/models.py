@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ClaimSummary(BaseModel):
@@ -187,7 +187,7 @@ class DashboardClaim(BaseModel):
     decision: Optional[str] = None
     confidence: Optional[float] = None
     result_code: Optional[str] = None
-    inconclusive_warnings: List[str] = []
+    inconclusive_warnings: List[str] = Field(default_factory=list)
     checks_passed: int = 0
     checks_failed: int = 0
     checks_inconclusive: int = 0
@@ -211,7 +211,7 @@ class DashboardClaim(BaseModel):
     dataset_label: Optional[str] = None
 
     # Documents
-    documents: List[DashboardClaimDoc] = []
+    documents: List[DashboardClaimDoc] = Field(default_factory=list)
 
 
 class DashboardClaimDetail(BaseModel):
@@ -219,7 +219,7 @@ class DashboardClaimDetail(BaseModel):
 
     claim_id: str
     # Coverage analysis
-    coverage_items: List[Dict[str, Any]] = []
+    coverage_items: List[Dict[str, Any]] = Field(default_factory=list)
     coverage_summary: Optional[Dict[str, Any]] = None
     # Assessment payout breakdown
     payout_calculation: Optional[Dict[str, Any]] = None
@@ -232,9 +232,9 @@ class DashboardClaimDetail(BaseModel):
     gt_total_approved: Optional[float] = None
     gt_reimbursement_rate_pct: Optional[float] = None
     # Screening checks
-    screening_checks: List[Dict[str, Any]] = []
+    screening_checks: List[Dict[str, Any]] = Field(default_factory=list)
     # Assessment checks
-    assessment_checks: List[Dict[str, Any]] = []
+    assessment_checks: List[Dict[str, Any]] = Field(default_factory=list)
     # Parts/labor breakdown (computed at read time)
     sys_parts_gross: Optional[float] = None
     sys_labor_gross: Optional[float] = None
@@ -242,4 +242,6 @@ class DashboardClaimDetail(BaseModel):
     sys_labor_adjusted: Optional[float] = None
     sys_total_adjusted: Optional[float] = None
     sys_vat_rate_pct: Optional[float] = None
+    sys_vat_amount: Optional[float] = None
+    gt_vat_amount: Optional[float] = None
     screening_payout: Optional[Dict[str, Any]] = None

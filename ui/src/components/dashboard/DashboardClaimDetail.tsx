@@ -43,6 +43,7 @@ const CHECK_LABELS: Record<string, string> = {
   assistance_items: "Assistance Items",
   assistance_package_items: "Assistance Items",
   hybrid_exclusion: "Hybrid / EV Exclusion",
+  damage_cause_exclusion: "Root-Cause Exclusion (DTC)",
   payout_calculation: "Payout Calculation",
   final_decision: "Final Decision",
 };
@@ -521,6 +522,11 @@ function PayoutTab({ detail }: { detail: DetailType }) {
           ? `${detail.sys_vat_rate_pct}%`
           : "-",
       gt: detail.gt_vat_rate_pct != null ? `${detail.gt_vat_rate_pct}%` : "-",
+    },
+    {
+      label: "VAT Amount",
+      system: detail.sys_vat_amount,
+      gt: detail.gt_vat_amount,
     },
     {
       label: "Deductible",

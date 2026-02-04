@@ -62,7 +62,7 @@ export function Sidebar({ currentView }: SidebarProps) {
         <img
           src="/trueaim-logo.png"
           alt="True AIm Logo"
-          className="w-8 h-8 object-contain"
+          className="w-8 h-8 object-contain dark:brightness-0 dark:invert"
         />
         <span className="font-semibold text-lg">True AIm</span>
       </div>

@@ -387,7 +387,7 @@ class TestConstants:
     """Tests for module-level constants."""
 
     def test_screening_check_ids(self):
-        expected = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c"}
+        expected = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c", "5d"}
         assert SCREENING_CHECK_IDS == expected
 
     def test_hard_fail_subset(self):

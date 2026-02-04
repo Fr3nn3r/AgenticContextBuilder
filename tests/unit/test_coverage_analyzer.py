@@ -399,11 +399,11 @@ class TestCoverageAnalyzer:
         assert labor_item.coverage_status != CoverageStatus.COVERED or \
             "simple invoice rule" not in labor_item.match_reasoning.lower()
 
-    def test_simple_invoice_rule_promotes_multiple_generic_labor_items(self, analyzer, covered_components):
-        """Test that simple invoice rule promotes ALL generic labor items.
+    def test_simple_invoice_rule_promotes_only_highest_generic_labor(self, analyzer, covered_components):
+        """Test that simple invoice rule promotes only the HIGHEST-PRICED generic labor.
 
-        Invoices like Rolls Royce claim 64836 have multiple "Arbeit" lines
-        alongside covered parts.  All generic labor should be promoted.
+        When invoices have multiple "Arbeit" lines (e.g. Rolls Royce claim 64836),
+        only the most expensive one should be promoted to avoid over-counting.
         """
         items = [
             {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 358.0},
@@ -418,11 +418,12 @@ class TestCoverageAnalyzer:
         )
 
         labor_items = [i for i in result.line_items if i.item_type == "labor"]
+        promoted = [i for i in labor_items if i.coverage_status == CoverageStatus.COVERED
+                     and "simple invoice rule" in (i.match_reasoning or "").lower()]
 
-        # Both generic labor items should be covered via simple invoice rule
-        for labor_item in labor_items:
-            assert labor_item.coverage_status == CoverageStatus.COVERED
-            assert "simple invoice rule" in labor_item.match_reasoning.lower()
+        # Only the highest-priced generic labor (Main d'œuvre @ 100) should be promoted
+        assert len(promoted) == 1
+        assert promoted[0].total_price == 100.0
 
     def test_simple_invoice_rule_handles_trailing_punctuation(self, analyzer, covered_components):
         """Test that 'ARBEIT:' (with colon) is recognized as generic labor."""

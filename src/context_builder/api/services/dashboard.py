@@ -7,15 +7,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Mapping from check names to human-readable result codes
-_CHECK_RESULT_CODES: Dict[str, str] = {
-    "component_coverage": "Parts not covered",
-    "service_compliance": "Service non-compliance",
-    "policy_validity": "Policy expired",
-    "mileage": "Mileage exceeded",
-    "damage_date": "Pre-existing damage",
-    "shop_authorization": "Unauthorized shop",
-    "vehicle_id": "VIN mismatch",
+_DEFAULT_DASHBOARD_CONFIG: Dict[str, Any] = {
+    "ground_truth_path": "config/ground_truth.json",
+    "ground_truth_doc_filename": "Claim_Decision.pdf",
+    "default_currency": "CHF",
+    "result_code_labels": {
+        "component_coverage": "Parts not covered",
+        "service_compliance": "Service non-compliance",
+        "policy_validity": "Policy expired",
+        "mileage": "Mileage exceeded",
+        "damage_date": "Pre-existing damage",
+        "shop_authorization": "Unauthorized shop",
+        "vehicle_id": "VIN mismatch",
+    },
 }
 
 
@@ -25,10 +29,44 @@ class DashboardService:
     def __init__(self, claims_dir: Path):
         self.claims_dir = claims_dir
         self.workspace_path = claims_dir.parent
+        self._dashboard_config: Optional[Dict[str, Any]] = None
+
+    def _load_dashboard_config(self) -> Dict[str, Any]:
+        """Load optional dashboard config from workspace config."""
+        if self._dashboard_config is not None:
+            return self._dashboard_config
+
+        config_path = self.workspace_path / "config" / "dashboard.json"
+        config = dict(_DEFAULT_DASHBOARD_CONFIG)
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    override = json.load(f)
+                if isinstance(override, dict):
+                    config.update(override)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load dashboard config: {e}")
+        self._dashboard_config = config
+        return config
+
+    def _resolve_path(self, path_value: str) -> Path:
+        """Resolve a workspace-relative path value."""
+        path = Path(path_value)
+        if path.is_absolute():
+            return path
+        return self.workspace_path / path
+
+    def _get_result_code_map(self) -> Dict[str, str]:
+        """Get check-name-to-label mapping for result codes."""
+        config = self._load_dashboard_config()
+        mapping = config.get("result_code_labels", {})
+        return mapping if isinstance(mapping, dict) else {}
 
     def _load_ground_truth(self) -> Dict[str, Dict[str, Any]]:
         """Load ground truth data keyed by claim_id."""
-        gt_path = self.workspace_path / "config" / "ground_truth.json"
+        config = self._load_dashboard_config()
+        gt_path_value = config.get("ground_truth_path", "config/ground_truth.json")
+        gt_path = self._resolve_path(gt_path_value)
         if not gt_path.exists():
             logger.warning(f"Ground truth not found: {gt_path}")
             return {}
@@ -110,10 +148,11 @@ class DashboardService:
 
         checks = assessment.get("checks", [])
         failed_reasons = []
+        code_map = self._get_result_code_map()
         for check in checks:
             if check.get("result") == "FAIL":
                 check_name = check.get("check_name", "")
-                readable = _CHECK_RESULT_CODES.get(check_name)
+                readable = code_map.get(check_name)
                 if readable and readable not in failed_reasons:
                     failed_reasons.append(readable)
 
@@ -208,7 +247,7 @@ class DashboardService:
             checks_failed = 0
             checks_inconclusive = 0
             payout = None
-            currency = "CHF"
+            currency = self._load_dashboard_config().get("default_currency", "CHF")
             assessment_method = None
 
             if assessment:
@@ -237,7 +276,10 @@ class DashboardService:
                 payout_data = assessment.get("payout")
                 if isinstance(payout_data, dict):
                     payout = payout_data.get("final_payout")
-                    currency = payout_data.get("currency", "CHF")
+                    currency = payout_data.get(
+                        "currency",
+                        self._load_dashboard_config().get("default_currency", "CHF"),
+                    )
                 elif isinstance(payout_data, (int, float)):
                     payout = payout_data
 
@@ -260,7 +302,10 @@ class DashboardService:
                 payout_diff = round(payout - gt_payout, 2)
 
             # Ground truth doc
-            gt_doc_path = claim_dir / "ground_truth" / "Claim_Decision.pdf"
+            gt_doc_filename = self._load_dashboard_config().get(
+                "ground_truth_doc_filename", "Claim_Decision.pdf"
+            )
+            gt_doc_path = claim_dir / "ground_truth" / gt_doc_filename
             has_gt_doc = gt_doc_path.exists()
 
             results.append({
@@ -381,6 +426,17 @@ class DashboardService:
         if vat_rate_pct is None and payout_calculation:
             vat_rate_pct = payout_calculation.get("vat_rate_pct")
 
+        # VAT amounts (computed from subtotal × rate)
+        sys_vat_amount = None
+        if sys_total_adjusted is not None and vat_rate_pct:
+            sys_vat_amount = round(sys_total_adjusted * vat_rate_pct / 100.0, 2)
+
+        gt_total_ml = gt.get("total_material_labor_approved")
+        gt_vat_rate = gt.get("vat_rate_pct")
+        gt_vat_amount = None
+        if gt_total_ml is not None and gt_vat_rate:
+            gt_vat_amount = round(gt_total_ml * gt_vat_rate / 100.0, 2)
+
         return {
             "claim_id": claim_id,
             "coverage_items": coverage_items,
@@ -401,12 +457,17 @@ class DashboardService:
             "sys_labor_adjusted": sys_labor_adjusted,
             "sys_total_adjusted": sys_total_adjusted,
             "sys_vat_rate_pct": vat_rate_pct,
+            "sys_vat_amount": sys_vat_amount,
+            "gt_vat_amount": gt_vat_amount,
             "screening_payout": screening_payout,
         }
 
     def get_ground_truth_doc_path(self, claim_id: str) -> Optional[Path]:
         """Get path to ground truth PDF for a claim."""
-        gt_path = self.claims_dir / claim_id / "ground_truth" / "Claim_Decision.pdf"
+        gt_doc_filename = self._load_dashboard_config().get(
+            "ground_truth_doc_filename", "Claim_Decision.pdf"
+        )
+        gt_path = self.claims_dir / claim_id / "ground_truth" / gt_doc_filename
         if gt_path.exists():
             return gt_path
         return None

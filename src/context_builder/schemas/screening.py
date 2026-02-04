@@ -13,14 +13,15 @@ from pydantic import BaseModel, Field
 
 # ── Constants ────────────────────────────────────────────────────────
 
-SCREENING_CHECK_IDS = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c"}
+SCREENING_CHECK_IDS = {"0", "1", "1b", "2", "2b", "3", "4a", "4b", "5", "5b", "5c", "5d"}
 
-HARD_FAIL_CHECK_IDS = {"0", "1", "1b", "3", "5", "5c"}
+HARD_FAIL_CHECK_IDS = {"0", "1", "1b", "3", "5", "5c", "5d"}
 # 0  = policy_enforcement
 # 1  = policy_validity
 # 1b = damage_date (clear-cut)
 # 3  = mileage
 # 5  = component_coverage
+# 5d = damage_cause_exclusion (DTC → excluded root cause)
 
 
 # ── Enums ────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ class ScreeningCheck(BaseModel):
     """Result of a single deterministic screening check."""
 
     check_id: str = Field(
-        description="Check identifier, e.g. '0', '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b', '5c'",
+        description="Check identifier, e.g. '0', '1', '1b', '2', '2b', '3', '4a', '4b', '5', '5b', '5c', '5d'",
     )
     check_name: str = Field(description="Human-readable check name")
     verdict: CheckVerdict = Field(description="Deterministic verdict")

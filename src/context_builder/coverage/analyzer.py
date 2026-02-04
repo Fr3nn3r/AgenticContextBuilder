@@ -1272,6 +1272,8 @@ class CoverageAnalyzer:
         # When the invoice has covered parts and generic labor entries
         # (descriptions that just say "work" / "Arbeit" / "Main d'œuvre"),
         # promote the labor — it's clearly the labour cost for those parts.
+        # Only promote the SINGLE highest-priced generic labor item to avoid
+        # over-counting when invoices list multiple generic "Arbeit" entries.
         if covered_parts:
             uncovered_generic_labor = [
                 item for item in items
@@ -1282,18 +1284,25 @@ class CoverageAnalyzer:
 
             if uncovered_generic_labor:
                 linked_part = covered_parts[0]
-                for labor_item in uncovered_generic_labor:
-                    labor_item.coverage_status = CoverageStatus.COVERED
-                    labor_item.coverage_category = linked_part.coverage_category
-                    labor_item.matched_component = linked_part.matched_component
-                    labor_item.match_confidence = 0.75
-                    labor_item.match_reasoning = (
-                        f"Simple invoice rule: generic labor linked to covered part "
-                        f"'{linked_part.description}' ({linked_part.coverage_category})"
-                    )
+                # Pick only the highest-priced generic labor entry
+                labor_item = max(uncovered_generic_labor, key=lambda x: x.total_price)
+                labor_item.coverage_status = CoverageStatus.COVERED
+                labor_item.coverage_category = linked_part.coverage_category
+                labor_item.matched_component = linked_part.matched_component
+                labor_item.match_confidence = 0.75
+                labor_item.match_reasoning = (
+                    f"Simple invoice rule: generic labor linked to covered part "
+                    f"'{linked_part.description}' ({linked_part.coverage_category})"
+                )
+                logger.debug(
+                    f"Promoted labor '{labor_item.description}' to COVERED "
+                    f"via simple invoice rule (linked to '{linked_part.description}')"
+                )
+                if len(uncovered_generic_labor) > 1:
+                    skipped = len(uncovered_generic_labor) - 1
                     logger.debug(
-                        f"Promoted labor '{labor_item.description}' to COVERED "
-                        f"via simple invoice rule (linked to '{linked_part.description}')"
+                        f"Simple invoice rule: skipped {skipped} additional "
+                        f"generic labor item(s) (only highest-priced promoted)"
                     )
 
         # Strategy 3: Repair-context keyword matching
@@ -1600,6 +1609,18 @@ class CoverageAnalyzer:
             if not has_covered_parts:
                 return items
 
+            # Phrases in LLM reasoning that indicate a definitive policy
+            # exclusion (the item type itself is not covered), as opposed to
+            # contextual uncertainty ("no covered part found").  When the LLM
+            # explicitly states the component/item is excluded by policy, the
+            # promotion should NOT override that judgment.
+            _EXPLICIT_EXCLUSION_PHRASES = (
+                "explicitly excluded",
+                "not listed as covered",
+                "not listed as a covered",
+                "excluded from coverage",
+            )
+
             for item in items:
                 if item.item_type not in labor_types:
                     continue
@@ -1610,6 +1631,18 @@ class CoverageAnalyzer:
                     continue
                 # Skip items that were explicitly excluded by a prior stage
                 if item.exclusion_reason:
+                    continue
+                # Skip items where the LLM's reasoning indicates a definitive
+                # policy exclusion (e.g., "hoses are explicitly excluded",
+                # "not listed as covered").  These are not contextual
+                # uncertainties — the LLM determined the item type is excluded.
+                reasoning_lower = (item.match_reasoning or "").lower()
+                if any(phrase in reasoning_lower for phrase in _EXPLICIT_EXCLUSION_PHRASES):
+                    logger.debug(
+                        "Skipping promotion of '%s' — LLM reasoning indicates "
+                        "explicit policy exclusion",
+                        item.description,
+                    )
                     continue
 
                 item.coverage_status = CoverageStatus.COVERED
