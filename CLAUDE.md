@@ -96,6 +96,15 @@ python -m context_builder.cli aggregate --claim-id CLM-001    # Aggregate facts 
 python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
 ```
 
+## Custom Skills
+Available slash commands for common workflows:
+- `/eval [run|investigate|compare|deep|tag]` — Pipeline evaluation
+- `/deploy` — Azure deployment
+- `/docx` — Document creation and editing
+- `/backlog [status|add|doing|done|priorities|search|clean]` — Project backlog management
+- `/architecture` — System design reference
+- `/compliance` — Compliance development patterns
+
 ## Conventions
 - Python: snake_case | TypeScript: camelCase | Classes: PascalCase
 - Test new/changed logic with PyTest or Jest
@@ -220,14 +229,13 @@ Customer-specific extractors, prompts, and specs are stored in **separate git re
 When entering plan mode, save the plan file to the `plans/` folder (e.g., `plans/plan-<feature-name>.md`).
 
 ## Context Management
-- **BACKLOG.md** - All tasks (todo/doing/done). Update before clearing context.
-- **.claude/docs/** - Reference docs:
-  - `architecture.md` - System design and component overview
-  - `compliance.md` - Audit logging and regulatory requirements
+- **Backlog**: Use `/backlog status` to see current tasks, `/backlog done ID` to complete items. Data in `plans/backlog.json`.
+- **On-demand reference** (loaded only when invoked):
+  - `/architecture` - System design and component overview
+  - `/compliance` - Audit logging and regulatory requirements
+- **Always-loaded docs** (`.claude/docs/`):
   - `customer-config.md` - Customer-specific configuration workflow
-  - `testing.md` - Test patterns and best practices
-  - `worktrees.md` - Multi-agent parallel development setup
-- Before `/clear`: Add handoff notes to BACKLOG.md under your task
+- Before `/clear`: Run `/backlog status` to verify task states are current.
 
 ## Key Paths
 - Backend: `src/context_builder/` (pipeline/, classification/, extraction/, api/)

@@ -1,25 +1,33 @@
+---
+name: architecture
+description: "System architecture reference — pipeline flow, components, data structures. Use /architecture when you need to understand the system design."
+allowed-tools: Read, Glob, Grep
+---
+
 # Architecture Reference
+
+This is the ContextBuilder system architecture. Use this as a reference when you need to understand the system design, pipeline flow, or data structures. You can cross-reference with live code using Read, Glob, and Grep tools.
 
 ## Pipeline Flow
 
 ```
 Input Documents (PDF/image/text)
-    ↓
+    |
 Ingestion (Azure DI or OpenAI Vision)
-    ↓
-Classification (OpenAI → doc type)
-    ↓
-Extraction (OpenAI → fields with provenance)
-    ↓
+    |
+Classification (OpenAI -> doc type)
+    |
+Extraction (OpenAI -> fields with provenance)
+    |
 Quality Gate (pass/warn/fail)
-    ↓
+    |
 Active Workspace (workspaces/{workspace_id}/)
-    ├── claims/{claim_id}/docs/{doc_id}/
-    │   ├── extraction.json
-    │   └── labels/
-    ├── runs/{run_id}/
-    ├── logs/ (decisions.jsonl, llm_calls.jsonl)
-    └── registry/ (truth store, indexes)
+    +-- claims/{claim_id}/docs/{doc_id}/
+    |   +-- extraction.json
+    |   +-- labels/
+    +-- runs/{run_id}/
+    +-- logs/ (decisions.jsonl, llm_calls.jsonl)
+    +-- registry/ (truth store, indexes)
 ```
 
 ## Workspaces
@@ -89,3 +97,10 @@ Workspaces are isolated storage locations (like separate databases).
 ## Doc Types
 
 `fnol_form`, `insurance_policy`, `police_report`, `invoice`, `id_document`, `vehicle_registration`, `certificate`, `medical_report`, `travel_itinerary`, `customer_comm`, `supporting_document`
+
+## Tips
+
+- To find all pipeline stages: `Glob("src/context_builder/pipeline/stages/*.py")`
+- To find all API routers: `Glob("src/context_builder/api/routers/*.py")`
+- To find all Pydantic schemas: `Glob("src/context_builder/schemas/*.py")`
+- To check doc type catalog: `Read("src/context_builder/extraction/specs/doc_type_catalog.yaml")`

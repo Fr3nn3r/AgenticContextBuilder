@@ -1,19 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat:*)",
-      "Bash(mkdir:*)",
-      "Bash(python scripts/test_persistence.py:*)",
-      "Bash(python -c:*)",
-      "Bash(pip show:*)",
-      "Bash(python src/medical_agent.py:*)",
-      "Bash(pip install:*)",
-      "Bash(timeout /t 15)",
-      "Bash(taskkill:*)",
-      "Bash(curl:*)",
       "Bash(python -m pytest:*)",
-      "Bash(powershell -Command \"(Get-Content ''src\\medical_agent.py'' | Measure-Object -Line).Lines\")",
-      "Bash(python scripts/test_observability_hello_world.py:*)"
+      "Bash(python -m context_builder:*)",
+      "Bash(python scripts/*:*)",
+      "Bash(python -c:*)",
+      "Bash(pip:*)",
+      "Bash(git:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(powershell:*)",
+      "Bash(uvicorn:*)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []
