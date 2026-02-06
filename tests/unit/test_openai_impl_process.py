@@ -19,7 +19,7 @@ class TestOpenAIVisionIngestionProcess:
     def mock_ingestion(self):
         """Create a mock OpenAIVisionIngestion instance."""
         with patch('context_builder.services.openai_client.get_openai_client'):
-            from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+            from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
             return OpenAIVisionIngestion()
 
     def test_process_implementation_image_success(self, mock_ingestion, tmp_path):
@@ -199,7 +199,7 @@ class TestOpenAIVisionIngestionRetry:
     def mock_ingestion(self):
         """Create a mock OpenAIVisionIngestion instance."""
         with patch('context_builder.services.openai_client.get_openai_client'):
-            from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+            from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
             ingestion = OpenAIVisionIngestion()
             # Reset retries to default
             ingestion.retries = 3

@@ -39,7 +39,7 @@ from context_builder.schemas.run_errors import PipelineStage
 
 # Ensure Azure DI implementation is imported so it auto-registers
 try:
-    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+    from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
 except ImportError:
     pass  # Azure DI dependencies not installed
 
@@ -692,8 +692,8 @@ Examples:
     eval_run_parser.add_argument(
         "--output",
         metavar="DIR",
-        default="output",
-        help="Output root directory (default: output)",
+        default=None,
+        help="Output root directory (default: active workspace)",
     )
     eval_run_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
@@ -1995,7 +1995,15 @@ def main():
                 elif args.quiet:
                     logging.getLogger().setLevel(logging.WARNING)
 
-                output_dir = Path(args.output)
+                if args.output:
+                    output_dir = Path(args.output)
+                else:
+                    workspace = get_active_workspace()
+                    if not workspace or not workspace.get("path"):
+                        logger.error("No active workspace configured and no --output specified")
+                        sys.exit(1)
+                    output_dir = Path(workspace["path"])
+                    logger.info(f"Using workspace '{workspace.get('name', workspace.get('workspace_id'))}': {output_dir}")
                 if not output_dir.exists():
                     logger.error(f"Output directory not found: {output_dir}")
                     sys.exit(1)

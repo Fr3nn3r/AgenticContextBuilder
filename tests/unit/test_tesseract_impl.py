@@ -37,7 +37,7 @@ class TestTesseractIngestionInit:
         mock_get_version.return_value = '5.0.1'
 
         with patch('platform.system', return_value='Linux'):
-            from context_builder.impl.tesseract_ingestion import TesseractIngestion
+            from context_builder.ingestion.providers.tesseract import TesseractIngestion
             ingestion = TesseractIngestion()
 
         assert ingestion.languages == ['eng']
@@ -57,7 +57,7 @@ class TestTesseractIngestionInit:
         with patch.dict(sys.modules, {'cv2': None, 'numpy': None}):
             with patch('platform.system', return_value='Linux'):
                 with caplog.at_level(logging.WARNING):
-                    from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                    from context_builder.ingestion.providers.tesseract import TesseractIngestion
                     ingestion = TesseractIngestion()
 
                 assert "OpenCV not available" in caplog.text
@@ -73,7 +73,7 @@ class TestTesseractIngestionInit:
         with patch.dict(sys.modules, {'pypdfium2': None}):
             with patch('platform.system', return_value='Linux'):
                 with caplog.at_level(logging.WARNING):
-                    from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                    from context_builder.ingestion.providers.tesseract import TesseractIngestion
                     ingestion = TesseractIngestion()
 
                 assert "pypdfium2 not installed, PDF support disabled" in caplog.text
@@ -83,7 +83,7 @@ class TestTesseractIngestionInit:
         """Test initialization fails without pytesseract."""
         with patch.dict(sys.modules, {'pytesseract': None}):
             with pytest.raises(ConfigurationError, match="Required packages not installed"):
-                from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                from context_builder.ingestion.providers.tesseract import TesseractIngestion
                 TesseractIngestion()
 
     @pytest.mark.skipif(not PYTESSERACT_AVAILABLE, reason="pytesseract not installed")
@@ -95,7 +95,7 @@ class TestTesseractIngestionInit:
 
         with patch('platform.system', return_value='Linux'):
             with pytest.raises(ConfigurationError, match="Tesseract OCR not found"):
-                from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                from context_builder.ingestion.providers.tesseract import TesseractIngestion
                 TesseractIngestion()
 
 
@@ -105,7 +105,7 @@ class TestTesseractIngestionWindows:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             ingestion = TesseractIngestion()
             ingestion.pytesseract = Mock()
@@ -162,7 +162,7 @@ class TestTesseractIngestionPreprocessing:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             ingestion = TesseractIngestion()
 
@@ -287,7 +287,7 @@ class TestTesseractIngestionConfidence:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             return TesseractIngestion()
 
@@ -337,7 +337,7 @@ class TestTesseractIngestionTextExtraction:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             ingestion = TesseractIngestion()
             ingestion.pytesseract = Mock()
@@ -406,7 +406,7 @@ class TestTesseractIngestionPDFProcessing:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             ingestion = TesseractIngestion()
             ingestion.pdf_renderer = Mock()
@@ -515,13 +515,13 @@ class TestTesseractIngestionProcessImplementation:
     @pytest.fixture
     def mock_ingestion(self):
         """Create a mock TesseractIngestion instance."""
-        from context_builder.impl.tesseract_ingestion import TesseractIngestion
+        from context_builder.ingestion.providers.tesseract import TesseractIngestion
         with patch.object(TesseractIngestion, '_setup_tesseract'):
             ingestion = TesseractIngestion()
             ingestion.Image = Mock()
             return ingestion
 
-    @patch('context_builder.impl.tesseract_ingestion.get_file_metadata')
+    @patch('context_builder.ingestion.providers.tesseract.get_file_metadata')
     def test_process_implementation_image_success(self, mock_get_metadata, mock_ingestion):
         """Test successful image file processing."""
         filepath = Path("test.jpg")
@@ -556,7 +556,7 @@ class TestTesseractIngestionProcessImplementation:
         assert result["processor"] == "tesseract"
         assert result["tesseract_languages"] == ['eng']
 
-    @patch('context_builder.impl.tesseract_ingestion.get_file_metadata')
+    @patch('context_builder.ingestion.providers.tesseract.get_file_metadata')
     def test_process_implementation_pdf_success(self, mock_get_metadata, mock_ingestion):
         """Test successful PDF file processing."""
         filepath = Path("test.pdf")
@@ -579,7 +579,7 @@ class TestTesseractIngestionProcessImplementation:
         assert len(result["pages"]) == 2
         assert abs(result["average_confidence"] - 0.85) < 0.001  # Use approximate equality
 
-    @patch('context_builder.impl.tesseract_ingestion.get_file_metadata')
+    @patch('context_builder.ingestion.providers.tesseract.get_file_metadata')
     def test_process_implementation_various_formats(self, mock_get_metadata, mock_ingestion):
         """Test processing various image formats."""
         formats = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif']
@@ -601,7 +601,7 @@ class TestTesseractIngestionProcessImplementation:
             assert result["file_extension"] == fmt
             assert result["total_pages"] == 1
 
-    @patch('context_builder.impl.tesseract_ingestion.get_file_metadata')
+    @patch('context_builder.ingestion.providers.tesseract.get_file_metadata')
     def test_process_implementation_error_handling(self, mock_get_metadata, mock_ingestion, caplog):
         """Test error handling in process implementation."""
         filepath = Path("test.jpg")
@@ -615,7 +615,7 @@ class TestTesseractIngestionProcessImplementation:
 
         assert "Failed to process file" in caplog.text
 
-    @patch('context_builder.impl.tesseract_ingestion.get_file_metadata')
+    @patch('context_builder.ingestion.providers.tesseract.get_file_metadata')
     def test_process_implementation_logs_info(self, mock_get_metadata, mock_ingestion, caplog):
         """Test process logs appropriate info messages."""
         filepath = Path("test.jpg")

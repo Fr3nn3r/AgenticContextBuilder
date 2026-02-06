@@ -16,7 +16,7 @@ class TestOpenAIVisionIngestionPDFProcessing:
         """Create a mock OpenAIVisionIngestion instance."""
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
             with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
                 ingestion = OpenAIVisionIngestion()
                 # Mock the API call method
                 ingestion._call_api_with_retry = Mock()

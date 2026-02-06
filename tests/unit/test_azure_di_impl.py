@@ -29,12 +29,12 @@ class TestAzureDocumentIntelligenceInit:
         """Test successful initialization with valid credentials."""
         import sys
         # Remove cached module to force re-import with mocked env
-        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
-            del sys.modules['context_builder.impl.azure_di_ingestion']
+        if 'context_builder.ingestion.providers.azure_document_intelligence' in sys.modules:
+            del sys.modules['context_builder.ingestion.providers.azure_document_intelligence']
 
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}, clear=True):
             with patch('dotenv.load_dotenv'):  # Prevent .env from overriding test values
-                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                 ingestion = AzureDocumentIntelligenceIngestion()
 
         assert ingestion.endpoint == "https://test.cognitiveservices.azure.com/"
@@ -50,26 +50,26 @@ class TestAzureDocumentIntelligenceInit:
     def test_init_missing_endpoint(self):
         """Test initialization fails without endpoint."""
         import sys
-        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
-            del sys.modules['context_builder.impl.azure_di_ingestion']
+        if 'context_builder.ingestion.providers.azure_document_intelligence' in sys.modules:
+            del sys.modules['context_builder.ingestion.providers.azure_document_intelligence']
 
         with patch.dict(os.environ, {}, clear=True):
             with patch('dotenv.load_dotenv'):
                 with pytest.raises(ConfigurationError, match="AZURE_DI_ENDPOINT not found"):
-                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                     AzureDocumentIntelligenceIngestion()
 
     @pytest.mark.skipif(not AZURE_DI_AVAILABLE, reason="azure-ai-documentintelligence not installed")
     def test_init_missing_api_key(self):
         """Test initialization fails without API key."""
         import sys
-        if 'context_builder.impl.azure_di_ingestion' in sys.modules:
-            del sys.modules['context_builder.impl.azure_di_ingestion']
+        if 'context_builder.ingestion.providers.azure_document_intelligence' in sys.modules:
+            del sys.modules['context_builder.ingestion.providers.azure_document_intelligence']
 
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/"}, clear=True):
             with patch('dotenv.load_dotenv'):
                 with pytest.raises(ConfigurationError, match="AZURE_DI_API_KEY not found"):
-                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                     AzureDocumentIntelligenceIngestion()
 
 
@@ -81,7 +81,7 @@ class TestAzureDocumentIntelligenceRetry:
         """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                 ingestion = AzureDocumentIntelligenceIngestion()
                 return ingestion
 
@@ -158,7 +158,7 @@ class TestAzureDocumentIntelligenceMarkdownSaving:
         """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                 ingestion = AzureDocumentIntelligenceIngestion()
                 return ingestion
 
@@ -207,7 +207,7 @@ class TestAzureDocumentIntelligenceMetadataExtraction:
         """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                 ingestion = AzureDocumentIntelligenceIngestion()
                 return ingestion
 
@@ -273,7 +273,7 @@ class TestAzureDocumentIntelligenceProcessing:
         """Create a mock Azure DI ingestion instance."""
         with patch.dict(os.environ, {"AZURE_DI_ENDPOINT": "https://test.cognitiveservices.azure.com/", "AZURE_DI_API_KEY": "test_key"}):
             with patch('azure.ai.documentintelligence.DocumentIntelligenceClient'):
-                from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                 ingestion = AzureDocumentIntelligenceIngestion()
                 return ingestion
 
@@ -428,7 +428,7 @@ class TestEnvironmentVariableLoading:
         as long as env vars are set (by main.py's load_dotenv or otherwise),
         the class will work correctly.
         """
-        from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+        from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
         import inspect
 
         # Verify the __init__ method uses os.getenv to read credentials
@@ -449,14 +449,14 @@ class TestEnvironmentVariableLoading:
         from pathlib import Path
         import ast
 
-        azure_di_path = Path(__file__).parent.parent.parent / "src" / "context_builder" / "impl" / "azure_di_ingestion.py"
+        azure_di_path = Path(__file__).parent.parent.parent / "src" / "context_builder" / "ingestion" / "providers" / "azure_document_intelligence.py"
         source = azure_di_path.read_text()
 
         # Verify load_dotenv is imported and called at module level
         assert "from dotenv import load_dotenv" in source, \
-            "azure_di_ingestion.py must import load_dotenv"
+            "azure_document_intelligence.py must import load_dotenv"
         assert "load_dotenv(" in source, \
-            "azure_di_ingestion.py must call load_dotenv() as fallback"
+            "azure_document_intelligence.py must call load_dotenv() as fallback"
 
     def test_main_py_loads_dotenv_at_startup(self):
         """Verify that main.py initializes environment at module level.

@@ -26,7 +26,7 @@ class TestOpenAIVisionIngestionEncoding:
         """Create a mock OpenAIVisionIngestion instance."""
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
             with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
                 return OpenAIVisionIngestion()
 
     def test_encode_image_valid_file(self, mock_ingestion, tmp_path):
@@ -101,7 +101,7 @@ class TestOpenAIVisionIngestionPILEncoding:
         """Create a mock OpenAIVisionIngestion instance."""
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
             with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
                 return OpenAIVisionIngestion()
 
     def test_encode_pil_image_success(self, mock_ingestion):
@@ -155,7 +155,7 @@ class TestOpenAIVisionIngestionFileMetadata:
         """Create a mock OpenAIVisionIngestion instance."""
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
             with patch('openai.OpenAI'):
-                from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
                 return OpenAIVisionIngestion()
 
     def test_get_file_metadata_basic(self, mock_ingestion, tmp_path):

@@ -200,20 +200,20 @@ class IngestionFactory:
             # Try to import the implementation
             if name_lower == "openai":
                 try:
-                    from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+                    from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
                     cls.register("openai", OpenAIVisionIngestion)
                 except ImportError as e:
                     raise ValueError(f"Failed to import OpenAI implementation: {e}")
             elif name_lower == "tesseract":
                 try:
-                    from context_builder.impl.tesseract_ingestion import TesseractIngestion
+                    from context_builder.ingestion.providers.tesseract import TesseractIngestion
                     cls.register("tesseract", TesseractIngestion)
                 except ImportError as e:
                     raise ValueError(f"Failed to import Tesseract implementation: {e}")
             elif name_lower == "azure-di":
                 try:
                     print(f"[IngestionFactory] Attempting to import azure_di_ingestion...", flush=True)
-                    from context_builder.impl.azure_di_ingestion import AzureDocumentIntelligenceIngestion
+                    from context_builder.ingestion.providers.azure_document_intelligence import AzureDocumentIntelligenceIngestion
                     print(f"[IngestionFactory] Successfully imported AzureDocumentIntelligenceIngestion", flush=True)
                     cls.register("azure-di", AzureDocumentIntelligenceIngestion)
                 except ImportError as e:

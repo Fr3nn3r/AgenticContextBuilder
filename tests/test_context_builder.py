@@ -192,7 +192,7 @@ class TestOpenAIResilience:
     @patch('openai.OpenAI')
     def test_retry_on_rate_limit(self, mock_openai_class):
         """Test retry logic on rate limit errors."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -218,7 +218,7 @@ class TestOpenAIResilience:
     @patch('openai.OpenAI')
     def test_retry_on_timeout(self, mock_openai_class):
         """Test retry logic on timeout errors."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -242,7 +242,7 @@ class TestOpenAIResilience:
     @patch('openai.OpenAI')
     def test_no_retry_on_auth_error(self, mock_openai_class):
         """Test no retry on authentication errors."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -260,7 +260,7 @@ class TestOpenAIResilience:
     @patch('openai.OpenAI')
     def test_exponential_backoff(self, mock_openai_class):
         """Test exponential backoff timing."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -291,7 +291,7 @@ class TestJSONParsing:
     @patch('openai.OpenAI')
     def test_parse_json_with_markdown(self, mock_openai_class):
         """Test parsing JSON from markdown code blocks."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -309,7 +309,7 @@ class TestJSONParsing:
     @patch('openai.OpenAI')
     def test_parse_json_fallback(self, mock_openai_class):
         """Test fallback when JSON parsing fails."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
@@ -359,7 +359,7 @@ class TestMemoryOptimization:
     @patch('openai.OpenAI')
     def test_pdf_streaming_processing(self, mock_openai_class):
         """Test that PDFs are processed page by page without accumulation."""
-        from context_builder.impl.openai_vision_ingestion import OpenAIVisionIngestion
+        from context_builder.ingestion.providers.openai_vision import OpenAIVisionIngestion
 
         with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}):
             ingestion = OpenAIVisionIngestion()
