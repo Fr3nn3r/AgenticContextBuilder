@@ -17,8 +17,8 @@ from context_builder.coverage.explanation_generator import (
     ExplanationGenerator,
 )
 from context_builder.coverage.schemas import CoverageAnalysisResult
-from context_builder.schemas.claim_facts import parse_european_number
 from context_builder.storage.filesystem import FileStorage
+from context_builder.utils.number_parsing import parse_european_number
 
 logger = logging.getLogger(__name__)
 

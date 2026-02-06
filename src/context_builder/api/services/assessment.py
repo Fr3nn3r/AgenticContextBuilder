@@ -1,4 +1,8 @@
-"""Assessment service for loading and transforming claim assessments."""
+"""Assessment storage service for loading and saving claim assessments.
+
+This service handles file I/O for assessment data (loading, saving, versioning).
+For running assessments, see ClaimAssessmentService in claim_assessment.py.
+"""
 
 import json
 import logging
@@ -10,8 +14,17 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-class AssessmentService:
-    """Service for loading and transforming claim assessment data."""
+class AssessmentStorageService:
+    """Service for loading and saving claim assessment data (file I/O).
+
+    This handles:
+    - Loading assessment JSON files
+    - Saving assessment versions with history
+    - Transforming assessment data for UI display
+
+    For running assessments (reconciliation + checks + payout calculation),
+    use ClaimAssessmentService instead.
+    """
 
     def __init__(self, claims_dir: Path):
         """Initialize the assessment service.
@@ -869,3 +882,7 @@ class AssessmentService:
             1 for r in results if r.get("predicted") == "REFER_TO_HUMAN"
         )
         return refer_count / len(results)
+
+
+# Backwards compatibility alias (deprecated - use AssessmentStorageService)
+AssessmentService = AssessmentStorageService

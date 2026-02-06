@@ -1,7 +1,7 @@
 """Service layer for API endpoints."""
 
 from .aggregation import AggregationError, AggregationService
-from .assessment import AssessmentService
+from .assessment import AssessmentStorageService, AssessmentService
 from .auth import AuthService, Session
 from .claims import ClaimsService
 from .documents import DocumentsService
@@ -21,7 +21,8 @@ from .token_costs import TokenCostsService
 __all__ = [
     "AggregationError",
     "AggregationService",
-    "AssessmentService",
+    "AssessmentStorageService",
+    "AssessmentService",  # Deprecated alias
     "AuditEntry",
     "AuditService",
     "AuthService",

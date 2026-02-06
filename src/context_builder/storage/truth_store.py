@@ -25,8 +25,10 @@ def _resolve_registry_dir(output_root: Path) -> Path:
     return output_root.parent / "registry"
 
 
-class TruthStore:
-    """Filesystem-backed canonical truth store with version history.
+class GroundTruthStore:
+    """Filesystem-backed ground truth store with version history.
+
+    Stores labeled/verified data for evaluation and comparison against extractions.
 
     Compliance features:
     - Append-only history: Every save creates a new version file
@@ -144,3 +146,7 @@ class TruthStore:
         if version_number < 1 or version_number > len(history):
             return None
         return history[version_number - 1]
+
+
+# Backwards compatibility alias (deprecated - use GroundTruthStore)
+TruthStore = GroundTruthStore

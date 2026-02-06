@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from context_builder.api.services import (
     AggregationService,
-    AssessmentService,
+    AssessmentStorageService,
     AuditService,
     AuthService,
     ClaimsService,
@@ -207,9 +207,9 @@ def get_truth_service() -> TruthService:
     return TruthService(get_data_dir())
 
 
-def get_assessment_service() -> AssessmentService:
-    """Get AssessmentService instance."""
-    return AssessmentService(get_data_dir())
+def get_assessment_service() -> AssessmentStorageService:
+    """Get AssessmentStorageService instance for loading/saving assessment files."""
+    return AssessmentStorageService(get_data_dir())
 
 
 def get_aggregation_service() -> AggregationService:

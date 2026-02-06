@@ -53,9 +53,9 @@ from context_builder.schemas.decision_record import (
 )
 
 
-class GenericFieldExtractor(FieldExtractor):
+class LLMFieldExtractor(FieldExtractor):
     """
-    Generic extractor that works for any doc type using its DocTypeSpec.
+    LLM-based field extractor that works for any doc type using its DocTypeSpec.
 
     Uses two-pass extraction:
     1. Find candidate spans around hint keywords
@@ -515,11 +515,14 @@ class GenericFieldExtractor(FieldExtractor):
 
 # Auto-register for supported doc types
 def _register_extractors():
-    """Register GenericFieldExtractor for all doc types with specs."""
+    """Register LLMFieldExtractor for all doc types with specs."""
     from context_builder.extraction.spec_loader import list_available_specs
 
     for doc_type in list_available_specs():
-        ExtractorFactory.register(doc_type, GenericFieldExtractor)
+        ExtractorFactory.register(doc_type, LLMFieldExtractor)
 
 
 _register_extractors()
+
+# Backwards compatibility alias (deprecated - use LLMFieldExtractor)
+GenericFieldExtractor = LLMFieldExtractor
