@@ -20,7 +20,10 @@ def _resolve_output_paths(output_root: Path) -> Tuple[Path, Path]:
         return output_root, output_root / "claims"
     if output_root.name == "claims":
         return output_root.parent, output_root
-    return output_root.parent, output_root
+    raise ValueError(
+        f"Cannot resolve output paths: '{output_root}' has no 'claims' subdirectory "
+        f"and is not itself named 'claims'. Pass a workspace root or claims directory."
+    )
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:

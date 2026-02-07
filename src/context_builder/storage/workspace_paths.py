@@ -83,6 +83,8 @@ def get_active_workspace_path() -> Optional[Path]:
         for ws in registry.get("workspaces", []):
             if ws.get("workspace_id") == active_id:
                 workspace_path = Path(ws.get("path", ""))
+                if not workspace_path.is_absolute():
+                    workspace_path = project_root / workspace_path
                 if workspace_path.exists():
                     return workspace_path
                 else:

@@ -408,6 +408,8 @@ class WorkspaceService:
                 raise ValueError(f"Workspace not found: {workspace_id}")
 
         workspace_path = Path(workspace.path)
+        if not workspace_path.is_absolute():
+            workspace_path = self.project_root / workspace_path
         if not workspace_path.exists():
             raise ValueError(f"Workspace path does not exist: {workspace_path}")
 
