@@ -1477,3 +1477,46 @@ export async function getDashboardClaimDetail(
 export function getGroundTruthDocUrl(claimId: string): string {
   return `${API_BASE}/dashboard/claims/${encodeURIComponent(claimId)}/ground-truth-doc`;
 }
+
+// =============================================================================
+// DECISION DOSSIER API
+// =============================================================================
+
+import type {
+  DecisionDossier,
+  DossierVersionMeta,
+  DenialClauseDefinition,
+} from "../types";
+
+export async function getDecisionDossier(claimId: string, claimRunId?: string): Promise<DecisionDossier> {
+  const params = new URLSearchParams();
+  if (claimRunId) params.set("claim_run_id", claimRunId);
+  const qs = params.toString();
+  return fetchJson<DecisionDossier>(`/api/claims/${claimId}/decision-dossier${qs ? `?${qs}` : ""}`);
+}
+
+export async function listDossierVersions(claimId: string, claimRunId?: string): Promise<DossierVersionMeta[]> {
+  const params = new URLSearchParams();
+  if (claimRunId) params.set("claim_run_id", claimRunId);
+  const qs = params.toString();
+  return fetchJson<DossierVersionMeta[]>(`/api/claims/${claimId}/decision-dossier/versions${qs ? `?${qs}` : ""}`);
+}
+
+export async function getDossierVersion(claimId: string, version: number, claimRunId?: string): Promise<DecisionDossier> {
+  const params = new URLSearchParams();
+  if (claimRunId) params.set("claim_run_id", claimRunId);
+  const qs = params.toString();
+  return fetchJson<DecisionDossier>(`/api/claims/${claimId}/decision-dossier/${version}${qs ? `?${qs}` : ""}`);
+}
+
+export async function evaluateDecision(claimId: string, assumptions: Record<string, boolean>, claimRunId?: string): Promise<DecisionDossier> {
+  return fetchJson<DecisionDossier>(`/api/claims/${claimId}/decision-dossier/evaluate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assumptions, claim_run_id: claimRunId }),
+  });
+}
+
+export async function getDenialClauses(): Promise<DenialClauseDefinition[]> {
+  return fetchJson<DenialClauseDefinition[]>("/api/denial-clauses");
+}

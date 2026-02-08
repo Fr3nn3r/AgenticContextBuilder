@@ -33,6 +33,9 @@ from context_builder.api.services import (
     UsersService,
     WorkspaceService,
 )
+from context_builder.api.services.decision_dossier import (
+    DecisionDossierService,
+)
 from context_builder.services.compliance import (
     DecisionStorage,
     LLMCallStorage,
@@ -223,6 +226,11 @@ def get_reconciliation_service() -> ReconciliationService:
     storage = FileStorage(get_data_dir())
     aggregation = get_aggregation_service()
     return ReconciliationService(storage, aggregation)
+
+
+def get_decision_dossier_service() -> DecisionDossierService:
+    """Get DecisionDossierService instance."""
+    return DecisionDossierService(get_data_dir(), get_workspace_path())
 
 
 # Singleton service instances

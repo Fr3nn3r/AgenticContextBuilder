@@ -54,4 +54,4 @@ EOF
 
 export VITE_PORT="$FE_PORT"
 export VITE_API_PORT="$BE_PORT"
-npm run dev
+npm run dev -- --host 0.0.0.0

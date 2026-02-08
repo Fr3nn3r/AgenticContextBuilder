@@ -21,7 +21,8 @@ export type Screen =
   | 'all-claims'
   | 'claims-explorer'
   | 'documents'
-  | 'costs';
+  | 'costs'
+  | 'decision-dossier';
 
 export interface User {
   username: string;
@@ -60,6 +61,7 @@ const SCREEN_ACCESS: Record<Screen, Role[]> = {
   'claims-explorer': ['admin', 'reviewer', 'operator', 'auditor'],
   'documents': ['admin', 'operator', 'auditor'],
   'costs': ['admin', 'auditor'],
+  'decision-dossier': ['admin', 'reviewer', 'operator', 'auditor'],
 };
 
 const SCREEN_EDIT: Record<Screen, Role[]> = {
@@ -81,6 +83,7 @@ const SCREEN_EDIT: Record<Screen, Role[]> = {
   'claims-explorer': ['admin', 'reviewer'],
   'documents': ['admin', 'reviewer'],
   'costs': ['admin'],
+  'decision-dossier': ['admin', 'reviewer', 'operator'],
 };
 
 const TOKEN_KEY = 'auth_token';

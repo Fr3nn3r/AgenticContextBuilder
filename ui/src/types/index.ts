@@ -1356,3 +1356,106 @@ export interface DashboardClaimDetail {
   gt_vat_amount: number | null;
   screening_payout: Record<string, unknown> | null;
 }
+
+// ── Decision Dossier Types ────────────────────────────────────────
+
+export type ClaimVerdictType = "APPROVE" | "DENY" | "REFER";
+export type LineItemVerdictType = "COVERED" | "DENIED" | "PARTIAL" | "REFER";
+export type EvaluabilityTierType = 1 | 2 | 3;
+export type ClauseEvaluationLevelType = "claim" | "line_item" | "claim_with_item_consequence";
+
+export interface DenialClauseDefinition {
+  reference: string;
+  text: string;
+  short_name: string;
+  category: string;
+  evaluation_level: ClauseEvaluationLevelType;
+  evaluability_tier: EvaluabilityTierType;
+  default_assumption: boolean;
+  assumption_question: string | null;
+}
+
+export interface ClauseEvidence {
+  fact_name: string;
+  fact_value: string | null;
+  source_doc_id: string | null;
+  screening_check_id: string | null;
+  description: string | null;
+}
+
+export interface ClauseEvaluation {
+  clause_reference: string;
+  clause_short_name: string;
+  category: string;
+  evaluation_level: ClauseEvaluationLevelType;
+  evaluability_tier: EvaluabilityTierType;
+  verdict: string;
+  assumption_used: boolean | null;
+  evidence: ClauseEvidence[];
+  reason: string;
+  affected_line_items: string[];
+}
+
+export interface LineItemDecision {
+  item_id: string;
+  description: string;
+  item_type: string;
+  verdict: LineItemVerdictType;
+  applicable_clauses: string[];
+  denial_reasons: string[];
+  claimed_amount: number;
+  approved_amount: number;
+  denied_amount: number;
+  adjusted_amount: number;
+  adjustment_reason: string | null;
+}
+
+export interface AssumptionRecord {
+  clause_reference: string;
+  question: string;
+  assumed_value: boolean;
+  adjuster_confirmed: boolean;
+  tier: EvaluabilityTierType;
+}
+
+export interface FinancialSummary {
+  total_claimed: number;
+  total_covered: number;
+  total_denied: number;
+  total_adjusted: number;
+  net_payout: number;
+  currency: string;
+  parts_total: number;
+  labor_total: number;
+  fees_total: number;
+  other_total: number;
+}
+
+export interface DecisionDossier {
+  schema_version: string;
+  claim_id: string;
+  version: number;
+  claim_verdict: ClaimVerdictType;
+  verdict_reason: string;
+  clause_evaluations: ClauseEvaluation[];
+  line_item_decisions: LineItemDecision[];
+  assumptions_used: AssumptionRecord[];
+  financial_summary: FinancialSummary | null;
+  engine_id: string;
+  engine_version: string;
+  evaluation_timestamp: string;
+  input_refs: Record<string, unknown>;
+  failed_clauses: string[];
+  unresolved_assumptions: string[];
+}
+
+export interface DossierVersionMeta {
+  version: number;
+  claim_verdict: ClaimVerdictType | null;
+  evaluation_timestamp: string | null;
+  engine_id: string | null;
+  failed_clauses_count: number;
+  unresolved_count: number;
+  claim_run_id: string | null;
+  filename: string;
+}

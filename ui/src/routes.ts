@@ -16,6 +16,7 @@ export type ViewId =
   | "claims-explorer"
   | "documents"
   | "cost-estimates"
+  | "decision-dossier"
   | "templates"
   | "pipeline"
   | "truth"
@@ -54,6 +55,7 @@ export const ROUTE_CONFIG: RouteConfig[] = [
   { id: "claims-explorer", path: "/claims/explorer", label: "Claim Explorer", title: "Claim Explorer", showInNav: true, authScreen: "claims-explorer" },
   { id: "documents", path: "/documents", label: "Documents", title: "Documents", showInNav: true, authScreen: "documents" },
   { id: "cost-estimates", path: "/cost-estimates", label: "Cost Estimates", title: "Cost Estimates Review", showInNav: true },
+  { id: "decision-dossier", path: "/decision", label: "Decision", title: "Decision Dossier", showInNav: true, authScreen: "decision-dossier" },
   { id: "truth", path: "/truth", label: "Ground Truth", title: "Ground Truth", showInNav: true, authScreen: "ground-truth" },
   { id: "templates", path: "/templates", label: "Templates", title: "Extraction Templates", showInNav: true, authScreen: "templates" },
   { id: "pipeline", path: "/pipeline", label: "Pipeline", title: "Pipeline Control Center", showInNav: true, authScreen: "pipeline" },

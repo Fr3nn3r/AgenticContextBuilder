@@ -9,6 +9,14 @@ interface SidebarProps {
   currentView: ViewId;
 }
 
+function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
 // Icon components keyed by route ID
 const ICONS: Record<ViewId, React.ComponentType<{ className?: string }>> = {
   "new-claim": PlusIcon,
@@ -18,6 +26,7 @@ const ICONS: Record<ViewId, React.ComponentType<{ className?: string }>> = {
   "claims-explorer": ExplorerIcon,
   "documents": DocumentsIcon,
   "cost-estimates": ReceiptIcon,
+  "decision-dossier": ScaleIcon,
   "truth": TruthIcon,
   "templates": TemplatesIcon,
   "pipeline": PipelineIcon,
@@ -35,6 +44,14 @@ export function Sidebar({ currentView }: SidebarProps) {
   const location = useLocation();
   const { user, canAccess } = useAuth();
   const [versionDisplay, setVersionDisplay] = useState("True AIm");
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+
+  // Persist collapsed state
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", String(collapsed));
+  }, [collapsed]);
 
   // Fetch version on mount
   useEffect(() => {
@@ -57,15 +74,21 @@ export function Sidebar({ currentView }: SidebarProps) {
   });
 
   return (
-    <div className="w-56 bg-sidebar text-sidebar-foreground flex flex-col" data-testid="sidebar">
+    <div
+      className={cn(
+        "bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-200",
+        collapsed ? "w-16" : "w-56"
+      )}
+      data-testid="sidebar"
+    >
       {/* Logo */}
-      <div className="p-4 flex items-center gap-2">
+      <div className={cn("p-4 flex items-center", collapsed ? "justify-center" : "gap-2")}>
         <img
           src="/trueaim-logo.png"
           alt="True AIm Logo"
-          className="w-8 h-8 object-contain dark:brightness-0 dark:invert"
+          className="w-8 h-8 object-contain dark:brightness-0 dark:invert flex-shrink-0"
         />
-        <span className="font-semibold text-lg">True AIm</span>
+        {!collapsed && <span className="font-semibold text-lg">True AIm</span>}
       </div>
 
       {/* Navigation */}
@@ -82,26 +105,43 @@ export function Sidebar({ currentView }: SidebarProps) {
             <NavLink
               key={item.id}
               to={item.path}
+              title={collapsed ? item.label : undefined}
               data-testid={`nav-${item.id}`}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                "w-full flex items-center rounded-lg text-sm transition-colors",
+                collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
               )}
             >
-              <Icon className="w-5 h-5" />
-              {item.label}
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && item.label}
             </NavLink>
           );
         })}
       </nav>
 
-      {/* Footer - Version */}
-      <div className="p-4 border-t border-sidebar-border mt-auto">
-        <div className="text-xs text-muted-foreground">
-          {versionDisplay}
-        </div>
+      {/* Footer - Toggle + Version */}
+      <div className="border-t border-sidebar-border mt-auto">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-full flex items-center gap-2 px-4 py-3 text-muted-foreground hover:text-sidebar-foreground transition-colors"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <ChevronLeftIcon
+            className={cn(
+              "w-4 h-4 transition-transform duration-200 flex-shrink-0",
+              collapsed && "rotate-180"
+            )}
+          />
+          {!collapsed && <span className="text-xs">Collapse</span>}
+        </button>
+        {!collapsed && (
+          <div className="px-4 pb-3 text-xs text-muted-foreground">
+            {versionDisplay}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -252,6 +292,19 @@ function ReceiptIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2zM10 8.5a.5.5 0 11-1 0 .5.5 0 011 0zm5 5a.5.5 0 11-1 0 .5.5 0 011 0z"
+      />
+    </svg>
+  );
+}
+
+function ScaleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
       />
     </svg>
   );

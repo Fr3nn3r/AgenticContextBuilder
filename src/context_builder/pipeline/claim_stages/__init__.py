@@ -5,7 +5,7 @@ as opposed to the document-level stages in pipeline/stages/.
 
 Pipeline flow:
     Document Pipeline (per doc):  Ingestion -> Classification -> Extraction
-    Claim Pipeline (per claim):   Reconciliation -> Enrichment -> Screening -> Processing
+    Claim Pipeline (per claim):   Reconciliation -> Enrichment -> Screening -> Processing -> Decision
 
 The claim pipeline runs after all documents have been processed by the document pipeline.
 
@@ -42,6 +42,12 @@ from context_builder.pipeline.claim_stages.processing import (
     Processor,
     register_processor,
     get_processor,
+)
+from context_builder.pipeline.claim_stages.decision import (
+    DecisionStage,
+    DecisionEngine,
+    DefaultDecisionEngine,
+    load_engine_from_workspace,
 )
 
 # Import assessment processor to auto-register it
@@ -153,6 +159,7 @@ __all__ = [
     "EnrichmentStage",
     "ScreeningStage",
     "ProcessingStage",
+    "DecisionStage",
     # Enrichment utilities
     "Enricher",
     "DefaultEnricher",
@@ -166,4 +173,8 @@ __all__ = [
     "Processor",
     "register_processor",
     "get_processor",
+    # Decision utilities
+    "DecisionEngine",
+    "DefaultDecisionEngine",
+    "load_engine_from_workspace",
 ]

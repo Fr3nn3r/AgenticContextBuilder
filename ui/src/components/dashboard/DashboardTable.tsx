@@ -367,7 +367,7 @@ function TableRow({
         <tr>
           <td colSpan={10} className="p-0">
             <div className="px-4 py-3">
-              <DashboardClaimDetail claimId={claim.claim_id} documents={claim.documents} />
+              <DashboardClaimDetail claimId={claim.claim_id} />
             </div>
           </td>
         </tr>

@@ -79,4 +79,4 @@ workspaces/
 
 output_ui/.env
 
-backup/
+backup/.venv-wsl/

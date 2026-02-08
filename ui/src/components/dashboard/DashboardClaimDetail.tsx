@@ -12,7 +12,6 @@ import type { EvidenceLocation } from "../ClaimExplorer/DocumentSlidePanel";
 import { cn } from "../../lib/utils";
 import type {
   DashboardClaimDetail as DetailType,
-  DashboardClaimDoc,
   ClaimFacts,
   AggregatedFact,
   DocSummary,
@@ -20,7 +19,6 @@ import type {
 
 interface DashboardClaimDetailProps {
   claimId: string;
-  documents: DashboardClaimDoc[];
 }
 
 type Tab = "checks" | "coverage" | "payout" | "facts";
@@ -65,7 +63,7 @@ function formatDocType(docType: string): string {
     .join(" ");
 }
 
-export function DashboardClaimDetail({ claimId, documents }: DashboardClaimDetailProps) {
+export function DashboardClaimDetail({ claimId }: DashboardClaimDetailProps) {
   const [detail, setDetail] = useState<DetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("checks");
@@ -168,7 +166,7 @@ export function DashboardClaimDetail({ claimId, documents }: DashboardClaimDetai
         {tab === "checks" && (
           <ChecksTab
             detail={detail}
-            documents={documents}
+            documents={docSummaries}
             onViewSource={handleViewSource}
           />
         )}
@@ -199,7 +197,7 @@ function ChecksTab({
   onViewSource,
 }: {
   detail: DetailType;
-  documents: DashboardClaimDoc[];
+  documents: DocSummary[];
   onViewSource: (
     docId: string,
     page: number | null,

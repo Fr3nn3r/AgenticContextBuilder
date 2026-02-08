@@ -53,6 +53,7 @@ from context_builder.api.routers import (
     insights as insights_router,
     pipeline as pipeline_router,
     system as system_router,
+    decision as decision_router,
     upload as upload_router,
 )
 
@@ -106,6 +107,7 @@ app.include_router(eval_showcase_router.router)
 app.include_router(evolution_router.router)
 app.include_router(insights_router.router)
 app.include_router(pipeline_router.router)
+app.include_router(decision_router.router)
 app.include_router(upload_router.router)
 
 def _resolve_workspace_path(path: str | Path) -> Path:

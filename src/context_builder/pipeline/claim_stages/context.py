@@ -19,6 +19,7 @@ class ClaimStageTimings:
     enrichment_ms: int = 0
     screening_ms: int = 0
     processing_ms: int = 0
+    decision_ms: int = 0
     total_ms: int = 0
 
 
@@ -30,6 +31,7 @@ class ClaimStageConfig:
     run_enrichment: bool = True  # Run enrichment stage (if enricher configured)
     run_screening: bool = True  # Run screening stage (if screener configured)
     run_processing: bool = True
+    run_decision: bool = True  # Run decision stage (if engine configured)
     processing_type: str = "assessment"  # Type of processing to run
 
     @property
@@ -75,6 +77,9 @@ class ClaimContext:
     # Set by processing stage
     processing_type: str = "assessment"
     processing_result: Optional[Dict[str, Any]] = None
+
+    # Set by decision stage
+    decision_result: Optional[Dict[str, Any]] = None
 
     # Streaming callbacks for live progress
     on_token_update: Optional[Callable[[int, int], None]] = None  # (input_tokens, output_tokens)

@@ -2,10 +2,15 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache for list_claims results (keyed by claims_dir path).
+_list_claims_cache: Dict[str, Any] = {}
+_CACHE_TTL_SECONDS = 30
 
 _DEFAULT_DASHBOARD_CONFIG: Dict[str, Any] = {
     "ground_truth_path": "config/ground_truth.json",
@@ -104,6 +109,8 @@ class DashboardService:
         """Load the latest assessment for a claim.
 
         Returns (assessment_data, claim_run_id) or (None, None).
+        Uses sorted directory names (descending) to pick the latest run
+        and only reads that single assessment.json file.
         """
         claim_runs_dir = self.claims_dir / claim_id / "claim_runs"
         if not claim_runs_dir.exists():
@@ -117,28 +124,24 @@ class DashboardService:
                     pass
             return None, None
 
-        latest = None
-        latest_ts = ""
-        latest_run_id = None
-
-        for run_dir in claim_runs_dir.iterdir():
-            if not run_dir.is_dir():
-                continue
+        # Sort run dirs descending by name (timestamp-based names) and pick
+        # the first one with an assessment.json — avoids reading ALL runs.
+        run_dirs = sorted(
+            (d for d in claim_runs_dir.iterdir() if d.is_dir()),
+            key=lambda d: d.name,
+            reverse=True,
+        )
+        for run_dir in run_dirs:
             af = run_dir / "assessment.json"
             if not af.exists():
                 continue
             try:
                 with open(af, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                ts = data.get("assessment_timestamp", "")
-                if ts > latest_ts:
-                    latest_ts = ts
-                    latest = data
-                    latest_run_id = run_dir.name
+                    return json.load(f), run_dir.name
             except (json.JSONDecodeError, IOError):
                 continue
 
-        return latest, latest_run_id
+        return None, None
 
     def _derive_result_code(self, assessment: Dict[str, Any]) -> str:
         """Derive a human-readable result code from assessment checks."""
@@ -217,13 +220,33 @@ class DashboardService:
                 })
         return docs
 
+    def _count_documents(self, claim_id: str) -> int:
+        """Count documents for a claim (fast — no file reads, just directory listing)."""
+        docs_dir = self.claims_dir / claim_id / "docs"
+        if not docs_dir.exists():
+            return 0
+        return sum(1 for d in docs_dir.iterdir() if d.is_dir())
+
     def list_claims(self) -> List[Dict[str, Any]]:
         """Get enriched claim data for all claims in the workspace."""
+        global _list_claims_cache
+
         if not self.claims_dir.exists():
             return []
 
+        # Check module-level cache
+        cache_key = str(self.claims_dir)
+        cached = _list_claims_cache.get(cache_key)
+        if cached and cached["expires_at"] > time.monotonic():
+            return cached["data"]
+
         gt_data = self._load_ground_truth()
         ds_assignments, ds_labels = self._load_datasets()
+        config = self._load_dashboard_config()
+        default_currency = config.get("default_currency", "CHF")
+        gt_doc_filename = config.get(
+            "ground_truth_doc_filename", "Claim_Decision.pdf"
+        )
         results = []
 
         for claim_dir in sorted(self.claims_dir.iterdir()):
@@ -234,7 +257,7 @@ class DashboardService:
             if claim_id.startswith(".") or claim_id in ("runs",):
                 continue
 
-            docs = self._get_documents(claim_id)
+            doc_count = self._count_documents(claim_id)
             assessment, claim_run_id = self._load_latest_assessment(claim_id)
             gt = gt_data.get(claim_id, {})
 
@@ -247,7 +270,7 @@ class DashboardService:
             checks_failed = 0
             checks_inconclusive = 0
             payout = None
-            currency = self._load_dashboard_config().get("default_currency", "CHF")
+            currency = default_currency
             assessment_method = None
 
             if assessment:
@@ -276,10 +299,7 @@ class DashboardService:
                 payout_data = assessment.get("payout")
                 if isinstance(payout_data, dict):
                     payout = payout_data.get("final_payout")
-                    currency = payout_data.get(
-                        "currency",
-                        self._load_dashboard_config().get("default_currency", "CHF"),
-                    )
+                    currency = payout_data.get("currency", default_currency)
                 elif isinstance(payout_data, (int, float)):
                     payout = payout_data
 
@@ -302,9 +322,6 @@ class DashboardService:
                 payout_diff = round(payout - gt_payout, 2)
 
             # Ground truth doc
-            gt_doc_filename = self._load_dashboard_config().get(
-                "ground_truth_doc_filename", "Claim_Decision.pdf"
-            )
             gt_doc_path = claim_dir / "ground_truth" / gt_doc_filename
             has_gt_doc = gt_doc_path.exists()
 
@@ -312,7 +329,7 @@ class DashboardService:
                 "claim_id": claim_id,
                 "folder_name": claim_id,
                 "claim_date": claim_date,
-                "doc_count": len(docs),
+                "doc_count": doc_count,
                 "decision": decision,
                 "confidence": confidence,
                 "result_code": result_code,
@@ -334,8 +351,14 @@ class DashboardService:
                 "has_ground_truth_doc": has_gt_doc,
                 "dataset_id": ds_assignments.get(claim_id),
                 "dataset_label": ds_labels.get(ds_assignments.get(claim_id, ""), None),
-                "documents": docs,
+                "documents": [],
             })
+
+        # Store in module-level cache
+        _list_claims_cache[cache_key] = {
+            "data": results,
+            "expires_at": time.monotonic() + _CACHE_TTL_SECONDS,
+        }
 
         return results
 

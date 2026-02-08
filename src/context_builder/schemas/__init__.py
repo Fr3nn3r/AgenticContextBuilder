@@ -18,6 +18,23 @@ from context_builder.schemas.screening import (
     ScreeningPayoutCalculation,
     ScreeningResult,
 )
+from context_builder.schemas.decision_dossier import (
+    AssumptionRecord,
+    ClaimVerdict,
+    ClauseEvaluation,
+    ClauseEvaluationLevel,
+    ClauseEvidence,
+    DecisionDossier,
+    DenialClauseDefinition,
+    EvaluabilityTier,
+    FinancialSummary,
+    LineItemDecision,
+    LineItemVerdict,
+)
+from context_builder.schemas.decision_services import (
+    LaborRateResult,
+    PartsClassification,
+)
 from context_builder.schemas.reconciliation import (
     ConflictSource,
     FactConflict,
@@ -34,7 +51,16 @@ from context_builder.schemas.reconciliation import (
 
 __all__ = [
     "AggregatedFact",
+    "AssumptionRecord",
     "CheckVerdict",
+    "ClaimVerdict",
+    "ClauseEvaluation",
+    "ClauseEvaluationLevel",
+    "ClauseEvidence",
+    "DecisionDossier",
+    "DenialClauseDefinition",
+    "EvaluabilityTier",
+    "FinancialSummary",
     "ClaimFacts",
     "ClaimRunManifest",
     "ConflictSource",
@@ -45,6 +71,9 @@ __all__ = [
     "GateStatus",
     "GateThresholds",
     "HARD_FAIL_CHECK_IDS",
+    "LaborRateResult",
+    "LineItemDecision",
+    "LineItemVerdict",
     "LLMCallRecord",
     "ReconciliationClaimResult",
     "ReconciliationEvalSummary",
@@ -56,6 +85,7 @@ __all__ = [
     "ScreeningCheck",
     "ScreeningPayoutCalculation",
     "ScreeningResult",
+    "PartsClassification",
     "SourceDocument",
     "migrate_claim_facts_to_v3",
 ]
