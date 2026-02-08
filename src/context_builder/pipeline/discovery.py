@@ -497,7 +497,7 @@ def discover_from_workspace(
             claim_id = record.get("claim_id", "")
             doc_type = record.get("doc_type", "")
             doc_id = record.get("doc_id", "")
-            doc_root = record.get("doc_root", "")
+            doc_root = record.get("doc_root", "").replace("\\", "/")
 
             # Apply filters
             if doc_type_filter and doc_type not in doc_type_filter:

@@ -212,7 +212,7 @@ class TestOpenAIVisionIngestionFileMetadata:
 
     def test_get_file_metadata_unknown_mime(self, mock_ingestion, tmp_path):
         """Test unknown MIME type defaults to octet-stream."""
-        test_file = tmp_path / "test.xyz"
+        test_file = tmp_path / "test.zzz"
         test_file.write_bytes(b"data")
 
         from context_builder.utils.file_utils import get_file_metadata

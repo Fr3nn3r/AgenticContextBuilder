@@ -54,14 +54,14 @@ class TestGetFileMetadata:
 
     def test_unknown_mime_type(self, tmp_path):
         """Test metadata extraction for file with unknown extension."""
-        test_file = tmp_path / "unknown.xyz"
+        test_file = tmp_path / "unknown.zzz"
         test_content = b"Unknown content"
         test_file.write_bytes(test_content)
 
         metadata = get_file_metadata(test_file)
 
-        assert metadata["file_name"] == "unknown.xyz"
-        assert metadata["file_extension"] == ".xyz"
+        assert metadata["file_name"] == "unknown.zzz"
+        assert metadata["file_extension"] == ".zzz"
         assert metadata["mime_type"] == "application/octet-stream"  # Default for unknown
         assert metadata["file_size_bytes"] == len(test_content)
 

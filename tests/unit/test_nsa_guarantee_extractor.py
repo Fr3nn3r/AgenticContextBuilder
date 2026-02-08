@@ -30,7 +30,9 @@ def make_page_content(page: int, text: str) -> PageContent:
 
 def get_nsa_guarantee_extractor_class():
     """Get the NsaGuaranteeExtractor class from the registered extractor."""
-    extractor = ExtractorFactory.create("nsa_guarantee")
+    with patch("workspace_extractors.nsa_guarantee.OpenAI"), \
+         patch("workspace_extractors.nsa_guarantee.get_llm_audit_service"):
+        extractor = ExtractorFactory.create("nsa_guarantee")
     return extractor.__class__
 
 
@@ -98,7 +100,9 @@ class TestNsaGuaranteeExtractorRegistration:
         """Test that NsaGuaranteeExtractor is registered for nsa_guarantee."""
         assert ExtractorFactory.is_supported("nsa_guarantee")
 
-    def test_extractor_is_nsa_guarantee_class(self):
+    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
+    def test_extractor_is_nsa_guarantee_class(self, mock_audit, mock_openai):
         """Test that factory returns NsaGuaranteeExtractor, not GenericFieldExtractor."""
         extractor = ExtractorFactory.create("nsa_guarantee")
 
@@ -109,7 +113,9 @@ class TestNsaGuaranteeExtractorRegistration:
         # Should NOT be the generic extractor
         assert not isinstance(extractor, GenericFieldExtractor)
 
-    def test_extractor_has_correct_doc_type(self):
+    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
+    def test_extractor_has_correct_doc_type(self, mock_audit, mock_openai):
         """Test that extractor has correct doc_type."""
         extractor = ExtractorFactory.create("nsa_guarantee")
         assert extractor.doc_type == "nsa_guarantee"
