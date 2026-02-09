@@ -30,7 +30,7 @@ def make_page_content(page: int, text: str) -> PageContent:
 
 def get_nsa_guarantee_extractor_class():
     """Get the NsaGuaranteeExtractor class from the registered extractor."""
-    with patch("workspace_extractors.nsa_guarantee.OpenAI"), \
+    with patch("workspace_extractors.nsa_guarantee.get_openai_client"), \
          patch("workspace_extractors.nsa_guarantee.get_llm_audit_service"):
         extractor = ExtractorFactory.create("nsa_guarantee")
     return extractor.__class__
@@ -100,7 +100,7 @@ class TestNsaGuaranteeExtractorRegistration:
         """Test that NsaGuaranteeExtractor is registered for nsa_guarantee."""
         assert ExtractorFactory.is_supported("nsa_guarantee")
 
-    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_openai_client")
     @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
     def test_extractor_is_nsa_guarantee_class(self, mock_audit, mock_openai):
         """Test that factory returns NsaGuaranteeExtractor, not GenericFieldExtractor."""
@@ -113,7 +113,7 @@ class TestNsaGuaranteeExtractorRegistration:
         # Should NOT be the generic extractor
         assert not isinstance(extractor, GenericFieldExtractor)
 
-    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_openai_client")
     @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
     def test_extractor_has_correct_doc_type(self, mock_audit, mock_openai):
         """Test that extractor has correct doc_type."""
@@ -154,7 +154,7 @@ class TestNsaGuaranteeExtractorConfig:
 class TestNsaGuaranteeExtractorInit:
     """Tests for extractor initialization."""
 
-    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_openai_client")
     @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
     def test_init_with_defaults(self, mock_audit, mock_openai):
         """Test extractor initializes with default values."""
@@ -166,7 +166,7 @@ class TestNsaGuaranteeExtractorInit:
         assert extractor.model == "gpt-4o"  # From prompt config
         assert extractor.temperature == 0.1
 
-    @patch("workspace_extractors.nsa_guarantee.OpenAI")
+    @patch("workspace_extractors.nsa_guarantee.get_openai_client")
     @patch("workspace_extractors.nsa_guarantee.get_llm_audit_service")
     def test_init_with_model_override(self, mock_audit, mock_openai):
         """Test extractor accepts model override."""
@@ -184,7 +184,7 @@ class TestNsaGuaranteeExtractorExtraction:
     @pytest.fixture
     def mock_extractor(self):
         """Create extractor with mocked LLM client."""
-        with patch("workspace_extractors.nsa_guarantee.OpenAI") as mock_openai, \
+        with patch("workspace_extractors.nsa_guarantee.get_openai_client") as mock_openai, \
              patch("workspace_extractors.nsa_guarantee.get_llm_audit_service") as mock_audit:
             mock_audit.return_value = Mock()
             mock_client = Mock()
@@ -263,7 +263,7 @@ class TestNsaGuaranteeExtractorExtraction:
             prompt_version="v1.0",
         )
 
-    @patch('workspace_extractors.nsa_guarantee.OpenAI')
+    @patch('workspace_extractors.nsa_guarantee.get_openai_client')
     def test_extract_filters_pages_for_metadata(self, mock_openai_class, mock_extractor, sample_pages, sample_doc_meta, sample_run_meta):
         """Test that extract filters pages correctly for metadata extraction.
 
@@ -370,7 +370,7 @@ class TestNsaGuaranteeExtractorBuildExtractedFields:
     @pytest.fixture
     def mock_extractor(self):
         """Create extractor with mocked dependencies."""
-        with patch("workspace_extractors.nsa_guarantee.OpenAI"), \
+        with patch("workspace_extractors.nsa_guarantee.get_openai_client"), \
              patch("workspace_extractors.nsa_guarantee.get_llm_audit_service"):
             return ExtractorFactory.create("nsa_guarantee")
 
@@ -410,7 +410,7 @@ class TestNsaGuaranteeExtractorComponentExtraction:
     @pytest.fixture
     def mock_extractor(self):
         """Create extractor with mocked dependencies."""
-        with patch("workspace_extractors.nsa_guarantee.OpenAI") as mock_openai, \
+        with patch("workspace_extractors.nsa_guarantee.get_openai_client") as mock_openai, \
              patch("workspace_extractors.nsa_guarantee.get_llm_audit_service") as mock_audit:
             mock_audit.return_value = Mock()
             mock_openai.return_value = Mock()
@@ -537,7 +537,7 @@ class TestNsaGuaranteeExtractorSummaryFunctions:
     @pytest.fixture
     def extractor(self):
         """Create extractor with mocked dependencies."""
-        with patch("workspace_extractors.nsa_guarantee.OpenAI"), \
+        with patch("workspace_extractors.nsa_guarantee.get_openai_client"), \
              patch("workspace_extractors.nsa_guarantee.get_llm_audit_service"):
             return ExtractorFactory.create("nsa_guarantee")
 

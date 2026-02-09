@@ -32,7 +32,7 @@ def _make_extractor():
     """Return a NsaCostEstimateExtractor with all external I/O mocked out."""
     spec = get_spec("cost_estimate")
 
-    with patch("workspaces.nsa.config.extractors.nsa_cost_estimate.OpenAI"), \
+    with patch("workspaces.nsa.config.extractors.nsa_cost_estimate.get_openai_client"), \
          patch("workspaces.nsa.config.extractors.nsa_cost_estimate.get_llm_audit_service"), \
          patch("workspaces.nsa.config.extractors.nsa_cost_estimate.AuditedOpenAIClient"), \
          patch("workspaces.nsa.config.extractors.nsa_cost_estimate.load_prompt", return_value={

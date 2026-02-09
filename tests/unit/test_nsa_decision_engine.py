@@ -5,6 +5,7 @@ against a claim's screening results, coverage analysis, and aggregated facts.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -60,6 +61,7 @@ def _minimal_clause_registry() -> Dict[str, Any]:
                 "evaluability_tier": 2,
                 "default_assumption": True,
                 "assumption_question": "Is the damage due to normal wear and tear?",
+                "enabled": False,
             },
             {
                 "reference": "2.3.A.d",
@@ -80,6 +82,7 @@ def _minimal_clause_registry() -> Dict[str, Any]:
                 "evaluability_tier": 2,
                 "default_assumption": True,
                 "assumption_question": "Is the vehicle maintenance compliant?",
+                "enabled": False,
             },
             {
                 "reference": "2.2.D",
@@ -181,8 +184,13 @@ def workspace(tmp_path):
     with open(services_dir / "labor_rates.json", "w") as f:
         json.dump(labor_rates, f)
 
-    # Write parts keywords (no PyYAML needed — use JSON structure read via mock)
-    # The parts classifier tries yaml but falls back to defaults; we'll rely on defaults.
+    # Copy service modules (labor_rate_mock.py, parts_classifier_mock.py) from
+    # the real workspace so the engine can dynamically load them.
+    real_services = Path(__file__).resolve().parents[2] / "workspaces" / "nsa" / "config" / "decision" / "services"
+    for module_file in ("labor_rate_mock.py", "parts_classifier_mock.py"):
+        src = real_services / module_file
+        if src.exists():
+            shutil.copy(src, services_dir / module_file)
 
     return tmp_path
 
@@ -209,6 +217,14 @@ class TestRegistryLoading:
         registry = engine.get_clause_registry()
         assert registry["registry_version"] == "1.0.0"
         assert len(registry["clauses"]) == 10
+
+    def test_engine_evaluates_only_enabled_clauses(self, engine):
+        """Engine should skip disabled clauses (enabled=false) during evaluation."""
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
+        evaluated_refs = {e.clause_reference for e in dossier.clause_evaluations}
+        assert "2.2.B" not in evaluated_refs
+        assert "2.3.A.q" not in evaluated_refs
+        assert len(dossier.clause_evaluations) == 8
 
     def test_caches_registry(self, engine):
         r1 = engine.get_clause_registry()
@@ -287,52 +303,6 @@ class TestClaimLevelEvaluation:
 class TestTier2Evaluation:
     """Test Tier 2 clauses that try evidence, then fall back to assumption."""
 
-    def test_wear_and_tear_with_evidence(self, engine):
-        coverage = _make_coverage(line_items=[
-            {
-                "description": "Brake disc replacement",
-                "item_type": "parts",
-                "total_price": 350.0,
-                "coverage_status": "not_covered",
-                "exclusion_reason": "Normal Verschleiss",
-                "covered_amount": 0,
-                "not_covered_amount": 350.0,
-            },
-        ])
-        dossier = engine.evaluate(
-            claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage,
-        )
-        ev = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.2.B")
-        assert ev.verdict == "FAIL"
-        assert ev.assumption_used is None  # Used evidence, not assumption
-
-    def test_wear_and_tear_falls_back_to_assumption(self, engine):
-        """With no wear evidence, falls back to default assumption (True = PASS)."""
-        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
-        ev = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.2.B")
-        assert ev.verdict == "PASS"
-        assert ev.assumption_used is True
-
-    def test_wear_assumption_overridden_to_fail(self, engine):
-        """Override assumption to False triggers FAIL."""
-        dossier = engine.evaluate(
-            claim_id="CLM-001",
-            aggregated_facts={},
-            assumptions={"2.2.B": False},
-        )
-        ev = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.2.B")
-        assert ev.verdict == "FAIL"
-        assert ev.assumption_used is False
-
-    def test_maintenance_compliance_with_fact(self, engine):
-        facts = _make_facts([
-            {"name": "service_history_compliant", "value": "false"},
-        ])
-        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts=facts)
-        ev = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.3.A.q")
-        assert ev.verdict == "FAIL"
-        assert ev.assumption_used is None
-
     def test_reporting_deadline_within_limit(self, engine):
         facts = _make_facts([
             {"name": "damage_date", "value": "2025-06-01"},
@@ -397,13 +367,13 @@ class TestLineItemClauses:
 class TestVerdictDetermination:
     """Test claim-level verdict logic."""
 
-    def test_all_pass_no_data_gives_refer(self, engine):
-        """When everything passes but tier 2/3 assumptions are unconfirmed, verdict is REFER."""
+    def test_all_pass_no_data_gives_approve(self, engine):
+        """When everything passes, verdict is APPROVE (assumptions are treated as facts)."""
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
-        # No failed clauses, but unconfirmed assumptions → REFER
+        # No failed clauses, assumptions treated as accepted facts → APPROVE
         assert len(dossier.failed_clauses) == 0
-        assert dossier.claim_verdict.value == "REFER"
-        assert len(dossier.unresolved_assumptions) > 0
+        assert dossier.claim_verdict.value == "APPROVE"
+        assert len(dossier.unresolved_assumptions) == 0
 
     def test_tier1_fail_gives_deny(self, engine):
         screening = _make_screening([
@@ -412,19 +382,13 @@ class TestVerdictDetermination:
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, screening_result=screening)
         assert dossier.claim_verdict.value == "DENY"
 
-    def test_unresolved_assumptions_gives_refer(self, engine):
-        """Tier 3 with unconfirmed assumption → REFER (when no hard deny)."""
-        # Default state: tier 3 assumptions are unconfirmed but non-rejecting (PASS)
-        # So verdict is APPROVE. We need the assumption to be used AND unresolved.
-        # The engine records unconfirmed assumptions — let's check with REFER logic.
+    def test_unconfirmed_assumptions_still_approves(self, engine):
+        """Tier 3 with unconfirmed assumption → APPROVE (assumptions are accepted facts)."""
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
         # Default tier 3 assumptions are non-rejecting (True) → PASS
-        # So there are unresolved assumptions but no failed clauses → REFER
-        if dossier.unresolved_assumptions:
-            assert dossier.claim_verdict.value == "REFER"
-        else:
-            # If the engine doesn't flag these as unresolved, we still get APPROVE
-            assert dossier.claim_verdict.value == "APPROVE"
+        # Assumptions are treated as facts, no REFER
+        assert dossier.claim_verdict.value == "APPROVE"
+        assert len(dossier.unresolved_assumptions) == 0
 
 
 class TestFinancialSummary:
@@ -496,15 +460,15 @@ class TestDossierStructure:
         assert dossier.claim_id == "CLM-001"
         assert dossier.version == 1
         assert dossier.engine_id == "nsa_decision_v1"
-        assert dossier.engine_version == "1.0.0"
+        assert dossier.engine_version == "1.1.0"
         assert dossier.evaluation_timestamp
 
-    def test_dossier_evaluates_all_clauses(self, engine):
-        """Engine should produce evaluations for all clauses in the registry."""
+    def test_dossier_evaluates_all_enabled_clauses(self, engine):
+        """Engine should produce evaluations for all enabled clauses in the registry."""
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
         registry = engine.get_clause_registry()
-        num_clauses = len(registry["clauses"])
-        assert len(dossier.clause_evaluations) == num_clauses
+        enabled_count = sum(1 for c in registry["clauses"] if c.get("enabled", True))
+        assert len(dossier.clause_evaluations) == enabled_count
 
     def test_assumptions_tracked_for_tier2_tier3(self, engine):
         """Tier 2/3 clauses that use assumptions should be in assumptions_used."""
@@ -533,13 +497,13 @@ class TestAssumptionOverrides:
         dossier = engine.evaluate(
             claim_id="CLM-001",
             assumptions={
-                "2.2.B": False,  # Tier 2: wear & tear → FAIL
+                "2.6.C.a": False,  # Tier 2: reporting deadline → FAIL
                 "2.3.A.d": False,  # Tier 3: gross negligence → FAIL
             },
         )
-        ev_b = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.2.B")
+        ev_c = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.6.C.a")
         ev_d = next(e for e in dossier.clause_evaluations if e.clause_reference == "2.3.A.d")
-        assert ev_b.verdict == "FAIL"
+        assert ev_c.verdict == "FAIL"
         assert ev_d.verdict == "FAIL"
 
     def test_assumption_override_does_not_affect_tier1(self, engine):
