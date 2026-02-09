@@ -408,9 +408,15 @@ def check_2b_owner_match(facts: List[Dict]) -> ScreeningCheck:
 def check_3_mileage(facts: List[Dict]) -> ScreeningCheck:
     """Check 3: Mileage."""
     km_limit = _parse_int(_get_fact(facts, "km_limited_to"))
-    odometer = _parse_int(
-        _get_fact(facts, "odometer_km") or _get_fact(facts, "vehicle_current_km")
-    )
+    odometer = _parse_int(_get_fact(facts, "odometer_km"))
+    if odometer is None and km_limit is not None:
+        return ScreeningCheck(
+            check_id="3", check_name="mileage",
+            verdict=CheckVerdict.INCONCLUSIVE,
+            reason="Odometer reading missing — required for km-limited policy. "
+                   "Check cost estimate or request odometer photo.",
+            is_hard_fail=True,
+        )
     if km_limit is None or odometer is None:
         return ScreeningCheck(
             check_id="3", check_name="mileage",
@@ -544,9 +550,7 @@ def check_4b_service_compliance(
 
     # Mileage compliance
     mileage_verdict = None
-    odometer = _parse_int(
-        _get_fact(facts, "odometer_km") or _get_fact(facts, "vehicle_current_km")
-    )
+    odometer = _parse_int(_get_fact(facts, "odometer_km"))
     service_km = _parse_int(most_recent_entry.get("mileage_km"))
     if odometer is not None and service_km is not None and km_max > 0:
         km_gap = odometer - service_km
@@ -1033,10 +1037,12 @@ class TestCheck3Mileage:
         result = check_3_mileage(facts)
         assert result.verdict == CheckVerdict.SKIPPED
 
-    def test_skipped_no_odometer(self):
+    def test_inconclusive_no_odometer_with_km_limit(self):
+        """Missing odometer + km limit → INCONCLUSIVE (data quality warning)."""
         facts = [{"name": "km_limited_to", "value": "150000"}]
         result = check_3_mileage(facts)
-        assert result.verdict == CheckVerdict.SKIPPED
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert "Odometer reading missing" in result.reason
 
     def test_swiss_number_format(self):
         facts = [
@@ -1046,13 +1052,15 @@ class TestCheck3Mileage:
         result = check_3_mileage(facts)
         assert result.verdict == CheckVerdict.PASS
 
-    def test_fallback_to_vehicle_current_km(self):
+    def test_missing_odometer_with_km_limit_returns_inconclusive(self):
+        """Policy km is NOT used as odometer — returns INCONCLUSIVE when odometer missing."""
         facts = [
             {"name": "km_limited_to", "value": "150000"},
-            {"name": "vehicle_current_km", "value": "100000"},
+            {"name": "vehicle_km_at_policy_start", "value": "100000"},
         ]
         result = check_3_mileage(facts)
-        assert result.verdict == CheckVerdict.PASS
+        assert result.verdict == CheckVerdict.INCONCLUSIVE
+        assert "Odometer reading missing" in result.reason
 
 
 class TestCheck4aShopAuth:

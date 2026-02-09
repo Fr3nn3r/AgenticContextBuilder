@@ -392,6 +392,10 @@ class DecisionStage:
                 processing_result=processing_result,
             )
 
+            # Convert Pydantic model to dict if needed
+            if hasattr(dossier, "model_dump"):
+                dossier = dossier.model_dump()
+
             # Set version
             dossier["version"] = next_version
 

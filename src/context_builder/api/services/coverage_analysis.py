@@ -301,7 +301,7 @@ class CoverageAnalysisService:
         facts = claim_facts.get("facts", [])
 
         # Try multiple field names in priority order
-        field_names = ["odometer_km", "vehicle_current_km", "km_stand", "mileage_km"]
+        field_names = ["odometer_km", "km_stand", "mileage_km"]
 
         for name in field_names:
             value = self._extract_fact_value(facts, name)

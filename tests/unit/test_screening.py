@@ -412,21 +412,23 @@ class TestCheck3Mileage:
         check = _screener()._check_3_mileage(facts)
         assert check.verdict == CheckVerdict.SKIPPED
 
-    def test_skipped_missing_odometer(self):
+    def test_missing_odometer_with_km_limit_inconclusive(self):
+        """Missing odometer + km limit present → INCONCLUSIVE (not SKIPPED)."""
         facts = _make_facts(
             ("km_limited_to", "150000"),
         )
         check = _screener()._check_3_mileage(facts)
-        assert check.verdict == CheckVerdict.SKIPPED
+        assert check.verdict == CheckVerdict.INCONCLUSIVE
 
-    def test_fallback_to_vehicle_current_km(self):
-        """When odometer_km is missing, falls back to vehicle_current_km."""
+    def test_missing_odometer_with_km_limit_returns_inconclusive(self):
+        """When odometer_km is missing but km_limited_to exists, return INCONCLUSIVE warning."""
         facts = _make_facts(
             ("km_limited_to", "150000"),
-            ("vehicle_current_km", "74359"),
+            ("vehicle_km_at_policy_start", "74359"),
         )
         check = _screener()._check_3_mileage(facts)
-        assert check.verdict == CheckVerdict.PASS
+        assert check.verdict == CheckVerdict.INCONCLUSIVE
+        assert "Odometer reading missing" in check.reason
 
     def test_evidence_contains_values(self):
         facts = _make_facts(

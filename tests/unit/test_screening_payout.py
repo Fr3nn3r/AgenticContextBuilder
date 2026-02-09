@@ -120,7 +120,7 @@ class TestPayoutBasic:
     """Basic payout calculation tests."""
 
     def test_basic_payout_no_cap_no_deductible(self):
-        """No max coverage, no deductible → final = subtotal_with_vat * rate."""
+        """No max coverage, no deductible → final = subtotal_with_vat after rate."""
         facts = _make_facts(
             ("policyholder_name", "Hans Muster"),
         )
@@ -130,10 +130,11 @@ class TestPayoutBasic:
         assert payout is not None
         assert payout.covered_total == 4500.0
         assert payout.not_covered_total == 500.0
-        assert payout.capped_amount == 4500.0
+        # Rate applied first: 4500 * 80% = 3600, no cap → capped_amount = 3600
+        assert payout.capped_amount == 3600.0
         assert payout.max_coverage_applied is False
         assert payout.deductible_amount == 0.0
-        # Rate applied: 4500 * 80% = 3600, +VAT: 3600 * 1.081 = 3891.6
+        # +VAT: 3600 * 1.081 = 3891.6
         assert payout.after_deductible == 3891.6
         assert payout.final_payout == 3891.6
         assert payout.policyholder_type == "individual"
@@ -216,7 +217,8 @@ class TestPayoutMaxCoverage:
         payout = _screener()._calculate_payout(facts, coverage)
 
         assert payout.max_coverage_applied is False
-        assert payout.capped_amount == 5000.0
+        # Rate first: 5000 * 80% = 4000, 4000 < 10000 → no cap
+        assert payout.capped_amount == 4000.0
 
     def test_cap_at_exact_amount(self):
         facts = _make_facts(
@@ -226,8 +228,9 @@ class TestPayoutMaxCoverage:
         coverage = _make_coverage_result(covered_total=5000.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
+        # Rate first: 5000 * 80% = 4000, 4000 < 5000 → no cap
         assert payout.max_coverage_applied is False
-        assert payout.capped_amount == 5000.0
+        assert payout.capped_amount == 4000.0
 
     def test_no_cap_when_not_specified(self):
         facts = _make_facts(("policyholder_name", "Hans Muster"))
@@ -236,7 +239,8 @@ class TestPayoutMaxCoverage:
 
         assert payout.max_coverage is None
         assert payout.max_coverage_applied is False
-        assert payout.capped_amount == 50000.0
+        # Rate first: 50000 * 80% = 40000, no cap
+        assert payout.capped_amount == 40000.0
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -333,11 +337,11 @@ class TestPayoutDeductible:
         coverage = _make_coverage_result(covered_total=5000.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        # Capped at 3000, rate = 3000 * 80% = 2400, subtotal = 2400 * 1.081 = 2594.4
-        # deductible = 2594.4 * 10% = 259.44
+        # Rate first: 5000 * 80% = 4000, cap at 3000 (4000 > 3000)
+        # subtotal = 3000 * 1.081 = 3243.0, deductible = 324.3
         assert payout.capped_amount == 3000.0
-        assert payout.deductible_amount == 259.44
-        assert payout.after_deductible == 2334.96
+        assert payout.deductible_amount == 324.3
+        assert payout.after_deductible == 2918.7
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -417,7 +421,7 @@ class TestPayoutFullFlow:
     def test_typical_individual_claim(self):
         """Typical claim: individual, deductible, no cap.
 
-        Formula: gross → *rate → +VAT → -deductible
+        Formula: gross → *rate → (cap check) → +VAT → -deductible
         """
         facts = _make_facts(
             ("policyholder_name", "Anna Muster"),
@@ -431,18 +435,18 @@ class TestPayoutFullFlow:
 
         assert payout.covered_total == 4500.0
         assert payout.not_covered_total == 500.0
-        assert payout.capped_amount == 4500.0
-        # rate = 4500 * 80% = 3600, subtotal = 3600 * 1.081 = 3891.6, deductible = 389.16
+        # Rate first: 4500 * 80% = 3600, no cap → capped_amount = 3600
+        assert payout.capped_amount == 3600.0
+        # subtotal = 3600 * 1.081 = 3891.6, deductible = 389.16
         assert payout.deductible_amount == 389.16
         assert payout.after_deductible == 3502.44
         assert payout.vat_adjusted is False
-        # Rate already applied; final = after_deductible for individuals
         assert payout.final_payout == 3502.44
 
     def test_company_claim_with_cap(self):
         """Company claim: capped, deductible, VAT deduction.
 
-        Formula: gross → cap → *rate → +VAT → -deductible → -company VAT
+        Formula: gross → *rate → cap → +VAT → -deductible → -company VAT
         """
         facts = _make_facts(
             ("policyholder_name", "Muster AG"),
@@ -453,16 +457,16 @@ class TestPayoutFullFlow:
         coverage = _make_coverage_result(covered_total=5000.0, not_covered_total=200.0)
         payout = _screener()._calculate_payout(facts, coverage)
 
-        # Step 1: Cap at 3000
+        # Step 1: Rate first: 5000 * 80% = 4000, cap at 3000 (4000 > 3000)
         assert payout.max_coverage_applied is True
         assert payout.capped_amount == 3000.0
 
-        # Step 2: rate = 3000 * 80% = 2400, subtotal = 2400 * 1.081 = 2594.4
-        # Deductible = max(2594.4*10%, 200) = 259.44
-        assert payout.deductible_amount == 259.44
-        assert payout.after_deductible == 2334.96
+        # Step 2: subtotal = 3000 * 1.081 = 3243.0
+        # Deductible = max(3243.0*10%, 200) = max(324.3, 200) = 324.3
+        assert payout.deductible_amount == 324.3
+        assert payout.after_deductible == 2918.7
 
-        # Step 3: Rate already applied; remove VAT for company
+        # Step 3: Remove VAT for company
         assert payout.vat_adjusted is True
         expected_final = round(payout.after_deductible / (1 + SWISS_VAT_RATE), 2)
         assert payout.final_payout == expected_final

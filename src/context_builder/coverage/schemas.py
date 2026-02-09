@@ -92,11 +92,14 @@ class CoverageSummary(BaseModel):
     total_not_covered: float = Field(
         0.0, description="Total of not-covered items"
     )
+    vat_amount: float = Field(
+        0.0, description="Deprecated: use screening payout. Always 0.0"
+    )
     excess_amount: float = Field(
-        0.0, description="Excess/deductible amount to subtract"
+        0.0, description="Deprecated: use screening payout. Always 0.0"
     )
     total_payable: float = Field(
-        0.0, description="Final amount payable after excess and coverage"
+        0.0, description="Deprecated: equals total_covered_before_excess. Use screening payout for final amount."
     )
     items_covered: int = Field(0, description="Count of covered items")
     items_not_covered: int = Field(0, description="Count of not-covered items")

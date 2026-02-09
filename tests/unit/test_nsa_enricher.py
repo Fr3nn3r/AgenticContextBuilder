@@ -218,25 +218,25 @@ class TestComputeCheckInputs:
         assert result["check_1_policy_validity"]["claim_date"] is None
         assert result["check_4b_service"]["claim_date"] is None
 
-    def test_odometer_fallback_to_vehicle_current_km(self, mock_enricher):
-        """current_odometer should fall back to vehicle_current_km if odometer_km missing."""
+    def test_odometer_no_fallback_to_policy_km(self, mock_enricher):
+        """current_odometer should NOT fall back to vehicle_km_at_policy_start."""
         claim_facts = {
             "facts": [
-                {"name": "vehicle_current_km", "value": "136000"},
+                {"name": "vehicle_km_at_policy_start", "value": "136000"},
             ],
             "structured_data": {},
         }
 
         result = mock_enricher._compute_check_inputs(claim_facts)
 
-        assert result["check_1_policy_validity"]["current_odometer"] == "136000"
+        assert result["check_1_policy_validity"]["current_odometer"] is None
 
-    def test_odometer_prefers_odometer_km(self, mock_enricher):
-        """current_odometer should prefer odometer_km over vehicle_current_km."""
+    def test_odometer_uses_odometer_km_only(self, mock_enricher):
+        """current_odometer should use odometer_km, ignoring policy km."""
         claim_facts = {
             "facts": [
                 {"name": "odometer_km", "value": "140000"},
-                {"name": "vehicle_current_km", "value": "136000"},
+                {"name": "vehicle_km_at_policy_start", "value": "136000"},
             ],
             "structured_data": {},
         }

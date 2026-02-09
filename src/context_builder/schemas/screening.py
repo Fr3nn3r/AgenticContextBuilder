@@ -88,7 +88,7 @@ class ScreeningPayoutCalculation(BaseModel):
         default=False, description="Whether the coverage cap was applied"
     )
     capped_amount: float = Field(
-        description="Amount after cap (equals covered_total if no cap)",
+        description="Rate-adjusted amount after coverage_percent, possibly capped at max_coverage",
     )
     vat_amount: float = Field(
         default=0.0, description="VAT amount added (8.1% for Swiss claims)"
