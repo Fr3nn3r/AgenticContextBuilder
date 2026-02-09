@@ -1520,3 +1520,16 @@ export async function evaluateDecision(claimId: string, assumptions: Record<stri
 export async function getDenialClauses(): Promise<DenialClauseDefinition[]> {
   return fetchJson<DenialClauseDefinition[]>("/api/denial-clauses");
 }
+
+export async function getClaimsWithDossiers(): Promise<string[]> {
+  return fetchJson<string[]>("/api/claims-with-dossiers");
+}
+
+// =============================================================================
+// WORKBENCH API
+// =============================================================================
+
+export async function getWorkbenchData(claimId: string, claimRunId?: string): Promise<any> {
+  const params = claimRunId ? `?claim_run_id=${encodeURIComponent(claimRunId)}` : '';
+  return fetchJson<any>(`${API_BASE}/claims/${encodeURIComponent(claimId)}/workbench${params}`);
+}

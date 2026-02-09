@@ -238,7 +238,7 @@ function FactField({
 // DECISION BANNER (styled like Assessment tab)
 // =============================================================================
 
-function DecisionBanner({ data }: { data: any }) {
+function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
   const dossier = data.dossier;
   const verdict = (dossier?.claim_verdict?.toUpperCase() ?? "REFER") as ClaimVerdict;
   const config = VERDICT_CONFIG[verdict] || VERDICT_CONFIG.REFER;
@@ -247,7 +247,10 @@ function DecisionBanner({ data }: { data: any }) {
   const confidence = rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
   const isDenied = verdict === "DENY";
 
-  // Build reason text
+  // Build reason text — strip redundant "Claim approved/denied." prefix
+  const stripVerdictPrefix = (s: string) =>
+    s.replace(/^Claim\s+(approved|denied)\.?\s*/i, "");
+
   let reason = config.description;
   if (isDenied) {
     const clauseEvals: any[] = dossier?.clause_evaluations ?? [];
@@ -255,7 +258,7 @@ function DecisionBanner({ data }: { data: any }) {
       (c: any) => c.verdict?.toUpperCase() === "FAIL"
     );
     if (dossier?.verdict_reason) {
-      reason = dossier.verdict_reason;
+      reason = stripVerdictPrefix(dossier.verdict_reason);
     } else if (failedEvals.length > 0) {
       const explanations = failedEvals.map((c: any) => {
         const name = c.clause_short_name || c.clause_reference;
@@ -265,7 +268,7 @@ function DecisionBanner({ data }: { data: any }) {
       reason = explanations.join(". ") + ".";
     }
   } else if (dossier?.verdict_reason) {
-    reason = dossier.verdict_reason;
+    reason = stripVerdictPrefix(dossier.verdict_reason);
   }
 
   // For non-denied claims
@@ -298,9 +301,14 @@ function DecisionBanner({ data }: { data: any }) {
             <VerdictIcon className={cn("h-7 w-7", config.textColor)} />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className={cn("text-xl font-bold", config.textColor)}>
-              {config.label}
-            </h2>
+            <div className="flex items-baseline gap-3">
+              <h2 className={cn("text-xl font-bold", config.textColor)}>
+                {config.label}
+              </h2>
+              <span className="text-lg font-semibold tabular-nums tracking-wide text-foreground/90 font-mono">
+                #{claimId}
+              </span>
+            </div>
             <p className="text-sm text-muted-foreground mt-1">{reason}</p>
           </div>
           {confidence != null && (
@@ -460,16 +468,27 @@ function CostBreakdownTab({ data }: { data: any }) {
   const totalClaimed = Object.values(byType).reduce((s, v) => s + v.claimed, 0);
   const totalCovered = isDenied ? 0 : Object.values(byType).reduce((s, v) => s + v.covered, 0);
   const vatRate = sp?.vat_rate_pct ?? 0;
+  const maxCoverage: number | null = sp?.max_coverage ?? null;
+  let afterCap: number;
+  let capApplied: boolean;
   let vatAmount: number;
   let excess: number;
   let payable: number;
   if (hasOverrides && !isDenied) {
-    vatAmount = totalCovered * (vatRate / 100);
+    // Apply coverage rate
+    const rateAdjusted = coveragePct != null ? totalCovered * (coveragePct / 100) : totalCovered;
+    // Apply max coverage cap
+    capApplied = maxCoverage != null && rateAdjusted > maxCoverage;
+    afterCap = capApplied ? maxCoverage! : rateAdjusted;
+    vatAmount = afterCap * (vatRate / 100);
+    const subtotalWithVat = afterCap + vatAmount;
     const deductPct = sp?.deductible_percent ?? 0;
     const deductMin = sp?.deductible_minimum ?? 0;
-    excess = totalCovered > 0 ? Math.max(totalCovered * (deductPct / 100), deductMin) : 0;
-    payable = Math.max(0, totalCovered + vatAmount - excess);
+    excess = subtotalWithVat > 0 ? Math.max(subtotalWithVat * (deductPct / 100), deductMin) : 0;
+    payable = Math.max(0, subtotalWithVat - excess);
   } else {
+    capApplied = sp?.max_coverage_applied ?? false;
+    afterCap = sp?.capped_amount ?? totalCovered;
     vatAmount = sp?.vat_amount ?? 0;
     excess = isDenied ? 0 : (sp?.deductible_amount ?? 0);
     payable = isDenied ? 0 : (sp?.final_payout ?? 0);
@@ -521,16 +540,16 @@ function CostBreakdownTab({ data }: { data: any }) {
                         isOpen && "rotate-90"
                       )} />
                     </td>
-                    <td className="px-3 py-2 text-foreground font-medium">
+                    <td className="px-3 py-2 text-[13px] text-foreground font-medium">
                       {typeLabel[type] || type}
                       <span className="ml-1.5 text-[11px] text-muted-foreground font-normal">
                         ({group.items.length})
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    <td className="px-3 py-2 text-right tabular-nums text-[13px] text-muted-foreground">
                       {fmt(group.claimed)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-foreground">
+                    <td className="px-3 py-2 text-right tabular-nums text-[13px] font-semibold text-foreground">
                       {fmt(group.covered)}
                     </td>
                   </tr>
@@ -648,11 +667,11 @@ function CostBreakdownTab({ data }: { data: any }) {
             })}
             <tr className="border-t-2 border-border bg-muted/30">
               <td />
-              <td className="px-3 py-2 font-bold text-foreground">Total</td>
-              <td className="px-3 py-2 text-right tabular-nums font-bold text-muted-foreground">
+              <td className="px-3 py-2.5 text-[14px] font-bold text-foreground">Total</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-[14px] font-bold text-muted-foreground">
                 {fmt(totalClaimed)}
               </td>
-              <td className="px-3 py-2 text-right tabular-nums font-bold text-foreground">
+              <td className="px-3 py-2.5 text-right tabular-nums text-[14px] font-bold text-foreground">
                 {fmt(totalCovered)}
               </td>
             </tr>
@@ -691,6 +710,16 @@ function CostBreakdownTab({ data }: { data: any }) {
             )}
             <span className="text-muted-foreground">Net (covered)</span>
             <span className="text-right tabular-nums">{fmt(totalCovered)}</span>
+            {capApplied && maxCoverage != null && (
+              <>
+                <span className="text-muted-foreground">
+                  Max coverage cap
+                </span>
+                <span className="text-right tabular-nums font-medium">
+                  {fmt(maxCoverage)}
+                </span>
+              </>
+            )}
             {vatRate > 0 && (
               <>
                 <span className="text-muted-foreground">
@@ -708,10 +737,10 @@ function CostBreakdownTab({ data }: { data: any }) {
               {sp?.deductible_percent ? ")" : ""}
             </span>
             <span className="text-right tabular-nums">-{fmt(excess)}</span>
-            <span className="font-bold text-foreground border-t border-border pt-1 mt-1">
+            <span className="text-sm font-bold text-foreground border-t border-border pt-1.5 mt-1">
               Payable
             </span>
-            <span className="font-bold text-foreground text-right tabular-nums border-t border-border pt-1 mt-1">
+            <span className="text-sm font-bold text-foreground text-right tabular-nums border-t border-border pt-1.5 mt-1">
               {fmt(payable)}
             </span>
           </div>
@@ -783,35 +812,7 @@ function CoverageChecksTab({
 
   return (
     <div className="space-y-4">
-      {/* Summary bar */}
-      <div className="flex items-center gap-6 text-sm">
-        {verified.length > 0 && (
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-muted-foreground">
-              {verified.length} verified
-            </span>
-          </span>
-        )}
-        {needsReview.length > 0 && (
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-            <span className="text-muted-foreground">
-              {needsReview.length} needs review
-            </span>
-          </span>
-        )}
-        {issues.length > 0 && (
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-muted-foreground">
-              {issues.length} issue{issues.length !== 1 ? "s" : ""}
-            </span>
-          </span>
-        )}
-      </div>
-
-      {/* Section: Needs Review (amber) */}
+      {/* Section: Assumptions (amber) */}
       {needsReview.length > 0 && (
         <div className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
           <div
@@ -826,24 +827,31 @@ function CoverageChecksTab({
               )}
               <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                Needs Review ({needsReview.length})
+                Assumptions
               </span>
             </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onReEvaluate();
-              }}
-              disabled={evaluating}
-              className={cn(
-                "px-3 py-1 text-xs font-medium rounded-md transition-colors",
-                evaluating
-                  ? "bg-muted text-muted-foreground cursor-not-allowed"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+            <span className="flex items-center gap-2">
+              {data.dossier?.version != null && (
+                <span className="text-xs text-muted-foreground/60 tabular-nums">
+                  v{data.dossier.version}
+                </span>
               )}
-            >
-              {evaluating ? "Re-evaluating..." : "Re-evaluate"}
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReEvaluate();
+                }}
+                disabled={evaluating}
+                className={cn(
+                  "px-3 py-1 text-xs font-medium rounded-md transition-colors",
+                  evaluating
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                )}
+              >
+                {evaluating ? "Re-evaluating..." : "Re-evaluate"}
+              </button>
+            </span>
           </div>
           {openSections["needs-review"] && (
             <div className="px-4 py-3 space-y-2 border-t border-amber-200 dark:border-amber-800">
@@ -851,60 +859,40 @@ function CoverageChecksTab({
                 const ref = clause.clause_reference;
                 const currentValue = assumptions[ref] ?? clause.assumption_used;
                 const question = clauseToQuestion(clause, assumptionQuestions);
-                const hasDetail = clause.reason || clause.clause_short_name;
+                const detail = clause.reason?.replace(/\s*\(assumed\)\.?/gi, "").trim() || null;
                 return (
-                  <div key={ref}>
-                    <div className="flex items-center justify-between gap-3">
+                  <div key={ref} className="group/row relative flex items-center justify-between gap-3">
+                    <span className="flex-1 min-w-0 text-sm text-foreground truncate">
+                      <span className="font-mono text-xs text-muted-foreground mr-1.5">{ref}</span>
+                      {question}
+                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <button
-                        onClick={() => hasDetail && toggleItem(ref)}
+                        onClick={() => onToggle(ref, true)}
                         className={cn(
-                          "flex-1 min-w-0 text-left truncate",
-                          hasDetail && "cursor-pointer"
+                          "px-3 py-1 text-xs rounded-md font-medium transition-colors",
+                          currentValue === true
+                            ? "bg-green-600 text-white"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
                         )}
                       >
-                        <span className="text-sm text-foreground">
-                          <span className="font-mono text-xs text-muted-foreground mr-1.5">{ref}</span>
-                          {question}
-                        </span>
+                        YES
                       </button>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => onToggle(ref, true)}
-                          className={cn(
-                            "px-3 py-1 text-xs rounded-md font-medium transition-colors",
-                            currentValue === true
-                              ? "bg-green-600 text-white"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          )}
-                        >
-                          YES
-                        </button>
-                        <button
-                          onClick={() => onToggle(ref, false)}
-                          className={cn(
-                            "px-3 py-1 text-xs rounded-md font-medium transition-colors",
-                            currentValue === false
-                              ? "bg-red-600 text-white"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          )}
-                        >
-                          NO
-                        </button>
-                      </div>
-                    </div>
-                    {hasDetail && (
-                      <div
-                        className="grid transition-[grid-template-rows] duration-200 ease-out"
-                        style={{ gridTemplateRows: expandedItem === ref ? "1fr" : "0fr" }}
+                      <button
+                        onClick={() => onToggle(ref, false)}
+                        className={cn(
+                          "px-3 py-1 text-xs rounded-md font-medium transition-colors",
+                          currentValue === false
+                            ? "bg-red-600 text-white"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        )}
                       >
-                        <div className="overflow-hidden">
-                          <div className="pt-1 pb-0.5 pl-[calc(0.375rem+1ch)] text-xs text-muted-foreground space-y-0.5">
-                            {clause.clause_short_name && (
-                              <p>{clause.clause_short_name}</p>
-                            )}
-                            {clause.reason && <p>{clause.reason}</p>}
-                          </div>
-                        </div>
+                        NO
+                      </button>
+                    </div>
+                    {detail && (
+                      <div className="pointer-events-none absolute right-0 top-full z-20 mt-1 max-w-xs rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md border border-border opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                        {detail}
                       </div>
                     )}
                   </div>
@@ -1001,32 +989,17 @@ function CoverageChecksTab({
           {openSections["verified"] && (
             <div className="px-4 py-3 space-y-0.5 border-t border-green-200 dark:border-green-800">
               {verified.map((clause: any, idx: number) => {
-                const vKey = `v-${clause.clause_reference || idx}`;
+                const detail = clause.reason?.replace(/\s*\(assumed\)\.?/gi, "").trim() || null;
                 return (
-                  <div key={idx}>
-                    <button
-                      onClick={() => clause.reason && toggleItem(vKey)}
-                      className={cn(
-                        "flex items-center gap-2 py-0.5 w-full text-left",
-                        clause.reason && "cursor-pointer"
-                      )}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                      <span className="text-sm text-foreground">
-                        <span className="font-mono text-xs text-muted-foreground mr-1.5">{clause.clause_reference}</span>
-                        {clause.clause_short_name || clause.clause_reference}
-                      </span>
-                    </button>
-                    {clause.reason && (
-                      <div
-                        className="grid transition-[grid-template-rows] duration-200 ease-out"
-                        style={{ gridTemplateRows: expandedItem === vKey ? "1fr" : "0fr" }}
-                      >
-                        <div className="overflow-hidden">
-                          <p className="text-xs text-muted-foreground pl-[22px] pb-1">
-                            {clause.reason}
-                          </p>
-                        </div>
+                  <div key={idx} className="group/row relative flex items-center gap-2 py-0.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    <span className="text-sm text-foreground">
+                      <span className="font-mono text-xs text-muted-foreground mr-1.5">{clause.clause_reference}</span>
+                      {clause.clause_short_name || clause.clause_reference}
+                    </span>
+                    {detail && (
+                      <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 max-w-sm rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md border border-border opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                        {detail}
                       </div>
                     )}
                   </div>
@@ -1111,9 +1084,11 @@ function DocumentsTab({
 function ClaimDetail({
   claimId,
   onViewSource,
+  onDossierUpdate,
 }: {
   claimId: string;
   onViewSource: (evidence: EvidenceLocation) => void;
+  onDossierUpdate?: (claimId: string, data: any) => void;
 }) {
   const [data, setData] = useState<any>(null);
   const [documents, setDocuments] = useState<DocSummary[]>([]);
@@ -1167,7 +1142,12 @@ function ClaimDetail({
       setError(null);
       const newDossier = await evaluateDecision(claimId, assumptions);
       // Update dossier in-place — avoids full reload (spinner + assumption reset)
-      setData((prev: any) => prev ? { ...prev, dossier: newDossier } : prev);
+      setData((prev: any) => {
+        const updated = prev ? { ...prev, dossier: newDossier } : prev;
+        // Propagate to parent so enrichment cache + table row update
+        if (updated && onDossierUpdate) onDossierUpdate(claimId, updated);
+        return updated;
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to re-evaluate decision"
@@ -1175,7 +1155,7 @@ function ClaimDetail({
     } finally {
       setEvaluating(false);
     }
-  }, [claimId, assumptions]);
+  }, [claimId, assumptions, onDossierUpdate]);
 
   if (loading) {
     return (
@@ -1230,7 +1210,7 @@ function ClaimDetail({
   return (
     <div className="space-y-4">
       {/* Decision banner */}
-      <DecisionBanner data={data} />
+      <DecisionBanner data={data} claimId={claimId} />
 
       {/* Tabs */}
       <div className="border-b border-border">
@@ -1378,9 +1358,12 @@ function buildEnrichment(wb: any): WorkbenchEnrichment {
   const confidence =
     rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
 
+  const stripVerdictPrefix = (s: string) =>
+    s.replace(/^Claim\s+(approved|denied)\.?\s*/i, "");
+
   let rationale: string | null = null;
   if (dossier?.verdict_reason) {
-    rationale = dossier.verdict_reason;
+    rationale = stripVerdictPrefix(dossier.verdict_reason);
   } else if (verdict === "DENY" && dossier?.failed_clauses?.length > 0) {
     rationale = dossier.failed_clauses
       .map((c: any) => c.clause_reference || c)
@@ -1610,6 +1593,14 @@ export function ClaimsWorkbenchPage() {
     setExpandedId((prev) => (prev === claimId ? null : claimId));
   }, []);
 
+  // Re-sync enrichment cache when dossier is re-evaluated
+  const handleDossierUpdate = useCallback((claimId: string, wb: any) => {
+    setEnrichmentCache((prev) => ({
+      ...prev,
+      [claimId]: buildEnrichment(wb),
+    }));
+  }, []);
+
   // View source handler — opens document slide panel
   const handleViewSource = useCallback(
     (claimId: string, evidence: EvidenceLocation) => {
@@ -1727,6 +1718,7 @@ export function ClaimsWorkbenchPage() {
                       onViewSource={(ev) =>
                         handleViewSource(claim.claim_id, ev)
                       }
+                      onDossierUpdate={handleDossierUpdate}
                     />
                   );
                 })}
@@ -1770,6 +1762,7 @@ function ClaimRow({
   totalCols,
   onToggle,
   onViewSource,
+  onDossierUpdate,
 }: {
   claim: DashboardClaim;
   effective: EffectiveValues;
@@ -1777,6 +1770,7 @@ function ClaimRow({
   totalCols: number;
   onToggle: () => void;
   onViewSource: (evidence: EvidenceLocation) => void;
+  onDossierUpdate?: (claimId: string, data: any) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -1892,6 +1886,7 @@ function ClaimRow({
               <ClaimDetail
                 claimId={claim.claim_id}
                 onViewSource={onViewSource}
+                onDossierUpdate={onDossierUpdate}
               />
             </div>
           </td>

@@ -238,6 +238,10 @@ class DecisionDossierService:
                 assumptions=assumptions,
             )
 
+            # Convert Pydantic model to dict if needed
+            if hasattr(dossier, "model_dump"):
+                dossier = dossier.model_dump()
+
             # Determine next version
             existing = self._find_dossier_files(claim_folder, claim_run_id)
             max_version = 0
@@ -280,6 +284,81 @@ class DecisionDossierService:
         except Exception as e:
             logger.error(f"Failed to get clause registry: {e}")
             return []
+
+    def list_claims_with_dossiers(self) -> List[str]:
+        """Return claim IDs that have at least one decision dossier file.
+
+        Scans all claim directories for decision_dossier_v*.json in their
+        latest claim run.
+        """
+        result = []
+        if not self.claims_dir.exists():
+            return result
+
+        for claim_folder in sorted(self.claims_dir.iterdir()):
+            if not claim_folder.is_dir():
+                continue
+            claim_run_id = self._get_latest_claim_run_id(claim_folder)
+            if not claim_run_id:
+                continue
+            run_dir = claim_folder / "claim_runs" / claim_run_id
+            dossier_files = list(run_dir.glob("decision_dossier_v*.json"))
+            if dossier_files:
+                result.append(claim_folder.name)
+
+        return result
+
+    def get_workbench_data(
+        self, claim_id: str, claim_run_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Return aggregated data for the Claims Workbench view.
+
+        Bundles claim facts, screening, coverage analysis, and decision
+        dossier into a single response for the frontend.
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            return None
+
+        if not claim_run_id:
+            claim_run_id = self._get_latest_claim_run_id(claim_folder)
+        if not claim_run_id:
+            return None
+
+        run_dir = claim_folder / "claim_runs" / claim_run_id
+
+        facts = self._load_json(run_dir / "claim_facts.json")
+        screening = self._load_json(run_dir / "screening.json")
+        coverage = self._load_json(run_dir / "coverage_analysis.json")
+        assessment = self._load_json(run_dir / "assessment.json")
+
+        # Get latest dossier
+        dossier_files = self._find_dossier_files(claim_folder, claim_run_id)
+        dossier = None
+        if dossier_files:
+            dossier = self._load_json(dossier_files[-1])
+
+        # List documents
+        docs_dir = claim_folder / "docs"
+        documents = []
+        if docs_dir.exists():
+            for f in sorted(docs_dir.iterdir()):
+                if f.is_file():
+                    documents.append({
+                        "filename": f.name,
+                        "size_kb": round(f.stat().st_size / 1024, 1),
+                    })
+
+        return {
+            "claim_id": claim_id,
+            "claim_run_id": claim_run_id,
+            "facts": facts,
+            "screening": screening,
+            "coverage": coverage,
+            "assessment": assessment,
+            "dossier": dossier,
+            "documents": documents,
+        }
 
     @staticmethod
     def _load_json(path: Path) -> Optional[Dict[str, Any]]:

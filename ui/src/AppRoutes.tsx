@@ -27,7 +27,8 @@ import {
 } from "./pages/compliance";
 import { AssessmentConsolePage, TriageQueuePage } from "./components/assessment";
 import { CostEstimatesReviewPage } from "./pages/CostEstimatesReviewPage";
-import { DecisionDossierPage } from "./pages/DecisionDossierPage";
+import { ClaimsWorkbenchPage } from "./pages/ClaimsWorkbenchPage";
+import { ClaimIntakePage } from "./pages/ClaimIntakePage";
 import { useBatch } from "./context/BatchContext";
 import { useClaims } from "./context/ClaimsContext";
 
@@ -245,8 +246,11 @@ export function AppRoutes() {
       {/* Cost Estimates Review page */}
       <Route path="/cost-estimates" element={<CostEstimatesReviewPage />} />
 
-      {/* Decision Dossier page */}
-      <Route path="/decision" element={<DecisionDossierPage />} />
+      {/* Claims Workbench (replaces Decision Dossier) */}
+      <Route path="/decision" element={<ClaimsWorkbenchPage />} />
+
+      {/* Claim Intake demo */}
+      <Route path="/claim-intake" element={<ClaimIntakePage />} />
 
       {/* Redirects for backwards compatibility */}
       <Route path="/" element={<Navigate to="/batches" replace />} />

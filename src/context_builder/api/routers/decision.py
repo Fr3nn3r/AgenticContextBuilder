@@ -114,6 +114,35 @@ def evaluate_decision(
     return dossier
 
 
+@router.get("/api/claims/{claim_id}/workbench")
+def get_workbench_data(
+    claim_id: str,
+    claim_run_id: Optional[str] = Query(None, description="Claim run ID (uses latest if omitted)"),
+) -> Dict[str, Any]:
+    """Get aggregated data for the Claims Workbench view.
+
+    Returns claim facts, screening, coverage analysis, assessment, and
+    decision dossier in a single response.
+    """
+    service = get_decision_dossier_service()
+    data = service.get_workbench_data(claim_id, claim_run_id)
+
+    if data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No data found for claim {claim_id}",
+        )
+
+    return data
+
+
+@router.get("/api/claims-with-dossiers")
+def list_claims_with_dossiers() -> List[str]:
+    """Return claim IDs that have at least one decision dossier."""
+    service = get_decision_dossier_service()
+    return service.list_claims_with_dossiers()
+
+
 @router.get("/api/denial-clauses")
 def get_denial_clauses() -> List[Dict[str, Any]]:
     """Get the denial clause registry for the current workspace.
