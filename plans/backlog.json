@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": 1,
     "created": "2026-02-05",
-    "last_modified": "2026-02-09T15:30:00Z",
+    "last_modified": "2026-02-09T18:00:00Z",
     "archive_after_days": 14
   },
   "items": [
@@ -40,16 +40,16 @@
       "id": "REFACTOR-03",
       "title": "Review and redesign CLI for consistency and usability",
       "description": "Complete review of the CLI (context_builder.cli). Current experience feels inconsistent and amateurish — command structure, argument naming, help text, output formatting, and error messages need to be audited and redesigned for a natural, professional, and consistent user experience. Includes: (1) Audit all existing commands and subcommands for naming consistency, (2) Standardize help text and usage patterns, (3) Improve output formatting (progress indicators, colors, tables), (4) Consistent error handling and user-friendly error messages, (5) Review argument/flag naming conventions, (6) Ensure --help is comprehensive and well-structured at every level.",
-      "status": "doing",
+      "status": "done",
       "priority": "P3",
       "category": "refactoring",
       "effort": "medium",
-      "plan_file": null,
+      "plan_file": "plans/agile-shimmying-quiche.md",
       "created": "2026-02-08T16:00:00Z",
       "started": "2026-02-09T12:10:00Z",
-      "completed": null,
-      "notes": "",
-      "tags": ["cli", "ux", "developer-experience"]
+      "completed": "2026-02-09T18:00:00Z",
+      "notes": "Replaced 2,844-line argparse monolith with Typer + Rich CLI package (9 command files). Commands flattened: index build->index, eval run->eval, coverage analyze->coverage, backfill-evidence->backfill, reconcile-eval->reconcile summary. Deprecated acquire removed. --json/--verbose/--quiet global flags. Rich progress bars replace tqdm. Commit 1fd9375.",
+      "tags": ["cli", "ux", "developer-experience", "typer", "rich"]
     },
     {
       "id": "FEAT-43",
