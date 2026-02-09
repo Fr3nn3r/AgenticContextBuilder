@@ -267,8 +267,9 @@ class TestCoverageAnalyzer:
         )
 
         summary = result.summary
-        # 100% coverage on 1000 = 1000 covered, 10% excess = 100, min 50 → excess 100
-        assert summary.excess_amount >= 50.0
+        # Payout (VAT, deductible) is now computed by the screener, not the analyzer
+        assert summary.excess_amount == 0.0
+        assert summary.total_payable == summary.total_covered_before_excess
 
     def test_metadata_tracking(self, analyzer, sample_line_items, covered_components):
         """Test that metadata is tracked correctly."""
@@ -1293,7 +1294,7 @@ class TestDeterminePrimaryRepair:
         assert result.is_covered is True
 
     def test_tier2_repair_context(self, analyzer):
-        """Tier 2: repair context primary component used when no covered items."""
+        """Tier 2: repair context used but is_covered overridden when no covered items."""
         from types import SimpleNamespace
         items = [
             self._make_item(
@@ -1311,7 +1312,8 @@ class TestDeterminePrimaryRepair:
         assert result.determination_method == "repair_context"
         assert result.component == "timing_chain"
         assert result.confidence == 0.80
-        assert result.is_covered is True
+        # Safety net: no covered line items → is_covered overridden to False
+        assert result.is_covered is False
 
     def test_fallback_none_when_no_tiers_match(self, analyzer):
         """Fallback: no covered items, no repair context → determination_method='none'."""
@@ -1414,6 +1416,260 @@ class TestDeterminePrimaryRepair:
         result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
         assert result.determination_method == "repair_context"
         assert result.component == "angle_gearbox"
+
+
+class TestRepairContextExclusionPatterns:
+    """Tests for _extract_repair_context exclusion pattern awareness (Fix 1)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config, nsa_rule_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+            rule_engine=RuleEngine(config=nsa_rule_config),
+        )
+
+    def test_keyword_skipped_when_exclusion_pattern_matches(self, analyzer):
+        """Repair context should not match 'culasse' in 'COUVRE CULASSE' (excluded)."""
+        import re
+        # Ensure exclusion patterns include couvre culasse
+        has_couvre = any(
+            p.search("COUVRE CULASSE")
+            for p in analyzer.rule_engine._exclusion_patterns
+        )
+        if not has_couvre:
+            # Add the pattern for test purposes if not in config
+            analyzer.rule_engine._exclusion_patterns.append(
+                re.compile(r"COUVRE.?CULASSE", re.IGNORECASE)
+            )
+        line_items = [
+            {
+                "item_type": "labor",
+                "description": "DEPOSE-POSE COUVRE CULASSE",
+                "total_price": 150.0,
+            },
+        ]
+        context = analyzer._extract_repair_context(line_items, {}, {})
+        # The keyword "culasse" should NOT match because COUVRE CULASSE is excluded
+        assert context.primary_component is None
+
+    def test_keyword_matches_when_no_exclusion_pattern(self, analyzer):
+        """Repair context should match 'culasse' in normal (non-excluded) descriptions."""
+        # Verify that "culasse" is a valid repair keyword
+        has_culasse_keyword = any(
+            "culasse" in kw
+            for kw in analyzer.component_config.repair_context_keywords
+        )
+        if not has_culasse_keyword:
+            pytest.skip("'culasse' not in repair_context_keywords")
+
+        line_items = [
+            {
+                "item_type": "labor",
+                "description": "Remplacement culasse moteur",
+                "total_price": 500.0,
+            },
+        ]
+        context = analyzer._extract_repair_context(line_items, {}, {})
+        assert context.primary_component is not None
+
+
+class TestDemoteLaborWithoutCoveredParts:
+    """Tests for _demote_labor_without_covered_parts (Fix 2)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+        )
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code="P001",
+            description="test part",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="timing_belt",
+            match_method=MatchMethod.KEYWORD,
+            match_confidence=0.90,
+            match_reasoning="Keyword match",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    def test_keyword_matched_labor_demoted_when_no_covered_parts(self, analyzer):
+        """Keyword-matched labor should be demoted when zero parts are covered."""
+        items = [
+            self._make_item(
+                description="Seal", item_type="parts",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                covered_amount=0.0, not_covered_amount=50.0,
+            ),
+            self._make_item(
+                description="Crankshaft pulley removal", item_type="labor",
+                match_method=MatchMethod.KEYWORD, total_price=80.0,
+                covered_amount=80.0, not_covered_amount=0.0,
+            ),
+        ]
+        result = analyzer._demote_labor_without_covered_parts(items)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        assert labor.exclusion_reason == "demoted_no_anchor"
+        assert labor.covered_amount == 0.0
+
+    def test_part_number_matched_labor_demoted_when_no_covered_parts(self, analyzer):
+        """Part-number-matched labor should be demoted when zero parts are covered."""
+        items = [
+            self._make_item(
+                description="Seal", item_type="parts",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                covered_amount=0.0, not_covered_amount=50.0,
+            ),
+            self._make_item(
+                description="Turbo installation", item_type="labor",
+                match_method=MatchMethod.PART_NUMBER, total_price=300.0,
+                covered_amount=300.0, not_covered_amount=0.0,
+            ),
+        ]
+        result = analyzer._demote_labor_without_covered_parts(items)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        assert labor.exclusion_reason == "demoted_no_anchor"
+
+    def test_llm_matched_labor_demoted_when_no_covered_parts(self, analyzer):
+        """LLM-matched labor should still be demoted (existing behavior preserved)."""
+        items = [
+            self._make_item(
+                description="Seal", item_type="parts",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                covered_amount=0.0, not_covered_amount=50.0,
+            ),
+            self._make_item(
+                description="Motor repair", item_type="labor",
+                match_method=MatchMethod.LLM, total_price=200.0,
+                covered_amount=200.0, not_covered_amount=0.0,
+            ),
+        ]
+        result = analyzer._demote_labor_without_covered_parts(items)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        assert labor.exclusion_reason == "demoted_no_anchor"
+
+    def test_labor_not_demoted_when_covered_parts_exist(self, analyzer):
+        """Labor should NOT be demoted when there are covered parts."""
+        items = [
+            self._make_item(
+                description="Turbocharger", item_type="parts",
+                total_price=1200.0, covered_amount=1200.0,
+            ),
+            self._make_item(
+                description="Turbo installation", item_type="labor",
+                match_method=MatchMethod.KEYWORD, total_price=300.0,
+                covered_amount=300.0,
+            ),
+        ]
+        result = analyzer._demote_labor_without_covered_parts(items)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 300.0
+
+
+class TestTier2SafetyNet:
+    """Tests for tier 2 safety net — is_covered cross-check (Fix 3)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+        )
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code="P001",
+            description="test part",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="timing_belt",
+            match_method=MatchMethod.KEYWORD,
+            match_confidence=0.90,
+            match_reasoning="Keyword match",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    def test_tier2_is_covered_overridden_when_no_covered_items(self, analyzer):
+        """Tier 2: is_covered=True overridden to False when zero items are covered."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
+                matched_component=None, covered_amount=0.0, not_covered_amount=100.0,
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="cylinder_head",
+            primary_category="engine",
+            source_description="Remplacement culasse",
+            is_covered=True,
+        )
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.component == "cylinder_head"
+        assert result.is_covered is False  # Overridden by safety net
+
+    def test_tier2_is_covered_preserved_when_covered_items_exist(self, analyzer):
+        """Tier 2: is_covered=True preserved when covered items exist."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Covered part", coverage_status=CoverageStatus.COVERED,
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="timing_chain",
+            primary_category="engine",
+            source_description="Steuerkette ersetzen",
+            is_covered=True,
+        )
+        # Note: tier 1a will normally pick up the covered item first, so
+        # we need to ensure nothing matches tier 1a by removing matched_component
+        items[0].matched_component = None
+        # Tier 1a/1b skip items without matched_component for COVERED
+        # Actually tier 1a checks coverage_status == COVERED + item_type parts
+        # Let's set item_type to something that won't match tier 1a
+        items[0].item_type = "fee"
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.is_covered is True  # Preserved — covered item exists
+
+    def test_tier2_not_covered_passes_through(self, analyzer):
+        """Tier 2: is_covered=False passes through without modification."""
+        from types import SimpleNamespace
+        items = [
+            self._make_item(
+                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
+                matched_component=None, covered_amount=0.0, not_covered_amount=100.0,
+            ),
+        ]
+        repair_ctx = SimpleNamespace(
+            primary_component="control_arm",
+            primary_category="suspension",
+            source_description="Querlenker ersetzen",
+            is_covered=False,
+        )
+        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
+        assert result.determination_method == "repair_context"
+        assert result.is_covered is False
 
 
 class TestNormalizeCoverageScale:

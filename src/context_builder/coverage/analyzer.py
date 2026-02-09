@@ -423,8 +423,19 @@ class CoverageAnalyzer:
                 continue
 
             # Check for known repair keywords
+            desc_upper = item.get("description", "").upper()
             for keyword, (component, category) in self.component_config.repair_context_keywords.items():
                 if keyword in description:
+                    # Check if description matches an exclusion pattern — if so,
+                    # the item is excluded and the keyword match is a false positive
+                    # (e.g. "culasse" in "couvre culasse")
+                    if any(p.search(desc_upper) for p in self.rule_engine._exclusion_patterns):
+                        logger.info(
+                            "Repair context: skipping keyword '%s' in '%s' — "
+                            "matches exclusion pattern",
+                            keyword, description[:60],
+                        )
+                        continue
                     detected.append(component)
 
                     # Use the first detected component as primary
@@ -1091,6 +1102,8 @@ class CoverageAnalyzer:
     ) -> CoverageSummary:
         """Calculate summary statistics from analyzed line items.
 
+        Payout (VAT, deductible) is computed by the screener, not here.
+
         Args:
             line_items: List of analyzed line items
             coverage_percent: Policy coverage percentage
@@ -1150,16 +1163,6 @@ class CoverageAnalyzer:
                 total_not_covered += item.total_price
                 items_review_needed += 1
 
-        # Calculate excess
-        excess_amount = 0.0
-        if excess_percent is not None and total_covered_before_excess > 0:
-            excess_amount = total_covered_before_excess * (excess_percent / 100.0)
-            if excess_minimum is not None:
-                excess_amount = max(excess_amount, excess_minimum)
-
-        # Final payable
-        total_payable = max(0.0, total_covered_before_excess - excess_amount)
-
         return CoverageSummary(
             total_claimed=total_claimed,
             total_covered_before_excess=total_covered_before_excess,
@@ -1167,8 +1170,9 @@ class CoverageAnalyzer:
             parts_covered_gross=parts_covered_gross,
             labor_covered_gross=labor_covered_gross,
             total_not_covered=total_not_covered,
-            excess_amount=excess_amount,
-            total_payable=total_payable,
+            vat_amount=0.0,
+            excess_amount=0.0,
+            total_payable=total_covered_before_excess,
             items_covered=items_covered,
             items_not_covered=items_not_covered,
             items_review_needed=items_review_needed,
@@ -1507,8 +1511,9 @@ class CoverageAnalyzer:
                 continue
             if item.coverage_status != CoverageStatus.COVERED:
                 continue
-            if item.match_method != MatchMethod.LLM:
-                continue
+            # When zero parts are covered, ALL labor is access work —
+            # regardless of how it was matched. Labor requires a covered
+            # parts anchor.
 
             original_category = item.coverage_category
             item.coverage_status = CoverageStatus.NOT_COVERED
@@ -1752,18 +1757,33 @@ class CoverageAnalyzer:
 
         # Tier 2: repair context (works even if component is not covered)
         if repair_context and repair_context.primary_component:
+            # Cross-check: if no line items are covered, the repair context's
+            # coverage determination was wrong (likely a false keyword match).
+            effective_covered = repair_context.is_covered
+            if effective_covered:
+                any_covered = any(
+                    item.coverage_status == CoverageStatus.COVERED
+                    for item in all_items
+                )
+                if not any_covered:
+                    logger.warning(
+                        "Primary repair (tier 2): overriding is_covered=True→False "
+                        "for claim %s — no covered line items", claim_id,
+                    )
+                    effective_covered = False
+
             logger.info(
                 "Primary repair (tier 2): '%s' (%s, covered=%s) from repair context for claim %s",
                 repair_context.primary_component,
                 repair_context.primary_category,
-                repair_context.is_covered,
+                effective_covered,
                 claim_id,
             )
             return PrimaryRepairResult(
                 component=repair_context.primary_component,
                 category=repair_context.primary_category,
                 description=repair_context.source_description,
-                is_covered=repair_context.is_covered,
+                is_covered=effective_covered,
                 confidence=0.80,
                 determination_method="repair_context",
             )
