@@ -91,9 +91,15 @@ python -m context_builder.cli pipeline <input> --doc-types list          # List 
 python -m context_builder.cli pipeline <input> --doc-types fnol_form,police_report  # Filter doc types
 
 # Other CLI commands
-python -m context_builder.cli index build                     # Build registry indexes
-python -m context_builder.cli aggregate --claim-id CLM-001    # Aggregate facts for a claim
-python -m context_builder.cli eval run --run-id <run_id>      # Evaluate a run
+python -m context_builder.cli index                            # Build registry indexes
+python -m context_builder.cli eval --run-id <run_id>           # Evaluate a run
+python -m context_builder.cli assess --claim-id CLM-001        # Assess a single claim
+python -m context_builder.cli reconcile --claim-id CLM-001     # Reconcile facts for a claim
+python -m context_builder.cli reconcile summary                # Aggregate reconciliation reports
+python -m context_builder.cli coverage --claim-id CLM-001      # Analyze coverage
+python -m context_builder.cli backfill                         # Backfill evidence offsets
+python -m context_builder.cli workspace list                   # List workspaces
+python -m context_builder.cli export                           # Export to Excel
 ```
 
 ## Custom Skills
@@ -156,6 +162,27 @@ The core product (`src/context_builder/`) must remain **customer-agnostic**. Cus
 - Adding customer-specific vocabulary or business rules to `src/`
 
 **Full guidelines:** `docs/DEVELOPER_GUIDELINES.md`
+
+### Single Source of Truth for Computed Values
+
+Derived values (payout amounts, scores, compliance verdicts) must be computed in **exactly one place**. Every other layer reads and displays the result — never recomputes it.
+
+**Red flags — you're about to create a duplicate computation:**
+- Frontend code doing arithmetic on raw fields to produce a value the backend already computes
+- A second backend module computing the same derived value with its own formula
+- Inline math in a UI component that mirrors a service function
+- "I'll just recompute it here because it's simpler than threading the value through"
+
+**Rule:** If a value exists in the API response, display it. If it doesn't, add it to the API response from the authoritative source — don't recompute it client-side.
+
+**Canonical owners:**
+| Computed value | Owner | Consumers (read-only) |
+|---------------|-------|-----------------------|
+| Payout (VAT, deductible, final amount) | `screener._calculate_payout()` | Analyzer summary, assessment, frontend, CLI |
+| Coverage determination (covered/not) | `coverage/analyzer.py` | Screener, frontend, decision engine |
+| Claim verdict (APPROVE/DENY) | Decision engine | Assessment, frontend |
+
+See `docs/FIX-payout-single-source-of-truth.md` for a case study of what happens when this rule is violated.
 
 ## Versioning & Commits
 

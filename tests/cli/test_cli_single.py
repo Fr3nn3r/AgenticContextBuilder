@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
 import pytest
 
-from context_builder.cli import (
+from context_builder._cli_legacy import (
     process_file,
     save_single_result,
     main,
@@ -33,7 +33,7 @@ class TestCLISingleFileProcessing:
     @pytest.fixture
     def mock_factory(self, mock_ingestion):
         """Mock factory that returns our ingestion."""
-        with patch('context_builder.cli.IngestionFactory') as factory:
+        with patch('context_builder._cli_legacy.IngestionFactory') as factory:
             factory.create = Mock(return_value=mock_ingestion)
             yield factory
 
@@ -239,8 +239,8 @@ class TestCLIMainSingleFile:
     @pytest.fixture
     def mock_env(self):
         """Mock environment setup."""
-        with patch('context_builder.cli.load_dotenv'):
-            with patch('context_builder.cli.setup_signal_handlers'):
+        with patch('context_builder._cli_legacy._ensure_initialized'):
+            with patch('context_builder._cli_legacy.setup_signal_handlers'):
                 yield
 
     @pytest.fixture
@@ -252,7 +252,7 @@ class TestCLIMainSingleFile:
             "pages": [{"text": "content"}],
             "data": {"result": "ok"}
         })
-        with patch('context_builder.cli.IngestionFactory') as factory:
+        with patch('context_builder._cli_legacy.IngestionFactory') as factory:
             factory.create.return_value = mock
             yield mock
 
@@ -382,7 +382,7 @@ class TestCLIMainSingleFile:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = IngestionError("API failed")
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]

@@ -14,7 +14,7 @@ from context_builder.ingestion import (
     ConfigurationError,
     APIError
 )
-from context_builder.cli import get_supported_files, process_file, setup_argparser
+from context_builder._cli_legacy import get_supported_files, process_file, setup_argparser
 
 
 class TestFileDiscovery:

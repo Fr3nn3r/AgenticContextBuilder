@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
 
-from context_builder.cli import (
+from context_builder._cli_legacy import (
     setup_argparser,
     main,
     signal_handler,
@@ -117,8 +117,8 @@ class TestCLIConfiguration:
     @pytest.fixture
     def mock_env(self):
         """Mock environment."""
-        with patch('context_builder.cli.load_dotenv'):
-            with patch('context_builder.cli.setup_signal_handlers'):
+        with patch('context_builder._cli_legacy._ensure_initialized'):
+            with patch('context_builder._cli_legacy.setup_signal_handlers'):
                 yield
 
     def test_config_build_from_args_all_values(self):
@@ -193,8 +193,8 @@ class TestCLIConfiguration:
         test_file.touch()
 
         # Test verbose
-        with patch('context_builder.cli.process_file', return_value={}):
-            with patch('context_builder.cli.save_single_result'):
+        with patch('context_builder._cli_legacy.process_file', return_value={}):
+            with patch('context_builder._cli_legacy.save_single_result'):
                 test_args = ['cli.py', 'acquire', str(test_file), '--verbose']
                 monkeypatch.setattr(sys, 'argv', test_args)
 
@@ -204,8 +204,8 @@ class TestCLIConfiguration:
                 assert logging.getLogger().level == logging.DEBUG
 
         # Test quiet
-        with patch('context_builder.cli.process_file', return_value={}):
-            with patch('context_builder.cli.save_single_result'):
+        with patch('context_builder._cli_legacy.process_file', return_value={}):
+            with patch('context_builder._cli_legacy.save_single_result'):
                 test_args = ['cli.py', 'acquire', str(test_file), '--quiet']
                 monkeypatch.setattr(sys, 'argv', test_args)
 
@@ -221,8 +221,8 @@ class TestCLIErrorHandling:
     @pytest.fixture
     def mock_env(self):
         """Mock environment."""
-        with patch('context_builder.cli.load_dotenv'):
-            with patch('context_builder.cli.setup_signal_handlers'):
+        with patch('context_builder._cli_legacy._ensure_initialized'):
+            with patch('context_builder._cli_legacy.setup_signal_handlers'):
                 yield
 
     def test_file_not_found(self, mock_env, monkeypatch, caplog, capsys):
@@ -262,7 +262,7 @@ class TestCLIErrorHandling:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = IngestionError("Processing failed")
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
@@ -283,7 +283,7 @@ class TestCLIErrorHandling:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = ConfigurationError("API key missing")
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
@@ -304,7 +304,7 @@ class TestCLIErrorHandling:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = APIError("Rate limit exceeded")
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
@@ -325,7 +325,7 @@ class TestCLIErrorHandling:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = RuntimeError("Unexpected error")
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
@@ -346,7 +346,7 @@ class TestCLIErrorHandling:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        with patch('context_builder.cli.process_file') as mock_process:
+        with patch('context_builder._cli_legacy.process_file') as mock_process:
             mock_process.side_effect = KeyboardInterrupt()
 
             test_args = ['cli.py', 'acquire', str(test_file), '-o', str(output_dir)]
@@ -409,8 +409,8 @@ class TestSessionTracking:
     @pytest.fixture
     def mock_env(self):
         """Mock environment."""
-        with patch('context_builder.cli.load_dotenv'):
-            with patch('context_builder.cli.setup_signal_handlers'):
+        with patch('context_builder._cli_legacy._ensure_initialized'):
+            with patch('context_builder._cli_legacy.setup_signal_handlers'):
                 yield
 
     def test_session_id_generated(self, mock_env, tmp_path, monkeypatch, capsys):
@@ -418,8 +418,8 @@ class TestSessionTracking:
         test_file = tmp_path / "test.jpg"
         test_file.touch()
 
-        with patch('context_builder.cli.process_file', return_value={}):
-            with patch('context_builder.cli.save_single_result'):
+        with patch('context_builder._cli_legacy.process_file', return_value={}):
+            with patch('context_builder._cli_legacy.save_single_result'):
                 test_args = ['cli.py', 'acquire', str(test_file)]
                 monkeypatch.setattr(sys, 'argv', test_args)
 
@@ -443,8 +443,8 @@ class TestSessionTracking:
             captured_session_id = session_id
             return Path("dummy.json")
 
-        with patch('context_builder.cli.process_file', return_value={}):
-            with patch('context_builder.cli.save_single_result', side_effect=capture_session):
+        with patch('context_builder._cli_legacy.process_file', return_value={}):
+            with patch('context_builder._cli_legacy.save_single_result', side_effect=capture_session):
                 test_args = ['cli.py', 'acquire', str(test_file)]
                 monkeypatch.setattr(sys, 'argv', test_args)
 

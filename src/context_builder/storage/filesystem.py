@@ -77,7 +77,7 @@ class FileStorage:
             logger.warning(
                 f"Registry indexes not found at {self.registry_dir}. "
                 f"Falling back to filesystem scan for '{operation}'. "
-                f"Run 'python -m context_builder.cli index build' to create indexes."
+                f"Run 'python -m context_builder.cli index' to create indexes."
             )
             _warned_registry_paths.add(registry_key)
 

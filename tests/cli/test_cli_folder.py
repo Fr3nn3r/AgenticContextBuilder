@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
 
-from context_builder.cli import (
+from context_builder._cli_legacy import (
     get_supported_files,
     process_folder,
     main,
@@ -137,7 +137,7 @@ class TestProcessFolder:
     @pytest.fixture
     def mock_factory(self, mock_ingestion):
         """Mock factory."""
-        with patch('context_builder.cli.IngestionFactory') as factory:
+        with patch('context_builder._cli_legacy.IngestionFactory') as factory:
             factory.create = Mock(return_value=mock_ingestion)
             yield factory
 
@@ -280,8 +280,8 @@ class TestMainFolderProcessing:
     @pytest.fixture
     def mock_env(self):
         """Mock environment setup."""
-        with patch('context_builder.cli.load_dotenv'):
-            with patch('context_builder.cli.setup_signal_handlers'):
+        with patch('context_builder._cli_legacy._ensure_initialized'):
+            with patch('context_builder._cli_legacy.setup_signal_handlers'):
                 yield
 
     @pytest.fixture
@@ -289,7 +289,7 @@ class TestMainFolderProcessing:
         """Mock ingestion."""
         mock = Mock()
         mock.process = Mock(return_value={"file_name": "test", "data": {"result": "ok"}})
-        with patch('context_builder.cli.IngestionFactory') as factory:
+        with patch('context_builder._cli_legacy.IngestionFactory') as factory:
             factory.create.return_value = mock
             yield mock
 

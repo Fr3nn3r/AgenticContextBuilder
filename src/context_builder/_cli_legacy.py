@@ -2614,8 +2614,8 @@ def main():
                             print(f"     {yellow}Review Needed:{reset} {summary.items_review_needed} items")
                         if summary.coverage_percent is not None:
                             print(f"     Coverage %: {summary.coverage_percent}%")
-                        print(f"     Excess: CHF {summary.excess_amount:,.2f}")
-                        print(f"     Payable: CHF {summary.total_payable:,.2f}")
+                        print(f"     Covered (net): CHF {summary.total_covered_before_excess:,.2f}")
+                        print(f"     (Payout with VAT/deductible is calculated by the screener)")
                         print(f"     Claim Run: {result.claim_run_id}")
 
                 except CoverageAnalysisError as e:

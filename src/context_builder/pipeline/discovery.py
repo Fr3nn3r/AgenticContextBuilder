@@ -475,7 +475,7 @@ def discover_from_workspace(
     if not index_path.exists():
         raise FileNotFoundError(
             f"Registry index not found: {index_path}\n"
-            f"Run 'python -m context_builder.cli index build' first."
+            f"Run 'python -m context_builder.cli index' first."
         )
 
     # Read and filter index records
