@@ -3,13 +3,16 @@
 import asyncio
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from context_builder.api.services.upload import UploadService
+from context_builder.pipeline.event_collector import EventCollector
+from context_builder.pipeline.events import EventType, PipelineEvent
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,7 @@ class PipelineStatus(str, Enum):
 
     PENDING = "pending"
     RUNNING = "running"
+    ASSESSING = "assessing"
     COMPLETED = "completed"
     PARTIAL = "partial"  # Some docs succeeded, some failed
     FAILED = "failed"
@@ -65,6 +69,10 @@ class PipelineRun:
     prompt_config_id: Optional[str] = None
     force_overwrite: bool = False
     compute_metrics: bool = True
+    # Auto-assess: chain assessment after extraction
+    auto_assess: bool = False
+    # Parallel document processing (1 = sequential, default)
+    max_workers: int = 1
     # Tracking fields
     stage_timings: Dict[str, int] = field(default_factory=dict)  # stage -> ms
     reuse_counts: Dict[str, int] = field(default_factory=dict)   # stage -> count reused
@@ -116,6 +124,9 @@ class PipelineService:
         compute_metrics: bool = True,
         dry_run: bool = False,
         progress_callback: Optional[ProgressCallback] = None,
+        auto_assess: bool = False,
+        assessment_broadcast: Optional[Callable[[dict], Awaitable[None]]] = None,
+        max_workers: int = 1,
     ) -> str:
         """
         Start pipeline execution for pending claims.
@@ -129,6 +140,8 @@ class PipelineService:
             compute_metrics: Compute metrics.json at end
             dry_run: Preview only, no actual processing
             progress_callback: Optional callback for progress updates
+            auto_assess: If True, chain assessment after extraction completes
+            assessment_broadcast: Callback for assessment progress via WS
 
         Returns:
             Run ID for tracking
@@ -149,6 +162,8 @@ class PipelineService:
             prompt_config_id=prompt_config_id,
             force_overwrite=force_overwrite,
             compute_metrics=compute_metrics,
+            auto_assess=auto_assess,
+            max_workers=max_workers,
         )
 
         # Build initial doc list from pending claims
@@ -181,7 +196,10 @@ class PipelineService:
 
         # Start background task
         asyncio.create_task(
-            self._run_pipeline(run_id, claim_ids, model, progress_callback)
+            self._run_pipeline(
+                run_id, claim_ids, model, progress_callback,
+                assessment_broadcast=assessment_broadcast,
+            )
         )
 
         return run_id
@@ -192,16 +210,37 @@ class PipelineService:
         claim_ids: List[str],
         model: str,
         progress_callback: Optional[ProgressCallback],
+        assessment_broadcast: Optional[Callable[[dict], Awaitable[None]]] = None,
     ) -> None:
-        """Execute pipeline in background."""
+        """Execute pipeline in background using EventCollector for progress."""
         run = self.active_runs.get(run_id)
         if not run:
             return
 
         run.status = PipelineStatus.RUNNING
 
+        # Map stage names -> DocPhase for event processing
+        _stage_to_phase = {
+            "ingestion": DocPhase.INGESTING,
+            "classification": DocPhase.CLASSIFYING,
+            "extraction": DocPhase.EXTRACTING,
+        }
+        _failed_phase_map = {
+            "ingestion": DocPhase.INGESTING,
+            "classification": DocPhase.CLASSIFYING,
+            "extraction": DocPhase.EXTRACTING,
+        }
+
+        # Create a threading.Event for cancellation propagation into threads
+        cancel_event = threading.Event()
+        # Wire up asyncio cancel -> threading cancel
+        orig_cancel = self.cancel_events.get(run_id)
+        if orig_cancel:
+            # Check if already cancelled before we start
+            if orig_cancel.is_set():
+                cancel_event.set()
+
         try:
-            # Import pipeline components
             from context_builder.pipeline.discovery import discover_claims
             from context_builder.pipeline.run import process_claim
 
@@ -209,12 +248,13 @@ class PipelineService:
             input_paths: List[Path] = []
             for claim_id in claim_ids:
                 if self._is_cancelled(run_id):
+                    cancel_event.set()
                     break
                 input_path = self.upload_service.move_to_input(claim_id)
                 input_paths.append(input_path)
 
             if self._is_cancelled(run_id):
-                # Cleanup any claims already moved to input before cancellation
+                cancel_event.set()
                 for input_path in input_paths:
                     claim_id = input_path.name
                     self.upload_service.cleanup_staging(claim_id)
@@ -223,125 +263,87 @@ class PipelineService:
                 self._persist_run(run)
                 return
 
-            # Process each claim
             total_success = 0
             total_failed = 0
 
             for input_path in input_paths:
                 if self._is_cancelled(run_id):
+                    cancel_event.set()
                     break
 
                 claim_id = input_path.name
 
-                # Discover documents in this claim
                 claims = discover_claims(input_path)
                 if not claims:
                     logger.warning(f"No documents found in {input_path}")
                     continue
 
-                claim = claims[0]  # Should be one claim per input_path
+                claim = claims[0]
 
-                # Update doc IDs to match discovered documents
-                # The original doc_ids from upload may differ from discovered doc_ids
                 await self._update_doc_ids(run_id, claim_id, claim.documents, progress_callback)
 
-                # Get event loop for thread-safe callback scheduling
-                loop = asyncio.get_running_loop()
-
-                # Create progress callback that reports per-document completion
-                def make_doc_callback(claim_id: str):
-                    def callback(idx: int, total: int, filename: str):
-                        # Find the doc by filename and mark as done
-                        for key, doc in run.docs.items():
-                            if doc.claim_id == claim_id and doc.filename == filename:
-                                doc.phase = DocPhase.DONE
-                                if progress_callback:
-                                    # Thread-safe scheduling to main event loop
-                                    asyncio.run_coroutine_threadsafe(
-                                        self._async_callback(
-                                            progress_callback, run_id, doc.doc_id, DocPhase.DONE, None
-                                        ),
-                                        loop
-                                    )
-                                break
-                    return callback
-
-                # Create phase callback for real-time stage updates
-                def make_phase_callback(claim_id: str):
-                    # Map stage names to DocPhase
-                    stage_to_phase = {
-                        "ingestion": DocPhase.INGESTING,
-                        "classification": DocPhase.CLASSIFYING,
-                        "extraction": DocPhase.EXTRACTING,
-                    }
-
-                    def callback(stage_name: str, doc_id: str):
-                        phase = stage_to_phase.get(stage_name)
-                        if phase:
-                            # Update local state
-                            for key, doc in run.docs.items():
-                                if doc.doc_id == doc_id:
-                                    doc.phase = phase
-                                    break
-                            # Broadcast via WebSocket (thread-safe)
-                            if progress_callback:
-                                asyncio.run_coroutine_threadsafe(
-                                    self._async_callback(
-                                        progress_callback, run_id, doc_id, phase, None
-                                    ),
-                                    loop
-                                )
-                    return callback
+                # Create EventCollector for this claim
+                collector = EventCollector()
 
                 try:
-                    # Build stage config from run settings
                     doc_ids = [doc.doc_id for doc in claim.documents]
                     if run.force_overwrite:
-                        # Force overwrite: use exactly the stages specified
                         stage_config = self._build_stage_config(run.stages)
                     else:
-                        # Smart detection: skip stages with existing outputs
                         stage_config = self._detect_stages_for_claim(
                             claim_id, doc_ids, requested_stages=run.stages
                         )
 
-                    # Process the claim in a thread pool to allow event loop
-                    # to process broadcast tasks while processing runs
+                    # Start async polling loop: drain events and update state
+                    poll_task = asyncio.create_task(
+                        self._poll_events(
+                            collector, run, run_id, progress_callback, _stage_to_phase
+                        )
+                    )
+
+                    # Run pipeline in thread pool (documents may run in parallel)
                     result = await asyncio.to_thread(
                         process_claim,
                         claim=claim,
                         output_base=self.output_dir,
                         run_id=run_id,
-                        model=model,
                         stage_config=stage_config,
-                        progress_callback=make_doc_callback(claim_id),
-                        phase_callback=make_phase_callback(claim_id),
+                        event_collector=collector,
+                        max_workers=run.max_workers,
+                        cancel_event=cancel_event,
                     )
 
-                    # Count results
+                    # Signal no more events and drain remaining
+                    collector.close()
+                    await poll_task
+
+                    # Post-process results (count success/failure, mark failed docs)
                     for doc_result in result.documents:
                         if doc_result.status == "success":
                             total_success += 1
                         else:
                             total_failed += 1
-                            # Mark failed doc and track which stage failed
                             for key, doc in run.docs.items():
                                 if doc.claim_id == claim_id and doc.filename == doc_result.original_filename:
-                                    # Save the stage where it failed before marking as failed
-                                    doc.failed_at_stage = doc.phase if doc.phase != DocPhase.PENDING else DocPhase.INGESTING
+                                    failed_phase = getattr(doc_result, "failed_phase", None)
+                                    if failed_phase and failed_phase in _failed_phase_map:
+                                        doc.failed_at_stage = _failed_phase_map[failed_phase]
+                                    elif doc.phase not in (DocPhase.PENDING, DocPhase.DONE):
+                                        doc.failed_at_stage = doc.phase
+                                    else:
+                                        doc.failed_at_stage = DocPhase.INGESTING
                                     doc.phase = DocPhase.FAILED
                                     doc.error = doc_result.error
                                     if progress_callback:
-                                        asyncio.create_task(
-                                            self._async_callback(
-                                                progress_callback, run_id, doc.doc_id, DocPhase.FAILED, doc_result.error, doc.failed_at_stage
-                                            )
+                                        await self._async_callback(
+                                            progress_callback, run_id, doc.doc_id,
+                                            DocPhase.FAILED, doc_result.error, doc.failed_at_stage,
                                         )
                                     break
 
                 except Exception as e:
                     logger.exception(f"Failed to process claim {claim_id}")
-                    # Mark all docs in this claim as failed, tracking which stage they were in
+                    collector.close()
                     for key, doc in run.docs.items():
                         if doc.claim_id == claim_id and doc.phase != DocPhase.DONE:
                             doc.failed_at_stage = doc.phase if doc.phase != DocPhase.PENDING else DocPhase.INGESTING
@@ -349,10 +351,9 @@ class PipelineService:
                             doc.error = str(e)
                             total_failed += 1
                             if progress_callback:
-                                asyncio.create_task(
-                                    self._async_callback(
-                                        progress_callback, run_id, doc.doc_id, DocPhase.FAILED, str(e), doc.failed_at_stage
-                                    )
+                                await self._async_callback(
+                                    progress_callback, run_id, doc.doc_id,
+                                    DocPhase.FAILED, str(e), doc.failed_at_stage,
                                 )
 
                 # Cleanup staging for this claim
@@ -376,21 +377,108 @@ class PipelineService:
                 "failed": total_failed,
             }
 
-            # Persist run to disk for visibility in other screens
             self._persist_run(run)
 
-            # Broadcast run completion via progress callback
-            # The callback will be used to send run_complete message
             if progress_callback:
                 await self._async_callback(
                     progress_callback, run_id, "__RUN_COMPLETE__",
                     DocPhase.DONE, None, None
                 )
 
+            # Auto-assess after extraction
+            if run.auto_assess and total_success > 0 and not self._is_cancelled(run_id):
+                await self._run_auto_assessment(
+                    run, run_id, assessment_broadcast
+                )
+
         except Exception as e:
             logger.exception(f"Pipeline run {run_id} failed")
             run.status = PipelineStatus.FAILED
             run.completed_at = datetime.utcnow().isoformat() + "Z"
+
+    async def _poll_events(
+        self,
+        collector: EventCollector,
+        run: PipelineRun,
+        run_id: str,
+        progress_callback: Optional[ProgressCallback],
+        stage_to_phase: Dict[str, DocPhase],
+    ) -> None:
+        """Async loop: drain events from the collector and update run state.
+
+        Runs on the event-loop thread so ``run.docs`` is only modified
+        single-threaded — no locks needed.
+        """
+        while not collector.closed:
+            for event in collector.drain():
+                self._update_doc_from_event(run, event, stage_to_phase)
+                if progress_callback:
+                    await self._broadcast_event(
+                        progress_callback, run_id, event, stage_to_phase
+                    )
+            await asyncio.sleep(0.05)
+
+        # Final drain after close
+        for event in collector.drain():
+            self._update_doc_from_event(run, event, stage_to_phase)
+            if progress_callback:
+                await self._broadcast_event(
+                    progress_callback, run_id, event, stage_to_phase
+                )
+
+    def _update_doc_from_event(
+        self,
+        run: PipelineRun,
+        event: PipelineEvent,
+        stage_to_phase: Dict[str, DocPhase],
+    ) -> None:
+        """Update run.docs state from a PipelineEvent (single-threaded)."""
+        if event.event_type == EventType.DOC_STAGE_START:
+            phase = stage_to_phase.get(event.stage)
+            if phase:
+                for key, doc in run.docs.items():
+                    if doc.doc_id == event.doc_id:
+                        doc.phase = phase
+                        break
+
+        elif event.event_type == EventType.DOC_COMPLETE:
+            for key, doc in run.docs.items():
+                if doc.doc_id == event.doc_id:
+                    doc.phase = DocPhase.DONE
+                    break
+
+        elif event.event_type == EventType.DOC_FAILED:
+            phase = stage_to_phase.get(event.stage, DocPhase.INGESTING)
+            for key, doc in run.docs.items():
+                if doc.doc_id == event.doc_id:
+                    doc.phase = DocPhase.FAILED
+                    doc.failed_at_stage = phase
+                    doc.error = event.error
+                    break
+
+    async def _broadcast_event(
+        self,
+        callback: ProgressCallback,
+        run_id: str,
+        event: PipelineEvent,
+        stage_to_phase: Dict[str, DocPhase],
+    ) -> None:
+        """Convert a PipelineEvent to a progress callback invocation."""
+        if event.event_type == EventType.DOC_STAGE_START:
+            phase = stage_to_phase.get(event.stage)
+            if phase:
+                await self._async_callback(
+                    callback, run_id, event.doc_id, phase, None
+                )
+        elif event.event_type == EventType.DOC_COMPLETE:
+            await self._async_callback(
+                callback, run_id, event.doc_id, DocPhase.DONE, None
+            )
+        elif event.event_type == EventType.DOC_FAILED:
+            phase = stage_to_phase.get(event.stage, DocPhase.INGESTING)
+            await self._async_callback(
+                callback, run_id, event.doc_id, DocPhase.FAILED, event.error, phase
+            )
 
     async def _update_doc_ids(
         self,
@@ -445,6 +533,100 @@ class PipelineService:
         event = self.cancel_events.get(run_id)
         return event is not None and event.is_set()
 
+    def _get_successful_claim_ids(self, run: PipelineRun) -> List[str]:
+        """Get claim IDs that had at least one successful document."""
+        successful = set()
+        for doc in run.docs.values():
+            if doc.phase == DocPhase.DONE:
+                successful.add(doc.claim_id)
+        return list(successful)
+
+    async def _run_auto_assessment(
+        self,
+        run: PipelineRun,
+        run_id: str,
+        assessment_broadcast: Optional[Callable[[dict], Awaitable[None]]],
+    ) -> None:
+        """Chain assessment after extraction completes.
+
+        Runs assessment for each successful claim and broadcasts progress
+        through the pipeline WebSocket so the frontend stays on one connection.
+        """
+        from context_builder.api.dependencies import get_workspace_path
+        from context_builder.api.services.assessment_runner import AssessmentRunnerService
+
+        successful = self._get_successful_claim_ids(run)
+        if not successful:
+            return
+
+        run.status = PipelineStatus.ASSESSING
+
+        if assessment_broadcast:
+            await assessment_broadcast({
+                "type": "assessment_starting",
+                "claim_ids": successful,
+            })
+
+        workspace_path = get_workspace_path()
+        results: List[Dict[str, Any]] = []
+
+        for claim_id in successful:
+            if self._is_cancelled(run_id):
+                break
+
+            asm_id = f"ASM-{run_id}-{claim_id}"
+            runner = AssessmentRunnerService()
+
+            async def on_stage(stage: str, status: str, _cid: str = claim_id) -> None:
+                if assessment_broadcast:
+                    await assessment_broadcast({
+                        "type": "assessment_stage",
+                        "claim_id": _cid,
+                        "stage": stage,
+                        "status": status,
+                    })
+
+            async def on_complete(
+                decision: str, asmt_id: str, _cid: str = claim_id
+            ) -> None:
+                results.append({
+                    "claim_id": _cid,
+                    "decision": decision,
+                    "assessment_id": asmt_id,
+                })
+                if assessment_broadcast:
+                    await assessment_broadcast({
+                        "type": "assessment_complete",
+                        "claim_id": _cid,
+                        "decision": decision,
+                        "assessment_id": asmt_id,
+                    })
+
+            async def on_error(error: str, _cid: str = claim_id) -> None:
+                if assessment_broadcast:
+                    await assessment_broadcast({
+                        "type": "assessment_error",
+                        "claim_id": _cid,
+                        "error": error,
+                    })
+
+            await runner.run_assessment(
+                claim_id=claim_id,
+                run_id=asm_id,
+                workspace_path=workspace_path,
+                on_stage_update=on_stage,
+                on_complete=on_complete,
+                on_error=on_error,
+            )
+
+        if assessment_broadcast:
+            await assessment_broadcast({
+                "type": "all_assessments_complete",
+                "results": results,
+            })
+
+        run.status = PipelineStatus.COMPLETED
+
     async def cancel_pipeline(self, run_id: str) -> bool:
         """
         Cancel a running pipeline.
@@ -464,6 +646,12 @@ class PipelineService:
             run = self.active_runs.get(run_id)
             if run:
                 run.status = PipelineStatus.CANCELLED
+                # Mark all non-completed docs as cancelled
+                for doc in run.docs.values():
+                    if doc.phase not in (DocPhase.DONE, DocPhase.FAILED):
+                        doc.failed_at_stage = doc.phase if doc.phase != DocPhase.PENDING else DocPhase.INGESTING
+                        doc.phase = DocPhase.FAILED
+                        doc.error = "Cancelled by user"
 
             return True
 

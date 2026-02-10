@@ -110,15 +110,13 @@ class TestSafeFloat:
 class TestGetNormalizer:
     """Tests for normalizer registry lookup."""
 
-    def test_all_normalizers_return_safe_string(self):
-        """All normalizer names should return safe_string behavior."""
+    def test_passthrough_normalizers_return_safe_string(self):
+        """Non-date normalizer names should return safe_string behavior."""
         normalizer_names = [
             "uppercase_trim",
-            "date_to_iso",
             "plate_normalize",
             "none",
             "trim",
-            "swiss_date_to_iso",
             "swiss_currency",
             "covered_boolean",
             "transferable_boolean",
@@ -133,6 +131,25 @@ class TestGetNormalizer:
             # All should handle list case (the bug fix)
             assert normalizer(["test"]) == "test"
             assert normalizer(["a", "b"]) == "a b"
+
+    def test_date_normalizers_parse_dates(self):
+        """date_to_iso and swiss_date_to_iso should parse real dates."""
+        for name in ("date_to_iso", "swiss_date_to_iso"):
+            normalizer = get_normalizer(name)
+            assert normalizer("23.01.2026") == "2026-01-23"
+            assert normalizer("2026-01-23") == "2026-01-23"
+            assert normalizer("20. Januar 2026") == "2026-01-20"
+
+    def test_date_normalizers_fallback_on_failure(self):
+        """date_to_iso should return original string on unparseable input."""
+        normalizer = get_normalizer("date_to_iso")
+        assert normalizer("not a date") == "not a date"
+        assert normalizer(None) == ""
+
+    def test_date_normalizers_handle_lists(self):
+        """date_to_iso should handle list input via safe_string first."""
+        normalizer = get_normalizer("date_to_iso")
+        assert normalizer(["23.01.2026"]) == "2026-01-23"
 
     def test_unknown_normalizer_returns_safe_string(self):
         """Unknown normalizer name should still return safe_string."""

@@ -47,7 +47,7 @@ class TestPartialStatusEnum:
 
     def test_all_status_values(self):
         """All expected status values exist."""
-        expected = {"pending", "running", "completed", "partial", "failed", "cancelled"}
+        expected = {"pending", "running", "assessing", "completed", "partial", "failed", "cancelled"}
         actual = {s.value for s in PipelineStatus}
         assert expected == actual
 

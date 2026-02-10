@@ -91,7 +91,11 @@ def get_structured_fact(facts: List[Dict], name: str) -> Optional[Any]:
 
 
 def parse_date(value: Optional[str]) -> Optional[date]:
-    """Parse ISO (YYYY-MM-DD) and European (DD.MM.YYYY) date strings.
+    """Parse a date string in any supported European format.
+
+    Delegates to the shared date parser so screening handles legacy
+    non-normalized dates (named months, comma separators, etc.) as well
+    as the new ISO-normalized values.
 
     Args:
         value: Date string or None.
@@ -99,20 +103,13 @@ def parse_date(value: Optional[str]) -> Optional[date]:
     Returns:
         date object, or None if parsing fails.
     """
-    if not value or not isinstance(value, str):
+    from context_builder.utils.date_parsing import parse_date_to_iso
+
+    iso = parse_date_to_iso(value)
+    if iso is None:
         return None
-    value = value.strip()
-    # ISO format: YYYY-MM-DD
-    try:
-        return datetime.strptime(value[:10], "%Y-%m-%d").date()
-    except (ValueError, IndexError):
-        pass
-    # European format: DD.MM.YYYY
-    try:
-        return datetime.strptime(value[:10], "%d.%m.%Y").date()
-    except (ValueError, IndexError):
-        pass
-    return None
+    # parse_date_to_iso guarantees YYYY-MM-DD format
+    return datetime.strptime(iso, "%Y-%m-%d").date()
 
 
 def parse_int(value: Optional[str]) -> Optional[int]:

@@ -509,6 +509,47 @@ class TestAppendToRunIndex:
         assert "run_root" in record
 
 
+class TestRunPipelineCallsProcessClaim:
+    """Verify _run_pipeline passes only valid kwargs to process_claim."""
+
+    @pytest.mark.asyncio
+    async def test_process_claim_receives_no_model_kwarg(
+        self, pipeline_service, mock_upload_service, tmp_path
+    ):
+        """process_claim must not receive a 'model' kwarg (it doesn't accept one)."""
+        import inspect
+        from context_builder.pipeline.run import process_claim
+
+        sig = inspect.signature(process_claim)
+        assert "model" not in sig.parameters, (
+            "process_claim() should not have a 'model' parameter. "
+            "If it did, the pipeline service could pass it, but currently "
+            "it does not and passing model= causes a TypeError at runtime."
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_kwargs_match_process_claim_signature(
+        self, pipeline_service, mock_upload_service, tmp_path
+    ):
+        """All kwargs passed to process_claim by _run_pipeline must be accepted."""
+        import inspect
+        from context_builder.pipeline.run import process_claim
+
+        sig = inspect.signature(process_claim)
+        valid_params = set(sig.parameters.keys())
+
+        # These are the kwargs the pipeline service passes to process_claim
+        # (Phase 3: old callbacks replaced by event_collector)
+        passed_kwargs = {
+            "claim", "output_base", "run_id", "stage_config",
+            "event_collector", "max_workers", "cancel_event",
+        }
+        invalid = passed_kwargs - valid_params
+        assert invalid == set(), (
+            f"_run_pipeline passes kwargs not accepted by process_claim: {invalid}"
+        )
+
+
 class TestDetectStagesForClaim:
     """Tests for smart stage detection."""
 

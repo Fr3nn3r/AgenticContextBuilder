@@ -257,3 +257,11 @@ class DecisionDossier(BaseModel):
         default_factory=list,
         description="Clause references with unconfirmed tier 2/3 assumptions",
     )
+    coverage_overrides: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Adjuster coverage overrides {item_id: is_covered}",
+    )
+    confidence_index: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Composite Confidence Index computed after decision stage",
+    )

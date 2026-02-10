@@ -390,8 +390,8 @@ class TestNsaGuaranteeExtractorBuildExtractedFields:
         fields = mock_extractor._build_extracted_fields(raw, pages, ["start_date"])
 
         assert len(fields) == 1
-        # Normalizers now preserve raw values (type coercion only)
-        assert fields[0].normalized_value == "31.12.2025"
+        # date_to_iso normalizer converts European dates to ISO
+        assert fields[0].normalized_value == "2025-12-31"
 
     def test_handles_missing_fields(self, mock_extractor):
         """Test that missing fields are handled gracefully."""

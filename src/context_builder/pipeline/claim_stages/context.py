@@ -20,6 +20,7 @@ class ClaimStageTimings:
     screening_ms: int = 0
     processing_ms: int = 0
     decision_ms: int = 0
+    confidence_ms: int = 0
     total_ms: int = 0
 
 
@@ -32,6 +33,7 @@ class ClaimStageConfig:
     run_screening: bool = True  # Run screening stage (if screener configured)
     run_processing: bool = True
     run_decision: bool = True  # Run decision stage (if engine configured)
+    run_confidence: bool = True  # Run confidence index computation
     processing_type: str = "assessment"  # Type of processing to run
 
     @property

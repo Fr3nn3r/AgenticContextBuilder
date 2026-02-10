@@ -500,6 +500,7 @@ export interface DocProgress {
 export type PipelineBatchStatus =
   | "pending"
   | "running"
+  | "assessing"
   | "completed"
   | "failed"
   | "cancelled";
@@ -532,6 +533,12 @@ export type WebSocketMessageType =
   | "batch_cancelled"
   | "run_complete"    // deprecated - use batch_complete
   | "run_cancelled"   // deprecated - use batch_cancelled
+  | "assessment_starting"
+  | "assessment_stage"
+  | "assessment_complete"
+  | "assessment_error"
+  | "all_assessments_complete"
+  | "error"
   | "ping";
 
 export interface WebSocketMessage {
@@ -549,6 +556,37 @@ export interface WebSocketMessage {
     success: number;
     failed: number;
   };
+  // Assessment fields (auto-assess via pipeline WS)
+  claim_ids?: string[];
+  claim_id?: string;
+  stage?: string;
+  decision?: string;
+  assessment_id?: string;
+  results?: Array<{ claim_id: string; decision: string; assessment_id: string }>;
+  message?: string;  // Error message from server
+}
+
+// =============================================================================
+// ASSESSMENT PROGRESS TYPES (Auto-assess via pipeline WebSocket)
+// =============================================================================
+
+export type AssessmentPhase =
+  | "pending"
+  | "reconciliation"
+  | "enrichment"
+  | "screening"
+  | "processing"
+  | "decision"
+  | "complete"
+  | "error";
+
+export interface ClaimAssessmentProgress {
+  claim_id: string;
+  phase: AssessmentPhase;
+  decision?: string;
+  assessment_id?: string;
+  error?: string;
+  failed_at_stage?: AssessmentPhase;
 }
 
 // =============================================================================
@@ -645,6 +683,7 @@ export interface StartPipelineRequest {
   stages?: string[];
   prompt_config_id?: string;
   force_overwrite?: boolean;
+  auto_assess?: boolean;
   compute_metrics?: boolean;
   dry_run?: boolean;
 }
@@ -965,6 +1004,24 @@ export interface ServiceEntry {
 
 export type CoverageStatus = "covered" | "not_covered" | "review_needed";
 export type MatchMethod = "rule" | "part_number" | "keyword" | "llm" | "manual";
+export type TraceAction =
+  | "matched"
+  | "skipped"
+  | "deferred"
+  | "overridden"
+  | "promoted"
+  | "demoted"
+  | "excluded"
+  | "validated";
+
+export interface TraceStep {
+  stage: string;
+  action: TraceAction;
+  verdict?: CoverageStatus | null;
+  confidence?: number | null;
+  reasoning: string;
+  detail?: Record<string, unknown> | null;
+}
 
 export interface LineItemCoverage {
   item_code: string | null;
@@ -978,6 +1035,7 @@ export interface LineItemCoverage {
   match_confidence: number;
   match_reasoning: string;
   exclusion_reason: string | null;
+  decision_trace?: TraceStep[] | null;
   covered_amount: number;
   not_covered_amount: number;
 }
@@ -1022,6 +1080,7 @@ export interface CoverageAnalysisResult {
   line_items: LineItemCoverage[];
   summary: CoverageSummary;
   primary_repair: PrimaryRepairResult | null;
+  repair_context: PrimaryRepairResult | null;
   non_covered_explanations: NonCoveredExplanation[] | null;
   non_covered_summary: string | null;
 }
@@ -1431,6 +1490,49 @@ export interface FinancialSummary {
   other_total: number;
 }
 
+// =============================================================================
+// CONFIDENCE INDEX TYPES (CCI)
+// =============================================================================
+
+export type ConfidenceBand = "high" | "moderate" | "low";
+
+export interface ConfidenceIndex {
+  composite_score: number;
+  band: ConfidenceBand;
+  components: Record<string, number>;
+}
+
+export interface SignalSnapshot {
+  signal_name: string;
+  raw_value: number | null;
+  normalized_value: number;
+  source_stage: string;
+  description: string;
+}
+
+export interface ComponentScore {
+  component: string;
+  score: number;
+  weight: number;
+  weighted_contribution: number;
+  signals_used: SignalSnapshot[];
+  notes: string;
+}
+
+export interface ConfidenceSummary {
+  schema_version: string;
+  claim_id: string;
+  claim_run_id: string;
+  composite_score: number;
+  band: ConfidenceBand;
+  component_scores: ComponentScore[];
+  weights_used: Record<string, number>;
+  signals_collected: SignalSnapshot[];
+  stages_available: string[];
+  stages_missing: string[];
+  flags: string[];
+}
+
 export interface DecisionDossier {
   schema_version: string;
   claim_id: string;
@@ -1447,6 +1549,8 @@ export interface DecisionDossier {
   input_refs: Record<string, unknown>;
   failed_clauses: string[];
   unresolved_assumptions: string[];
+  coverage_overrides?: Record<string, boolean>;
+  confidence_index?: ConfidenceIndex | null;
 }
 
 export interface DossierVersionMeta {

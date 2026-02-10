@@ -150,7 +150,10 @@ class AzureDocumentIntelligenceIngestion(DataIngestion):
                 elif "rate" in error_str or "429" in error_str or "throttl" in error_str:
                     raise APIError(f"Rate limit exceeded after {self.retries} retries: {e}")
                 elif "timeout" in error_str:
-                    raise APIError(f"Request timed out after {self.retries} retries: {e}")
+                    raise APIError(
+                        f"Azure Document Intelligence timed out after {self.retries} retries "
+                        f"(endpoint: {self.endpoint.split('/')[2] if self.endpoint else 'unknown'})"
+                    )
                 else:
                     raise APIError(f"API call failed after {self.retries} retries: {e}")
 
@@ -317,7 +320,10 @@ class AzureDocumentIntelligenceIngestion(DataIngestion):
             elif "rate" in str(e).lower() or "throttl" in str(e).lower():
                 raise APIError("Rate limit exceeded. Please try again later.")
             elif "timeout" in str(e).lower():
-                raise APIError("Request timed out. Please try again.")
+                raise APIError(
+                    f"Azure Document Intelligence timed out "
+                    f"(endpoint: {self.endpoint.split('/')[2] if self.endpoint else 'unknown'})"
+                )
             else:
                 raise APIError(error_msg)
 

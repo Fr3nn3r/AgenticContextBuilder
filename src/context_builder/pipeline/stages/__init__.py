@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Callable, Generic, List, Optional, Protocol, TypeVar
+
+logger = logging.getLogger(__name__)
 
 from context_builder.pipeline.stages.context import (
     ClaimResult,
@@ -43,10 +46,12 @@ class PipelineRunner(Generic[T]):
         stages: List[Stage[T]],
         on_phase_start: Optional[PhaseCallback[T]] = None,
         on_phase_end: Optional[PhaseEndCallback[T]] = None,
+        fail_on_callback_error: bool = False,
     ) -> None:
         self.stages = stages
         self.on_phase_start = on_phase_start
         self.on_phase_end = on_phase_end
+        self.fail_on_callback_error = fail_on_callback_error
 
     def run(self, context: T) -> T:
         for stage in self.stages:
@@ -54,8 +59,10 @@ class PipelineRunner(Generic[T]):
             if self.on_phase_start:
                 try:
                     self.on_phase_start(stage.name, context)
-                except Exception:
-                    pass  # Don't let callback errors break the pipeline
+                except Exception as e:
+                    logger.warning("Phase start callback failed for '%s': %s", stage.name, e, exc_info=True)
+                    if self.fail_on_callback_error:
+                        raise
 
             context = stage.run(context)
             status = getattr(context, "status", "success")
@@ -64,8 +71,10 @@ class PipelineRunner(Generic[T]):
             if self.on_phase_end:
                 try:
                     self.on_phase_end(stage.name, context, status)
-                except Exception:
-                    pass  # Don't let callback errors break the pipeline
+                except Exception as e:
+                    logger.warning("Phase end callback failed for '%s': %s", stage.name, e, exc_info=True)
+                    if self.fail_on_callback_error:
+                        raise
 
             if status in ("skipped", "error"):
                 break

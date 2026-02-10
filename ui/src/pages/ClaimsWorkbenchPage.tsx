@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { cn } from "../lib/utils";
+import { formatEventDate } from "../lib/formatters";
 import {
   CheckCircle2,
   XCircle,
@@ -15,6 +16,7 @@ import {
   Copy,
   Check,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import {
   getDashboardClaims,
@@ -31,6 +33,8 @@ import {
 import { DocumentSlidePanel } from "../components/ClaimExplorer/DocumentSlidePanel";
 import type { EvidenceLocation } from "../components/ClaimExplorer/DocumentSlidePanel";
 import type { DashboardClaim, DocSummary } from "../types";
+import { ConfidenceBadge } from "../components/ClaimsWorkbench/ConfidenceBadge";
+import { DecisionTraceTab } from "../components/ClaimsWorkbench/DecisionTraceTab";
 
 // =============================================================================
 // HELPERS
@@ -102,7 +106,7 @@ function clauseToQuestion(
 // TYPES & CONFIG
 // =============================================================================
 
-type TabId = "costs" | "coverage-checks" | "documents";
+type TabId = "costs" | "coverage-checks" | "documents" | "decisions";
 type ClaimVerdict = "APPROVE" | "DENY" | "REFER";
 
 const VERDICT_CONFIG: Record<
@@ -243,8 +247,10 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
   const verdict = (dossier?.claim_verdict?.toUpperCase() ?? "REFER") as ClaimVerdict;
   const config = VERDICT_CONFIG[verdict] || VERDICT_CONFIG.REFER;
   const VerdictIcon = config.icon;
-  const rawConf = data.assessment?.confidence_score ?? null;
+  const cci = data.dossier?.confidence_index;
+  const rawConf = cci?.composite_score ?? data.assessment?.confidence_score ?? null;
   const confidence = rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
+  const cciBand = cci?.band ?? null;
   const isDenied = verdict === "DENY";
 
   // Build reason text — strip redundant "Claim approved/denied." prefix
@@ -313,19 +319,8 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
           </div>
           {confidence != null && (
             <div className="text-right flex-shrink-0">
-              <div className="text-xs text-muted-foreground">Confidence</div>
-              <div
-                className={cn(
-                  "text-lg font-bold tabular-nums",
-                  confidence >= 80
-                    ? "text-foreground"
-                    : confidence >= 60
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-rose-600 dark:text-rose-400"
-                )}
-              >
-                {confidence.toFixed(0)}%
-              </div>
+              <div className="text-xs text-muted-foreground mb-0.5">Confidence</div>
+              <ConfidenceBadge score={rawConf} band={cciBand} />
             </div>
           )}
         </div>
@@ -401,7 +396,15 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
 // TAB: COST BREAKDOWN
 // =============================================================================
 
-function CostBreakdownTab({ data }: { data: any }) {
+function CostBreakdownTab({
+  data,
+  coverageOverrides,
+  setCoverageOverrides,
+}: {
+  data: any;
+  coverageOverrides: Record<string, boolean>;
+  setCoverageOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
   const lineItems: any[] = data.coverage?.line_items ?? [];
   const summary = data.coverage?.summary;
   const dossier = data.dossier;
@@ -422,8 +425,6 @@ function CostBreakdownTab({ data }: { data: any }) {
   const toggleItem = (key: string) =>
     setExpandedItem((prev) => (prev === key ? null : key));
 
-  // Coverage override state (what-if mode)
-  const [coverageOverrides, setCoverageOverrides] = useState<Record<string, boolean>>({});
   const hasOverrides = Object.keys(coverageOverrides).length > 0;
 
   const toggleCoverageOverride = (itemKey: string, currentlyCovered: boolean) => {
@@ -451,17 +452,18 @@ function CostBreakdownTab({ data }: { data: any }) {
 
   if (lineItems.length === 0) return <NoDataEmptyState />;
 
-  // Aggregate by item type
+  // Aggregate by item type (use flat index for override keys to match engine item_ids)
   const typeOrder = ["parts", "labor", "fee", "other"];
   const byType: Record<string, { claimed: number; covered: number; items: any[] }> = {};
+  let flatIdx = 0;
   for (const item of lineItems) {
     const type = item.item_type === "fees" ? "fee" : (item.item_type || "other");
     if (!byType[type]) byType[type] = { claimed: 0, covered: 0, items: [] };
-    const idx = byType[type].items.length;
-    const key = `${type}-${idx}`;
+    const key = `item_${flatIdx}`;
+    flatIdx++;
     byType[type].claimed += parseFloat(item.total_price || 0);
     byType[type].covered += getEffectiveCovered(item, key);
-    byType[type].items.push(item);
+    byType[type].items.push({ ...item, _key: key });
   }
 
   const rows = typeOrder.filter((t) => byType[t]);
@@ -554,10 +556,10 @@ function CostBreakdownTab({ data }: { data: any }) {
                     </td>
                   </tr>
                   {isOpen &&
-                    group.items.map((item: any, idx: number) => {
+                    group.items.map((item: any) => {
                       const originalCovered = item.coverage_status === "covered";
                       const originalDenied = item.coverage_status === "not_covered" || item.coverage_status === "denied";
-                      const itemKey = `${type}-${idx}`;
+                      const itemKey = item._key as string;
                       const isOverridden = itemKey in coverageOverrides;
                       const effectivelyCovered = isOverridden ? coverageOverrides[itemKey] : originalCovered;
                       const effectivelyDenied = isOverridden ? !coverageOverrides[itemKey] : originalDenied;
@@ -594,7 +596,7 @@ function CostBreakdownTab({ data }: { data: any }) {
                                         : effectivelyDenied
                                           ? "bg-destructive"
                                           : "bg-warning",
-                                      isOverridden && "ring-2 ring-offset-1 ring-primary/60",
+                                      isOverridden && "ring-[3px] ring-offset-1 ring-primary/60",
                                       "group-hover/dot:ring-2 group-hover/dot:ring-offset-1 group-hover/dot:ring-primary/40"
                                     )}
                                   />
@@ -608,8 +610,9 @@ function CostBreakdownTab({ data }: { data: any }) {
                                   </span>
                                 )}
                                 {isOverridden && (
-                                  <span className="shrink-0 text-[9px] font-medium text-primary/70 uppercase tracking-wider">
-                                    override
+                                  <span className="shrink-0 inline-flex items-center gap-0.5 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                    Override
                                   </span>
                                 )}
                               </div>
@@ -688,7 +691,7 @@ function CostBreakdownTab({ data }: { data: any }) {
           {hasOverrides && (
             <div className="flex items-center justify-between mb-2 pb-2 border-b border-primary/20">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                What-if
+                What-if ({Object.keys(coverageOverrides).length} override{Object.keys(coverageOverrides).length !== 1 ? "s" : ""})
               </span>
               <button
                 onClick={() => setCoverageOverrides({})}
@@ -861,10 +864,15 @@ function CoverageChecksTab({
                 const question = clauseToQuestion(clause, assumptionQuestions);
                 const detail = clause.reason?.replace(/\s*\(assumed\)\.?/gi, "").trim() || null;
                 return (
-                  <div key={ref} className="group/row relative flex items-center justify-between gap-3">
-                    <span className="flex-1 min-w-0 text-sm text-foreground truncate">
-                      <span className="font-mono text-xs text-muted-foreground mr-1.5">{ref}</span>
-                      {question}
+                  <div key={ref} className="group/arow flex items-center justify-between gap-3">
+                    <span className="flex-1 min-w-0 text-sm text-foreground flex items-center gap-1">
+                      <span className="font-mono text-xs text-muted-foreground mr-1.5 flex-shrink-0">{ref}</span>
+                      <span className="truncate">{question}</span>
+                      {detail && (
+                        <span className="text-xs text-muted-foreground/60 truncate opacity-0 group-hover/arow:opacity-100 transition-opacity duration-150 flex-shrink-0">
+                          -- {detail}
+                        </span>
+                      )}
                     </span>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
@@ -890,11 +898,6 @@ function CoverageChecksTab({
                         NO
                       </button>
                     </div>
-                    {detail && (
-                      <div className="pointer-events-none absolute right-0 top-full z-20 mt-1 max-w-xs rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md border border-border opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
-                        {detail}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -903,7 +906,7 @@ function CoverageChecksTab({
         </div>
       )}
 
-      {/* Section: Issues Found (red) */}
+      {/* Section: Clauses Invoked (red) */}
       {issues.length > 0 && (
         <div className="border border-red-200 dark:border-red-800 rounded-lg overflow-hidden">
           <button
@@ -917,7 +920,7 @@ function CoverageChecksTab({
             )}
             <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
             <span className="text-sm font-medium text-red-800 dark:text-red-300">
-              Issues Found ({issues.length})
+              Clauses Invoked ({issues.length})
             </span>
           </button>
           {openSections["issues"] && (
@@ -926,7 +929,7 @@ function CoverageChecksTab({
                 const iKey = `i-${clause.clause_reference || idx}`;
                 const hasDetail = clause.reason || clause.evidence?.length > 0 || clause.affected_line_items?.length > 0;
                 return (
-                  <div key={idx}>
+                  <div key={idx} className="group/irow">
                     <button
                       onClick={() => hasDetail && toggleItem(iKey)}
                       className={cn(
@@ -935,10 +938,15 @@ function CoverageChecksTab({
                       )}
                     >
                       <XCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
-                      <span className="text-sm text-foreground">
+                      <span className="text-sm text-foreground whitespace-nowrap">
                         <span className="font-mono text-xs text-muted-foreground mr-1.5">{clause.clause_reference}</span>
                         {clause.clause_short_name || clause.clause_reference}
                       </span>
+                      {clause.reason && (
+                        <span className="text-xs text-muted-foreground/60 truncate opacity-0 group-hover/irow:opacity-100 transition-opacity duration-150">
+                          -- {clause.reason}
+                        </span>
+                      )}
                     </button>
                     {hasDetail && (
                       <div
@@ -991,16 +999,16 @@ function CoverageChecksTab({
               {verified.map((clause: any, idx: number) => {
                 const detail = clause.reason?.replace(/\s*\(assumed\)\.?/gi, "").trim() || null;
                 return (
-                  <div key={idx} className="group/row relative flex items-center gap-2 py-0.5">
+                  <div key={idx} className="group/row flex items-center gap-2 py-0.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                    <span className="text-sm text-foreground">
+                    <span className="text-sm text-foreground whitespace-nowrap">
                       <span className="font-mono text-xs text-muted-foreground mr-1.5">{clause.clause_reference}</span>
                       {clause.clause_short_name || clause.clause_reference}
                     </span>
                     {detail && (
-                      <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 max-w-sm rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md border border-border opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
-                        {detail}
-                      </div>
+                      <span className="text-xs text-muted-foreground/60 truncate opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                        -- {detail}
+                      </span>
                     )}
                   </div>
                 );
@@ -1093,6 +1101,7 @@ function ClaimDetail({
   const [data, setData] = useState<any>(null);
   const [documents, setDocuments] = useState<DocSummary[]>([]);
   const [assumptions, setAssumptions] = useState<Record<string, boolean>>({});
+  const [coverageOverrides, setCoverageOverrides] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<TabId>("costs");
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
@@ -1125,6 +1134,12 @@ function ClaimDetail({
         }
       }
       setAssumptions(newAssumptions);
+
+      // Initialize coverage overrides from persisted dossier
+      const savedOverrides = wb.dossier?.coverage_overrides ?? {};
+      if (Object.keys(savedOverrides).length > 0) {
+        setCoverageOverrides(savedOverrides);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -1140,7 +1155,7 @@ function ClaimDetail({
     try {
       setEvaluating(true);
       setError(null);
-      const newDossier = await evaluateDecision(claimId, assumptions);
+      const newDossier = await evaluateDecision(claimId, assumptions, coverageOverrides);
       // Update dossier in-place — avoids full reload (spinner + assumption reset)
       setData((prev: any) => {
         const updated = prev ? { ...prev, dossier: newDossier } : prev;
@@ -1148,6 +1163,10 @@ function ClaimDetail({
         if (updated && onDossierUpdate) onDossierUpdate(claimId, updated);
         return updated;
       });
+      // Sync overrides from the persisted dossier (merged on server)
+      if (newDossier?.coverage_overrides) {
+        setCoverageOverrides(newDossier.coverage_overrides);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to re-evaluate decision"
@@ -1155,7 +1174,7 @@ function ClaimDetail({
     } finally {
       setEvaluating(false);
     }
-  }, [claimId, assumptions, onDossierUpdate]);
+  }, [claimId, assumptions, coverageOverrides, onDossierUpdate]);
 
   if (loading) {
     return (
@@ -1189,6 +1208,10 @@ function ClaimDetail({
   const mileageFact = getFact(facts, "odometer_km");
   const mileageValue = mileageFact?.value ?? mileageFact?.normalized_value;
 
+  const lineItemsWithTrace = (data.coverage?.line_items ?? []).filter(
+    (i: any) => Array.isArray(i.decision_trace) && i.decision_trace.length > 0
+  ).length;
+
   const tabs: { id: TabId; label: string; count?: number }[] = [
     {
       id: "costs",
@@ -1199,6 +1222,11 @@ function ClaimDetail({
       id: "coverage-checks",
       label: "Coverage Checks",
       count: data.dossier?.clause_evaluations?.length,
+    },
+    {
+      id: "decisions",
+      label: "Decisions",
+      count: lineItemsWithTrace || undefined,
     },
     {
       id: "documents",
@@ -1239,7 +1267,13 @@ function ClaimDetail({
 
       {/* Tab content */}
       <div>
-        {activeTab === "costs" && <CostBreakdownTab data={data} />}
+        {activeTab === "costs" && (
+          <CostBreakdownTab
+            data={data}
+            coverageOverrides={coverageOverrides}
+            setCoverageOverrides={setCoverageOverrides}
+          />
+        )}
         {activeTab === "coverage-checks" && (
           <CoverageChecksTab
             data={data}
@@ -1250,6 +1284,9 @@ function ClaimDetail({
             onReEvaluate={handleReEvaluate}
             evaluating={evaluating}
           />
+        )}
+        {activeTab === "decisions" && (
+          <DecisionTraceTab data={data} />
         )}
         {activeTab === "documents" && (
           <DocumentsTab
@@ -1354,7 +1391,8 @@ function buildEnrichment(wb: any): WorkbenchEnrichment {
   const payout = verdict !== "DENY"
     ? (assessment?.payout?.final_payout ?? screening?.payout?.final_payout ?? null)
     : null;
-  const rawConf = assessment?.confidence_score ?? null;
+  const cciScore = dossier?.confidence_index?.composite_score;
+  const rawConf = cciScore ?? assessment?.confidence_score ?? null;
   const confidence =
     rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
 
@@ -1394,7 +1432,13 @@ function buildEnrichment(wb: any): WorkbenchEnrichment {
 
 function parseDate(d: string | null): number {
   if (!d) return 0;
-  const parts = d.split(/[./]/);
+  // ISO format (new normalized data): YYYY-MM-DD
+  const isoMatch = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])).getTime();
+  }
+  // Legacy European formats: DD.MM.YYYY, DD/MM/YYYY, DD,MM,YYYY
+  const parts = d.split(/[./,]/);
   if (parts.length === 3) {
     const [day, month, year] = parts;
     return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
@@ -1857,7 +1901,7 @@ function ClaimRow({
         </td>
         {/* Event Date */}
         <td className="py-2 px-2 text-xs text-muted-foreground">
-          {effective.eventDate || "-"}
+          {formatEventDate(effective.eventDate)}
         </td>
         {/* Payout */}
         <td className="py-2 px-2 text-right font-mono text-xs text-foreground">

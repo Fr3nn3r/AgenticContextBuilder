@@ -10,7 +10,14 @@ from typing import Any
 
 
 class ResultWriter:
-    """Centralized filesystem writes for pipeline outputs."""
+    """Centralized filesystem writes for pipeline outputs.
+
+    Thread safety: each document writes to its own subtree
+    (``claims/{claim_id}/docs/{doc_id}/...``), so concurrent
+    ``ResultWriter`` calls from different document threads never
+    contend on the same file.  No additional locking is required
+    when using ``ThreadPoolExecutor`` for parallel document processing.
+    """
 
     def write_json(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

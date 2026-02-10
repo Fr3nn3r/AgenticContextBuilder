@@ -113,15 +113,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
           });
 
           if (response.ok) {
-            const userData = await response.json();
-            setUser(userData);
+            const userData = await response.json().catch(() => null);
+            if (userData) {
+              setUser(userData);
+            } else {
+              // Valid status but bad body — clear auth
+              localStorage.removeItem(TOKEN_KEY);
+              localStorage.removeItem(USER_KEY);
+            }
           } else {
             // Token invalid, clear storage
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(USER_KEY);
           }
-        } catch (error) {
-          console.error('Failed to restore session:', error);
+        } catch {
+          // Network error (backend down) — keep cached user for offline display
+          // but don't throw; let the login screen show gracefully
+          console.warn('Backend unreachable during session restore');
           localStorage.removeItem(TOKEN_KEY);
           localStorage.removeItem(USER_KEY);
         }
@@ -134,20 +142,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+    } catch {
+      throw new Error(
+        'Unable to connect to the server. Please check that the backend is running.'
+      );
+    }
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({ detail: 'Login failed' }));
       throw new Error(error.detail || 'Login failed');
     }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
+    if (!data?.token || !data?.user) {
+      throw new Error('Invalid response from server');
+    }
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     setUser(data.user);

@@ -119,7 +119,7 @@ class TestCoverageAnalyzer:
 
         assert result is not None
         assert result.claim_id == "TEST001"
-        assert result.schema_version == "coverage_analysis_v1"
+        assert result.schema_version == "coverage_analysis_v2"
         assert len(result.line_items) == len(sample_line_items)
 
     def test_rule_engine_exclusions(self, analyzer, covered_components):

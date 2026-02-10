@@ -29,6 +29,34 @@ class MatchMethod(str, Enum):
     MANUAL = "manual"  # Human override
 
 
+class TraceAction(str, Enum):
+    """Action taken by a pipeline stage on a line item."""
+
+    MATCHED = "matched"
+    SKIPPED = "skipped"
+    DEFERRED = "deferred"
+    OVERRIDDEN = "overridden"
+    PROMOTED = "promoted"
+    DEMOTED = "demoted"
+    EXCLUDED = "excluded"
+    VALIDATED = "validated"
+
+
+class TraceStep(BaseModel):
+    """Single step in the coverage decision trace."""
+
+    stage: str = Field(..., description="Pipeline stage name")
+    action: TraceAction = Field(..., description="Action taken by this stage")
+    verdict: Optional[CoverageStatus] = Field(
+        None, description="Coverage status after this step"
+    )
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    reasoning: str = Field(..., description="Human-readable explanation")
+    detail: Optional[Dict[str, Any]] = Field(
+        None, description="Stage-specific metadata"
+    )
+
+
 class LineItemCoverage(BaseModel):
     """Coverage determination for a single line item."""
 
@@ -61,6 +89,11 @@ class LineItemCoverage(BaseModel):
     # Exclusion reason (populated by rule engine / analyzer for NOT_COVERED items)
     exclusion_reason: Optional[str] = Field(
         None, description="Reason key for non-coverage (e.g. 'fee', 'consumable', 'component_excluded')"
+    )
+
+    # Decision trace (step-by-step pipeline audit trail)
+    decision_trace: Optional[List[TraceStep]] = Field(
+        None, description="Step-by-step trace of coverage decision pipeline"
     )
 
     # Coverage amounts (calculated based on status and coverage_percent)
@@ -211,8 +244,8 @@ class NonCoveredExplanation(BaseModel):
 class CoverageAnalysisResult(BaseModel):
     """Complete result of coverage analysis for a claim."""
 
-    schema_version: Literal["coverage_analysis_v1"] = Field(
-        "coverage_analysis_v1", description="Schema version identifier"
+    schema_version: Literal["coverage_analysis_v1", "coverage_analysis_v2"] = Field(
+        "coverage_analysis_v2", description="Schema version identifier"
     )
     claim_id: str = Field(..., description="Claim identifier")
     claim_run_id: Optional[str] = Field(
@@ -241,6 +274,11 @@ class CoverageAnalysisResult(BaseModel):
     # Primary repair determination
     primary_repair: Optional[PrimaryRepairResult] = Field(
         None, description="Primary repair component determination result"
+    )
+
+    # Repair context (extracted from labor descriptions)
+    repair_context: Optional[PrimaryRepairResult] = Field(
+        None, description="Repair context extracted from labor descriptions"
     )
 
     # Non-covered explanations (post-processing)

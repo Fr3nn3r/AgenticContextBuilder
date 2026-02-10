@@ -74,6 +74,11 @@ def pipeline_cmd(
     ),
     skip_first: int = typer.Option(0, "--skip-first", help="Skip first N claims"),
     no_progress: bool = typer.Option(False, "--no-progress", help="Disable progress bars"),
+    parallel: int = typer.Option(
+        1, "--parallel",
+        help="Documents to process in parallel per claim (1-8)",
+        min=1, max=8,
+    ),
     no_llm_logging: bool = typer.Option(
         False, "--no-llm-logging",
         help="Disable LLM call logging to llm_calls.jsonl",
@@ -369,6 +374,7 @@ def pipeline_cmd(
                 progress_callback=progress_cb,
                 phase_callback=phase_cb,
                 phase_end_callback=phase_end_cb,
+                max_workers=parallel,
             )
 
             total_docs += len(result.documents)

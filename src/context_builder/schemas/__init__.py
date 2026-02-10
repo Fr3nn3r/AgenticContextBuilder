@@ -35,6 +35,11 @@ from context_builder.schemas.decision_services import (
     LaborRateResult,
     PartsClassification,
 )
+from context_builder.schemas.confidence import (
+    ConfidenceBand,
+    ConfidenceIndex,
+    ConfidenceSummary,
+)
 from context_builder.schemas.reconciliation import (
     ConflictSource,
     FactConflict,
@@ -54,6 +59,9 @@ __all__ = [
     "AssumptionRecord",
     "CheckVerdict",
     "ClaimVerdict",
+    "ConfidenceBand",
+    "ConfidenceIndex",
+    "ConfidenceSummary",
     "ClauseEvaluation",
     "ClauseEvaluationLevel",
     "ClauseEvidence",

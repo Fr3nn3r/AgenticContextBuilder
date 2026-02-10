@@ -127,26 +127,32 @@ class TestListClaimRuns:
         assert storage.list_claim_runs() == []
 
     def test_list_claim_runs_sorted(self, storage):
-        """Test runs are sorted newest first (by ID string)."""
-        # Create multiple runs
+        """Test runs are sorted newest first (by mtime)."""
+        import time
+
+        # Create multiple runs with slight delay to ensure distinct mtimes
         run1 = storage.create_claim_run(["run_1"], "0.5.0")
+        time.sleep(0.05)
         run2 = storage.create_claim_run(["run_2"], "0.5.0")
+        time.sleep(0.05)
         run3 = storage.create_claim_run(["run_3"], "0.5.0")
 
         runs = storage.list_claim_runs()
         assert len(runs) == 3
-        # Should be sorted reverse alphabetically (which is newest first for timestamp-based IDs)
-        assert runs == sorted([run1.claim_run_id, run2.claim_run_id, run3.claim_run_id], reverse=True)
+        # Newest first by modification time
+        assert runs[0] == run3.claim_run_id
+        assert runs[-1] == run1.claim_run_id
 
-    def test_list_claim_runs_ignores_non_clm_dirs(self, storage, claim_folder):
-        """Test that non-clm_ directories are ignored."""
+    def test_list_claim_runs_includes_non_clm_dirs(self, storage, claim_folder):
+        """Test that all run directories are included (including ASM- prefixed)."""
         storage.create_claim_run(["run_1"], "0.5.0")
 
-        # Create a non-clm_ directory
-        (storage.claim_runs_dir / "some_other_dir").mkdir(parents=True)
+        # Create an ASM-prefixed directory (from auto-assessment)
+        (storage.claim_runs_dir / "ASM-BATCH-001-CLM-001").mkdir(parents=True)
 
         runs = storage.list_claim_runs()
-        assert len(runs) == 1
+        assert len(runs) == 2
+        assert "ASM-BATCH-001-CLM-001" in runs
 
 
 class TestGetLatestClaimRunId:
@@ -157,13 +163,15 @@ class TestGetLatestClaimRunId:
         assert storage.get_latest_claim_run_id() is None
 
     def test_get_latest_claim_run_id(self, storage):
-        """Test getting latest run ID (sorted by string, reverse order)."""
+        """Test getting latest run ID (most recently modified)."""
+        import time
+
         run1 = storage.create_claim_run(["run_1"], "0.5.0")
+        time.sleep(0.05)
         run2 = storage.create_claim_run(["run_2"], "0.5.0")
 
-        # Latest is the one that sorts last in reverse order
-        expected_latest = max(run1.claim_run_id, run2.claim_run_id)
-        assert storage.get_latest_claim_run_id() == expected_latest
+        # Latest is the most recently created/modified
+        assert storage.get_latest_claim_run_id() == run2.claim_run_id
 
 
 class TestWriteAndReadFromClaimRun:

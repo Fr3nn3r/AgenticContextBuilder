@@ -290,7 +290,7 @@ class TestReconciliationStage:
 
         # Mock claim facts
         mock_claim_facts = MagicMock()
-        mock_claim_facts.run_id = "run_001"
+        mock_claim_facts.claim_run_id = "run_001"
         mock_claim_facts.facts = []
         mock_claim_facts.model_dump.return_value = {"facts": []}
         mock_aggregation_instance.aggregate_claim_facts.return_value = mock_claim_facts
@@ -391,3 +391,65 @@ class TestReconciliationStage:
 
         assert result.status == "error"
         assert "Unexpected error" in result.error
+
+    @patch("context_builder.pipeline.claim_stages.reconciliation.FileStorage")
+    @patch("context_builder.pipeline.claim_stages.reconciliation.AggregationService")
+    @patch("context_builder.pipeline.claim_stages.reconciliation.ReconciliationService")
+    def test_uses_real_claim_facts_attributes(
+        self,
+        mock_reconciliation_service,
+        mock_aggregation_service,
+        mock_file_storage,
+        stage,
+        tmp_path,
+    ):
+        """Regression: use a real ClaimFacts object to catch attribute mismatches.
+
+        Previously claim_facts.run_id was accessed but ClaimFacts v3 uses
+        claim_run_id. MagicMock hid the bug by accepting any attribute.
+        """
+        from context_builder.schemas.claim_facts import ClaimFacts, AggregatedFact, FactProvenance
+
+        mock_file_storage.return_value = MagicMock()
+        mock_aggregation_instance = MagicMock()
+        mock_aggregation_service.return_value = mock_aggregation_instance
+
+        mock_reconciliation_instance = MagicMock()
+        mock_reconciliation_service.return_value = mock_reconciliation_instance
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.report = MagicMock()
+        mock_result.report.run_id = "ext_run_001"
+        mock_result.report.gate.status.value = "pass"
+        mock_result.report.gate.conflict_count = 0
+        mock_result.report.gate.missing_critical_facts = []
+        mock_reconciliation_instance.reconcile.return_value = mock_result
+
+        # Use a REAL ClaimFacts object (not a mock) to catch attribute errors
+        real_claim_facts = ClaimFacts(
+            claim_id="CLM-001",
+            claim_run_id="ASM-BATCH-001-CLM-001",
+            extraction_runs_used=["ext_run_001"],
+            facts=[],
+            sources=[],
+        )
+        mock_aggregation_instance.aggregate_claim_facts.return_value = real_claim_facts
+
+        context = ClaimContext(
+            claim_id="CLM-001",
+            workspace_path=tmp_path,
+            run_id="ASM-BATCH-001-CLM-001",
+            stage_config=ClaimStageConfig(run_reconciliation=True),
+        )
+
+        result = stage.run(context)
+
+        # Should succeed without AttributeError
+        assert result.aggregated_facts is not None
+        assert result.facts_run_id == "ASM-BATCH-001-CLM-001"
+
+        # Verify aggregate_claim_facts was called with context.run_id (not report.run_id)
+        mock_aggregation_instance.aggregate_claim_facts.assert_called_once_with(
+            "CLM-001", "ASM-BATCH-001-CLM-001"
+        )

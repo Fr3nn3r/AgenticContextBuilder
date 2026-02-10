@@ -56,6 +56,7 @@ class DecisionEngine(Protocol):
         coverage_analysis: Optional[Dict[str, Any]] = None,
         processing_result: Optional[Dict[str, Any]] = None,
         assumptions: Optional[Dict[str, bool]] = None,
+        coverage_overrides: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Any]:
         """Evaluate a claim against all denial clauses.
 
@@ -67,6 +68,8 @@ class DecisionEngine(Protocol):
             processing_result: Processing/assessment result dict (if available).
             assumptions: Override assumptions for tier 2/3 clauses
                          {clause_reference: bool}. None = use defaults.
+            coverage_overrides: Adjuster coverage overrides
+                         {item_id: is_covered}. None = no overrides.
 
         Returns:
             Decision Dossier as a dict (matching DecisionDossier schema).
@@ -145,6 +148,7 @@ class DefaultDecisionEngine:
         coverage_analysis: Optional[Dict[str, Any]] = None,
         processing_result: Optional[Dict[str, Any]] = None,
         assumptions: Optional[Dict[str, bool]] = None,
+        coverage_overrides: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Any]:
         """Return empty dossier — no clauses evaluated."""
         return {

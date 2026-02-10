@@ -184,6 +184,7 @@ class DecisionDossierService:
         self,
         claim_id: str,
         assumptions: Dict[str, bool],
+        coverage_overrides: Optional[Dict[str, bool]] = None,
         claim_run_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Re-run the decision engine with overridden assumptions.
@@ -191,11 +192,14 @@ class DecisionDossierService:
         Args:
             claim_id: Claim identifier.
             assumptions: Assumption overrides {clause_reference: bool}.
+            coverage_overrides: Coverage overrides {item_id: is_covered}.
             claim_run_id: Optional claim run ID.
 
         Returns:
             New dossier dict, or None if evaluation failed.
         """
+        coverage_overrides = coverage_overrides or {}
+
         claim_folder = self._find_claim_folder(claim_id)
         if not claim_folder:
             return None
@@ -227,6 +231,38 @@ class DecisionDossierService:
             logger.warning(f"No claim facts found for {claim_id} in run {claim_run_id}")
             return None
 
+        # Merge coverage overrides: previous dossier + new (new wins)
+        merged_overrides: Dict[str, bool] = {}
+        existing_dossier_files = self._find_dossier_files(claim_folder, claim_run_id)
+        if existing_dossier_files:
+            prev = self._load_json(existing_dossier_files[-1])
+            if prev:
+                merged_overrides.update(prev.get("coverage_overrides", {}))
+        merged_overrides.update(coverage_overrides)
+
+        # Apply coverage overrides to coverage data before engine evaluation
+        if merged_overrides and coverage:
+            import copy
+            coverage = copy.deepcopy(coverage)
+            line_items = coverage.get("line_items", [])
+            for key, is_covered in merged_overrides.items():
+                if key.startswith("item_"):
+                    try:
+                        idx = int(key[5:])
+                        if 0 <= idx < len(line_items):
+                            item = line_items[idx]
+                            total_price = float(item.get("total_price", 0) or 0)
+                            if is_covered:
+                                item["coverage_status"] = "covered"
+                                item["covered_amount"] = total_price
+                                item["not_covered_amount"] = 0
+                            else:
+                                item["coverage_status"] = "not_covered"
+                                item["covered_amount"] = 0
+                                item["not_covered_amount"] = total_price
+                    except (ValueError, IndexError):
+                        pass
+
         try:
             # Run evaluation with assumptions
             dossier = engine.evaluate(
@@ -236,6 +272,7 @@ class DecisionDossierService:
                 coverage_analysis=coverage,
                 processing_result=processing,
                 assumptions=assumptions,
+                coverage_overrides=merged_overrides,
             )
 
             # Convert Pydantic model to dict if needed
@@ -331,6 +368,7 @@ class DecisionDossierService:
         screening = self._load_json(run_dir / "screening.json")
         coverage = self._load_json(run_dir / "coverage_analysis.json")
         assessment = self._load_json(run_dir / "assessment.json")
+        confidence_summary = self._load_json(run_dir / "confidence_summary.json")
 
         # Get latest dossier
         dossier_files = self._find_dossier_files(claim_folder, claim_run_id)
@@ -357,6 +395,7 @@ class DecisionDossierService:
             "coverage": coverage,
             "assessment": assessment,
             "dossier": dossier,
+            "confidence_summary": confidence_summary,
             "documents": documents,
         }
 

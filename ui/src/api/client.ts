@@ -30,10 +30,17 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new Error(
+      "Unable to connect to the server. Please check that the backend is running."
+    );
+  }
 
   // Handle 401 Unauthorized - redirect to login
   if (response.status === 401) {
@@ -44,10 +51,12 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
-  return response.json();
+  return response.json().catch(() => {
+    throw new Error("Invalid response from server");
+  });
 }
 
 export async function listClaims(runId?: string): Promise<ClaimSummary[]> {
@@ -802,12 +811,14 @@ export async function generateClaimId(): Promise<{ claim_id: string }> {
 
 export async function startPipeline(
   claimIds: string[],
-  model: string = "gpt-4o"
+  model: string = "gpt-4o",
+  autoAssess: boolean = false,
+  forceOverwrite: boolean = false,
 ): Promise<{ batch_id: string; status: string }> {
   const result = await fetchJson<{ run_id: string; status: string }>(`${API_BASE}/pipeline/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ claim_ids: claimIds, model }),
+    body: JSON.stringify({ claim_ids: claimIds, model, auto_assess: autoAssess, force_overwrite: forceOverwrite }),
   });
   return { batch_id: result.run_id, status: result.status };
 }
@@ -1509,11 +1520,20 @@ export async function getDossierVersion(claimId: string, version: number, claimR
   return fetchJson<DecisionDossier>(`/api/claims/${claimId}/decision-dossier/${version}${qs ? `?${qs}` : ""}`);
 }
 
-export async function evaluateDecision(claimId: string, assumptions: Record<string, boolean>, claimRunId?: string): Promise<DecisionDossier> {
+export async function evaluateDecision(
+  claimId: string,
+  assumptions: Record<string, boolean>,
+  coverageOverrides?: Record<string, boolean>,
+  claimRunId?: string,
+): Promise<DecisionDossier> {
   return fetchJson<DecisionDossier>(`/api/claims/${claimId}/decision-dossier/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ assumptions, claim_run_id: claimRunId }),
+    body: JSON.stringify({
+      assumptions,
+      coverage_overrides: coverageOverrides ?? {},
+      claim_run_id: claimRunId,
+    }),
   });
 }
 

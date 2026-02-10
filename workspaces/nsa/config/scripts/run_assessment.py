@@ -372,7 +372,7 @@ def compute_check_inputs(claim_facts: dict, assumptions: dict) -> dict:
         "policy_end": get_fact("end_date"),
         "claim_date": get_fact("document_date"),
         "km_limited_to": get_fact("km_limited_to"),
-        "current_odometer": get_fact("odometer_km") or get_fact("vehicle_current_km"),
+        "current_odometer": get_fact("odometer_km"),
     }
 
     # Check 4a: Shop authorization (copy from enrichment)

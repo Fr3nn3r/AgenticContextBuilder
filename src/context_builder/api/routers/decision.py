@@ -19,6 +19,7 @@ class EvaluateRequest(BaseModel):
     """Request body for re-evaluation with assumption overrides."""
 
     assumptions: Dict[str, bool] = {}
+    coverage_overrides: Dict[str, bool] = {}
     claim_run_id: Optional[str] = None
 
 
@@ -102,6 +103,7 @@ def evaluate_decision(
     dossier = service.evaluate_with_assumptions(
         claim_id=claim_id,
         assumptions=request.assumptions,
+        coverage_overrides=request.coverage_overrides,
         claim_run_id=request.claim_run_id,
     )
 

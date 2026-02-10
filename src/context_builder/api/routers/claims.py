@@ -279,26 +279,6 @@ async def start_assessment_run(
                 detail=f"Assessment already running for claim {claim_id} (run_id: {run_id})"
             )
 
-    # Verify claim has facts to assess (check claim runs with fallback to legacy)
-    from context_builder.storage.filesystem import FileStorage
-
-    data_dir = get_data_dir()
-    storage = FileStorage(data_dir)
-
-    try:
-        claim_run_storage = storage.get_claim_run_storage(claim_id)
-        facts_data = claim_run_storage.read_with_fallback("claim_facts.json")
-        if facts_data is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No claim facts found for {claim_id}. Run reconciliation first."
-            )
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Claim not found: {claim_id}"
-        )
-
     # Generate run ID and track the run
     run_id = f"ASM-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
     _active_assessment_runs[run_id] = {
@@ -325,119 +305,62 @@ async def _run_assessment_pipeline(run_id: str, claim_id: str, processing_type: 
     """Background task that runs the assessment pipeline.
 
     Broadcasts progress via WebSocket and saves results.
+    Uses AssessmentRunnerService for the actual pipeline execution.
     """
-    from pathlib import Path
-    from context_builder.pipeline.claim_stages import (
-        ClaimContext,
-        ClaimPipelineRunner,
-        ClaimStageConfig,
-        ReconciliationStage,
-        ProcessingStage,
-        get_processor,
-    )
+    from context_builder.api.services.assessment_runner import AssessmentRunnerService
 
     workspace_path = get_workspace_path()
+    loop = asyncio.get_event_loop()
 
-    # Create context with streaming callbacks
-    async def token_callback(input_tokens: int, output_tokens: int) -> None:
-        await assessment_ws_manager.broadcast(run_id, {
-            "type": "tokens",
-            "input": input_tokens,
-            "output": output_tokens,
-        })
-
-    async def stage_callback(stage_name: str, status: str) -> None:
+    async def on_stage(stage_name: str, status: str) -> None:
         await assessment_ws_manager.broadcast(run_id, {
             "type": "stage",
             "stage": stage_name,
             "status": status,
         })
 
-    # Wrap async callbacks for sync pipeline
-    loop = asyncio.get_event_loop()
-
-    def sync_token_callback(input_tokens: int, output_tokens: int) -> None:
-        # Store in run state for late-connecting clients (fixes race condition)
+    async def on_token(input_tokens: int, output_tokens: int) -> None:
         if run_id in _active_assessment_runs:
             _active_assessment_runs[run_id]["input_tokens"] = input_tokens
             _active_assessment_runs[run_id]["output_tokens"] = output_tokens
-        # Broadcast to connected clients
-        asyncio.run_coroutine_threadsafe(
-            token_callback(input_tokens, output_tokens), loop
-        )
+        await assessment_ws_manager.broadcast(run_id, {
+            "type": "tokens",
+            "input": input_tokens,
+            "output": output_tokens,
+        })
 
-    def sync_stage_callback(stage_name: str, status: str) -> None:
-        asyncio.run_coroutine_threadsafe(
-            stage_callback(stage_name, status), loop
-        )
+    async def on_complete(decision: str, assessment_id: str, _claim_id: str) -> None:
+        _active_assessment_runs[run_id]["status"] = "completed"
+        await assessment_ws_manager.broadcast(run_id, {
+            "type": "complete",
+            "decision": decision,
+            "assessment_id": assessment_id,
+            "input_tokens": _active_assessment_runs[run_id].get("input_tokens", 0),
+            "output_tokens": _active_assessment_runs[run_id].get("output_tokens", 0),
+        })
 
-    context = ClaimContext(
-        claim_id=claim_id,
-        workspace_path=workspace_path,
-        run_id=run_id,
-        stage_config=ClaimStageConfig(
-            run_reconciliation=True,
-            run_processing=True,
-            processing_type=processing_type,
-        ),
-        processing_type=processing_type,
-        on_token_update=sync_token_callback,
-        on_stage_update=sync_stage_callback,
-    )
-
-    try:
-        # Check if processor is registered
-        processor = get_processor(processing_type)
-        if processor is None:
-            raise ValueError(f"No processor registered for type: {processing_type}")
-
-        # Run pipeline stages: Reconciliation -> Enrichment -> Screening -> Processing -> Decision
-        from context_builder.pipeline.claim_stages import EnrichmentStage, ScreeningStage, DecisionStage
-        stages = [ReconciliationStage(), EnrichmentStage(), ScreeningStage(), ProcessingStage(), DecisionStage()]
-        runner = ClaimPipelineRunner(stages)
-
-        # Run synchronously (blocking)
-        # TODO: Consider running in thread pool for true async
-        context = runner.run(context)
-
-        # Save result if successful
-        if context.status == "success" and context.processing_result:
-            assessment_service = get_assessment_service()
-            saved = assessment_service.save_assessment(
-                claim_id=claim_id,
-                assessment_data=context.processing_result,
-                prompt_version=context.prompt_version,
-                extraction_bundle_id=context.extraction_bundle_id,
-            )
-
-            _active_assessment_runs[run_id]["status"] = "completed"
-            _active_assessment_runs[run_id]["result"] = saved
-
-            # Broadcast completion
-            await assessment_ws_manager.broadcast(run_id, {
-                "type": "complete",
-                "decision": context.processing_result.get("decision"),
-                "assessment_id": saved.get("id"),
-                "input_tokens": _active_assessment_runs[run_id].get("input_tokens", 0),
-                "output_tokens": _active_assessment_runs[run_id].get("output_tokens", 0),
-            })
-        else:
-            _active_assessment_runs[run_id]["status"] = "error"
-            _active_assessment_runs[run_id]["error"] = context.error or "Unknown error"
-
-            await assessment_ws_manager.broadcast(run_id, {
-                "type": "error",
-                "message": context.error or "Assessment failed",
-            })
-
-    except Exception as e:
+    async def on_error(error_msg: str, _claim_id: str) -> None:
         _active_assessment_runs[run_id]["status"] = "error"
-        _active_assessment_runs[run_id]["error"] = str(e)
-
+        _active_assessment_runs[run_id]["error"] = error_msg
         await assessment_ws_manager.broadcast(run_id, {
             "type": "error",
-            "message": str(e),
+            "message": error_msg,
         })
+
+    runner = AssessmentRunnerService()
+    saved = await runner.run_assessment(
+        claim_id=claim_id,
+        run_id=run_id,
+        workspace_path=workspace_path,
+        processing_type=processing_type,
+        on_stage_update=on_stage,
+        on_token_update=on_token,
+        on_complete=on_complete,
+        on_error=on_error,
+    )
+
+    if saved:
+        _active_assessment_runs[run_id]["result"] = saved
 
 
 @router.get("/api/claims/{claim_id}/assessment/status/{run_id}")

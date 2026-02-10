@@ -24,7 +24,9 @@ from context_builder.coverage.schemas import (
     CoverageStatus,
     LineItemCoverage,
     MatchMethod,
+    TraceAction,
 )
+from context_builder.coverage.trace import TraceBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -359,8 +361,10 @@ Determine if this item is covered under the policy."""
                 # Cap confidence for vague descriptions to ensure human review
                 confidence = result.confidence
                 reasoning = result.reasoning
+                vague_capped = False
                 if self._detect_vague_description(description) and confidence > 0.50:
                     confidence = 0.50
+                    vague_capped = True
                     reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
 
                 # Determine coverage status with asymmetric thresholds:
@@ -378,6 +382,30 @@ Determine if this item is covered under the policy."""
                 if attempt > 0:
                     reasoning += f" [Succeeded on attempt {attempt + 1}]"
 
+                # Build trace step with LLM audit metadata
+                tb = TraceBuilder()
+                trace_detail: Dict[str, Any] = {
+                    "model": self.config.model,
+                }
+                # Extract token usage from response if available
+                usage = getattr(response, "usage", None)
+                if usage:
+                    trace_detail["prompt_tokens"] = getattr(usage, "prompt_tokens", None)
+                    trace_detail["completion_tokens"] = getattr(usage, "completion_tokens", None)
+                # Get call ID from audit client if available
+                call_id_fn = getattr(client, "get_last_call_id", None)
+                if call_id_fn:
+                    trace_detail["call_id"] = call_id_fn()
+                if vague_capped:
+                    trace_detail["vague_description_cap"] = True
+                    trace_detail["raw_confidence"] = result.confidence
+                if attempt > 0:
+                    trace_detail["retries"] = attempt
+
+                tb.add("llm", TraceAction.MATCHED, reasoning,
+                       verdict=status, confidence=confidence,
+                       detail=trace_detail)
+
                 return LineItemCoverage(
                     item_code=item_code,
                     description=description,
@@ -389,6 +417,7 @@ Determine if this item is covered under the policy."""
                     match_method=MatchMethod.LLM,
                     match_confidence=confidence,
                     match_reasoning=reasoning,
+                    decision_trace=tb.build(),
                     covered_amount=total_price if status == CoverageStatus.COVERED else 0.0,
                     not_covered_amount=0.0 if status == CoverageStatus.COVERED else total_price,
                 )
@@ -414,6 +443,12 @@ Determine if this item is covered under the policy."""
                         description[:40], max_attempts, e,
                     )
 
+        fail_tb = TraceBuilder()
+        fail_tb.add("llm", TraceAction.SKIPPED,
+                     f"LLM analysis failed after {max_attempts} attempts: {str(last_error)}",
+                     verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
+                     detail={"reason": "llm_error", "retries": max_attempts,
+                             "model": self.config.model})
         return LineItemCoverage(
             item_code=item_code,
             description=description,
@@ -425,6 +460,7 @@ Determine if this item is covered under the policy."""
             match_method=MatchMethod.LLM,
             match_confidence=0.0,
             match_reasoning=f"LLM analysis failed after {max_attempts} attempts: {str(last_error)}",
+            decision_trace=fail_tb.build(),
             covered_amount=0.0,
             not_covered_amount=total_price,
         )

@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
-from context_builder.coverage.schemas import CoverageStatus, MatchMethod
+from context_builder.coverage.schemas import CoverageStatus, MatchMethod, TraceAction
 
 
 def _load_nsa_rule_config() -> RuleConfig:
@@ -64,6 +64,12 @@ class TestRuleEngineDefaults:
         assert result.not_covered_amount == 50.0
         assert "fee" in result.match_reasoning.lower()
         assert result.exclusion_reason == "fee"
+        # Trace assertions
+        assert result.decision_trace is not None
+        assert len(result.decision_trace) == 1
+        assert result.decision_trace[0].stage == "rule_engine"
+        assert result.decision_trace[0].action == TraceAction.EXCLUDED
+        assert result.decision_trace[0].detail["rule"] == "fee_item"
 
     def test_zero_price_item_covered(self):
         """Zero-price items are marked covered."""
@@ -77,6 +83,11 @@ class TestRuleEngineDefaults:
         assert result.coverage_status == CoverageStatus.COVERED
         assert result.match_method == MatchMethod.RULE
         assert result.covered_amount == 0.0
+        # Trace assertions
+        assert result.decision_trace is not None
+        assert len(result.decision_trace) == 1
+        assert result.decision_trace[0].action == TraceAction.MATCHED
+        assert result.decision_trace[0].detail["rule"] == "zero_price"
 
     def test_normal_part_passes_through(self):
         """Normal parts pass through without matching (no patterns configured)."""

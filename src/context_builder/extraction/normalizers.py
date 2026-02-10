@@ -1,10 +1,12 @@
 """Field value normalizers and validators for extraction.
 
-Simplified approach: All normalizers just ensure type safety (convert to string).
-Raw values from LLM are preserved as-is without transformation.
+Most normalizers just ensure type safety (convert to string).
+Date normalizers actively parse multilingual dates to ISO YYYY-MM-DD.
 """
 
 from typing import Any, Callable
+
+from context_builder.utils.date_parsing import date_to_iso
 
 
 def safe_float(value: Any, default: float = 0.0) -> float | None:
@@ -101,19 +103,16 @@ def validate_non_empty(value: Any) -> bool:
 
 
 def validate_is_date(value: Any) -> bool:
-    """Validate that value looks like a date (basic check)."""
-    import re
+    """Validate that value looks like a date.
+
+    Uses the real date parser so named months (German/French) are accepted too.
+    """
+    from context_builder.utils.date_parsing import parse_date_to_iso
+
     s = safe_string(value)
     if not s:
         return False
-    # Match common date patterns
-    date_patterns = [
-        r"\d{4}-\d{2}-\d{2}",      # ISO: 2026-01-23
-        r"\d{1,2}/\d{1,2}/\d{2,4}", # dd/mm/yy or dd/mm/yyyy
-        r"\d{1,2}-\d{1,2}-\d{2,4}", # dd-mm-yy or dd-mm-yyyy
-        r"\d{1,2}\.\d{1,2}\.\d{2,4}", # dd.mm.yyyy (Swiss)
-    ]
-    return any(re.search(p, s) for p in date_patterns)
+    return parse_date_to_iso(s) is not None
 
 
 def validate_plate_like(value: Any) -> bool:
@@ -153,11 +152,11 @@ def validate_vin_format(value: Any) -> bool:
 NORMALIZERS: dict[str, Callable[[Any], str]] = {
     "uppercase_trim": safe_string,
     "vin_canonical": normalize_vin,
-    "date_to_iso": safe_string,
+    "date_to_iso": date_to_iso,
     "plate_normalize": safe_string,
     "none": safe_string,
     "trim": safe_string,
-    "swiss_date_to_iso": safe_string,
+    "swiss_date_to_iso": date_to_iso,
     "swiss_currency": safe_string,
     "covered_boolean": safe_string,
     "transferable_boolean": safe_string,
@@ -175,7 +174,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
 
 
 def get_normalizer(name: str) -> Callable[[Any], str]:
-    """Get normalizer function by name. All return safe_string."""
+    """Get normalizer function by name."""
     return NORMALIZERS.get(name, safe_string)
 
 

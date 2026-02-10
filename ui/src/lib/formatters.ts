@@ -223,6 +223,30 @@ export function formatDuration(seconds: number): string {
 }
 
 // ============================================================================
+// Event Date Formatting
+// ============================================================================
+
+/**
+ * Formats an event date for display.
+ * Expects ISO YYYY-MM-DD (from backend normalization) and converts to DD.MM.YYYY.
+ * Returns the original string as-is for legacy non-normalized data.
+ *
+ * @example
+ * formatEventDate("2026-01-23") // "23.01.2026"
+ * formatEventDate(null)         // "-"
+ * formatEventDate("27 janvier 2026") // "27 janvier 2026" (legacy pass-through)
+ */
+export function formatEventDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "-";
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${day}.${month}.${year}`;
+  }
+  return dateStr;
+}
+
+// ============================================================================
 // Batch ID Formatting
 // ============================================================================
 

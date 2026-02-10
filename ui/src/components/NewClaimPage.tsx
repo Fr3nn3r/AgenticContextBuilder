@@ -14,6 +14,7 @@ import {
   deletePendingClaim,
   deletePendingDocument,
   listPendingClaims,
+  runClaimAssessment,
   startPipeline,
   uploadDocuments,
 } from '../api/client';
@@ -26,7 +27,8 @@ function generateLocalClaimId(): string {
   return `CLM-${dateStr}-${randomSuffix}`;
 }
 import { usePipelineWebSocket } from '../hooks/usePipelineWebSocket';
-import type { DocProgress, PendingClaim, PipelineBatch, PipelineBatchStatus } from '../types';
+import type { ClaimAssessmentProgress, DocProgress, PendingClaim, PipelineBatch, PipelineBatchStatus } from '../types';
+import { AssessmentProgress } from './AssessmentProgress';
 import { PendingClaimCard } from './PendingClaimCard';
 import { PipelineProgress } from './PipelineProgress';
 
@@ -44,6 +46,13 @@ export function NewClaimPage() {
   const [docs, setDocs] = useState<Record<string, DocProgress>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [isStarting, setIsStarting] = useState(false); // Shows while API call is in progress
+
+  // Force reprocess toggle
+  const [forceReprocess, setForceReprocess] = useState(false);
+
+  // Assessment state (auto-assess after extraction)
+  const [assessmentProgress, setAssessmentProgress] = useState<Record<string, ClaimAssessmentProgress>>({});
+  const [isAssessing, setIsAssessing] = useState(false);
 
   // WebSocket connection
   const { isConnected, isConnecting, isReconnecting } = usePipelineWebSocket({
@@ -63,7 +72,12 @@ export function NewClaimPage() {
       setCurrentBatch((prev) =>
         prev ? { ...prev, status: 'completed', summary } : null
       );
-      setPageState('complete');
+      // Don't set pageState='complete' yet — assessment may follow
+      // If no assessment_starting arrives within a moment, the WS will close
+      // and we'll reach 'complete' via onAllAssessmentsComplete or the WS close
+      if (!isAssessing) {
+        setPageState('complete');
+      }
     },
     onBatchCancelled: () => {
       setCurrentBatch((prev) =>
@@ -76,6 +90,83 @@ export function NewClaimPage() {
         prev ? { ...prev, status } : null
       );
       setDocs(syncedDocs);
+      if (status === 'assessing') {
+        setIsAssessing(true);
+      }
+    },
+    // Assessment callbacks
+    onAssessmentStarting: (claimIds) => {
+      setIsAssessing(true);
+      setPageState('running');
+      setCurrentBatch((prev) =>
+        prev ? { ...prev, status: 'assessing' as PipelineBatchStatus } : null
+      );
+      const initial: Record<string, ClaimAssessmentProgress> = {};
+      claimIds.forEach((cid) => {
+        initial[cid] = { claim_id: cid, phase: 'pending' };
+      });
+      setAssessmentProgress(initial);
+    },
+    onAssessmentStage: (claimId, stage, status) => {
+      setAssessmentProgress((prev) => {
+        const current = prev[claimId];
+        // Don't overwrite terminal states (error/complete) with a stage update
+        if (current?.phase === 'error' || current?.phase === 'complete') {
+          return prev;
+        }
+        // If the stage itself reports an error, mark as error with failedAtStage
+        if (status === 'error') {
+          return {
+            ...prev,
+            [claimId]: {
+              ...current,
+              claim_id: claimId,
+              phase: 'error',
+              failed_at_stage: stage as ClaimAssessmentProgress['phase'],
+            },
+          };
+        }
+        return {
+          ...prev,
+          [claimId]: {
+            ...current,
+            claim_id: claimId,
+            phase: stage as ClaimAssessmentProgress['phase'],
+          },
+        };
+      });
+    },
+    onAssessmentComplete: (claimId, decision, assessmentId) => {
+      setAssessmentProgress((prev) => ({
+        ...prev,
+        [claimId]: {
+          ...prev[claimId],
+          claim_id: claimId,
+          phase: 'complete',
+          decision,
+          assessment_id: assessmentId,
+        },
+      }));
+    },
+    onAssessmentError: (claimId, error) => {
+      setAssessmentProgress((prev) => ({
+        ...prev,
+        [claimId]: {
+          ...prev[claimId],
+          claim_id: claimId,
+          phase: 'error',
+          error,
+          // Preserve failed_at_stage if already set by onAssessmentStage
+          failed_at_stage: prev[claimId]?.failed_at_stage ?? prev[claimId]?.phase as ClaimAssessmentProgress['phase'],
+        },
+      }));
+    },
+    onAllAssessmentsComplete: () => {
+      setIsAssessing(false);
+      setPageState('complete');
+      setCurrentBatch((prev) =>
+        prev ? { ...prev, status: 'completed' } : null
+      );
     },
   });
 
@@ -138,11 +229,12 @@ export function NewClaimPage() {
   }, []);
 
   const handleRemoveClaim = useCallback(async (claimId: string) => {
+    // Always remove from local state (claim may only exist locally if no docs uploaded yet)
+    setPendingClaims((prev) => prev.filter((c) => c.claim_id !== claimId));
     try {
       await deletePendingClaim(claimId);
-      await loadPendingClaims();
-    } catch (err) {
-      console.error('Failed to remove claim:', err);
+    } catch {
+      // 404 expected for locally-created claims with no uploads
     }
   }, []);
 
@@ -153,7 +245,7 @@ export function NewClaimPage() {
     setIsStarting(true);
 
     try {
-      const result = await startPipeline(claimsWithDocs.map((c) => c.claim_id));
+      const result = await startPipeline(claimsWithDocs.map((c) => c.claim_id), 'gpt-4o', true, forceReprocess);
 
       // Initialize docs state from pending claims
       const initialDocs: Record<string, DocProgress> = {};
@@ -197,9 +289,94 @@ export function NewClaimPage() {
   const handleReset = () => {
     setCurrentBatch(null);
     setDocs({});
+    setAssessmentProgress({});
+    setIsAssessing(false);
     setPendingClaims([]);
     setPageState('uploading');
   };
+
+  // Retry failed assessments
+  const [isRetryingAssessment, setIsRetryingAssessment] = useState(false);
+
+  const handleRetryAssessment = async (claimIds: string[]) => {
+    if (claimIds.length === 0) return;
+    setIsRetryingAssessment(true);
+
+    // Reset failed claims to pending state
+    setAssessmentProgress((prev) => {
+      const updated = { ...prev };
+      claimIds.forEach((cid) => {
+        updated[cid] = { claim_id: cid, phase: 'pending' };
+      });
+      return updated;
+    });
+    setIsAssessing(true);
+    setPageState('running');
+
+    // Run each claim assessment sequentially via per-claim endpoint
+    for (const cid of claimIds) {
+      setAssessmentProgress((prev) => ({
+        ...prev,
+        [cid]: { ...prev[cid], claim_id: cid, phase: 'reconciliation' },
+      }));
+      try {
+        // Start assessment (returns immediately with run_id)
+        const startResult = await runClaimAssessment(cid);
+        const runId = (startResult as unknown as { run_id: string }).run_id;
+        if (!runId) throw new Error('No run_id returned from assessment start');
+
+        // Poll status until assessment completes
+        const result = await pollAssessmentStatus(cid, runId);
+        const completed = result.status === 'completed' && result.result;
+        if (completed) {
+          const { decision, id } = result.result!;
+          setAssessmentProgress((prev) => ({
+            ...prev,
+            [cid]: {
+              claim_id: cid,
+              phase: 'complete',
+              decision,
+              assessment_id: id,
+            },
+          }));
+        } else if (result.status === 'error') {
+          throw new Error(result.error || 'Assessment failed');
+        }
+      } catch (err) {
+        console.error(`Assessment retry failed for ${cid}:`, err);
+        setAssessmentProgress((prev) => ({
+          ...prev,
+          [cid]: {
+            claim_id: cid,
+            phase: 'error',
+            error: err instanceof Error ? err.message : 'Retry failed. Please try again.',
+            failed_at_stage: prev[cid]?.phase as ClaimAssessmentProgress['phase'],
+          },
+        }));
+      }
+    }
+
+    setIsAssessing(false);
+    setPageState('complete');
+    setIsRetryingAssessment(false);
+  };
+
+  /** Poll assessment status endpoint until terminal state. */
+  async function pollAssessmentStatus(
+    claimId: string,
+    runId: string,
+    intervalMs = 2000,
+    maxAttempts = 150, // 5 minutes
+  ): Promise<{ status: string; result?: { decision: string; id: string }; error?: string }> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}/assessment/status/${encodeURIComponent(runId)}`);
+      if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
+      const data = await res.json();
+      if (data.status !== 'running') return data;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error('Assessment timed out');
+  }
 
   const totalDocs = pendingClaims.reduce((sum, c) => sum + c.documents.length, 0);
   const canRun = totalDocs > 0 && !uploadingClaim;
@@ -214,15 +391,18 @@ export function NewClaimPage() {
 
   return (
     <div className="flex-1 overflow-auto bg-muted">
-      <div className="max-w-4xl mx-auto py-8 px-4">
+      <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">New Claim</h1>
-          <p className="text-muted-foreground mt-1">
-            {pageState === 'uploading' && 'Upload documents and run the extraction pipeline.'}
-            {pageState === 'running' && 'Processing documents...'}
-            {pageState === 'complete' && 'Pipeline completed.'}
-          </p>
+        <div className="mb-4 flex items-baseline justify-between">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-xl font-semibold text-foreground tracking-tight">New Claim</h1>
+            <span className="text-sm text-muted-foreground">
+              {pageState === 'uploading' && 'Upload documents and run the extraction pipeline.'}
+              {pageState === 'running' && !isAssessing && 'Processing documents...'}
+              {pageState === 'running' && isAssessing && 'Assessing claims...'}
+              {pageState === 'complete' && 'Pipeline completed.'}
+            </span>
+          </div>
         </div>
 
         {/* Upload State */}
@@ -262,7 +442,16 @@ export function NewClaimPage() {
             )}
 
             {/* Run Button */}
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-4">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={forceReprocess}
+                  onChange={(e) => setForceReprocess(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Force reprocess
+              </label>
               <button
                 onClick={handleRunPipeline}
                 disabled={!canRun}
@@ -290,30 +479,52 @@ export function NewClaimPage() {
           <div className="space-y-6">
             <PipelineProgress
               batchId={currentBatch.batch_id}
-              status={currentBatch.status}
+              status={isAssessing ? 'completed' as PipelineBatchStatus : currentBatch.status}
               docs={docs}
               claimIds={currentBatch.claim_ids}
               summary={currentBatch.summary}
-              onCancel={() => setShowCancelConfirm(true)}
+              onCancel={!isAssessing ? () => setShowCancelConfirm(true) : undefined}
               isConnected={isConnected}
               isConnecting={isConnecting}
               isReconnecting={isReconnecting}
             />
 
+            {/* Assessment Progress (shown during/after assessment) */}
+            {Object.keys(assessmentProgress).length > 0 && (
+              <AssessmentProgress
+                claims={assessmentProgress}
+                phase={isAssessing ? 'running' : pageState === 'complete' ? 'complete' : 'idle'}
+                onRetry={handleRetryAssessment}
+                isRetrying={isRetryingAssessment}
+              />
+            )}
+
             {pageState === 'complete' && (
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
                 <button
                   onClick={handleReset}
-                  className="px-4 py-2 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   Upload More Claims
                 </button>
                 <a
                   href={`/batches/${currentBatch?.batch_id}/documents`}
-                  className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
+                  className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
                 >
                   View in Batches
                 </a>
+                {/* Per-claim assessment links */}
+                {Object.values(assessmentProgress)
+                  .filter((c) => c.phase === 'complete')
+                  .map((c) => (
+                    <a
+                      key={c.claim_id}
+                      href={`/claims/${c.claim_id}`}
+                      className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    >
+                      View {c.claim_id} Assessment
+                    </a>
+                  ))}
               </div>
             )}
           </div>

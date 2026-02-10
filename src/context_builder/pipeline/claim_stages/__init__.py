@@ -49,6 +49,12 @@ from context_builder.pipeline.claim_stages.decision import (
     DefaultDecisionEngine,
     load_engine_from_workspace,
 )
+# NOTE: ConfidenceStage lives in context_builder.confidence.stage which itself
+# imports from this package's .context module.  Importing it eagerly here would
+# create a circular import chain:
+#   claim_stages.__init__ -> confidence.stage -> claim_stages.context
+#                         -> claim_stages.__init__ (partially initialised)
+# We therefore use a lazy accessor via __getattr__ (see bottom of file).
 
 # Import assessment processor to auto-register it
 import context_builder.pipeline.claim_stages.assessment_processor  # noqa: F401
@@ -160,6 +166,7 @@ __all__ = [
     "ScreeningStage",
     "ProcessingStage",
     "DecisionStage",
+    "ConfidenceStage",
     # Enrichment utilities
     "Enricher",
     "DefaultEnricher",
@@ -178,3 +185,12 @@ __all__ = [
     "DefaultDecisionEngine",
     "load_engine_from_workspace",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import for ConfidenceStage to avoid circular import."""
+    if name == "ConfidenceStage":
+        from context_builder.confidence.stage import ConfidenceStage
+
+        return ConfidenceStage
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

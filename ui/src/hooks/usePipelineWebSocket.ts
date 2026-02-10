@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DocProgress, PipelineBatchStatus, WebSocketMessage } from '../types';
 
 const WS_RECONNECT_DELAY = 3000;
+const WS_MAX_RECONNECT_ATTEMPTS = 10;
 
 // Build WebSocket URL from current location
 function getWsUrl(batchId: string): string {
@@ -27,6 +28,12 @@ export interface UsePipelineWebSocketOptions {
   onBatchCancelled?: () => void;
   onSync?: (status: PipelineBatchStatus, docs: Record<string, DocProgress>) => void;
   onError?: (error: Error) => void;
+  // Assessment callbacks (auto-assess)
+  onAssessmentStarting?: (claimIds: string[]) => void;
+  onAssessmentStage?: (claimId: string, stage: string, status: string) => void;
+  onAssessmentComplete?: (claimId: string, decision: string, assessmentId: string) => void;
+  onAssessmentError?: (claimId: string, error: string) => void;
+  onAllAssessmentsComplete?: (results: Array<{ claim_id: string; decision: string; assessment_id: string }>) => void;
 }
 
 export interface UsePipelineWebSocketResult {
@@ -44,6 +51,11 @@ export function usePipelineWebSocket({
   onBatchCancelled,
   onSync,
   onError,
+  onAssessmentStarting,
+  onAssessmentStage,
+  onAssessmentComplete,
+  onAssessmentError,
+  onAllAssessmentsComplete,
 }: UsePipelineWebSocketOptions): UsePipelineWebSocketResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -63,6 +75,11 @@ export function usePipelineWebSocket({
     onBatchCancelled,
     onSync,
     onError,
+    onAssessmentStarting,
+    onAssessmentStage,
+    onAssessmentComplete,
+    onAssessmentError,
+    onAllAssessmentsComplete,
   });
 
   // Update callback refs when they change
@@ -73,8 +90,13 @@ export function usePipelineWebSocket({
       onBatchCancelled,
       onSync,
       onError,
+      onAssessmentStarting,
+      onAssessmentStage,
+      onAssessmentComplete,
+      onAssessmentError,
+      onAllAssessmentsComplete,
     };
-  }, [onDocProgress, onBatchComplete, onBatchCancelled, onSync, onError]);
+  }, [onDocProgress, onBatchComplete, onBatchCancelled, onSync, onError, onAssessmentStarting, onAssessmentStage, onAssessmentComplete, onAssessmentError, onAllAssessmentsComplete]);
 
   const connect = useCallback(() => {
     if (!batchId) return;
@@ -127,6 +149,7 @@ export function usePipelineWebSocket({
 
           case 'batch_complete':
           case 'run_complete':  // Support legacy message type
+            shouldReconnectRef.current = false;
             if (callbacks.onBatchComplete && message.summary) {
               callbacks.onBatchComplete(message.summary);
             }
@@ -134,8 +157,51 @@ export function usePipelineWebSocket({
 
           case 'batch_cancelled':
           case 'run_cancelled':  // Support legacy message type
+            shouldReconnectRef.current = false;
             if (callbacks.onBatchCancelled) {
               callbacks.onBatchCancelled();
+            }
+            break;
+
+          case 'assessment_starting':
+            if (callbacks.onAssessmentStarting && message.claim_ids) {
+              callbacks.onAssessmentStarting(message.claim_ids);
+            }
+            break;
+
+          case 'assessment_stage':
+            if (callbacks.onAssessmentStage && message.claim_id && message.stage) {
+              callbacks.onAssessmentStage(message.claim_id, message.stage, message.status || 'running');
+            }
+            break;
+
+          case 'assessment_complete':
+            if (callbacks.onAssessmentComplete && message.claim_id && message.decision) {
+              callbacks.onAssessmentComplete(message.claim_id, message.decision, message.assessment_id || '');
+            }
+            break;
+
+          case 'assessment_error':
+            if (callbacks.onAssessmentError && message.claim_id && message.error) {
+              callbacks.onAssessmentError(message.claim_id, message.error);
+            }
+            break;
+
+          case 'all_assessments_complete':
+            if (callbacks.onAllAssessmentsComplete && message.results) {
+              callbacks.onAllAssessmentsComplete(message.results);
+            }
+            break;
+
+          case 'error':
+            // Server says run not found or other terminal error — stop reconnecting
+            shouldReconnectRef.current = false;
+            {
+              const wsError = new Error(message.message || 'Server error');
+              setError(wsError);
+              if (callbacks.onError) {
+                callbacks.onError(wsError);
+              }
             }
             break;
 
@@ -162,15 +228,29 @@ export function usePipelineWebSocket({
     ws.onclose = () => {
       setIsConnected(false);
       setIsConnecting(false);
-      setIsReconnecting(false);
       wsRef.current = null;
 
-      // Auto-reconnect if we should
+      // Auto-reconnect if we should (with max attempts safety net)
       if (shouldReconnectRef.current && batchId) {
-        setReconnectAttempts((prev) => prev + 1);
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          connect();
-        }, WS_RECONNECT_DELAY);
+        // Show reconnecting state immediately (not after the delay)
+        setIsReconnecting(true);
+        setReconnectAttempts((prev) => {
+          if (prev >= WS_MAX_RECONNECT_ATTEMPTS) {
+            setIsReconnecting(false);
+            const maxError = new Error(`WebSocket reconnect failed after ${WS_MAX_RECONNECT_ATTEMPTS} attempts`);
+            setError(maxError);
+            if (callbacksRef.current.onError) {
+              callbacksRef.current.onError(maxError);
+            }
+            return prev;
+          }
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect();
+          }, WS_RECONNECT_DELAY);
+          return prev + 1;
+        });
+      } else {
+        setIsReconnecting(false);
       }
     };
   }, [batchId]);

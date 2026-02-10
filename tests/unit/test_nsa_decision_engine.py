@@ -96,8 +96,48 @@ def _minimal_clause_registry() -> Dict[str, Any]:
             },
             {
                 "reference": "2.4.A.c",
-                "text": "Flat-rate labor hours limit.",
-                "short_name": "Flat-rate labor hours",
+                "text": "Parts without manufacturer part number not covered.",
+                "short_name": "Parts without part number",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.4.A.d",
+                "text": "Wear parts excluded unless part of covered failure.",
+                "short_name": "Wear parts exclusion",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.4.A.e",
+                "text": "Fluid losses (causal analysis required).",
+                "short_name": "Fluid losses",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.4.A.f",
+                "text": "Cosmetic/acoustic defects not impairing function.",
+                "short_name": "Cosmetic defects",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.4.A.g",
+                "text": "Consumables and fluids not covered unless part of covered repair.",
+                "short_name": "Consumables and fluids",
                 "category": "limitation",
                 "evaluation_level": "line_item",
                 "evaluability_tier": 1,
@@ -106,8 +146,28 @@ def _minimal_clause_registry() -> Dict[str, Any]:
             },
             {
                 "reference": "2.4.A.h",
-                "text": "Administrative fees excluded.",
-                "short_name": "Administrative fees exclusion",
+                "text": "Body components and administrative fees excluded.",
+                "short_name": "Body components / admin fees",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.5.A.b",
+                "text": "Diagnostic/calibration work capped.",
+                "short_name": "Diagnostic fee cap",
+                "category": "limitation",
+                "evaluation_level": "line_item",
+                "evaluability_tier": 1,
+                "default_assumption": True,
+                "assumption_question": None,
+            },
+            {
+                "reference": "2.5.A.c",
+                "text": "Test drives excluded.",
+                "short_name": "Test drives",
                 "category": "limitation",
                 "evaluation_level": "line_item",
                 "evaluability_tier": 1,
@@ -216,7 +276,7 @@ class TestRegistryLoading:
     def test_loads_clause_registry(self, engine):
         registry = engine.get_clause_registry()
         assert registry["registry_version"] == "1.0.0"
-        assert len(registry["clauses"]) == 10
+        assert len(registry["clauses"]) == 16
 
     def test_engine_evaluates_only_enabled_clauses(self, engine):
         """Engine should skip disabled clauses (enabled=false) during evaluation."""
@@ -224,7 +284,7 @@ class TestRegistryLoading:
         evaluated_refs = {e.clause_reference for e in dossier.clause_evaluations}
         assert "2.2.B" not in evaluated_refs
         assert "2.3.A.q" not in evaluated_refs
-        assert len(dossier.clause_evaluations) == 8
+        assert len(dossier.clause_evaluations) == 14
 
     def test_caches_registry(self, engine):
         r1 = engine.get_clause_registry()
@@ -363,6 +423,162 @@ class TestLineItemClauses:
         assert "2.4.A.h" in lid.applicable_clauses
         assert lid.denied_amount > 0 or lid.verdict.value == "DENIED"
 
+    def test_labor_flat_rate_exceeds_guideline(self, engine):
+        """2.2.D triggers on excess labor hours beyond flat-rate guideline."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Clutch replacement labor",
+                "item_type": "labor",
+                "quantity": 10.0,  # Way over flat-rate
+                "unit_price": 150.0,
+                "total_price": 1500.0,
+                "coverage_status": "covered",
+                "covered_amount": 1500.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.2.D" in lid.applicable_clauses
+        assert lid.adjusted_amount > 0
+
+    def test_labor_rate_cap_by_brand(self, engine):
+        """2.2.D triggers when hourly rate exceeds brand-specific max."""
+        facts = _make_facts([{"name": "vehicle_make", "value": "BMW"}])
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Engine repair",
+                "item_type": "labor",
+                "quantity": 2.0,
+                "unit_price": 250.0,  # Exceeds BMW max of 200
+                "total_price": 500.0,
+                "coverage_status": "covered",
+                "covered_amount": 500.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(
+            claim_id="CLM-001", aggregated_facts=facts, coverage_analysis=coverage,
+        )
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.2.D" in lid.applicable_clauses
+        assert lid.adjusted_amount > 0
+
+    def test_consumable_excluded(self, engine):
+        """2.4.A.g triggers on oil/fluid item not part of covered repair."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Motoroel 5W-30",
+                "item_type": "parts",
+                "item_code": "OIL-5W30-001",
+                "total_price": 85.0,
+                "coverage_status": "",
+                "covered_amount": 0.0,
+                "not_covered_amount": 85.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.4.A.g" in lid.applicable_clauses
+        assert lid.denied_amount > 0 or lid.verdict.value == "DENIED"
+
+    def test_consumable_in_covered_repair_passes(self, engine):
+        """2.4.A.g does NOT trigger when coverage_status is 'covered'."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Motoroel 5W-30",
+                "item_type": "parts",
+                "item_code": "OIL-5W30-001",
+                "total_price": 85.0,
+                "coverage_status": "covered",
+                "covered_amount": 85.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        # 2.4.A.g should not deny it because it's part of a covered repair
+        assert lid.verdict.value != "DENIED" or "2.4.A.g" not in lid.applicable_clauses
+
+    def test_wear_part_excluded(self, engine):
+        """2.4.A.d triggers on brake pads (wear part) not in covered repair."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Brake pad front left",
+                "item_type": "parts",
+                "item_code": "BRK-PAD-001",
+                "total_price": 120.0,
+                "coverage_status": "",
+                "covered_amount": 0.0,
+                "not_covered_amount": 120.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.4.A.d" in lid.applicable_clauses
+        assert lid.denied_amount > 0 or lid.verdict.value == "DENIED"
+
+    def test_diagnostic_fee_capped(self, engine):
+        """2.5.A.b caps diagnostic fee at 250 CHF."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Diagnose Fehlersuche",
+                "item_type": "fee",
+                "total_price": 400.0,
+                "coverage_status": "covered",
+                "covered_amount": 400.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.5.A.b" in lid.applicable_clauses
+        assert lid.adjusted_amount == 150.0  # 400 - 250
+
+    def test_test_drive_excluded(self, engine):
+        """2.5.A.c triggers on 'Probefahrt' labor item."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Probefahrt nach Reparatur",
+                "item_type": "labor",
+                "total_price": 80.0,
+                "coverage_status": "covered",
+                "covered_amount": 80.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert "2.5.A.c" in lid.applicable_clauses
+        assert lid.denied_amount > 0 or lid.verdict.value == "DENIED"
+
+    def test_test_drive_no_match(self, engine):
+        """2.5.A.c returns None on normal labor (no test drive keyword)."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Kupplungswechsel",
+                "item_type": "labor",
+                "total_price": 500.0,
+                "coverage_status": "covered",
+                "covered_amount": 500.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        # 2.5.A.c should not appear in applicable clauses for normal labor
+        if "2.5.A.c" in lid.applicable_clauses:
+            # Even if it appeared, it should not have denied anything
+            assert lid.verdict.value != "DENIED"
+
 
 class TestVerdictDetermination:
     """Test claim-level verdict logic."""
@@ -460,7 +676,7 @@ class TestDossierStructure:
         assert dossier.claim_id == "CLM-001"
         assert dossier.version == 1
         assert dossier.engine_id == "nsa_decision_v1"
-        assert dossier.engine_version == "1.1.0"
+        assert dossier.engine_version == "1.2.0"
         assert dossier.evaluation_timestamp
 
     def test_dossier_evaluates_all_enabled_clauses(self, engine):
@@ -520,6 +736,63 @@ class TestAssumptionOverrides:
         assert ev.verdict == "PASS"  # Tier 1 uses screening data, not assumptions
 
 
+class TestCoverageOverrides:
+    """Test coverage override persistence and auto-apply."""
+
+    def test_coverage_override_changes_verdict(self, engine):
+        """An item originally not_covered becomes covered when override is applied."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Turbo replacement",
+                "item_type": "parts",
+                "item_code": "TURBO-001",
+                "total_price": 2500.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 2500.0,
+            },
+        ])
+        # Without override: item should be DENIED
+        dossier_no_override = engine.evaluate(
+            claim_id="CLM-001",
+            aggregated_facts={},
+            coverage_analysis=coverage,
+        )
+        lid = dossier_no_override.line_item_decisions[0]
+        assert lid.verdict.value == "DENIED"
+
+        # Apply override via mutated coverage data (simulating what the service does)
+        import copy
+        coverage_overridden = copy.deepcopy(coverage)
+        coverage_overridden["line_items"][0]["coverage_status"] = "covered"
+        coverage_overridden["line_items"][0]["covered_amount"] = 2500.0
+        coverage_overridden["line_items"][0]["not_covered_amount"] = 0.0
+
+        dossier_with_override = engine.evaluate(
+            claim_id="CLM-001",
+            aggregated_facts={},
+            coverage_analysis=coverage_overridden,
+            coverage_overrides={"item_0": True},
+        )
+        lid2 = dossier_with_override.line_item_decisions[0]
+        assert lid2.verdict.value == "COVERED"
+
+    def test_coverage_overrides_persisted_in_dossier(self, engine):
+        """Dossier output includes the coverage_overrides dict."""
+        overrides = {"item_0": True, "item_2": False}
+        dossier = engine.evaluate(
+            claim_id="CLM-001",
+            aggregated_facts={},
+            coverage_overrides=overrides,
+        )
+        assert dossier.coverage_overrides == overrides
+
+    def test_empty_overrides_default(self, engine):
+        """Dossier has empty coverage_overrides by default."""
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
+        assert dossier.coverage_overrides == {}
+
+
 class TestScreeningHelpers:
     """Test helper methods."""
 
@@ -551,3 +824,260 @@ class TestScreeningHelpers:
 
     def test_get_fact_value_none_facts(self, engine):
         assert engine._get_fact_value(None, "mileage") is None
+
+
+class TestCoverageExclusionMapping:
+    """Test _map_coverage_exclusion_to_clause and the not-covered fast path."""
+
+    def test_explicit_exclusion_reason_maps_to_clause(self, engine):
+        """exclusion_reason 'consumable' maps to clause 2.4.A.g."""
+        item = {
+            "description": "Motoroel 5W-30",
+            "exclusion_reason": "consumable",
+            "match_reasoning": "Consumable item not covered: oil",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        clause_ref, clause_name, reason = result
+        assert clause_ref == "2.4.A.g"
+        assert "Consumables and fluids" in clause_name
+        assert "Motoroel 5W-30" in reason
+
+    def test_component_excluded_maps_to_2_2_A(self, engine):
+        item = {
+            "description": "Turbolader",
+            "exclusion_reason": "component_excluded",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.2.A"
+
+    def test_component_not_in_list_maps_to_2_4_A_b(self, engine):
+        item = {
+            "description": "Spiegel links",
+            "exclusion_reason": "component_not_in_list",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.b"
+
+    def test_demoted_no_anchor_maps_to_2_2_D(self, engine):
+        item = {
+            "description": "Arbeit Demontage",
+            "exclusion_reason": "demoted_no_anchor",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.2.D"
+
+    def test_fee_diagnostic_sub_typed(self, engine):
+        """Fee exclusion_reason + diagnostic description maps to 2.5.A.b."""
+        item = {
+            "description": "Diagnose Fehlersuche",
+            "exclusion_reason": "fee",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.5.A.b"
+
+    def test_fee_towing_sub_typed(self, engine):
+        item = {
+            "description": "Abschleppen Transport",
+            "exclusion_reason": "fee",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.g"
+
+    def test_fee_admin_sub_typed(self, engine):
+        item = {
+            "description": "Bearbeitungsgebuehr Admin",
+            "exclusion_reason": "fee",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.h"
+
+    def test_fee_default_sub_type(self, engine):
+        """Fee without specific keywords defaults to 2.4.A.h."""
+        item = {
+            "description": "Sonstige Gebuehr",
+            "exclusion_reason": "fee",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.h"
+
+    def test_infer_from_match_reasoning_oil(self, engine):
+        """Missing exclusion_reason with oil keyword inferred as fluid_loss -> 2.4.A.e."""
+        item = {
+            "description": "Injecteur d'huile",
+            "match_reasoning": "Part is excluded: oil",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.e"
+        assert "Fluid losses" in result[1]
+
+    def test_infer_from_match_reasoning_demoted(self, engine):
+        """Missing exclusion_reason with [DEMOTED: keyword inferred as demoted_no_anchor."""
+        item = {
+            "description": "Arbeit Montage",
+            "match_reasoning": "[DEMOTED: no covered anchor part]",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.2.D"
+
+    def test_infer_from_match_reasoning_generic_description(self, engine):
+        item = {
+            "description": "Diverse",
+            "match_reasoning": "Generic description too vague",
+        }
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is not None
+        assert result[0] == "2.4.A.b"
+
+    def test_no_exclusion_reason_no_reasoning_returns_none(self, engine):
+        item = {"description": "Unknown item"}
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is None
+
+    def test_unknown_exclusion_reason_returns_none(self, engine):
+        item = {"description": "Foo", "exclusion_reason": "totally_unknown_reason"}
+        result = engine._map_coverage_exclusion_to_clause(item)
+        assert result is None
+
+    def test_not_covered_item_gets_clause_in_decision(self, engine):
+        """A not_covered item with exclusion_reason gets the clause in its decision."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Spiegel links",
+                "item_type": "parts",
+                "total_price": 350.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 350.0,
+                "exclusion_reason": "component_not_in_list",
+                "match_reasoning": "Part not in policy's exhaustive parts list",
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert lid.verdict.value == "DENIED"
+        assert "2.4.A.b" in lid.applicable_clauses
+        assert any("2.4.A.b" in r for r in lid.denial_reasons)
+        assert lid.denied_amount == 350.0
+        assert lid.approved_amount == 0.0
+
+    def test_not_covered_item_without_exclusion_still_denied(self, engine):
+        """A not_covered item without exclusion_reason is still DENIED (just no clause)."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Mystery part",
+                "item_type": "parts",
+                "total_price": 100.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 100.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert lid.verdict.value == "DENIED"
+        assert lid.denied_amount == 100.0
+
+    def test_review_needed_includes_match_reasoning(self, engine):
+        """review_needed items include match_reasoning in denial_reasons."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Ventildeckeldichtung",
+                "item_type": "parts",
+                "item_code": "VDD-001",
+                "total_price": 180.0,
+                "coverage_status": "review_needed",
+                "covered_amount": 180.0,
+                "not_covered_amount": 0.0,
+                "match_reasoning": "Ambiguous: could be valve cover gasket",
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert lid.verdict.value == "REFER"
+        assert any("Ambiguous" in r for r in lid.denial_reasons)
+
+    def test_covered_item_unaffected_by_new_logic(self, engine):
+        """Covered items still go through line-item clause evaluation as before."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Turbo replacement",
+                "item_type": "parts",
+                "item_code": "TRB-001",
+                "total_price": 2500.0,
+                "coverage_status": "covered",
+                "covered_amount": 2500.0,
+                "not_covered_amount": 0.0,
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 1
+        lid = dossier.line_item_decisions[0]
+        assert lid.verdict.value == "COVERED"
+        assert lid.approved_amount == 2500.0
+
+    def test_mixed_covered_and_not_covered_items(self, engine):
+        """Mix of covered and not_covered items produces correct decisions."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Turbo replacement",
+                "item_type": "parts",
+                "item_code": "TRB-001",
+                "total_price": 2500.0,
+                "coverage_status": "covered",
+                "covered_amount": 2500.0,
+                "not_covered_amount": 0.0,
+            },
+            {
+                "description": "Motoroel 5W-30",
+                "item_type": "parts",
+                "total_price": 85.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 85.0,
+                "exclusion_reason": "consumable",
+                "match_reasoning": "Consumable item not covered: oil",
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        assert len(dossier.line_item_decisions) == 2
+        covered_lid = dossier.line_item_decisions[0]
+        denied_lid = dossier.line_item_decisions[1]
+        assert covered_lid.verdict.value == "COVERED"
+        assert denied_lid.verdict.value == "DENIED"
+        assert "2.4.A.g" in denied_lid.applicable_clauses
+
+    def test_not_covered_clause_appears_in_summary_evaluations(self, engine):
+        """Clause mapped from coverage exclusion shows as FAIL in summary evaluations."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Arbeit Demontage",
+                "item_type": "labor",
+                "total_price": 200.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 200.0,
+                "exclusion_reason": "demoted_no_anchor",
+            },
+        ])
+        dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, coverage_analysis=coverage)
+        # 2.2.D is a line_item clause; the summary evaluation should show FAIL
+        ev_22d = next(
+            (e for e in dossier.clause_evaluations if e.clause_reference == "2.2.D"),
+            None,
+        )
+        assert ev_22d is not None
+        assert ev_22d.verdict == "FAIL"
+        assert "item_0" in ev_22d.affected_line_items

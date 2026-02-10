@@ -197,7 +197,7 @@ export function useAssessmentWebSocket(): UseAssessmentWebSocketReturn {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ detail: "Failed to start assessment" }));
         setProgress((prev) => ({
           ...prev,
           status: "error",
@@ -206,7 +206,15 @@ export function useAssessmentWebSocket(): UseAssessmentWebSocketReturn {
         return null;
       }
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+      if (!data?.run_id) {
+        setProgress((prev) => ({
+          ...prev,
+          status: "error",
+          error: "Invalid response from server",
+        }));
+        return null;
+      }
       const runId = data.run_id;
 
       setProgress((prev) => ({

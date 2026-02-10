@@ -6,7 +6,9 @@ _ensure_initialized()
 
 import json
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -43,6 +45,8 @@ from context_builder.pipeline.helpers.metadata import (
     mark_run_complete,
     write_manifest,
 )
+from context_builder.pipeline.event_collector import EventCollector
+from context_builder.pipeline.events import EventType, PipelineEvent
 from context_builder.pipeline.state import is_claim_processed
 from context_builder.pipeline.writer import ResultWriter
 from context_builder.schemas.run_errors import DocStatus, PipelineStage, RunErrorCode, TextSource
@@ -83,6 +87,8 @@ def process_document(
     version_bundle_id: Optional[str] = None,
     audit_storage_dir: Optional[Path] = None,
     pii_vault: Optional[Any] = None,
+    event_collector: Optional[EventCollector] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> DocResult:
     """
     Process a single document through selected pipeline stages.
@@ -137,11 +143,28 @@ def process_document(
     def on_phase_start(stage_name: str, ctx: DocumentContext) -> None:
         if phase_callback:
             phase_callback(stage_name, doc.doc_id, doc.original_filename)
+        if event_collector:
+            event_collector.emit(PipelineEvent(
+                event_type=EventType.DOC_STAGE_START,
+                claim_id=claim_id,
+                doc_id=doc.doc_id,
+                filename=doc.original_filename,
+                stage=stage_name,
+            ))
 
     # Create phase end callback wrapper that passes doc_id and status
     def on_phase_end(stage_name: str, ctx: DocumentContext, status: str) -> None:
         if phase_end_callback:
             phase_end_callback(stage_name, doc.doc_id, doc.original_filename, status)
+        if event_collector:
+            event_collector.emit(PipelineEvent(
+                event_type=EventType.DOC_STAGE_END,
+                claim_id=claim_id,
+                doc_id=doc.doc_id,
+                filename=doc.original_filename,
+                stage=stage_name,
+                status=status,
+            ))
 
     runner = PipelineRunner(
         [
@@ -154,10 +177,32 @@ def process_document(
     )
 
     try:
+        # Check cancellation before starting
+        if cancel_event and cancel_event.is_set():
+            return DocResult(
+                doc_id=doc.doc_id,
+                original_filename=doc.original_filename,
+                status="skipped",
+                source_type=doc.source_type,
+                error="Cancelled",
+            )
+
         context = runner.run(context)
         if context.timings.total_ms == 0:
             context.timings.total_ms = int((time.time() - context.start_time) * 1000)
-        return context.to_doc_result()
+        result = context.to_doc_result()
+
+        if event_collector:
+            event_collector.emit(PipelineEvent(
+                event_type=EventType.DOC_COMPLETE,
+                claim_id=claim_id,
+                doc_id=doc.doc_id,
+                filename=doc.original_filename,
+                status=result.status,
+                time_ms=result.time_ms,
+                doc_type=result.doc_type,
+            ))
+        return result
     except Exception as e:
         elapsed_ms = int((time.time() - context.start_time) * 1000)
         context.timings.total_ms = elapsed_ms
@@ -167,7 +212,7 @@ def process_document(
             f"Failed to process {doc.original_filename} in {context.current_phase} phase: {error_msg}"
         )
         logger.debug(f"Full traceback for {doc.original_filename}:", exc_info=True)
-        return DocResult(
+        result = DocResult(
             doc_id=doc.doc_id,
             original_filename=doc.original_filename,
             status="error",
@@ -179,6 +224,18 @@ def process_document(
             ingestion_reused=context.ingestion_reused,
             classification_reused=context.classification_reused,
         )
+        if event_collector:
+            event_collector.emit(PipelineEvent(
+                event_type=EventType.DOC_FAILED,
+                claim_id=claim_id,
+                doc_id=doc.doc_id,
+                filename=doc.original_filename,
+                stage=context.current_phase,
+                status="error",
+                error=error_msg,
+                time_ms=elapsed_ms,
+            ))
+        return result
 
 
 def process_claim(
@@ -195,6 +252,9 @@ def process_claim(
     phase_end_callback: Optional[Callable[[str, str, str, str], None]] = None,
     providers: Optional[PipelineProviders] = None,
     pii_vault_enabled: bool = False,
+    event_collector: Optional[EventCollector] = None,
+    max_workers: int = 1,
+    cancel_event: Optional[threading.Event] = None,
 ) -> ClaimResult:
     """
     Process all documents in a claim through selected pipeline stages.
@@ -296,45 +356,104 @@ def process_claim(
             )
             logger.info(f"Created PII vault {pii_vault.vault_id} for claim {claim.claim_id}")
 
-        # Process each document
-        results: List[DocResult] = []
-        for idx, doc in enumerate(claim.documents):
-            logger.info(f"Processing document: {doc.original_filename}")
-
-            # Create document structure
+        # Pre-create doc structures (sequential — creates directories)
+        doc_prep: List[tuple] = []
+        audit_dir = get_workspace_logs_dir(output_base)
+        for doc in claim.documents:
             doc_paths, _, _ = create_doc_structure(
                 output_base, claim.claim_id, doc.doc_id, run_id
             )
+            doc_prep.append((doc, doc_paths))
 
-            # Compute audit dir for workspace-aware compliance logging
-            audit_dir = get_workspace_logs_dir(output_base)
+        # Common kwargs shared by every process_document call
+        common_kwargs = dict(
+            claim_id=claim.claim_id,
+            run_paths=run_paths,
+            run_id=run_id,
+            stage_config=stage_config,
+            writer=writer,
+            providers=providers,
+            phase_callback=phase_callback,
+            phase_end_callback=phase_end_callback,
+            version_bundle_id=version_bundle.bundle_id,
+            audit_storage_dir=audit_dir,
+            pii_vault=pii_vault,
+            event_collector=event_collector,
+            cancel_event=cancel_event,
+        )
 
-            result = process_document(
-                doc=doc,
-                claim_id=claim.claim_id,
-                doc_paths=doc_paths,
-                run_paths=run_paths,
-                classifier=classifier,
-                run_id=run_id,
-                stage_config=stage_config,
-                writer=writer,
-                providers=providers,
-                phase_callback=phase_callback,
-                phase_end_callback=phase_end_callback,
-                version_bundle_id=version_bundle.bundle_id,
-                audit_storage_dir=audit_dir,
-                pii_vault=pii_vault,
-            )
-            results.append(result)
+        # Process documents — sequential or parallel
+        results: List[DocResult] = []
 
-            # Report progress after document completion
-            if progress_callback:
-                progress_callback(idx + 1, len(claim.documents), doc.original_filename, result)
+        if max_workers <= 1:
+            # --- Sequential path (unchanged behavior) ---
+            for idx, (doc, doc_paths) in enumerate(doc_prep):
+                if cancel_event and cancel_event.is_set():
+                    break
+                logger.info(f"Processing document: {doc.original_filename}")
 
-            logger.info(
-                f"Document {doc.original_filename}: {result.status} "
-                f"(type={result.doc_type}, {result.time_ms}ms)"
-            )
+                result = process_document(
+                    doc=doc,
+                    doc_paths=doc_paths,
+                    classifier=classifier,
+                    **common_kwargs,
+                )
+                results.append(result)
+
+                if progress_callback:
+                    progress_callback(idx + 1, len(claim.documents), doc.original_filename, result)
+
+                logger.info(
+                    f"Document {doc.original_filename}: {result.status} "
+                    f"(type={result.doc_type}, {result.time_ms}ms)"
+                )
+        else:
+            # --- Parallel path ---
+            # Create per-thread classifiers to avoid audit_context race
+            def _make_classifier():
+                if providers and providers.classifier_factory is not None:
+                    return providers.classifier_factory.create("openai")
+                from context_builder.classification import ClassifierFactory
+                return ClassifierFactory.create("openai", audit_storage_dir=audit_dir)
+
+            def _process_one(doc, doc_paths, thread_classifier):
+                logger.info(f"Processing document (parallel): {doc.original_filename}")
+                return process_document(
+                    doc=doc,
+                    doc_paths=doc_paths,
+                    classifier=thread_classifier,
+                    **common_kwargs,
+                )
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_doc = {}
+                for doc, doc_paths in doc_prep:
+                    thread_clf = _make_classifier()
+                    future = executor.submit(_process_one, doc, doc_paths, thread_clf)
+                    future_to_doc[future] = doc
+
+                for idx, future in enumerate(as_completed(future_to_doc)):
+                    doc = future_to_doc[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        logger.error(f"Parallel doc failed: {doc.original_filename}: {exc}")
+                        result = DocResult(
+                            doc_id=doc.doc_id,
+                            original_filename=doc.original_filename,
+                            status="error",
+                            source_type=doc.source_type,
+                            error=str(exc),
+                        )
+                    results.append(result)
+
+                    if progress_callback:
+                        progress_callback(idx + 1, len(claim.documents), doc.original_filename, result)
+
+                    logger.info(
+                        f"Document {doc.original_filename}: {result.status} "
+                        f"(type={getattr(result, 'doc_type', None)}, {result.time_ms}ms)"
+                    )
 
         # Calculate stats
         success_count = sum(1 for r in results if r.status == "success")
@@ -463,6 +582,16 @@ def process_claim(
             f"Claim {claim.claim_id}: {status} "
             f"({success_count}/{total_count} docs, {elapsed:.1f}s)"
         )
+
+        if event_collector:
+            event_collector.emit(PipelineEvent(
+                event_type=EventType.CLAIM_COMPLETE,
+                claim_id=claim.claim_id,
+                doc_id="",
+                filename="",
+                status=status,
+                time_ms=int(elapsed * 1000),
+            ))
 
         return ClaimResult(
             claim_id=claim.claim_id,

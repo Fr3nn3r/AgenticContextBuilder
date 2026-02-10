@@ -22,7 +22,9 @@ from context_builder.coverage.schemas import (
     CoverageStatus,
     LineItemCoverage,
     MatchMethod,
+    TraceAction,
 )
+from context_builder.coverage.trace import TraceBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +153,14 @@ class RuleEngine:
         Returns:
             LineItemCoverage if matched by a rule, None otherwise
         """
+        tb = TraceBuilder()
+
         # Rule 1: Fee items are never covered
         if item_type.lower() in [t.lower() for t in self.config.fee_item_types]:
+            tb.add("rule_engine", TraceAction.EXCLUDED,
+                   f"Fee items ({item_type}) are not covered by policy",
+                   verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
+                   detail={"rule": "fee_item", "item_type": item_type})
             return self._create_not_covered(
                 description=description,
                 item_type=item_type,
@@ -160,11 +168,16 @@ class RuleEngine:
                 total_price=total_price,
                 reasoning=f"Fee items ({item_type}) are not covered by policy",
                 exclusion_reason="fee",
+                trace=tb.build(),
             )
 
         # Rule 2: Check exclusion patterns
         for pattern in self._exclusion_patterns:
             if pattern.search(description):
+                tb.add("rule_engine", TraceAction.EXCLUDED,
+                       f"Item matches exclusion pattern: {pattern.pattern}",
+                       verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
+                       detail={"rule": "exclusion_pattern", "pattern": pattern.pattern})
                 return self._create_not_covered(
                     description=description,
                     item_type=item_type,
@@ -172,6 +185,7 @@ class RuleEngine:
                     total_price=total_price,
                     reasoning=f"Item matches exclusion pattern: {pattern.pattern}",
                     exclusion_reason="exclusion_pattern",
+                    trace=tb.build(),
                 )
 
         # Rule 3: Check consumable patterns (parts only)
@@ -190,6 +204,10 @@ class RuleEngine:
                             f"detected for '{description}' - skipping exclusion"
                         )
                         break  # Don't exclude, let it fall through
+                    tb.add("rule_engine", TraceAction.EXCLUDED,
+                           f"Consumable item not covered: {pattern.pattern}",
+                           verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
+                           detail={"rule": "consumable", "pattern": pattern.pattern})
                     return self._create_not_covered(
                         description=description,
                         item_type=item_type,
@@ -197,11 +215,16 @@ class RuleEngine:
                         total_price=total_price,
                         reasoning=f"Consumable item not covered: {pattern.pattern}",
                         exclusion_reason="consumable",
+                        trace=tb.build(),
                     )
         elif item_type.lower() == "parts" and skip_consumable_check:
             # Log that we skipped consumable check due to repair context
             for pattern in self._consumable_patterns:
                 if pattern.search(description):
+                    tb.add("rule_engine", TraceAction.SKIPPED,
+                           f"Consumable check skipped - repair context: {repair_context_component}",
+                           detail={"rule": "consumable_override_by_repair_context",
+                                   "repair_component": repair_context_component})
                     logger.info(
                         f"Skipped consumable exclusion for '{description}' - "
                         f"repair context indicates '{repair_context_component}' (covered)"
@@ -210,6 +233,10 @@ class RuleEngine:
 
         # Rule 4: Zero-price items (labor) - likely complimentary, skip coverage
         if total_price == 0.0:
+            tb.add("rule_engine", TraceAction.MATCHED,
+                   "Zero-price item - no coverage calculation needed",
+                   verdict=CoverageStatus.COVERED, confidence=1.0,
+                   detail={"rule": "zero_price"})
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -221,6 +248,7 @@ class RuleEngine:
                 match_method=MatchMethod.RULE,
                 match_confidence=1.0,
                 match_reasoning="Zero-price item - no coverage calculation needed",
+                decision_trace=tb.build(),
                 covered_amount=0.0,
                 not_covered_amount=0.0,
             )
@@ -229,6 +257,10 @@ class RuleEngine:
         if item_type.lower() == "labor":
             for pattern in self._non_covered_labor_patterns:
                 if pattern.search(description):
+                    tb.add("rule_engine", TraceAction.EXCLUDED,
+                           f"Labor matches non-covered pattern: {pattern.pattern}",
+                           verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
+                           detail={"rule": "non_covered_labor", "pattern": pattern.pattern})
                     return self._create_not_covered(
                         description=description,
                         item_type=item_type,
@@ -236,11 +268,16 @@ class RuleEngine:
                         total_price=total_price,
                         reasoning=f"Labor matches non-covered pattern: {pattern.pattern}",
                         exclusion_reason="non_covered_labor",
+                        trace=tb.build(),
                     )
 
         # Rule 6: Generic/empty descriptions with no semantic content
         stripped = description.strip()
         if self._generic_description_pattern and self._generic_description_pattern.match(stripped):
+            tb.add("rule_engine", TraceAction.EXCLUDED,
+                   "Generic description - insufficient detail for coverage determination",
+                   verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
+                   detail={"rule": "generic_description"})
             return self._create_not_covered(
                 description=description,
                 item_type=item_type,
@@ -248,16 +285,22 @@ class RuleEngine:
                 total_price=total_price,
                 reasoning="Generic description - insufficient detail for coverage determination",
                 exclusion_reason="generic_description",
+                trace=tb.build(),
             )
 
         # Rule 7: Standalone fastener items -> REVIEW_NEEDED
         if self._fastener_pattern and self._fastener_pattern.match(stripped):
+            tb.add("rule_engine", TraceAction.MATCHED,
+                   "Standalone fastener - requires context to determine coverage",
+                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
+                   detail={"rule": "standalone_fastener"})
             return self._create_review_needed(
                 description=description,
                 item_type=item_type,
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone fastener - requires context to determine coverage",
+                trace=tb.build(),
             )
 
         # No rule matched
@@ -271,6 +314,7 @@ class RuleEngine:
         total_price: float,
         reasoning: str,
         exclusion_reason: Optional[str] = None,
+        trace: Optional[List] = None,
     ) -> LineItemCoverage:
         """Create a NOT_COVERED result."""
         return LineItemCoverage(
@@ -285,6 +329,7 @@ class RuleEngine:
             match_confidence=1.0,
             match_reasoning=reasoning,
             exclusion_reason=exclusion_reason,
+            decision_trace=trace,
             covered_amount=0.0,
             not_covered_amount=total_price,
         )
@@ -297,6 +342,7 @@ class RuleEngine:
         total_price: float,
         reasoning: str,
         confidence: float = 0.45,
+        trace: Optional[List] = None,
     ) -> LineItemCoverage:
         """Create a REVIEW_NEEDED result."""
         return LineItemCoverage(
@@ -310,6 +356,7 @@ class RuleEngine:
             match_method=MatchMethod.RULE,
             match_confidence=confidence,
             match_reasoning=reasoning,
+            decision_trace=trace,
             covered_amount=0.0,
             not_covered_amount=total_price,
         )

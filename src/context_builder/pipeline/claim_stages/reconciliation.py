@@ -69,7 +69,6 @@ class ReconciliationStage:
             # Run reconciliation (aggregates facts, detects conflicts, evaluates gate)
             result = reconciliation.reconcile(
                 claim_id=context.claim_id,
-                run_id=context.run_id if context.run_id else None,
             )
 
             if not result.success:
@@ -82,9 +81,11 @@ class ReconciliationStage:
                 return context
 
             # Get the aggregated facts for downstream processing
+            # Use the claim-level run_id (assessment run) so claim_facts are
+            # written to the same claim_runs/ directory as screening/decision.
             claim_facts = aggregation.aggregate_claim_facts(
                 context.claim_id,
-                result.report.run_id if result.report else None,
+                context.run_id,
             )
 
             # Write outputs
@@ -96,7 +97,7 @@ class ReconciliationStage:
 
             # Store in context for downstream stages
             context.aggregated_facts = claim_facts.model_dump(mode="json")
-            context.facts_run_id = claim_facts.run_id
+            context.facts_run_id = claim_facts.claim_run_id
             context.reconciliation_report = result.report
 
             # Log summary

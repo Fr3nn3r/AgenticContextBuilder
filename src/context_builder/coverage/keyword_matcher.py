@@ -19,7 +19,9 @@ from context_builder.coverage.schemas import (
     CoverageStatus,
     LineItemCoverage,
     MatchMethod,
+    TraceAction,
 )
+from context_builder.coverage.trace import TraceBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +180,24 @@ class KeywordMatcher:
                 # Labor for non-covered categories
                 confidence *= 0.9  # Reduce confidence
 
+        # Check if consumable penalty was applied
+        consumable_penalty = confidence != matches[0][2]
+
+        # Build trace step
+        tb = TraceBuilder()
+        trace_detail = {
+            "keyword": keyword,
+            "category": category,
+            "base_confidence": matches[0][2],
+        }
+        if consumable_penalty:
+            trace_detail["consumable_penalty"] = True
+
         if is_covered:
+            tb.add("keyword", TraceAction.MATCHED,
+                   f"Keyword '{keyword}' maps to covered category '{category}'",
+                   verdict=CoverageStatus.COVERED, confidence=confidence,
+                   detail=trace_detail)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -190,10 +209,15 @@ class KeywordMatcher:
                 match_method=MatchMethod.KEYWORD,
                 match_confidence=confidence,
                 match_reasoning=f"Keyword '{keyword}' maps to covered category '{category}'",
+                decision_trace=tb.build(),
                 covered_amount=total_price,
                 not_covered_amount=0.0,
             )
         else:
+            tb.add("keyword", TraceAction.MATCHED,
+                   f"Keyword '{keyword}' maps to category '{category}' which is not covered",
+                   verdict=CoverageStatus.NOT_COVERED, confidence=confidence,
+                   detail=trace_detail)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -206,6 +230,7 @@ class KeywordMatcher:
                 match_confidence=confidence,
                 match_reasoning=f"Keyword '{keyword}' maps to category '{category}' which is not covered",
                 exclusion_reason="category_not_covered",
+                decision_trace=tb.build(),
                 covered_amount=0.0,
                 not_covered_amount=total_price,
             )

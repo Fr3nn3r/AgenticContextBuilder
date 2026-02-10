@@ -33,6 +33,8 @@ class PipelineRunRequest(BaseModel):
     force_overwrite: bool = False
     compute_metrics: bool = True
     dry_run: bool = False
+    auto_assess: bool = False
+    max_workers: int = 1
 
 
 class PromptConfigRequest(BaseModel):
@@ -150,6 +152,15 @@ async def start_pipeline_run(
             "failed_at_stage": failed_at_stage.value if failed_at_stage else None,
         })
 
+    # Assessment broadcast callback: sends assessment messages via pipeline WS.
+    # Uses a list to hold run_id since the closure is created before start_pipeline returns.
+    _run_id_holder = []
+
+    async def assessment_broadcast(message: dict):
+        rid = _run_id_holder[0] if _run_id_holder else None
+        if rid:
+            await ws_manager.broadcast(rid, message)
+
     run_id = await pipeline_service.start_pipeline(
         claim_ids=request.claim_ids,
         model=request.model,
@@ -159,7 +170,11 @@ async def start_pipeline_run(
         compute_metrics=request.compute_metrics,
         dry_run=request.dry_run,
         progress_callback=broadcast_progress,
+        auto_assess=request.auto_assess,
+        assessment_broadcast=assessment_broadcast if request.auto_assess else None,
+        max_workers=max(1, min(request.max_workers, 8)),
     )
+    _run_id_holder.append(run_id)
 
     # Audit log the pipeline start
     audit_service = get_audit_service()
@@ -621,7 +636,7 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
             print(f"[WS] Sent sync message for run_id={run_id}")
 
             # If run already completed, send completion and close
-            if run.status.value in ("completed", "failed", "cancelled"):
+            if run.status.value in ("completed", "failed", "cancelled", "partial"):
                 print(f"[WS] Run already {run.status.value}, sending completion")
                 await websocket.send_json({
                     "type": "run_complete",
@@ -659,7 +674,7 @@ async def pipeline_websocket(websocket: WebSocket, run_id: str):
 
             # Check if run is complete
             run = pipeline_service.get_run_status(run_id)
-            if run and run.status.value in ("completed", "failed", "cancelled"):
+            if run and run.status.value in ("completed", "failed", "cancelled", "partial"):
                 print(f"[WS] Run {run_id} completed with status {run.status.value}")
                 await websocket.send_json({
                     "type": "run_complete",

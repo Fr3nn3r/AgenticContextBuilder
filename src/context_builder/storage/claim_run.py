@@ -172,11 +172,14 @@ class ClaimRunStorage:
 
         runs = []
         for run_dir in self.claim_runs_dir.iterdir():
-            if run_dir.is_dir() and run_dir.name.startswith("clm_"):
+            if run_dir.is_dir():
                 runs.append(run_dir.name)
 
-        # Sort by timestamp in ID (clm_YYYYMMDD_HHMMSS_hash), newest first
-        runs.sort(reverse=True)
+        # Sort by directory modification time, newest first
+        runs.sort(
+            key=lambda name: (self.claim_runs_dir / name).stat().st_mtime,
+            reverse=True,
+        )
         return runs
 
     def get_latest_claim_run_id(self) -> Optional[str]:
