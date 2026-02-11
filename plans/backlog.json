@@ -2,7 +2,7 @@
   "meta": {
     "schema_version": 1,
     "created": "2026-02-05",
-    "last_modified": "2026-02-10T01:00:00Z",
+    "last_modified": "2026-02-11T12:00:00Z",
     "archive_after_days": 14
   },
   "items": [
@@ -845,6 +845,21 @@
       "completed": null,
       "notes": "Compliance audit 2026-02-09: MEDIUM severity. Weakens individual accountability in audit trail.",
       "tags": ["compliance-audit", "audit-trail", "compliance", "rbac"]
+    },
+    {
+      "id": "FEAT-47",
+      "title": "Wire decision and confidence stages into standard assessment/processing pipeline",
+      "description": "The decision and confidence stages currently exist as standalone components but are not wired into the standard assessment/processing pipeline. They need to be integrated so that when a claim is assessed (via the API or CLI), the decision stage (producing decision dossiers with approve/deny/refer verdicts) and the confidence scoring stage (computing confidence penalties based on extraction quality, cost estimate complexity, etc.) run automatically as part of the standard flow. This means updating the pipeline orchestration and/or the assessment service to invoke these stages in sequence after screening/coverage analysis.",
+      "status": "todo",
+      "priority": "P1",
+      "category": "feature",
+      "effort": "medium",
+      "plan_file": null,
+      "created": "2026-02-11T12:00:00Z",
+      "started": null,
+      "completed": null,
+      "notes": "",
+      "tags": ["pipeline", "decision-engine", "confidence", "assessment"]
     }
   ]
 }

@@ -1541,13 +1541,27 @@ export async function getDenialClauses(): Promise<DenialClauseDefinition[]> {
   return fetchJson<DenialClauseDefinition[]>("/api/denial-clauses");
 }
 
-export async function getClaimsWithDossiers(): Promise<string[]> {
-  return fetchJson<string[]>("/api/claims-with-dossiers");
-}
-
 // =============================================================================
 // WORKBENCH API
 // =============================================================================
+
+// =============================================================================
+// CLAIM NOTES API
+// =============================================================================
+
+import type { ClaimNotes } from "../types";
+
+export async function getClaimNotes(claimId: string): Promise<ClaimNotes> {
+  return fetchJson<ClaimNotes>(`${API_BASE}/claims/${encodeURIComponent(claimId)}/notes`);
+}
+
+export async function saveClaimNotes(claimId: string, content: string): Promise<ClaimNotes> {
+  return fetchJson<ClaimNotes>(`${API_BASE}/claims/${encodeURIComponent(claimId)}/notes`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
 
 export async function getWorkbenchData(claimId: string, claimRunId?: string): Promise<any> {
   const params = claimRunId ? `?claim_run_id=${encodeURIComponent(claimRunId)}` : '';

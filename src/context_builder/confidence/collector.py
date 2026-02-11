@@ -182,8 +182,8 @@ class ConfidenceCollector:
 
             # conflict_rate (inverted: high = good)
             conflicts = reconciliation_report.get("conflicts") or []
-            facts = reconciliation_report.get("facts") or []
-            fact_count = len(facts)
+            facts_list = reconciliation_report.get("facts") or []
+            fact_count = len(facts_list) if facts_list else reconciliation_report.get("fact_count", 0)
             conflict_count = len(conflicts)
             if fact_count > 0:
                 raw = conflict_count / fact_count
@@ -305,6 +305,24 @@ class ConfidenceCollector:
                     normalized_value=0.0,
                     source_stage="coverage",
                     description="Primary repair classification confidence (not available)",
+                ))
+
+            # line_item_complexity (decay curve: penalty for high item counts)
+            # Applied as a multiplier on coverage_reliability, not averaged.
+            n = len(line_items)
+            if n > 0:
+                if n <= 10:
+                    complexity_score = 1.0
+                elif n <= 20:
+                    complexity_score = 1.0 - 0.05 * (n - 10)
+                else:
+                    complexity_score = max(0.15, 0.5 - 0.035 * (n - 20))
+                signals.append(SignalSnapshot(
+                    signal_name="coverage.line_item_complexity",
+                    raw_value=float(n),
+                    normalized_value=round(complexity_score, 4),
+                    source_stage="coverage",
+                    description="Payout confidence decay by line item count",
                 ))
 
         except Exception:

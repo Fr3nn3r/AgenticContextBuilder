@@ -2,12 +2,15 @@
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from context_builder.api.dependencies import (
+    CurrentUser,
     get_decision_dossier_service,
+    get_optional_user,
 )
+from context_builder.api.models import ClaimNotesResponse, SaveClaimNotesRequest
 
 router = APIRouter(tags=["decision"])
 
@@ -154,3 +157,37 @@ def get_denial_clauses() -> List[Dict[str, Any]]:
     """
     service = get_decision_dossier_service()
     return service.get_clause_registry()
+
+
+@router.get("/api/claims/{claim_id}/notes")
+def get_claim_notes(claim_id: str) -> ClaimNotesResponse:
+    """Get notes for a claim.
+
+    Returns empty content if no notes have been saved yet (never 404).
+    """
+    service = get_decision_dossier_service()
+    data = service.get_notes(claim_id)
+    return ClaimNotesResponse(**data)
+
+
+@router.put("/api/claims/{claim_id}/notes")
+def save_claim_notes(
+    claim_id: str,
+    request: SaveClaimNotesRequest,
+    user: Optional[CurrentUser] = Depends(get_optional_user),
+) -> ClaimNotesResponse:
+    """Save notes for a claim.
+
+    Overwrites any existing notes. Uses the authenticated user as author
+    if available, otherwise defaults to 'admin'.
+    """
+    service = get_decision_dossier_service()
+    updated_by = user.username if user else "admin"
+    try:
+        data = service.save_notes(claim_id, request.content, updated_by)
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Claim folder not found for {claim_id}",
+        )
+    return ClaimNotesResponse(**data)

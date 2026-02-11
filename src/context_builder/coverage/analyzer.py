@@ -1236,6 +1236,31 @@ class CoverageAnalyzer:
         normalized = description.lower().strip().rstrip(":.")
         return normalized in CoverageAnalyzer._GENERIC_LABOR_DESCRIPTIONS
 
+    @staticmethod
+    def _build_excluded_parts_index(
+        items: List[LineItemCoverage],
+    ) -> Dict[str, set]:
+        """Build an index of NOT_COVERED parts for excluded-part guards.
+
+        Returns a dict with:
+        - "codes": set of cleaned item_codes (alphanumeric, upper, 4+ chars)
+        - "components": set of matched_component values (lower-cased)
+        """
+        codes: set = set()
+        components: set = set()
+        for item in items:
+            if item.coverage_status != CoverageStatus.NOT_COVERED:
+                continue
+            if item.item_type not in ("parts", "part", "piece"):
+                continue
+            if item.item_code:
+                clean = "".join(c for c in item.item_code if c.isalnum()).upper()
+                if len(clean) >= 4:
+                    codes.add(clean)
+            if item.matched_component:
+                components.add(item.matched_component.lower())
+        return {"codes": codes, "components": components}
+
     def _apply_labor_follows_parts(
         self,
         items: List[LineItemCoverage],
@@ -1363,6 +1388,10 @@ class CoverageAnalyzer:
         # If labor description matches REPAIR_CONTEXT_KEYWORDS and covered parts
         # exist in the same category, promote the labor.
         if covered_parts:
+            excluded_idx = self._build_excluded_parts_index(items)
+            excluded_codes = excluded_idx["codes"]
+            excluded_components = excluded_idx["components"]
+
             for item in items:
                 if item.item_type not in labor_types:
                     continue
@@ -1372,6 +1401,51 @@ class CoverageAnalyzer:
                 desc_lower = item.description.lower()
                 for keyword, (component, category) in self.component_config.repair_context_keywords.items():
                     if keyword in desc_lower:
+                        # Guard: skip if labor's own code matches an excluded part
+                        if item.item_code:
+                            clean_labor_code = "".join(
+                                c for c in item.item_code if c.isalnum()
+                            ).upper()
+                            if clean_labor_code in excluded_codes:
+                                logger.debug(
+                                    "Skipped promotion of '%s' -- item_code %s "
+                                    "matches excluded part",
+                                    item.description, clean_labor_code,
+                                )
+                                skip_tb = TraceBuilder()
+                                skip_tb.extend(item.decision_trace)
+                                skip_tb.add(
+                                    "labor_follows_parts", TraceAction.SKIPPED,
+                                    f"Excluded-part guard: item_code {clean_labor_code} "
+                                    f"matches a NOT_COVERED part",
+                                    detail={"reason": "excluded_part_guard",
+                                            "strategy": "repair_context_keyword",
+                                            "blocked_by": "item_code_match"},
+                                )
+                                item.decision_trace = skip_tb.build()
+                                continue
+
+                        # Guard: skip if keyword's component matches an excluded
+                        # part's matched_component
+                        if component.lower() in excluded_components:
+                            logger.debug(
+                                "Skipped promotion of '%s' -- keyword component "
+                                "'%s' matches excluded part",
+                                item.description, component,
+                            )
+                            skip_tb = TraceBuilder()
+                            skip_tb.extend(item.decision_trace)
+                            skip_tb.add(
+                                "labor_follows_parts", TraceAction.SKIPPED,
+                                f"Excluded-part guard: component '{component}' "
+                                f"matches a NOT_COVERED part's component",
+                                detail={"reason": "excluded_part_guard",
+                                        "strategy": "repair_context_keyword",
+                                        "blocked_by": "component_match"},
+                            )
+                            item.decision_trace = skip_tb.build()
+                            continue
+
                         matching_covered = [
                             p for p in covered_parts
                             if p.coverage_category
@@ -1716,6 +1790,10 @@ class CoverageAnalyzer:
                 "excluded from coverage",
             )
 
+            # Build excluded-parts index for cross-reference guard
+            excluded_idx = self._build_excluded_parts_index(items)
+            excluded_codes = excluded_idx["codes"]
+
             for item in items:
                 if item.item_type not in labor_types:
                     continue
@@ -1739,6 +1817,61 @@ class CoverageAnalyzer:
                         item.description,
                     )
                     continue
+
+                # Guard: skip if labor's own code matches an excluded part
+                if item.item_code:
+                    clean_labor_code = "".join(
+                        c for c in item.item_code if c.isalnum()
+                    ).upper()
+                    if clean_labor_code in excluded_codes:
+                        logger.debug(
+                            "Skipped primary_repair_boost for '%s' -- "
+                            "item_code %s matches excluded part",
+                            item.description, clean_labor_code,
+                        )
+                        skip_tb = TraceBuilder()
+                        skip_tb.extend(item.decision_trace)
+                        skip_tb.add(
+                            "primary_repair_boost", TraceAction.SKIPPED,
+                            f"Excluded-part guard: item_code {clean_labor_code} "
+                            f"matches a NOT_COVERED part",
+                            detail={"reason": "excluded_part_guard",
+                                    "mode": "labor_follows_parts",
+                                    "blocked_by": "item_code_match"},
+                        )
+                        item.decision_trace = skip_tb.build()
+                        continue
+
+                # Guard: skip if labor description contains an excluded part code
+                if excluded_codes:
+                    desc_alnum = "".join(
+                        c for c in item.description.upper()
+                        if c.isalnum() or c.isspace()
+                    )
+                    skip = False
+                    for exc_code in excluded_codes:
+                        if exc_code in desc_alnum:
+                            logger.debug(
+                                "Skipped primary_repair_boost for '%s' -- "
+                                "description references excluded part %s",
+                                item.description, exc_code,
+                            )
+                            skip_tb = TraceBuilder()
+                            skip_tb.extend(item.decision_trace)
+                            skip_tb.add(
+                                "primary_repair_boost", TraceAction.SKIPPED,
+                                f"Excluded-part guard: description references "
+                                f"NOT_COVERED part code {exc_code}",
+                                detail={"reason": "excluded_part_guard",
+                                        "mode": "labor_follows_parts",
+                                        "blocked_by": "description_code_match",
+                                        "excluded_code": exc_code},
+                            )
+                            item.decision_trace = skip_tb.build()
+                            skip = True
+                            break
+                    if skip:
+                        continue
 
                 item.coverage_status = CoverageStatus.COVERED
                 item.coverage_category = category

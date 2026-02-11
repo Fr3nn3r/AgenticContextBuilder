@@ -7,7 +7,7 @@ and as a standalone ``confidence_summary.json`` (full ``ConfidenceSummary``).
 """
 
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +48,10 @@ class ComponentScore(BaseModel):
         description="Signals that contributed to this component",
     )
     notes: str = Field(default="", description="Extra info (e.g. 'weight redistributed')")
+    detail: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Structured context behind the score (e.g. missing facts list)",
+    )
 
 
 # ── Compact model (embedded in Decision Dossier) ─────────────────────

@@ -34,9 +34,21 @@ export function DocumentSlidePanel({
   const [docData, setDocData] = useState<DocPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [activeEvidence, setActiveEvidence] = useState<EvidenceLocation | null>(evidence);
 
-  const isOpen = evidence !== null;
-  const currentDocId = evidence?.docId;
+  // Slide-in animation on mount
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+  }, []);
+
+  // Sync when parent evidence prop changes (e.g. opening a different doc from outside)
+  useEffect(() => {
+    setActiveEvidence(evidence);
+  }, [evidence]);
+
+  const isOpen = visible && activeEvidence !== null;
+  const currentDocId = activeEvidence?.docId;
 
   // Find current document in the list
   const currentDocIndex = documents.findIndex((d) => d.doc_id === currentDocId);
@@ -68,18 +80,12 @@ export function DocumentSlidePanel({
 
   // Navigate to previous/next document
   const goToDocument = (docId: string) => {
-    if (evidence) {
-      // Create new evidence with just the docId (no specific highlight)
-      const newEvidence: EvidenceLocation = {
-        docId,
-        page: 1,
-        charStart: null,
-        charEnd: null,
-      };
-      // We need to update the parent - for now just reload
-      window.history.replaceState(null, "", `?doc=${docId}`);
-      setDocData(null);
-    }
+    setActiveEvidence({
+      docId,
+      page: 1,
+      charStart: null,
+      charEnd: null,
+    });
   };
 
   const canGoPrev = currentDocIndex > 0;
@@ -166,16 +172,16 @@ export function DocumentSlidePanel({
         </div>
 
         {/* Evidence highlight banner */}
-        {evidence && (evidence.page || evidence.highlightText) && (
+        {activeEvidence && (activeEvidence.page || activeEvidence.highlightText) && (
           <div className="px-4 py-2 bg-warning/10 border-b border-warning/30">
             <div className="flex items-center gap-2 text-sm text-warning">
               <FileText className="h-4 w-4 flex-shrink-0" />
               <span>
-                {evidence.page && `Page ${evidence.page}`}
-                {evidence.highlightText && (
+                {activeEvidence.page && `Page ${activeEvidence.page}`}
+                {activeEvidence.highlightText && (
                   <span className="ml-2 text-warning/80">
-                    "{evidence.highlightText.slice(0, 50)}
-                    {evidence.highlightText.length > 50 ? "..." : ""}"
+                    "{activeEvidence.highlightText.slice(0, 50)}
+                    {activeEvidence.highlightText.length > 50 ? "..." : ""}"
                   </span>
                 )}
               </span>
@@ -209,11 +215,11 @@ export function DocumentSlidePanel({
               hasPdf={docData.has_pdf}
               hasImage={docData.has_image}
               extraction={docData.extraction}
-              highlightPage={evidence?.page ?? undefined}
-              highlightCharStart={evidence?.charStart ?? undefined}
-              highlightCharEnd={evidence?.charEnd ?? undefined}
-              highlightQuote={evidence?.highlightText}
-              highlightValue={evidence?.highlightValue}
+              highlightPage={activeEvidence?.page ?? undefined}
+              highlightCharStart={activeEvidence?.charStart ?? undefined}
+              highlightCharEnd={activeEvidence?.charEnd ?? undefined}
+              highlightQuote={activeEvidence?.highlightText}
+              highlightValue={activeEvidence?.highlightValue}
               claimId={claimId}
               docId={currentDocId}
             />

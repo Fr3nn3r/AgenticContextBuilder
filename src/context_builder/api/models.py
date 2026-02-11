@@ -196,6 +196,17 @@ class DashboardClaim(BaseModel):
     assessment_method: Optional[str] = None
     claim_run_id: Optional[str] = None
 
+    # Workbench summary (from claim_facts, dossier, screening)
+    policy_number: Optional[str] = None
+    vehicle: Optional[str] = None
+    event_date: Optional[str] = None
+    verdict: Optional[str] = None
+    verdict_reason: Optional[str] = None
+    cci_score: Optional[float] = None
+    cci_band: Optional[str] = None
+    screening_payout: Optional[float] = None
+    has_dossier: bool = False
+
     # Ground truth
     gt_decision: Optional[str] = None
     gt_payout: Optional[float] = None
@@ -212,6 +223,20 @@ class DashboardClaim(BaseModel):
 
     # Documents
     documents: List[DashboardClaimDoc] = Field(default_factory=list)
+
+
+class ClaimNotesResponse(BaseModel):
+    """Response model for claim notes."""
+
+    content: str = ""
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class SaveClaimNotesRequest(BaseModel):
+    """Request body for saving claim notes."""
+
+    content: str
 
 
 class DashboardClaimDetail(BaseModel):

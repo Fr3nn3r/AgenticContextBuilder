@@ -399,6 +399,60 @@ class DecisionDossierService:
             "documents": documents,
         }
 
+    def get_notes(self, claim_id: str) -> Dict[str, Any]:
+        """Get notes for a claim.
+
+        Returns a dict with content, updated_at, updated_by.
+        Returns empty content if no notes file exists.
+        """
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            return {"content": "", "updated_at": None, "updated_by": None}
+
+        notes_path = claim_folder / "notes.json"
+        data = self._load_json(notes_path)
+        if not data:
+            return {"content": "", "updated_at": None, "updated_by": None}
+
+        return {
+            "content": data.get("content", ""),
+            "updated_at": data.get("updated_at"),
+            "updated_by": data.get("updated_by"),
+        }
+
+    def save_notes(self, claim_id: str, content: str, updated_by: str = "admin") -> Dict[str, Any]:
+        """Save notes for a claim.
+
+        Args:
+            claim_id: Claim identifier.
+            content: Note text.
+            updated_by: User who saved the note.
+
+        Returns:
+            The saved note data.
+
+        Raises:
+            ValueError: If the claim folder does not exist.
+        """
+        from datetime import datetime, timezone
+
+        claim_folder = self._find_claim_folder(claim_id)
+        if not claim_folder:
+            raise ValueError(f"Claim folder not found for {claim_id}")
+
+        notes_data = {
+            "content": content,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": updated_by,
+        }
+
+        notes_path = claim_folder / "notes.json"
+        with open(notes_path, "w", encoding="utf-8") as f:
+            json.dump(notes_data, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Saved notes for {claim_id} by {updated_by}")
+        return notes_data
+
     @staticmethod
     def _load_json(path: Path) -> Optional[Dict[str, Any]]:
         """Load a JSON file, returning None on error."""

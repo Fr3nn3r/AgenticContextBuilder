@@ -1871,3 +1871,247 @@ class TestPerTierAgeCoverage:
         assert result.inputs.coverage_percent_effective == 80
         item = result.line_items[0]
         assert item.covered_amount == 800.0
+
+
+class TestExcludedPartGuard:
+    """Tests for excluded-part guard in Strategy 3 and Mode 2.
+
+    When a labor item references a part that is explicitly NOT_COVERED,
+    the labor should NOT be promoted even if other parts in the same
+    category are covered.
+    """
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+        )
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code=None,
+            description="test item",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="motor",
+            match_method=MatchMethod.KEYWORD,
+            match_confidence=0.90,
+            match_reasoning="Keyword match",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    # -- Strategy 3 (repair_context_keyword) guards --
+
+    def test_repair_context_keyword_blocked_when_part_excluded_by_code(self, analyzer):
+        """Strategy 3: labor with same item_code as an excluded part is NOT promoted."""
+        # Pick a keyword that exists in repair_context_keywords config
+        keywords = analyzer.component_config.repair_context_keywords
+        if not keywords:
+            pytest.skip("No repair_context_keywords configured")
+        keyword = next(iter(keywords))
+        component, category = keywords[keyword]
+
+        items = [
+            # Covered part in same category (needed for Strategy 3 to fire)
+            self._make_item(
+                item_code="AAAA01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category=category, matched_component="motor",
+            ),
+            # Excluded part with code 213040
+            self._make_item(
+                item_code="213040", description="Timing belt",
+                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=category, matched_component=component,
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+            # Labor with SAME item_code as excluded part + keyword in description
+            self._make_item(
+                item_code="213040", description=f"Labor {keyword}",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                match_method=MatchMethod.KEYWORD,
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._apply_labor_follows_parts(items)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
+            "Labor should NOT be promoted when its item_code matches an excluded part"
+        )
+
+    def test_repair_context_keyword_blocked_when_component_excluded(self, analyzer):
+        """Strategy 3: labor keyword maps to component matching excluded part -> NOT promoted."""
+        keywords = analyzer.component_config.repair_context_keywords
+        if not keywords:
+            pytest.skip("No repair_context_keywords configured")
+        keyword = next(iter(keywords))
+        component, category = keywords[keyword]
+
+        items = [
+            # Covered part in same category
+            self._make_item(
+                item_code="AAAA01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category=category, matched_component="motor",
+            ),
+            # Excluded part whose matched_component matches the keyword's component
+            self._make_item(
+                item_code="BBBB02", description="Excluded part",
+                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=category, matched_component=component,
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+            # Labor with keyword in description but NO item_code
+            self._make_item(
+                item_code=None, description=f"Travail {keyword}",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._apply_labor_follows_parts(items)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
+            "Labor should NOT be promoted when keyword component matches excluded part"
+        )
+
+    def test_repair_context_keyword_still_works_when_no_excluded_match(self, analyzer):
+        """Strategy 3: labor promoted normally when no excluded parts match."""
+        keywords = analyzer.component_config.repair_context_keywords
+        if not keywords:
+            pytest.skip("No repair_context_keywords configured")
+        keyword = next(iter(keywords))
+        _component, category = keywords[keyword]
+
+        items = [
+            # Covered part in same category
+            self._make_item(
+                item_code="AAAA01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category=category, matched_component="motor",
+            ),
+            # NO excluded parts at all
+            # Labor with keyword in description
+            self._make_item(
+                item_code=None, description=f"Travail {keyword}",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._apply_labor_follows_parts(items)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED, (
+            "Labor should still be promoted when no excluded parts match"
+        )
+        assert "repair context" in labor.match_reasoning.lower() or keyword in labor.match_reasoning.lower()
+
+    # -- Mode 2 (primary_repair_boost) guards --
+
+    def test_primary_repair_boost_blocked_when_labor_code_matches_excluded(self, analyzer):
+        """Mode 2: labor with same item_code as excluded part is NOT promoted."""
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
+            # Covered part (so Mode 2 activates, not Mode 1)
+            self._make_item(
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            # Excluded part with code 213040
+            self._make_item(
+                item_code="213040", description="Timing belt part",
+                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="engine", matched_component="timing_belt",
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+            # Labor with SAME item_code as excluded part
+            self._make_item(
+                item_code="213040", description="Timing belt labor",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Not covered",
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
+            "Mode 2 should NOT promote labor when its code matches an excluded part"
+        )
+
+    def test_primary_repair_boost_blocked_when_description_references_excluded(self, analyzer):
+        """Mode 2: labor whose description contains an excluded part code is NOT promoted."""
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
+            # Covered part
+            self._make_item(
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            # Excluded part with code 213040
+            self._make_item(
+                item_code="213040", description="Timing belt part",
+                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="engine", matched_component="timing_belt",
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+            # Labor WITHOUT matching item_code but description mentions 213040
+            self._make_item(
+                item_code=None, description="GFS/GEFUEHRTE FUNKTION 213040",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Not covered",
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
+            "Mode 2 should NOT promote labor when description references excluded part code"
+        )
+
+    def test_primary_repair_boost_still_promotes_generic_labor(self, analyzer):
+        """Mode 2: generic labor without excluded match is still promoted (regression guard)."""
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
+            # Covered part
+            self._make_item(
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            # Generic labor with no code, no reference to excluded parts
+            self._make_item(
+                item_code=None, description="Arbeit allgemein",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Generic labor",
+                covered_amount=0.0, not_covered_amount=150.0,
+            ),
+        ]
+        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED, (
+            "Generic labor should still be promoted when no excluded parts match"
+        )

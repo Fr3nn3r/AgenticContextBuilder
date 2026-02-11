@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 # ── Default weights ──────────────────────────────────────────────────
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "document_quality": 0.25,
-    "data_completeness": 0.20,
-    "consistency": 0.20,
-    "coverage_reliability": 0.20,
+    "document_quality": 0.20,
+    "data_completeness": 0.15,
+    "consistency": 0.15,
+    "coverage_reliability": 0.35,
     "decision_clarity": 0.15,
 }
 
@@ -133,6 +133,16 @@ class ConfidenceScorer:
                 signals_used=matched,
                 notes="" if matched else "no signals available",
             ))
+
+        # Apply line_item_complexity as a multiplier on coverage_reliability
+        # (not averaged — it scales the component score directly)
+        _complexity = signal_map.get("coverage.line_item_complexity")
+        if _complexity is not None:
+            for cs in component_scores:
+                if cs.component == "coverage_reliability":
+                    cs.score = round(cs.score * _complexity.normalized_value, 4)
+                    cs.signals_used.append(_complexity)
+                    break
 
         # Redistribute weights (only active components participate)
         total_active_weight = sum(active_weights.values())

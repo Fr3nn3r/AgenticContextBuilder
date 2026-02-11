@@ -17,10 +17,10 @@ import {
   Check,
   RotateCcw,
   Pencil,
+  FileText,
 } from "lucide-react";
 import {
   getDashboardClaims,
-  getClaimsWithDossiers,
   listDocs,
   getWorkbenchData,
   evaluateDecision,
@@ -35,6 +35,9 @@ import type { EvidenceLocation } from "../components/ClaimExplorer/DocumentSlide
 import type { DashboardClaim, DocSummary } from "../types";
 import { ConfidenceBadge } from "../components/ClaimsWorkbench/ConfidenceBadge";
 import { DecisionTraceTab } from "../components/ClaimsWorkbench/DecisionTraceTab";
+import { GroundTruthTab } from "../components/ClaimsWorkbench/GroundTruthTab";
+import { CCISummaryCard } from "../components/ClaimsWorkbench/CCISummaryCard";
+import { NotesTab } from "../components/ClaimsWorkbench/NotesTab";
 
 // =============================================================================
 // HELPERS
@@ -106,7 +109,7 @@ function clauseToQuestion(
 // TYPES & CONFIG
 // =============================================================================
 
-type TabId = "costs" | "coverage-checks" | "documents" | "decisions";
+type TabId = "costs" | "coverage-checks" | "documents" | "decisions" | "confidence" | "ground-truth" | "notes";
 type ClaimVerdict = "APPROVE" | "DENY" | "REFER";
 
 const VERDICT_CONFIG: Record<
@@ -356,11 +359,11 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
         </div>
       ) : (
         <div className="px-6 py-4 border-t border-border bg-muted/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <Wrench className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
               {primaryRepair?.component ? (
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-sm font-medium text-foreground truncate">
                   {componentLabel(primaryRepair.component)}
                 </span>
               ) : (
@@ -369,7 +372,7 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
               {primaryRepair?.component && (
                 <span
                   className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                    "text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0",
                     primaryRepair.is_covered
                       ? "bg-success/15 text-success"
                       : "bg-destructive/15 text-destructive"
@@ -379,7 +382,7 @@ function DecisionBanner({ data, claimId }: { data: any; claimId: string }) {
                 </span>
               )}
             </div>
-            <div className="text-right">
+            <div className="text-right flex-shrink-0">
               <span className="text-xs text-muted-foreground mr-2">Payout</span>
               <span className="text-sm font-semibold text-foreground">
                 {bannerPayout > 0 ? formatCHF(bannerPayout, currency) : "Pending"}
@@ -400,10 +403,14 @@ function CostBreakdownTab({
   data,
   coverageOverrides,
   setCoverageOverrides,
+  documents,
+  onViewDocument,
 }: {
   data: any;
   coverageOverrides: Record<string, boolean>;
   setCoverageOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  documents?: DocSummary[];
+  onViewDocument?: (evidence: EvidenceLocation) => void;
 }) {
   const lineItems: any[] = data.coverage?.line_items ?? [];
   const summary = data.coverage?.summary;
@@ -439,6 +446,7 @@ function CostBreakdownTab({
     });
   };
 
+  /** Returns the effective covered amount for an item, ALREADY adjusted by coveragePct. */
   const getEffectiveCovered = (item: any, itemKey: string): number => {
     if (isDenied) return 0;
     const originalCovered = item.coverage_status === "covered";
@@ -452,22 +460,29 @@ function CostBreakdownTab({
 
   if (lineItems.length === 0) return <NoDataEmptyState />;
 
+  // Find first cost estimate document (if any)
+  const costEstimateDoc = documents?.find((d) => d.doc_type === "cost_estimate");
+
   // Aggregate by item type (use flat index for override keys to match engine item_ids)
   const typeOrder = ["parts", "labor", "fee", "other"];
-  const byType: Record<string, { claimed: number; covered: number; items: any[] }> = {};
+  const byType: Record<string, { claimed: number; subtotal: number; covered: number; items: any[] }> = {};
   let flatIdx = 0;
   for (const item of lineItems) {
     const type = item.item_type === "fees" ? "fee" : (item.item_type || "other");
-    if (!byType[type]) byType[type] = { claimed: 0, covered: 0, items: [] };
+    if (!byType[type]) byType[type] = { claimed: 0, subtotal: 0, covered: 0, items: [] };
     const key = `item_${flatIdx}`;
     flatIdx++;
-    byType[type].claimed += parseFloat(item.total_price || 0);
-    byType[type].covered += getEffectiveCovered(item, key);
+    const price = parseFloat(item.total_price || 0);
+    const covAmt = getEffectiveCovered(item, key);
+    byType[type].claimed += price;
+    byType[type].subtotal += covAmt > 0 ? price : 0;
+    byType[type].covered += covAmt;
     byType[type].items.push({ ...item, _key: key });
   }
 
   const rows = typeOrder.filter((t) => byType[t]);
   const totalClaimed = Object.values(byType).reduce((s, v) => s + v.claimed, 0);
+  const totalSubtotal = Object.values(byType).reduce((s, v) => s + v.subtotal, 0);
   const totalCovered = isDenied ? 0 : Object.values(byType).reduce((s, v) => s + v.covered, 0);
   const vatRate = sp?.vat_rate_pct ?? 0;
   const maxCoverage: number | null = sp?.max_coverage ?? null;
@@ -477,12 +492,14 @@ function CostBreakdownTab({
   let excess: number;
   let payable: number;
   if (hasOverrides && !isDenied) {
-    // Apply coverage rate
-    const rateAdjusted = coveragePct != null ? totalCovered * (coveragePct / 100) : totalCovered;
-    // Apply max coverage cap
-    capApplied = maxCoverage != null && rateAdjusted > maxCoverage;
-    afterCap = capApplied ? maxCoverage! : rateAdjusted;
-    vatAmount = afterCap * (vatRate / 100);
+    // totalCovered is already rate-adjusted per item (getEffectiveCovered applies
+    // coveragePct for overridden items; backend covered_amount is pre-adjusted).
+    // Do NOT apply coveragePct again here — that would double-count the rate.
+    capApplied = maxCoverage != null && totalCovered > maxCoverage;
+    afterCap = capApplied ? maxCoverage! : totalCovered;
+    // When cap is applied, it is the VAT-inclusive ceiling — no VAT on top.
+    // Matches screener._calculate_payout() logic (see DEEP-EVAL claim 65056).
+    vatAmount = capApplied ? 0 : afterCap * (vatRate / 100);
     const subtotalWithVat = afterCap + vatAmount;
     const deductPct = sp?.deductible_percent ?? 0;
     const deductMin = sp?.deductible_minimum ?? 0;
@@ -513,12 +530,14 @@ function CostBreakdownTab({
             <col />
             <col className="w-28" />
             <col className="w-28" />
+            <col className="w-28" />
           </colgroup>
           <thead>
             <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
               <th />
               <th className="px-3 py-2 text-left font-medium" />
               <th className="px-3 py-2 text-right font-medium">Claimed</th>
+              <th className="px-3 py-2 text-right font-medium">Subtotal</th>
               <th className="px-3 py-2 text-right font-medium">Covered</th>
             </tr>
           </thead>
@@ -550,6 +569,9 @@ function CostBreakdownTab({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-[13px] text-muted-foreground">
                       {fmt(group.claimed)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-[13px] text-muted-foreground">
+                      {fmt(group.subtotal)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-[13px] font-semibold text-foreground">
                       {fmt(group.covered)}
@@ -622,6 +644,12 @@ function CostBreakdownTab({
                             </td>
                             <td className={cn(
                               "px-3 py-1.5 text-right tabular-nums",
+                              coveredAmt > 0 ? "text-muted-foreground" : "text-muted-foreground/50"
+                            )}>
+                              {coveredAmt > 0 ? fmt(parseFloat(item.total_price || 0)) : "-"}
+                            </td>
+                            <td className={cn(
+                              "px-3 py-1.5 text-right tabular-nums",
                               coveredAmt > 0 ? "text-foreground" : "text-muted-foreground/50"
                             )}>
                               {fmt(coveredAmt)}
@@ -630,7 +658,7 @@ function CostBreakdownTab({
                           {isItemOpen && hasReason && (
                             <tr className={cn("border-b border-border", bandBg)}>
                               <td />
-                              <td colSpan={3} className="pl-12 pr-4 py-2">
+                              <td colSpan={4} className="pl-12 pr-4 py-2">
                                 <div className="text-xs space-y-1 text-muted-foreground">
                                   {item.match_reasoning && (
                                     <p>{item.match_reasoning}</p>
@@ -673,6 +701,9 @@ function CostBreakdownTab({
               <td className="px-3 py-2.5 text-[14px] font-bold text-foreground">Total</td>
               <td className="px-3 py-2.5 text-right tabular-nums text-[14px] font-bold text-muted-foreground">
                 {fmt(totalClaimed)}
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-[14px] font-bold text-muted-foreground">
+                {fmt(totalSubtotal)}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums text-[14px] font-bold text-foreground">
                 {fmt(totalCovered)}
@@ -747,6 +778,24 @@ function CostBreakdownTab({
               {fmt(payable)}
             </span>
           </div>
+        </div>
+      )}
+      {costEstimateDoc && onViewDocument && (
+        <div className="mt-3">
+          <button
+            onClick={() =>
+              onViewDocument({
+                docId: costEstimateDoc.doc_id,
+                page: 1,
+                charStart: null,
+                charEnd: null,
+              })
+            }
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary/80 border border-primary/30 hover:border-primary/50 rounded-md transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            View Cost Estimate
+          </button>
         </div>
       )}
     </div>
@@ -1043,14 +1092,21 @@ function DocumentsTab({
             <th className="px-4 py-2 font-medium">Filename</th>
             <th className="px-4 py-2 font-medium">Type</th>
             <th className="px-4 py-2 font-medium text-right">Pages</th>
-            <th className="px-4 py-2 font-medium text-center">View</th>
           </tr>
         </thead>
         <tbody>
           {documents.map((doc, idx) => (
             <tr
               key={doc.doc_id}
-              className="border-b border-border last:border-b-0"
+              onClick={() =>
+                onViewDocument?.({
+                  docId: doc.doc_id,
+                  page: 1,
+                  charStart: null,
+                  charEnd: null,
+                })
+              }
+              className="border-b border-border last:border-b-0 cursor-pointer hover:bg-muted/20 transition-colors"
             >
               <td className="px-4 py-2 text-muted-foreground text-xs">
                 {idx + 1}
@@ -1061,21 +1117,6 @@ function DocumentsTab({
               </td>
               <td className="px-4 py-2 text-right text-muted-foreground text-xs tabular-nums">
                 {doc.page_count > 0 ? doc.page_count : "-"}
-              </td>
-              <td className="px-4 py-2 text-center">
-                <button
-                  onClick={() =>
-                    onViewDocument?.({
-                      docId: doc.doc_id,
-                      page: 1,
-                      charStart: null,
-                      charEnd: null,
-                    })
-                  }
-                  className="text-xs text-primary hover:underline"
-                >
-                  Open
-                </button>
               </td>
             </tr>
           ))}
@@ -1093,10 +1134,14 @@ function ClaimDetail({
   claimId,
   onViewSource,
   onDossierUpdate,
+  hasGroundTruth,
+  hasGroundTruthDoc,
 }: {
   claimId: string;
   onViewSource: (evidence: EvidenceLocation) => void;
   onDossierUpdate?: (claimId: string, data: any) => void;
+  hasGroundTruth?: boolean;
+  hasGroundTruthDoc?: boolean;
 }) {
   const [data, setData] = useState<any>(null);
   const [documents, setDocuments] = useState<DocSummary[]>([]);
@@ -1235,6 +1280,17 @@ function ClaimDetail({
     },
   ];
 
+  const confidenceSummary = data.confidence_summary ?? null;
+  if (confidenceSummary) {
+    tabs.push({ id: "confidence", label: "Confidence" });
+  }
+
+  if (hasGroundTruth) {
+    tabs.push({ id: "ground-truth", label: "Ground Truth" });
+  }
+
+  tabs.push({ id: "notes", label: "Notes" });
+
   return (
     <div className="space-y-4">
       {/* Decision banner */}
@@ -1272,6 +1328,8 @@ function ClaimDetail({
             data={data}
             coverageOverrides={coverageOverrides}
             setCoverageOverrides={setCoverageOverrides}
+            documents={documents}
+            onViewDocument={onViewSource}
           />
         )}
         {activeTab === "coverage-checks" && (
@@ -1294,6 +1352,18 @@ function ClaimDetail({
             onViewDocument={onViewSource}
           />
         )}
+        {activeTab === "confidence" && confidenceSummary && (
+          <CCISummaryCard summary={confidenceSummary} />
+        )}
+        {activeTab === "ground-truth" && (
+          <GroundTruthTab
+            claimId={claimId}
+            hasGroundTruthDoc={!!hasGroundTruthDoc}
+          />
+        )}
+        {activeTab === "notes" && (
+          <NotesTab claimId={claimId} />
+        )}
       </div>
     </div>
   );
@@ -1311,20 +1381,11 @@ type SortKey =
   | "confidence"
   | "event_date"
   | "payout"
+  | "diff"
   | "vehicle"
   | "dataset";
 
 type SortDir = "asc" | "desc";
-
-interface WorkbenchEnrichment {
-  verdict: string | null;
-  policy: string | null;
-  vehicle: string | null;
-  eventDate: string | null;
-  payout: number | null;
-  confidence: number | null;
-  rationale: string | null;
-}
 
 interface EffectiveValues {
   policy: string | null;
@@ -1333,6 +1394,8 @@ interface EffectiveValues {
   confidence: number | null;
   eventDate: string | null;
   payout: number | null;
+  diff: number | null;
+  gtPayout: number | null;
   vehicle: string | null;
   dataset: string | null;
 }
@@ -1372,64 +1435,6 @@ function SortHeader({
   );
 }
 
-function buildEnrichment(wb: any): WorkbenchEnrichment {
-  const facts = wb?.facts;
-  const dossier = wb?.dossier;
-  const assessment = wb?.assessment;
-
-  const verdict = dossier?.claim_verdict?.toUpperCase() ?? null;
-  const policy = getFactValue(facts, "policy_number");
-
-  const makeFact = getFact(facts, "vehicle_make") || getFact(facts, "make");
-  const modelFact = getFact(facts, "vehicle_model") || getFact(facts, "model");
-  const make = makeFact?.value ?? makeFact?.normalized_value;
-  const model = modelFact?.value ?? modelFact?.normalized_value;
-  const vehicle = [make, model].filter(Boolean).join(" ") || null;
-  const eventDate =
-    getFactValue(facts, "cost_estimate.document_date") || null;
-  const screening = wb?.screening;
-  const payout = verdict !== "DENY"
-    ? (assessment?.payout?.final_payout ?? screening?.payout?.final_payout ?? null)
-    : null;
-  const cciScore = dossier?.confidence_index?.composite_score;
-  const rawConf = cciScore ?? assessment?.confidence_score ?? null;
-  const confidence =
-    rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
-
-  const stripVerdictPrefix = (s: string) =>
-    s.replace(/^Claim\s+(approved|denied)\.?\s*/i, "");
-
-  let rationale: string | null = null;
-  if (dossier?.verdict_reason) {
-    rationale = stripVerdictPrefix(dossier.verdict_reason);
-  } else if (verdict === "DENY" && dossier?.failed_clauses?.length > 0) {
-    rationale = dossier.failed_clauses
-      .map((c: any) => c.clause_reference || c)
-      .join(", ");
-  } else if (dossier?.clause_evaluations?.length > 0) {
-    const evals = dossier.clause_evaluations;
-    const passed = evals.filter(
-      (e: any) => e.verdict?.toUpperCase() === "PASS"
-    ).length;
-    const assumed = evals.filter(
-      (e: any) => e.assumption_used != null
-    ).length;
-    const parts = [`${passed}/${evals.length} passed`];
-    if (assumed > 0) parts.push(`${assumed} assumed`);
-    rationale = parts.join(", ");
-  }
-
-  return {
-    verdict,
-    policy,
-    vehicle,
-    eventDate,
-    payout,
-    confidence,
-    rationale,
-  };
-}
-
 function parseDate(d: string | null): number {
   if (!d) return 0;
   // ISO format (new normalized data): YYYY-MM-DD
@@ -1464,11 +1469,6 @@ export function ClaimsWorkbenchPage() {
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
 
-  // Workbench enrichment cache
-  const [enrichmentCache, setEnrichmentCache] = useState<
-    Record<string, WorkbenchEnrichment>
-  >({});
-
   // Document slide panel
   const [selectedEvidence, setSelectedEvidence] =
     useState<EvidenceLocation | null>(null);
@@ -1479,12 +1479,8 @@ export function ClaimsWorkbenchPage() {
     try {
       setLoading(true);
       setError(null);
-      const [list, dossierIds] = await Promise.all([
-        getDashboardClaims(),
-        getClaimsWithDossiers(),
-      ]);
-      const dossierSet = new Set(dossierIds);
-      setClaims(list.filter((c) => dossierSet.has(c.claim_id)));
+      const list = await getDashboardClaims();
+      setClaims(list.filter((c) => c.has_dossier));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load claims");
     } finally {
@@ -1495,33 +1491,6 @@ export function ClaimsWorkbenchPage() {
   useEffect(() => {
     loadClaims();
   }, [loadClaims]);
-
-  // Pre-load workbench enrichment for all claims
-  useEffect(() => {
-    if (claims.length === 0) return;
-    let cancelled = false;
-
-    async function preload() {
-      for (const claim of claims) {
-        if (cancelled) return;
-        try {
-          const wb = await getWorkbenchData(claim.claim_id);
-          if (cancelled) return;
-          setEnrichmentCache((prev) => ({
-            ...prev,
-            [claim.claim_id]: buildEnrichment(wb),
-          }));
-        } catch {
-          // Claim may not have workbench data yet
-        }
-      }
-    }
-
-    preload();
-    return () => {
-      cancelled = true;
-    };
-  }, [claims]);
 
   const handleSort = useCallback(
     (key: SortKey) => {
@@ -1535,22 +1504,27 @@ export function ClaimsWorkbenchPage() {
     [sortKey]
   );
 
-  // Get effective display values for a claim (enriched with workbench data)
+  // Get effective display values for a claim
   const getEffective = useCallback(
     (claim: DashboardClaim): EffectiveValues => {
-      const e = enrichmentCache[claim.claim_id];
+      // Normalize cci_score (0-1) to 0-100 for display; fall back to assessment confidence
+      const rawConf = claim.cci_score ?? (claim.confidence != null ? claim.confidence / 100 : null);
+      const confidence = rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
+
       return {
-        policy: e?.policy ?? null,
-        decision: e?.verdict ?? claim.decision?.toUpperCase() ?? null,
-        rationale: e?.rationale ?? claim.result_code ?? null,
-        confidence: e?.confidence ?? claim.confidence,
-        eventDate: e?.eventDate ?? claim.claim_date ?? null,
-        payout: e?.payout ?? claim.payout,
-        vehicle: e?.vehicle ?? null,
+        policy: claim.policy_number ?? null,
+        decision: claim.verdict ?? claim.decision?.toUpperCase() ?? null,
+        rationale: claim.verdict_reason ?? claim.result_code ?? null,
+        confidence,
+        eventDate: claim.event_date ?? claim.claim_date ?? null,
+        payout: claim.screening_payout ?? claim.payout,
+        diff: claim.payout_diff ?? null,
+        gtPayout: claim.gt_payout ?? null,
+        vehicle: claim.vehicle ?? null,
         dataset: claim.dataset_label ?? null,
       };
     },
-    [enrichmentCache]
+    []
   );
 
   // Filter claims
@@ -1610,6 +1584,10 @@ export function ClaimsWorkbenchPage() {
           va = ea.payout ?? -1;
           vb = eb.payout ?? -1;
           break;
+        case "diff":
+          va = ea.diff ?? -Infinity;
+          vb = eb.diff ?? -Infinity;
+          break;
         case "vehicle":
           va = ea.vehicle || "";
           vb = eb.vehicle || "";
@@ -1637,12 +1615,22 @@ export function ClaimsWorkbenchPage() {
     setExpandedId((prev) => (prev === claimId ? null : claimId));
   }, []);
 
-  // Re-sync enrichment cache when dossier is re-evaluated
+  // Re-sync claim row when dossier is re-evaluated
   const handleDossierUpdate = useCallback((claimId: string, wb: any) => {
-    setEnrichmentCache((prev) => ({
-      ...prev,
-      [claimId]: buildEnrichment(wb),
-    }));
+    const dossier = wb?.dossier;
+    if (!dossier) return;
+    setClaims((prev) =>
+      prev.map((c) =>
+        c.claim_id === claimId
+          ? {
+              ...c,
+              verdict: dossier.claim_verdict?.toUpperCase() ?? c.verdict,
+              cci_score: dossier.confidence_index?.composite_score ?? c.cci_score,
+              cci_band: dossier.confidence_index?.band ?? c.cci_band,
+            }
+          : c
+      )
+    );
   }, []);
 
   // View source handler — opens document slide panel
@@ -1661,18 +1649,17 @@ export function ClaimsWorkbenchPage() {
   const availableVerdicts = useMemo(() => {
     const set = new Set<string>();
     for (const claim of claims) {
-      const e = enrichmentCache[claim.claim_id];
-      const v = e?.verdict ?? claim.decision?.toUpperCase();
+      const v = claim.verdict ?? claim.decision?.toUpperCase();
       if (v) set.add(v);
     }
     return Array.from(set).sort();
-  }, [claims, enrichmentCache]);
+  }, [claims]);
 
   if (loading && claims.length === 0 && !error) {
     return <PageLoadingSkeleton message="Loading claims..." />;
   }
 
-  const TOTAL_COLS = 10; // chevron + 9 data columns
+  const TOTAL_COLS = 11; // chevron + 10 data columns
 
   return (
     <div className="h-full flex flex-col">
@@ -1743,6 +1730,7 @@ export function ClaimsWorkbenchPage() {
                   <SortHeader label="Conf." sortKeyName="confidence" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
                   <SortHeader label="Event Date" sortKeyName="event_date" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
                   <SortHeader label="Payout (CHF)" sortKeyName="payout" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                  <SortHeader label="Diff" sortKeyName="diff" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
                   <SortHeader label="Vehicle" sortKeyName="vehicle" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
                   <SortHeader label="Dataset" sortKeyName="dataset" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
                 </tr>
@@ -1911,6 +1899,26 @@ function ClaimRow({
               ? effective.payout.toFixed(2)
               : "-"}
         </td>
+        {/* Diff (system payout - ground truth) */}
+        <td className="py-2 px-2 text-right font-mono text-xs">
+          {effective.diff != null ? (
+            <span
+              className={cn(
+                "font-medium",
+                effective.diff > 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : effective.diff < 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-muted-foreground"
+              )}
+            >
+              {effective.diff > 0 ? "+" : ""}
+              {effective.diff.toFixed(2)}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </td>
         {/* Vehicle */}
         <td
           className="py-2 px-2 text-xs text-muted-foreground max-w-[140px] truncate"
@@ -1926,11 +1934,13 @@ function ClaimRow({
       {isExpanded && (
         <tr>
           <td colSpan={totalCols} className="p-0">
-            <div className="px-6 py-4 border-b border-border bg-muted/10">
+            <div className="px-6 py-4 border-b border-border bg-muted/10 overflow-hidden max-w-[calc(100vw-3.5rem)]">
               <ClaimDetail
                 claimId={claim.claim_id}
                 onViewSource={onViewSource}
                 onDossierUpdate={onDossierUpdate}
+                hasGroundTruth={!!(claim.gt_decision || claim.has_ground_truth_doc)}
+                hasGroundTruthDoc={claim.has_ground_truth_doc}
               />
             </div>
           </td>

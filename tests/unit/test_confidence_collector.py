@@ -253,7 +253,8 @@ def test_collect_coverage_full(collector):
     signals = collector.collect_coverage(analysis)
     by_name = {s.signal_name: s for s in signals}
 
-    assert len(signals) == 4
+    # 4 base signals + 1 complexity signal = 5
+    assert len(signals) == 5
 
     # avg_match_confidence: weighted = (0.9*1000 + 0.6*500) / (1000+500) = 1200/1500 = 0.8
     s = by_name["coverage.avg_match_confidence"]
@@ -275,6 +276,47 @@ def test_collect_coverage_full(collector):
     # primary_repair_confidence: 0.85
     s = by_name["coverage.primary_repair_confidence"]
     assert s.normalized_value == pytest.approx(0.85, abs=1e-6)
+    assert s.source_stage == "coverage"
+
+    # line_item_complexity: 2 items <= 10 -> score 1.0
+    s = by_name["coverage.line_item_complexity"]
+    assert s.raw_value == pytest.approx(2.0)
+    assert s.normalized_value == pytest.approx(1.0)
+    assert s.source_stage == "coverage"
+
+
+# ── 7b. line_item_complexity decay curve ──────────────────────────────
+
+
+@pytest.mark.parametrize("n_items,expected_score", [
+    (5, 1.0),     # no-penalty zone (n <= 10)
+    (15, 0.75),   # mid-decay: 1.0 - 0.05 * (15-10) = 0.75
+    (20, 0.50),   # boundary: 1.0 - 0.05 * (20-10) = 0.50
+    (30, 0.15),   # steep zone floor: 0.5 - 0.035 * (30-20) = 0.15
+    (60, 0.15),   # floor holds for n > 30
+])
+def test_collect_coverage_line_item_complexity_decay(collector, n_items, expected_score):
+    """Line item complexity signal follows piecewise-linear decay curve."""
+    line_items = [
+        {
+            "match_confidence": 0.9,
+            "total_price": 100.0,
+            "review_needed": False,
+            "match_method": "keyword",
+        }
+        for _ in range(n_items)
+    ]
+    analysis = {
+        "line_items": line_items,
+        "primary_repair": {"confidence": 0.8},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    s = by_name["coverage.line_item_complexity"]
+    assert s.raw_value == pytest.approx(float(n_items))
+    assert s.normalized_value == pytest.approx(expected_score, abs=1e-4)
     assert s.source_stage == "coverage"
 
 

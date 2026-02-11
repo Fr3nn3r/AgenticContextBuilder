@@ -2,16 +2,11 @@ import { useState, useMemo, Fragment } from "react";
 import { cn } from "../../lib/utils";
 import {
   ChevronRight,
-  AlertTriangle,
-  Info,
 } from "lucide-react";
 import { NoDataEmptyState } from "../shared";
 import type {
   TraceStep,
   TraceAction,
-  ConfidenceSummary,
-  ComponentScore,
-  ConfidenceBand,
 } from "../../types";
 
 // =============================================================================
@@ -57,149 +52,6 @@ function StatusDot({ status }: { status: string }) {
 }
 
 // =============================================================================
-// CCI COMPONENT BAR
-// =============================================================================
-
-function barColor(score: number): string {
-  if (score >= 0.80) return "bg-emerald-500 dark:bg-emerald-400";
-  if (score >= 0.55) return "bg-amber-500 dark:bg-amber-400";
-  return "bg-rose-500 dark:bg-rose-400";
-}
-
-function ComponentBar({
-  comp,
-  onToggle,
-  isOpen,
-}: {
-  comp: ComponentScore;
-  onToggle: () => void;
-  isOpen: boolean;
-}) {
-  const pct = Math.round(comp.score * 100);
-  const label = comp.component.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  return (
-    <div>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 py-1 hover:bg-muted/30 transition-colors rounded px-1 -mx-1"
-      >
-        <span className="text-xs text-muted-foreground w-40 text-left truncate flex-shrink-0">
-          {label}
-        </span>
-        <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-all", barColor(comp.score))}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="text-xs tabular-nums font-medium w-10 text-right flex-shrink-0">
-          {pct}%
-        </span>
-        <span className="text-[10px] text-muted-foreground w-8 text-right flex-shrink-0">
-          w:{comp.weight.toFixed(1)}
-        </span>
-        {comp.signals_used.length > 0 && (
-          <ChevronRight
-            className={cn(
-              "h-3 w-3 text-muted-foreground transition-transform flex-shrink-0",
-              isOpen && "rotate-90"
-            )}
-          />
-        )}
-      </button>
-      {isOpen && comp.signals_used.length > 0 && (
-        <div className="ml-44 pl-3 border-l border-border mb-1 space-y-0.5">
-          {comp.signals_used.map((sig, idx) => (
-            <div key={idx} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate flex-1">{sig.description || sig.signal_name}</span>
-              <span className="tabular-nums flex-shrink-0">
-                {sig.raw_value != null ? sig.raw_value.toFixed(2) : "-"}
-              </span>
-              <span className="text-muted-foreground/50 flex-shrink-0">-&gt;</span>
-              <span className="tabular-nums font-medium flex-shrink-0">
-                {sig.normalized_value.toFixed(2)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// CCI SUMMARY CARD
-// =============================================================================
-
-const BAND_STYLES: Record<ConfidenceBand, string> = {
-  high: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  moderate: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  low: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
-};
-
-function CCISummaryCard({ summary }: { summary: ConfidenceSummary }) {
-  const [openComp, setOpenComp] = useState<string | null>(null);
-  const pct = Math.round(summary.composite_score * 100);
-
-  return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">Composite Confidence Index</span>
-          <span
-            className={cn(
-              "text-[10px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide",
-              BAND_STYLES[summary.band]
-            )}
-          >
-            {summary.band}
-          </span>
-        </div>
-        <span className="text-lg font-bold tabular-nums text-foreground">{pct}%</span>
-      </div>
-
-      {/* Component bars */}
-      <div className="space-y-0.5">
-        {summary.component_scores.map((comp) => (
-          <ComponentBar
-            key={comp.component}
-            comp={comp}
-            isOpen={openComp === comp.component}
-            onToggle={() =>
-              setOpenComp((prev) => (prev === comp.component ? null : comp.component))
-            }
-          />
-        ))}
-      </div>
-
-      {/* Flags / warnings */}
-      {summary.flags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {summary.flags.map((flag, idx) => (
-            <span
-              key={idx}
-              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-            >
-              <AlertTriangle className="h-2.5 w-2.5" />
-              {flag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Missing stages */}
-      {summary.stages_missing.length > 0 && (
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <Info className="h-3 w-3 flex-shrink-0" />
-          <span>Missing stages: {summary.stages_missing.join(", ")}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
 // MAIN TAB COMPONENT
 // =============================================================================
 
@@ -209,9 +61,8 @@ interface DecisionTraceTabProps {
 
 export function DecisionTraceTab({ data }: DecisionTraceTabProps) {
   const lineItems: any[] = data.coverage?.line_items ?? [];
-  const confidenceSummary: ConfidenceSummary | null = data.confidence_summary ?? null;
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const toggleType = (type: string) =>
     setExpandedTypes((prev) => {
@@ -221,7 +72,11 @@ export function DecisionTraceTab({ data }: DecisionTraceTabProps) {
     });
 
   const toggleItem = (key: string) =>
-    setExpandedItem((prev) => (prev === key ? null : key));
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   // Group line items by type
   const typeOrder = ["parts", "labor", "fee", "other"];
@@ -251,15 +106,12 @@ export function DecisionTraceTab({ data }: DecisionTraceTabProps) {
   const totalItems = lineItems.length;
   const totalWithTrace = Object.values(byType).reduce((s, g) => s + g.traceCount, 0);
 
-  if (totalItems === 0 && !confidenceSummary) {
+  if (totalItems === 0) {
     return <NoDataEmptyState />;
   }
 
   return (
     <div className="space-y-4">
-      {/* CCI summary card */}
-      {confidenceSummary && <CCISummaryCard summary={confidenceSummary} />}
-
       {/* Line items with trace */}
       {totalItems > 0 && (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -304,7 +156,7 @@ export function DecisionTraceTab({ data }: DecisionTraceTabProps) {
                     const key = item._key as string;
                     const hasTrace = item._hasTrace as boolean;
                     const trace: TraceStep[] = item.decision_trace ?? [];
-                    const isOpen = expandedItem === key;
+                    const isOpen = expandedItems.has(key);
                     const conf = item.match_confidence;
 
                     return (
@@ -404,7 +256,7 @@ function TraceStepRow({ step, index }: { step: TraceStep; index: number }) {
       <div
         onClick={() => hasDetail && setDetailOpen((v) => !v)}
         className={cn(
-          "flex items-center gap-2 text-[11px] py-0.5 rounded px-1 -mx-1",
+          "flex items-start gap-2 text-[11px] py-0.5 rounded px-1 -mx-1 min-w-0",
           hasDetail && "cursor-pointer hover:bg-muted/30 transition-colors"
         )}
       >
@@ -420,7 +272,7 @@ function TraceStepRow({ step, index }: { step: TraceStep; index: number }) {
             {Math.round(step.confidence * 100)}%
           </span>
         )}
-        <span className="text-muted-foreground truncate flex-1">
+        <span className="text-muted-foreground whitespace-normal break-words flex-1 min-w-0">
           {step.reasoning}
         </span>
         {hasDetail && (
@@ -435,9 +287,9 @@ function TraceStepRow({ step, index }: { step: TraceStep; index: number }) {
       {detailOpen && hasDetail && (
         <div className="ml-8 pl-3 border-l border-border py-1 space-y-0.5">
           {Object.entries(step.detail!).map(([k, v]) => (
-            <div key={k} className="flex gap-2 text-[10px] text-muted-foreground">
+            <div key={k} className="flex gap-2 text-[10px] text-muted-foreground min-w-0">
               <span className="font-medium flex-shrink-0">{k}:</span>
-              <span className="truncate">
+              <span className="truncate min-w-0">
                 {typeof v === "object" ? JSON.stringify(v) : String(v)}
               </span>
             </div>

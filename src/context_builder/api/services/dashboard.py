@@ -220,6 +220,65 @@ class DashboardService:
                 })
         return docs
 
+    def _load_json(self, path: Path) -> Optional[Dict[str, Any]]:
+        """Load a JSON file, returning None on missing/corrupt."""
+        if not path.exists():
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def _get_fact_value(self, facts_data: Optional[Dict[str, Any]], name: str) -> Optional[str]:
+        """Search facts list by name, returning value or normalized_value."""
+        if not facts_data:
+            return None
+        for fact in facts_data.get("facts", []):
+            if fact.get("name") == name:
+                return fact.get("value") or fact.get("normalized_value")
+        return None
+
+    def _find_latest_dossier(self, run_dir: Path) -> Optional[Path]:
+        """Find the latest decision_dossier_v*.json in a run directory."""
+        candidates = sorted(run_dir.glob("decision_dossier_v*.json"))
+        return candidates[-1] if candidates else None
+
+    def _build_rationale(self, dossier: Dict[str, Any], verdict: Optional[str]) -> Optional[str]:
+        """Build a human-readable rationale from dossier data."""
+        strip_prefix = lambda s: (
+            s if not s else
+            s.replace("Claim approved.", "").replace("Claim denied.", "")
+            .replace("Claim approved", "").replace("Claim denied", "").strip()
+        ) or None
+
+        if dossier.get("verdict_reason"):
+            result = strip_prefix(dossier["verdict_reason"])
+            if result:
+                return result
+
+        if verdict == "DENY":
+            failed = dossier.get("failed_clauses", [])
+            if failed:
+                refs = [
+                    c.get("clause_reference", c) if isinstance(c, dict) else str(c)
+                    for c in failed
+                ]
+                return ", ".join(refs)
+
+        evals = dossier.get("clause_evaluations", [])
+        if evals:
+            passed = sum(
+                1 for e in evals if (e.get("verdict") or "").upper() == "PASS"
+            )
+            assumed = sum(1 for e in evals if e.get("assumption_used") is not None)
+            parts = [f"{passed}/{len(evals)} passed"]
+            if assumed > 0:
+                parts.append(f"{assumed} assumed")
+            return ", ".join(parts)
+
+        return None
+
     def _count_documents(self, claim_id: str) -> int:
         """Count documents for a claim (fast — no file reads, just directory listing)."""
         docs_dir = self.claims_dir / claim_id / "docs"
@@ -303,6 +362,50 @@ class DashboardService:
                 elif isinstance(payout_data, (int, float)):
                     payout = payout_data
 
+            # Workbench enrichment (facts, dossier, screening)
+            policy_number = None
+            wb_vehicle = None
+            event_date = None
+            wb_verdict = None
+            verdict_reason = None
+            cci_score = None
+            cci_band = None
+            wb_screening_payout = None
+            has_dossier = False
+
+            if claim_run_id:
+                run_dir = claim_dir / "claim_runs" / claim_run_id
+
+                # 1. Load claim_facts
+                facts_data = self._load_json(run_dir / "claim_facts.json")
+                if facts_data:
+                    policy_number = self._get_fact_value(facts_data, "policy_number")
+                    make = self._get_fact_value(facts_data, "vehicle_make") or self._get_fact_value(facts_data, "make")
+                    model = self._get_fact_value(facts_data, "vehicle_model") or self._get_fact_value(facts_data, "model")
+                    wb_vehicle = " ".join(filter(None, [make, model])) or None
+                    event_date = self._get_fact_value(facts_data, "cost_estimate.document_date")
+
+                # 2. Find latest dossier
+                dossier_path = self._find_latest_dossier(run_dir)
+                if dossier_path:
+                    has_dossier = True
+                    dossier_data = self._load_json(dossier_path)
+                    if dossier_data:
+                        wb_verdict = (dossier_data.get("claim_verdict") or "").upper() or None
+                        verdict_reason = self._build_rationale(dossier_data, wb_verdict)
+                        cci = dossier_data.get("confidence_index")
+                        if isinstance(cci, dict):
+                            cci_score = cci.get("composite_score")
+                            cci_band = cci.get("band")
+
+                # 3. Screening payout (only for non-DENY)
+                if wb_verdict != "DENY" and payout is None:
+                    screen_data = self._load_json(run_dir / "screening.json")
+                    if screen_data:
+                        sp = screen_data.get("payout")
+                        if isinstance(sp, dict):
+                            wb_screening_payout = sp.get("final_payout")
+
             # Ground truth fields
             gt_decision = gt.get("decision")
             gt_payout = gt.get("total_approved_amount")
@@ -341,6 +444,15 @@ class DashboardService:
                 "currency": currency,
                 "assessment_method": assessment_method,
                 "claim_run_id": claim_run_id,
+                "policy_number": policy_number,
+                "vehicle": wb_vehicle,
+                "event_date": event_date,
+                "verdict": wb_verdict,
+                "verdict_reason": verdict_reason,
+                "cci_score": cci_score,
+                "cci_band": cci_band,
+                "screening_payout": wb_screening_payout,
+                "has_dossier": has_dossier,
                 "gt_decision": gt_decision,
                 "gt_payout": gt_payout,
                 "gt_denial_reason": gt_denial_reason,

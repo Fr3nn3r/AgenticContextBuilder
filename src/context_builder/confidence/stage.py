@@ -19,10 +19,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from context_builder.confidence.collector import ConfidenceCollector
-from context_builder.confidence.scorer import ConfidenceScorer, DEFAULT_WEIGHTS
+from context_builder.confidence.scorer import ConfidenceScorer
 from context_builder.pipeline.claim_stages.context import ClaimContext
-from context_builder.schemas.confidence import SignalSnapshot
 from context_builder.storage.claim_run import ClaimRunStorage
 
 logger = logging.getLogger(__name__)
@@ -77,6 +75,67 @@ class ConfidenceStage:
                 except Exception:
                     logger.debug(f"Could not load extraction file {ext_file}", exc_info=True)
 
+        return results
+
+    def _derive_extraction_from_facts(
+        self, claim_folder: Path, claim_run_id: str
+    ) -> List[Dict[str, Any]]:
+        """Derive extraction quality signals from claim_facts.json when per-doc extraction files are missing.
+
+        Falls back to claim_facts (aggregated fields with confidence) and
+        meta/doc.json (doc-type confidence) to produce synthetic extraction
+        results that the collector can score.
+        """
+        storage = ClaimRunStorage(claim_folder)
+        claim_facts = storage.read_from_claim_run(claim_run_id, "claim_facts.json")
+        if not claim_facts:
+            return []
+
+        facts = claim_facts.get("facts") or []
+        if not facts:
+            return []
+
+        # Group facts by source doc
+        doc_facts: Dict[str, List[Dict[str, Any]]] = {}
+        for fact in facts:
+            selected = fact.get("selected_from") or {}
+            doc_id = selected.get("doc_id", "unknown")
+            doc_facts.setdefault(doc_id, []).append(fact)
+
+        results: List[Dict[str, Any]] = []
+        docs_dir = claim_folder / "docs"
+        for doc_id, fields_data in doc_facts.items():
+            result: Dict[str, Any] = {"fields": []}
+
+            # Read doc_type_confidence from meta/doc.json
+            meta_path = docs_dir / doc_id / "meta" / "doc.json"
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    dtc = meta.get("doc_type_confidence")
+                    if dtc is not None:
+                        result["doc_type_confidence"] = dtc
+                except Exception:
+                    pass
+
+            # Convert facts to field-like dicts
+            for fact in fields_data:
+                fld: Dict[str, Any] = {
+                    "confidence": fact.get("confidence"),
+                }
+                selected = fact.get("selected_from") or {}
+                if selected.get("text_quote"):
+                    fld["has_verified_evidence"] = True
+
+                result["fields"].append(fld)
+
+            results.append(result)
+
+        logger.debug(
+            f"Derived extraction data from claim_facts: {len(results)} docs, "
+            f"{sum(len(r['fields']) for r in results)} fields"
+        )
         return results
 
     def _load_coverage_analysis(
@@ -178,12 +237,14 @@ class ConfidenceStage:
                 context.workspace_path, context.claim_id
             )
 
-            # ── Collect signals ──────────────────────────────────
-            collector = ConfidenceCollector()
-
+            # ── Load data ────────────────────────────────────────
             extraction_results = (
                 self._load_extraction_results(claim_folder) if claim_folder else []
             )
+            if not extraction_results and claim_folder:
+                extraction_results = self._derive_extraction_from_facts(
+                    claim_folder, context.run_id
+                )
             coverage_analysis = (
                 self._load_coverage_analysis(claim_folder, context.run_id)
                 if claim_folder
@@ -194,31 +255,29 @@ class ConfidenceStage:
                 if claim_folder
                 else None
             )
+            custom_weights = self._load_custom_weights(context.workspace_path)
 
-            signals = collector.collect_all(
+            # ── Compute CCI (centralised) ────────────────────────
+            from context_builder.confidence import compute_confidence
+
+            summary = compute_confidence(
+                claim_id=context.claim_id,
+                claim_run_id=context.run_id,
                 extraction_results=extraction_results,
                 reconciliation_report=reconciliation_report,
                 coverage_analysis=coverage_analysis,
                 screening_result=context.screening_result,
                 processing_result=context.processing_result,
                 decision_result=context.decision_result,
+                weights=custom_weights,
             )
 
-            if not signals:
+            if summary is None:
                 logger.info(f"No signals collected for {context.claim_id}, skipping CCI")
                 context.notify_stage_update(self.name, "skipped")
                 elapsed_ms = int((time.time() - start) * 1000)
                 context.timings.confidence_ms = elapsed_ms
                 return context
-
-            # ── Score ────────────────────────────────────────────
-            custom_weights = self._load_custom_weights(context.workspace_path)
-            scorer = ConfidenceScorer(weights=custom_weights)
-            summary = scorer.compute(
-                signals=signals,
-                claim_id=context.claim_id,
-                claim_run_id=context.run_id,
-            )
 
             # ── Persist ──────────────────────────────────────────
             if claim_folder:
@@ -234,6 +293,7 @@ class ConfidenceStage:
                     logger.warning("Failed to write confidence_summary.json", exc_info=True)
 
                 # Patch latest dossier
+                scorer = ConfidenceScorer(weights=custom_weights)
                 ci = scorer.to_confidence_index(summary)
                 dossier_path = self._find_latest_dossier(claim_folder, context.run_id)
                 if dossier_path:
@@ -242,7 +302,7 @@ class ConfidenceStage:
             logger.info(
                 f"Confidence complete for {context.claim_id}: "
                 f"CCI={summary.composite_score:.3f} ({summary.band.value}), "
-                f"{len(signals)} signals, "
+                f"{len(summary.signals_collected)} signals, "
                 f"{len(summary.stages_available)} stages"
             )
             context.notify_stage_update(self.name, "complete")

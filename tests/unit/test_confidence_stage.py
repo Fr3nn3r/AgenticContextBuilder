@@ -266,8 +266,8 @@ class TestDossierPatching:
 # 5. run() handles exception gracefully (non-fatal)
 # ---------------------------------------------------------------------------
 class TestExceptionHandling:
-    def test_exception_in_collector_is_non_fatal(self, tmp_path: Path) -> None:
-        """If the collector blows up, the stage catches and continues."""
+    def test_exception_in_compute_is_non_fatal(self, tmp_path: Path) -> None:
+        """If compute_confidence blows up, the stage catches and continues."""
         _setup_claim_folder(tmp_path)
         ctx = _make_context(
             tmp_path,
@@ -276,32 +276,12 @@ class TestExceptionHandling:
         stage = ConfidenceStage()
 
         with patch(
-            "context_builder.confidence.stage.ConfidenceCollector.collect_all",
+            "context_builder.confidence.compute_confidence",
             side_effect=RuntimeError("boom"),
         ):
             result = stage.run(ctx)
 
         # Stage should return context without crashing
-        assert result is ctx
-        assert result.timings.confidence_ms >= 0
-
-    def test_exception_in_scorer_is_non_fatal(self, tmp_path: Path) -> None:
-        """If the scorer blows up, the stage catches and continues."""
-        claim_folder = _setup_claim_folder(tmp_path)
-        _setup_run_dir(claim_folder)
-
-        ctx = _make_context(
-            tmp_path,
-            screening_result=SCREENING_RESULT,
-        )
-        stage = ConfidenceStage()
-
-        with patch(
-            "context_builder.confidence.stage.ConfidenceScorer.compute",
-            side_effect=ValueError("scorer error"),
-        ):
-            result = stage.run(ctx)
-
         assert result is ctx
         assert result.timings.confidence_ms >= 0
 

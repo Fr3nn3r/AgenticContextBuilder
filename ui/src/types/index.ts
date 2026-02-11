@@ -1374,6 +1374,16 @@ export interface DashboardClaim {
   currency: string;
   assessment_method: string | null;
   claim_run_id: string | null;
+  // Workbench summary
+  policy_number: string | null;
+  vehicle: string | null;
+  event_date: string | null;
+  verdict: string | null;
+  verdict_reason: string | null;
+  cci_score: number | null;
+  cci_band: string | null;
+  screening_payout: number | null;
+  has_dossier: boolean;
   // Ground truth
   gt_decision: string | null;
   gt_payout: number | null;
@@ -1414,6 +1424,14 @@ export interface DashboardClaimDetail {
   sys_vat_amount: number | null;
   gt_vat_amount: number | null;
   screening_payout: Record<string, unknown> | null;
+}
+
+// ── Claim Notes Types ─────────────────────────────────────────────
+
+export interface ClaimNotes {
+  content: string;
+  updated_at: string | null;
+  updated_by: string | null;
 }
 
 // ── Decision Dossier Types ────────────────────────────────────────
@@ -1517,6 +1535,12 @@ export interface ComponentScore {
   weighted_contribution: number;
   signals_used: SignalSnapshot[];
   notes: string;
+  detail?: {
+    critical_facts_total?: number;
+    critical_facts_present?: number;
+    missing_critical_facts?: string[];
+    data_gaps?: Array<{ field: string; impact: string }>;
+  };
 }
 
 export interface ConfidenceSummary {
