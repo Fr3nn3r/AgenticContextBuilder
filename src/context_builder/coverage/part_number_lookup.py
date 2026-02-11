@@ -19,6 +19,18 @@ from typing import Any, Dict, List, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
+# Characters stripped during part number normalization (spaces, dashes, dots, slashes)
+_PN_STRIP_CHARS = str.maketrans("", "", " -./")
+
+
+def _normalize_part_number(pn: str) -> str:
+    """Normalize a part number for comparison.
+
+    Strips spaces, dashes, dots, and slashes, then uppercases.
+    E.g. '5WA 713 033 CC' and '5WA-713-033-CC' both become '5WA713033CC'.
+    """
+    return pn.translate(_PN_STRIP_CHARS).upper()
+
 
 @dataclass
 class PartLookupResult:
@@ -97,8 +109,8 @@ class AssumptionsLookupProvider:
 
         self._load_mappings()
 
-        # Normalize part number (remove spaces, uppercase)
-        normalized = part_number.replace(" ", "").upper()
+        # Normalize part number (remove spaces, dashes, dots, uppercase)
+        normalized = _normalize_part_number(part_number)
 
         # Try exact match first
         for stored_pn, info in self._part_number_mappings.items():
@@ -106,7 +118,7 @@ class AssumptionsLookupProvider:
             if stored_pn.startswith("_"):
                 continue
 
-            stored_normalized = stored_pn.replace(" ", "").upper()
+            stored_normalized = _normalize_part_number(stored_pn)
             if normalized == stored_normalized:
                 return PartLookupResult(
                     part_number=part_number,
