@@ -110,6 +110,23 @@ class AssessmentRunnerService:
                     extraction_bundle_id=context.extraction_bundle_id,
                 )
 
+                # Also write assessment.json into the claim_run directory so
+                # the dashboard can correlate it with the decision dossier
+                # (which DecisionStage already wrote to the same run dir).
+                try:
+                    from context_builder.storage.claim_run import ClaimRunStorage
+                    claim_folder = workspace_path / "claims" / claim_id
+                    if claim_folder.exists() and context.run_id:
+                        storage = ClaimRunStorage(claim_folder)
+                        storage.write_assessment(
+                            context.run_id, context.processing_result
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to write assessment.json to claim run "
+                        f"{context.run_id}: {e}"
+                    )
+
                 if on_complete:
                     await _maybe_await(
                         on_complete,

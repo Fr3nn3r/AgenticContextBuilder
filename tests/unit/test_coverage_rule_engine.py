@@ -302,6 +302,7 @@ class TestCustomConfig:
             component_override_patterns=[],
             generic_description_patterns=[],
             fastener_patterns=[],
+            seal_gasket_standalone_patterns=[],
         )
         engine = RuleEngine(config)
 
@@ -559,3 +560,126 @@ class TestRule7FastenerPatterns:
         )
         assert result is not None
         assert result.coverage_status == CoverageStatus.COVERED
+
+
+class TestRule7_5SealGasketStandalone:
+    """Tests for Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED."""
+
+    def test_standalone_dichtung_review_needed(self):
+        """Standalone DICHTUNG is flagged for review."""
+        config = RuleConfig(
+            fee_item_types=["fee"],
+            exclusion_patterns=[],
+            consumable_patterns=[],
+            non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
+            seal_gasket_standalone_patterns=["DICHTUNG", "DICHTRING", "O-?RING"],
+        )
+        engine = RuleEngine(config)
+        result = engine.match(
+            description="DICHTUNG",
+            item_type="parts",
+            total_price=15.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+        assert result.match_confidence == 0.45
+        assert result.match_method == MatchMethod.RULE
+        assert result.decision_trace[0].detail["rule"] == "standalone_seal_gasket"
+
+    def test_standalone_oring_review_needed(self):
+        """O-RING variant is caught by optional hyphen pattern."""
+        config = RuleConfig(
+            fee_item_types=["fee"],
+            exclusion_patterns=[],
+            consumable_patterns=[],
+            non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
+            seal_gasket_standalone_patterns=["O-?RING"],
+        )
+        engine = RuleEngine(config)
+        for desc in ["O-RING", "ORING"]:
+            result = engine.match(
+                description=desc,
+                item_type="parts",
+                total_price=5.0,
+            )
+            assert result is not None, f"Expected match for '{desc}'"
+            assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+
+    def test_compound_zylinderkopfdichtung_not_caught(self):
+        """Compound term ZYLINDERKOPFDICHTUNG passes through (anchored pattern)."""
+        config = RuleConfig(
+            fee_item_types=["fee"],
+            exclusion_patterns=[],
+            consumable_patterns=[],
+            non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
+            seal_gasket_standalone_patterns=["DICHTUNG", "DICHTRING"],
+        )
+        engine = RuleEngine(config)
+        result = engine.match(
+            description="ZYLINDERKOPFDICHTUNG",
+            item_type="parts",
+            total_price=120.0,
+        )
+        assert result is None  # Should NOT match — compound term
+
+    def test_zero_price_seal_covered_before_rule_7_5(self):
+        """Zero-price seal/gasket is covered by Rule 4 before Rule 7.5."""
+        config = RuleConfig(
+            fee_item_types=["fee"],
+            exclusion_patterns=[],
+            consumable_patterns=[],
+            non_covered_labor_patterns=[],
+            component_override_patterns=[],
+            generic_description_patterns=[],
+            fastener_patterns=[],
+            seal_gasket_standalone_patterns=["DICHTUNG"],
+        )
+        engine = RuleEngine(config)
+        result = engine.match(
+            description="DICHTUNG",
+            item_type="parts",
+            total_price=0.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.COVERED
+
+    def test_seal_gasket_empty_patterns_no_match(self):
+        """No match when seal_gasket_standalone_patterns is empty."""
+        engine = RuleEngine()  # default empty config
+        result = engine.match(
+            description="DICHTUNG",
+            item_type="parts",
+            total_price=10.0,
+        )
+        assert result is None
+
+    def test_from_dict_loads_seal_gasket_patterns(self):
+        """RuleConfig.from_dict correctly loads seal_gasket_standalone_patterns."""
+        data = {
+            "seal_gasket_standalone_patterns": ["DICHTUNG", "O-?RING"],
+        }
+        config = RuleConfig.from_dict(data)
+        assert config.seal_gasket_standalone_patterns == ["DICHTUNG", "O-?RING"]
+
+    def test_nsa_config_seal_gasket(self, nsa_engine):
+        """NSA config includes seal/gasket patterns if configured."""
+        # This test verifies integration with real NSA config.
+        # If seal_gasket_standalone_patterns not yet in NSA config, skip.
+        if not nsa_engine.config.seal_gasket_standalone_patterns:
+            pytest.skip("NSA config has no seal_gasket_standalone_patterns yet")
+        result = nsa_engine.match(
+            description="DICHTUNG",
+            item_type="parts",
+            total_price=12.0,
+        )
+        assert result is not None
+        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED

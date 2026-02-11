@@ -462,6 +462,46 @@ class CoverageAnalysisService:
 
         return age_years
 
+    def _extract_repair_description(
+        self, claim_facts: Dict[str, Any]
+    ) -> Optional[str]:
+        """Extract diagnostic/damage context for primary repair identification.
+
+        Combines error codes, error descriptions, and damage descriptions from
+        the claim facts into a single context string for the LLM.
+
+        Args:
+            claim_facts: Claim facts dictionary
+
+        Returns:
+            Formatted repair description string or None if no context available
+        """
+        facts = claim_facts.get("facts", [])
+
+        parts = []
+
+        error_codes = self._extract_fact_value(facts, "error_codes")
+        if error_codes:
+            parts.append(f"Error codes: {error_codes}")
+
+        error_descriptions = self._extract_fact_value(facts, "error_descriptions")
+        if error_descriptions:
+            parts.append(f"Error description: {error_descriptions}")
+
+        damage_description = (
+            self._extract_fact_value(facts, "damage_description")
+            or self._extract_fact_value(facts, "repair_reason")
+            or self._extract_fact_value(facts, "complaint")
+            or self._extract_fact_value(facts, "beanstandung")
+        )
+        if damage_description:
+            parts.append(f"Damage description: {damage_description}")
+
+        if not parts:
+            return None
+
+        return "\n".join(parts)
+
     def _write_coverage_analysis(
         self, claim_run_path: Path, result: CoverageAnalysisResult
     ) -> Path:
@@ -548,6 +588,9 @@ class CoverageAnalysisService:
         # Extract vehicle age for age-based coverage reduction
         vehicle_age_years = self._extract_vehicle_age(claim_facts)
 
+        # Extract diagnostic / damage context for primary repair identification
+        repair_description = self._extract_repair_description(claim_facts)
+
         age_info = ""
         if vehicle_age_years is not None:
             age_info = f", age={vehicle_age_years:.1f}y"
@@ -570,6 +613,7 @@ class CoverageAnalysisService:
             claim_run_id=claim_run_id,
             vehicle_age_years=vehicle_age_years,
             age_threshold_years=age_threshold_years,
+            repair_description=repair_description,
         )
 
         # Generate non-covered explanations (LLM rewrite when available)

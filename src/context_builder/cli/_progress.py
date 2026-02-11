@@ -98,7 +98,7 @@ class RichProgressReporter:
             TimeElapsedColumn(),
             TimeRemainingColumn(),
             console=self._console,
-            transient=False,
+            transient=True,
         )
         self._progress.start()
         self._claims_task = self._progress.add_task("Claims", total=len(claim_ids))
@@ -163,12 +163,16 @@ class RichProgressReporter:
         error: Optional[str] = None,
         confidence_band: Optional[str] = None,
     ) -> None:
-        """Mark a claim as complete and show summary. Thread-safe."""
-        if self.parallel <= 1:
-            self.complete_stage()
+        """Mark a claim as complete and show summary. Thread-safe.
 
+        Operations are done atomically under a single lock to prevent
+        Rich's refresh timer from rendering intermediate states (e.g.
+        progress bars without the stage task but before the result line).
+        The result is buffered FIRST so that the next Live refresh
+        renders it alongside the updated bars.
+        """
         if error:
-            msg = f"[red]✗[/red] {claim_id}: FAILED — {error}"
+            msg = f"[red]✗[/red] {claim_id}: FAILED -- {error}"
         else:
             parts = [f"[green]✓[/green] {claim_id}: {decision}"]
             if confidence is not None:
@@ -183,10 +187,26 @@ class RichProgressReporter:
             msg = " | ".join(parts)
 
         with self._lock:
+            # 1. Buffer the result line FIRST — Rich queues it for the
+            #    next Live refresh, so it appears above the progress bars.
+            if self._progress and self._progress.live.is_started:
+                self._progress.console.print(msg)
+            elif self.mode != ProgressMode.QUIET:
+                self._console.print(msg)
+
+            # 2. NOW clean up stage/detail tasks and advance the counter.
+            #    Any refresh that fires after this shows updated bars
+            #    with the result line already rendered above.
+            if self.parallel <= 1 and self._progress:
+                if self._detail_task is not None:
+                    self._progress.remove_task(self._detail_task)
+                    self._detail_task = None
+                if self._stage_task is not None:
+                    self._progress.remove_task(self._stage_task)
+                    self._stage_task = None
+
             if self._progress and self._claims_task is not None:
                 self._progress.advance(self._claims_task, 1)
-
-        self.write(msg)
 
     def finish(self) -> None:
         """Close all progress bars and clean up."""

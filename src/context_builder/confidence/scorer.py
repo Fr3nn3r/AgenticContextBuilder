@@ -49,7 +49,7 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
     ],
     "coverage_reliability": [
         "coverage.avg_match_confidence",
-        "coverage.review_needed_rate",
+        # coverage.review_needed_rate removed: zero variance across all eval claims
         "coverage.method_diversity",
         "coverage.primary_repair_confidence",
     ],
@@ -57,8 +57,8 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
         "screening.pass_rate",
         "screening.inconclusive_rate",
         "screening.hard_fail_clarity",
-        "decision.tier1_ratio",
-        "decision.assumption_reliance",
+        # decision.tier1_ratio removed: zero variance across all eval claims
+        # decision.assumption_reliance removed: zero variance across all eval claims
         "assessment.fraud_indicator_penalty",
     ],
 }
@@ -68,7 +68,7 @@ def score_to_band(score: float) -> ConfidenceBand:
     """Map a 0-1 composite score to a qualitative band."""
     if score >= 0.80:
         return ConfidenceBand.HIGH
-    elif score >= 0.55:
+    elif score >= 0.65:
         return ConfidenceBand.MODERATE
     else:
         return ConfidenceBand.LOW

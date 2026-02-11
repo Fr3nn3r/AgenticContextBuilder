@@ -1,0 +1,527 @@
+ASSUMPTIONS DATABASE ANALYSIS
+==============================
+File: workspaces/nsa/config/assumptions.json
+Schema version: assumptions_v1
+Last updated: 2026-01-29T17:45:00 by claude
+Generated: 2026-02-11
+
+Precedence rule: These are DEFAULT assumptions when the policy is SILENT.
+If the policy explicitly states coverage terms, POLICY WINS over these defaults.
+
+================================================================================
+1. PART NUMBERS (by_part_number)
+================================================================================
+
+#   | Part Number          | System                  | Component                  | Note
+----|----------------------|-------------------------|----------------------------|------------------------------------------
+  1 | 4N1857409J           | comfort_options         | mirror_assembly            | Aussenspiegel Aufnahme (automatic folding mirror)
+  2 | 4N1837015B           | electrical_system       | door_lock                  | Tuerschloss vorne (door lock actuator)
+  3 | 8W0616887            | suspension              | height_control_valve       |
+  4 | G 052731A2           | consumables             | hydraulic_oil              |
+  5 | 4M0827506F           | body                    | trunk_lock                 | reason: accessory
+  6 | F2237471             | electric                | power_supply_module        | APIM Power Supply Module (Ford SYNC) - covered under electric category
+  7 | F2316186             | infotainment            | central_processor          | Infotainment processor - not covered under ELEKTRO policy (EV drivetrain only)
+  8 | 61LR073764           | engine                  | timing_gear                | Pignon d'arbre a came
+  9 | 61LR073684           | engine                  | oil_jet                    | Injecteur d'huile (gicleur de refroidissement piston)
+ 10 | 61LR073744           | engine                  | pulley                     | Poulie
+ 11 | 61LR084294           | engine                  | chain_tensioner            | Tendeur de chaine primaire
+ 12 | 61LR138833           | engine                  | chain_tensioner            | Tendeur de chaine
+ 13 | 61LR139320           | engine                  | timing_chain               | Chaine distri-secondaire
+ 14 | 61LR132676           | engine                  | timing_chain               | Chaine distribution primaire
+ 15 | 61LR124261           | engine                  | timing_gear                | Pignon intermediaire
+ 16 | 61LR120540           | engine                  | chain_guide                | Guide av. inf. primaire
+ 17 | 61LR177463           | engine                  | camshaft                   | Capteur arbres a cames
+ 18 | 61LR124262           | engine                  | chain_guide                | Guide primaire arr.
+ 19 | 61LR073755           | engine                  | chain_guide                | Guide av. secondaire
+ 20 | 61LR073756           | engine                  | chain_guide                | Guide av. sup. primaire
+ 21 | 61LR073761           | engine                  | chain_guide                | Guide arr. secondaire
+ 22 | 61LR073747           | engine                  | timing_bolt                | Boulon systeme distribution variable
+ 23 | 61LR138592           | engine                  | injector_kit               | Kit de repose de l'injecteur
+ 24 | 61LR049457           | consumables             | oil                        | O-ring tuyau d'huile b-v.
+ 25 | G060175A2            | axle_drive              | haldex_fluid               | Haldex AWD coupling fluid - covered under axle_drive
+ 26 | 0D9498305            | axle_drive              | repair_kit                 | Haldex repair kit
+ 27 | 39701991             | axle_drive              | angle_gear_labor           | Angle gear removal/installation labor
+ 28 | A001989850313        | consumables             | oil                        | HUILE DE BV
+ 29 | A002989020311        | consumables             | oil                        | HUILE P ENGRENAGES HYPOID
+ 30 | 9822473680           | consumables             | oil_pan_gasket             | DICHTUNG F MOTOROELWANNE
+ 31 | 00001109AL           | consumables             | filter                     | OELFILTERPATRONE
+ 32 | 1654514180           | engine                  | piston                     | SATZ VON 3 ZUSAMMENGES. KOLBEN
+ 33 | 1697136980           | engine                  | valve_cleaner              | VENTILREINIGER
+ 34 | 9827278280           | turbo_supercharger      | turbocharger               | HOHLSCHRAUBE OELANSCHLUSS TURBO
+ 35 | 9802181280           | engine                  | injection_pump_outlet      | AUSGANGSSTUTZEN EINSPRITZPUMPE
+ 36 | 9675840180           | engine                  | connecting_rod_bolt        | SCHRAUBE F MOTORPLEUEL
+ 37 | 9808772880           | turbo_supercharger      | turbocharger               | HITZESCHILD TURBOLADER
+ 38 | K04891735AC          | engine                  | valve_body                 | VENTILFOERM.KOERPER
+ 39 | A001989240           | consumables             | hydraulic_oil              | HYDRAULIKOEL
+ 40 | A231320015           | engine                  | valve_unit                 | VENTILEINHEIT
+ 41 | 2704739              | axle_drive              | drive_shaft                | GELENKWELLE
+ 42 | 0BH325025PZ1B       | automatic_transmission  | mechatronic_unit           | MECHATRONIK
+ 43 | 0GC325201L           | automatic_transmission  | transmission_cover         | CAPOT BOITE
+ 44 | 1000                 | consumables             | oil                        | HUILE B. A VITESSE 5.5 LITRES
+ 45 | A0005003800          | cooling_system          | water_pump                 | KUEHLMITTELPUMPE AB ELC
+ 46 | 2000                 | electric                | sensor                     | PM-Sensor 392652U250FFF
+ 47 | A0009050219          | electric                | sensor                     | NOX-SENSOR
+ 48 | 971819076A           | engine                  | heating_valve              | HEIZUNGSVENTIL
+ 49 | 2015171839           | engine                  | valve_clamp                | Ersatzteile Amag Ventil Klemmschelle
+ 50 | Z570                 | consumables             | oil                        | HUILE TOTAL QUARTZ INEO RCP 5W30
+ 51 | P6503180880          | engine                  | timing_chain               | KIT CHAINE
+ 52 | P1680682480          | consumables             | oil                        | FILTRE A HUILE
+ 53 | 213040               | engine                  | timing_belt                | Courroie crantee/chaine de distribution
+ 54 | 1807611              | engine                  | timing_belt                | Courroie crantee/chaine de distribution
+ 55 | 217250               | consumables             | oil                        | Vidange/remplissage de l'huile moteur
+ 56 | 1761082              | engine                  | oil                        | Courroie de pompe a huile
+ 57 | 2468342              | consumables             | oil                        | Filtre a huile
+ 58 | 211410               | engine                  | valve_cover_gasket         | Joint de cache-soupapes
+ 59 | 1799829              | engine                  | valve_cover_gasket         | Joint de cache-soupapes
+ 60 | 214670               | engine                  | timing_gear                | Joint pignon de distribution vilebrequin
+ 61 | 1812510              | engine                  | timing_gear                | Joint pignon de distribution vilebrequin
+ 62 | 80A927155CG          | electrical_system       | control_unit               | STEUERGERAET
+ 63 | G055529A2            | consumables             | oil                        | OEL 1 L
+ 64 | 0CK325421A           | consumables             | filter                     | SAUGFILTER
+ 65 | 13329886040          | consumables             | filter                     | Kraftstofffilter beheizt Lager
+ 66 | 11127646552          | engine                  | valve_cover                | Couvre culasse
+ 67 | V759886280           | engine                  | valve_cover                | COUVERCLE DE CULASSE
+ 68 | 5WA407621D           | axle_drive              | wheel_hub                  | RADNABE
+ 69 | 1001203484           | consumables             | oil                        | Vis-bouchon, carter d'huile
+ 70 | G052182A2            | consumables             | oil                        | Huile de transmission
+ 71 | 5WA 713 033 CC       | automatic_transmission  | gear_selector_actuator     | BETAETIGUNG (Wahlhebelaktuator)
+ 72 | 5WA 713 761 A        | automatic_transmission  | locking_mechanism          | ARRETIERUNG (Schaltsperre)
+ 73 | LR012751             | engine                  | cylinder_liner             | Tube cylindre 1
+ 74 | LR012752             | engine                  | cylinder_liner             | Tube cylindre 2
+ 75 | LR012753             | engine                  | cylinder_liner             | Tube cylindre 3
+ 76 | LR012754             | engine                  | cylinder_liner             | Tube cylindre 4
+ 77 | LR022304             | engine                  | oil_separator_cover        | Couvercle (separateur d'huile)
+ 78 | A247 900 39 04       | lighting                | headlight_control_unit     | STEUERGERAET VOLLSTAENDIG (Scheinwerfer)
+ 79 | A205 900 61 47       | lighting                | headlight_control_unit     | STEUERGERAET VOLLSTAENDIG (Scheinwerfer)
+ 80 | A276 900 47 00 64    | electrical_system       | control_unit               | STEUERGERAET VOLLSTAENDIG
+ 81 | A176 350 31 00       | axle_drive              | differential               | DIFFERENTIEL ARRIERE
+ 82 | A000 490 16 41       | exhaust                 | exhaust_clamp              | COLLIER P TUBE SYS.ECHAPP
+ 83 | 1525A021             | engine                  | maf_sensor                 | Debitmetre (Mass airflow sensor)
+ 84 | 13538514148          | engine                  | injector                   | Injektor DMDC/RDC
+ 85 | 13518511626          | engine                  | high_pressure_pump         | Hochdruckpumpe DMDC/RDC
+ 86 | 13538514154          | engine                  | pressure_accumulator       | Druckspeicher DMDC/RDC
+ 87 | 16119468614          | engine                  | fuel_delivery_unit         | Foerdereinheit DMDC/RDC
+ 88 | 13538575461          | engine                  | fuel_supply_line           | Kraftstoffzulaufleitung DMDC/RDC
+ 89 | 13538575462          | engine                  | fuel_return_line           | Kraftstoff-Ruecklaufleitung DMDC/RDC
+ 90 | 13538579244          | engine                  | fuel_line                  | Druckleitung DMDC/RDC
+ 91 | 13538472971          | engine                  | fuel_line                  | Druckleitung DMDC/RDC
+ 92 | 13538579242          | engine                  | fuel_line                  | Druckleitung DMDC/RDC
+ 93 | 13538583458          | engine                  | fuel_line                  | Leitung Leckoel DMDC/RDC
+ 94 | 16118481591          | fuel_system             | fuel_tank                  | Kraftstofftank Kunststoff 68l DMDC/RDC
+ 95 | 31108095643          | suspension              | wheel_hub                  | Moyeu de roue arriere avec roulement
+ 96 | 00K68214628AA        | four_wd                 | elsd_motor                 | MOTEUR ELECTRIQUE (ELSD)
+ 97 | 9829930180           | engine                  | spark_plug                 | ZUENDKERZE
+ 98 | 9833150780           | engine                  | o_ring                     | O-RING SCHMIERROHR
+ 99 | 9814639380           | engine                  | gasket                     | DICHTG GEHAU-VERSCHLUSSPLATTE
+100 | P1697054780          | engine                  | camshaft_kit               | KIT AAC (Arbre a cames)
+101 | 08E0ZA02G1           | engine                  | crankshaft_seal            | ETANCHEITE CARTER DE PALIER ARBRE A
+102 | 3Q0498203A           | axle_drive              | cv_joint_boot              | Gaine Etancheite Articulation
+103 | 0GC 325 183 D        | automatic_transmission  | oil_filter                 | FILT. HUIL AUTOM
+104 | 0CK325031AR          | automatic_transmission  | sliding_sleeve             | SCHIEBKAST
+105 | 0CK325497H           | automatic_transmission  | control_unit               | STEUERUNG
+106 | 0CK325319A           | automatic_transmission  | pipe                       | ROHR (transmission pipe)
+107 | 5Q1953521KSIGI       | comfort_options         | airbag_clock_spring        | CONTACTEUR SPIRALE AIRBAG
+108 | 04L131512CF          | engine                  | egr_cooler                 | Radiateur refroidissement EGR
+109 | 1682616280           | emissions               | urea_tank                  | HARNSTOFFTANK
+110 | 04L131354            | engine                  | egr_seal                   | Element d'etancheite pour radiateur EGR
+111 | K68225128AB          | electrical_system       | connector                  | VERBINDER
+112 | 27105A4A094          | four_wd                 | transfer_case              | RP Remanufactured Transfer Box (ATC35L) [BMW]
+113 | 26117610061          | axle_drive              | flex_disc                  | Universal Flex Disc (Flector/Guibo) [BMW]
+114 | 22316786566          | automatic_transmission  | transmission_mount         | Gearbox mount [BMW]
+115 | 9113138              | steering                | steering_gear              | Steering rack assembly [Land Rover]
+116 | S005-2500            | suspension              | control_arm                | Bras de suspension [Land Rover]
+117 | A 276 050 14 00      | engine                  | rocker_arm                 | Roller-type rocker arm M276 [Mercedes]
+118 | A 260 050 34 00      | engine                  | rocker_arm                 | Roller-type rocker arm M260 [Mercedes]
+119 | A 642 050 00 80      | engine                  | valve_lifter               | Hydraulic valve lifter OM642 [Mercedes]
+120 | LR066536             | engine                  | oil_feed_pipe              | Oil feed pipe turbocharger [Land Rover]
+121 | 5H0419093J           | steering                | steering_wheel             | Steering wheel [VW]
+122 | 5Q0412249F           | suspension              | strut_bearing              | Suspension strut bearing [VW]
+123 | 5Q0412331E           | suspension              | strut_mount                | Suspension strut mount [VW]
+124 | 5Q0412303E           | suspension              | bump_stop                  | Rubber stop/bump stop [VW]
+125 | 5Q0412545D           | suspension              | spring_seat                | Lower coil spring pad [VW]
+126 | 5Q0411315A           | suspension              | stabilizer_link            | Stabilizer bar link [VW]
+127 | 06K145778AS          | engine                  | turbo_oil_line             | Turbocharger oil feed line EA888 [VW]
+128 | 06K103269F           | engine                  | timing_cover               | Engine upper timing cover EA888 [VW]
+129 | A 247 830 01 04      | body                    | cover_panel                | Cover panel/carter cover [Mercedes]
+130 | A 247 835 14 00      | body                    | sealing_frame              | Sealing frame [Mercedes]
+131 | 1712024              | brakes                  | brake_pads                 | Front brake pad set [Ford] NOTE: wear_part - typically excluded
+132 | 4M0 820 511 A        | hvac                    | blend_door_actuator        | HVAC air inlet door actuator [Audi]
+133 | 4M0 898 001          | hvac                    | hvac_repair_kit            | HVAC air distributor repair kit [Audi]
+134 | 4M0 820 356          | hvac                    | hvac_housing               | HVAC unit case/air distributor housing [Audi]
+135 | 4M0 898 333          | hvac                    | hvac_repair_kit            | HVAC repair kit [Audi]
+136 | 4M1 898 333 A        | hvac                    | hvac_repair_kit            | HVAC repair kit RHD variant [Audi]
+137 | 4M0 898 037 B        | hvac                    | hvac_parts_set             | HVAC parts set [Audi]
+138 | 61LR033302           | brakes                  | brake_disc                 | Rear brake disc [Land Rover] NOTE: wear_part - typically excluded
+139 | 61LR164821           | brakes                  | brake_pads                 | Rear brake pad set [Land Rover] NOTE: wear_part - typically excluded
+140 | 61LR148060           | suspension              | control_arm                | Front lower control arm LH [Land Rover]
+141 | 61LR148059           | suspension              | control_arm                | Front lower control arm RH [Land Rover]
+142 | 61LR033647           | steering                | steering_joint             | Steering joint [Land Rover]
+143 | P9822616180          | electrical_system       | battery                    | 12V battery [Peugeot] NOTE: typically excluded - wear/consumable
+144 | 0B5398048D           | automatic_transmission  | mechatronics_repair_kit    | Mechatronics repair kit DL501 [Audi]
+145 | 0B5315105TC          | automatic_transmission  | oil_pipe                   | DSG oil pump pipe pack DL501 [Audi]
+146 | 0B5325429E           | automatic_transmission  | oil_strainer               | Transmission oil strainer DL501 [Audi]
+147 | 0B5325330A           | automatic_transmission  | filter_cartridge           | DSG external cooling filter DL501 [Audi]
+148 | 11657583149          | engine                  | turbocharger               | Exhaust gas turbocharger BorgWarner K03 [MINI]
+149 | 11652444367          | engine                  | turbo_install_kit          | Turbocharger installation kit [MINI]
+150 | 94860700808          | electrical_system       | wiring_harness             | Engine wiring harness [Porsche]
+151 | 95861860400          | engine_management       | engine_control_unit        | Engine Control Module ECM/DME [Porsche]
+152 | 11367614288          | engine                  | vanos_actuator             | VANOS actuator B46/B48/B58 [BMW]
+153 | 11368696446          | engine                  | vanos_central_valve        | VANOS central valve B46/B58 [BMW]
+154 | 11128618520          | engine                  | gasket                     | Profile gasket high-pressure fuel pump [BMW]
+155 | 11128618519          | engine                  | valve_cover_gasket         | Profile gasket valve cover [BMW]
+156 | 06L121012L           | cooling_system          | water_pump                 | Water pump 1.8/2.0 TSI [VW/Skoda]
+157 | 06L121111N           | cooling_system          | thermostat                 | Coolant regulator/thermostat 1.8/2.0 TSI [VW/Skoda]
+158 | 06K133073            | engine                  | intake_gasket              | Intake manifold gasket EA888 [VW/Skoda]
+159 | A 176 350 31 00      | axle_drive              | rear_differential          | Complete rear axle differential 4MATIC [Mercedes] (DUPLICATE KEY with #81)
+160 | 9850364680           | cooling_system          | thermostat_housing         | Thermostat housing 1.6 BlueHDi [Peugeot]
+161 | 00006441CG           | hvac                    | blower_motor               | HVAC blower fan motor [Peugeot]
+162 | 0281008468           | exhaust_system          | particle_filter_sensor     | PM/soot sensor DPF Bosch [BMW]
+163 | LR158115             | axle_drive              | differential_repair_kit    | Rear differential pinion repair kit [Land Rover]
+164 | LR148059             | suspension              | control_arm                | Front lower control arm RH [Land Rover]
+165 | A205 780 97 00       | body                    | roof_guide_tube            | Panoramic/sliding roof guide tube [Mercedes]
+166 | A205 780 01 75       | body                    | roof_mechanism             | Sliding sunroof mechanism LH [Mercedes]
+167 | A205 780 02 75       | body                    | roof_mechanism             | Sliding sunroof mechanism RH [Mercedes]
+168 | A205 906 41 04       | electrical_system       | roof_motor                 | Sunroof roller blind gear motor [Mercedes]
+169 | A2464701694          | fuel_system             | fuel_pump                  | Electric in-tank fuel pump module [Mercedes]
+
+NOTE: Two metadata entries also exist (not parts):
+  - _extracted_from_claims: "Auto-extracted from claims on 2026-01-29"
+  - _batch_20260129_llm_reduction: batch annotation
+  - _batch_20260202_eval_v2: batch annotation
+
+TOTAL PART NUMBER ENTRIES: 169
+
+
+================================================================================
+2. KEYWORDS (by_keyword)
+================================================================================
+
+#   | Keyword                       | System                  | Component                  | Note
+----|-------------------------------|-------------------------|----------------------------|------------------------------------------
+  1 | ventil                        | suspension              | valve                      | Confirm context - could be engine valve
+  2 | hydraulikventil               | suspension              | hydraulic_valve            |
+  3 | zylinderkopf                  | engine                  | cylinder_head              |
+  4 | zylinderkopfdichtung          | engine                  | cylinder_head_gasket       |
+  5 | getriebe                      | transmission            | transmission               |
+  6 | betaetigung (+ umlaut form)   | automatic_transmission  | actuator                   | Gear selector actuator
+  7 | waehlhebel (+ umlaut form)    | automatic_transmission  | gear_selector              | Gear selector lever
+  8 | schalthebel                   | automatic_transmission  | shift_lever                | Shift lever/gear stick
+  9 | arretierung                   | automatic_transmission  | locking_mechanism          | Shift lock / park lock
+ 10 | kupplung                      | transmission            | clutch                     | reason: wear_part
+ 11 | serrure                       | body                    | lock                       | reason: accessory
+ 12 | schloss                       | electrical_system       | door_lock                  | reason: electronic_door_lock
+ 13 | tuerschloss (+ umlaut form)   | electrical_system       | door_lock                  | reason: electronic_door_lock
+ 14 | turschloss                    | electrical_system       | door_lock                  | reason: electronic_door_lock
+ 15 | kofferraumschloss             | body                    | trunk_lock                 | reason: accessory
+ 16 | bremse                        | brakes                  | brake                      | reason: wear_part
+ 17 | reifen                        | tires                   | tire                       | reason: wear_part
+ 18 | motor                         | engine                  | engine                     |
+ 19 | turbo                         | engine                  | turbocharger               |
+ 20 | kolben                        | engine                  | piston                     |
+ 21 | nockenwelle                   | engine                  | camshaft                   |
+ 22 | kurbelwelle                   | engine                  | crankshaft                 |
+ 23 | oelpumpe                      | engine                  | oil_pump                   |
+ 24 | steuerkette                   | engine                  | timing_chain               | Check if excluded in policy
+ 25 | kettenspanner                 | engine                  | chain_tensioner            |
+ 26 | kettenfuehrung                | engine                  | chain_guide                |
+ 27 | zahnriemen                    | engine                  | timing_belt                | Check if excluded in policy
+ 28 | zahnriemenkit                 | engine                  | timing_belt_kit            | Timing belt kit
+ 29 | riemenspanner                 | engine                  | belt_tensioner             |
+ 30 | umlenkrolle                   | engine                  | idler_pulley               |
+ 31 | spannrolle                    | engine                  | tensioner_pulley           |
+ 32 | chaine (+ accent form)        | engine                  | chain                      | Context: distribution = timing chain
+ 33 | distribution                  | engine                  | timing_system              |
+ 34 | tendeur                       | engine                  | tensioner                  |
+ 35 | poulie                        | engine                  | pulley                     |
+ 36 | pignon                        | engine                  | gear                       |
+ 37 | guide                         | engine                  | guide                      |
+ 38 | wasserpumpe                   | cooling                 | water_pump                 |
+ 39 | stossdaempfer                 | suspension              | shock_absorber             |
+ 40 | luftfederung                  | suspension              | air_suspension             |
+ 41 | differenzial                  | drivetrain              | differential               |
+ 42 | antriebswelle                 | drivetrain              | drive_shaft                |
+ 43 | winkelgetriebe                | axle_drive              | angle_gear                 | Angle gear / Haldex unit
+ 44 | haldex                        | axle_drive              | haldex_coupling            | Haldex AWD coupling system
+ 45 | gfs                           | labor                   | diagnostic                 | Gefuehrte Funktion - guided diagnostic
+ 46 | diagnose                      | labor                   | diagnostic                 |
+ 47 | aus- u.einbau                 | labor                   | removal_installation       |
+ 48 | aus- u.eingebaut              | labor                   | removal_installation       |
+ 49 | aus-, einbau                  | labor                   | removal_installation       |
+ 50 | eingestellt                   | labor                   | calibration                |
+ 51 | kalibrierung                  | labor                   | calibration                |
+ 52 | batterie geladen              | labor                   | battery_charge             |
+ 53 | niveaukontrolle               | labor                   | level_check                |
+ 54 | reinigung                     | labor                   | cleaning                   |
+ 55 | pruefen                       | labor                   | inspection                 |
+ 56 | kontrolle                     | labor                   | inspection                 |
+ 57 | hydraulikfluessigkeit         | consumables             | hydraulic_fluid            |
+ 58 | oelwechsel                    | labor                   | oil_change                 |
+ 59 | oel                           | consumables             | oil                        | Consumable for covered repairs
+ 60 | dichtung                      | parts                   | gasket                     | Gaskets for covered repairs
+ 61 | schraube                      | parts                   | bolt                       | Fasteners for covered repairs
+ 62 | raeder                        | labor                   | wheel_work                 | Wheel removal for access
+ 63 | courroie                      | engine                  | belt                       | Could be timing belt or serpentine belt
+ 64 | culasse                       | engine                  | cylinder_head              |
+ 65 | couvre culasse                | engine                  | valve_cover                |
+ 66 | soupape                       | engine                  | valve                      |
+ 67 | vilebrequin                   | engine                  | crankshaft                 |
+ 68 | papillon                      | engine                  | throttle_body              | Corps de papillon = throttle body
+ 69 | injecteur                     | engine                  | injector                   |
+ 70 | debitmetre (+ accent form)    | engine                  | maf_sensor                 |
+ 71 | egr                           | engine                  | egr_valve                  | Exhaust Gas Recirculation
+ 72 | pompe haute pression          | engine                  | high_pressure_pump         |
+ 73 | gicleur                       | engine                  | oil_jet                    | Gicleur d'huile = piston cooling oil jet
+ 74 | arbre de pont                 | axle_drive              | axle_shaft                 |
+ 75 | arbre de transmission         | axle_drive              | drive_shaft                |
+ 76 | cardan                        | axle_drive              | cv_joint                   |
+ 77 | homocinetique (+ accent/abbr) | axle_drive              | cv_joint                   | (3 variants: homocinetique, homocinétique, homoc)
+ 78 | soufflet                      | axle_drive              | cv_boot                    | CV joint boot
+ 79 | differentiel (+ accent form)  | axle_drive              | differential               | (2 variants)
+ 80 | reducteur de pont             | axle_drive              | rear_differential          |
+ 81 | calculateur                   | electrical_system       | control_unit               |
+ 82 | contacteur                    | electrical_system       | switch                     |
+ 83 | moteur electrique             | electrical_system       | electric_motor             |
+ 84 | boite de vitesses (+ accent)  | automatic_transmission  | transmission               | (2 variants)
+ 85 | commande vitesse              | mechanical_transmission | gear_control               |
+ 86 | mechatronik                   | automatic_transmission  | mechatronic_unit           |
+ 87 | radiateur                     | cooling_system          | radiator                   |
+ 88 | refroidissement               | cooling_system          | cooling_component          |
+ 89 | amortisseur                   | suspension              | shock_absorber             |
+ 90 | BVA                           | automatic_transmission  | transmission               |
+ 91 | moyeu                         | suspension              | wheel_hub                  |
+ 92 | drosselklappe                 | engine                  | throttle_body              |
+ 93 | drosselklappengehaeuse (+uml) | engine                  | throttle_body              | (2 variants)
+ 94 | hochdruckpumpe                | engine                  | high_pressure_pump         |
+ 95 | druckleitung                  | engine                  | pressure_line              |
+ 96 | druckspeicher                 | engine                  | pressure_accumulator       |
+ 97 | keilrippenriemen              | engine                  | serpentine_belt            |
+ 98 | foerdereinheit (+ umlaut)     | engine                  | fuel_delivery_unit         | (2 variants)
+ 99 | injektor                      | engine                  | injector                   |
+100 | leuchteinheit                 | lighting                | light_unit                 |
+101 | scheinwerfer                  | lighting                | headlight                  |
+102 | harnstoff                     | emissions               | urea                       |
+103 | adblue                        | emissions               | urea_fluid                 |
+104 | partikelsensor                | engine                  | pm_sensor                  |
+105 | liquide de refroidissement    | consumables             | coolant                    |
+106 | antigel                       | consumables             | antifreeze                 |
+107 | frostschutz                   | consumables             | antifreeze                 |
+108 | kuehlflluessigkeit            | consumables             | coolant                    |
+109 | kuehlmittel                   | consumables             | coolant                    |
+110 | petites fournitures           | consumables             | small_supplies             |
+111 | verbrauchsmaterial            | consumables             | consumables                |
+112 | materiel de consommation      | consumables             | consumables                |
+113 | recherche de panne            | labor                   | diagnostic                 |
+114 | diagnostic                    | labor                   | diagnostic                 |
+115 | programmation                 | labor                   | programming                |
+116 | codage                        | labor                   | coding                     |
+117 | depose                        | labor                   | removal_installation       |
+118 | vidange                       | labor                   | fluid_change               |
+119 | kurztest                      | labor                   | diagnostic                 | Short diagnostic test
+120 | softwareupdate                | labor                   | programming                |
+121 | kostenvoranschlag             | labor                   | estimate                   | Cost estimate preparation
+
+NOTE: Counting unique keyword entries (excluding _comment_ metadata keys):
+  Raw keyword entries in JSON: 121 (after deduplication of umlaut/accent variants sharing same base)
+  Including all variant spellings: ~132 actual JSON keys
+
+TOTAL UNIQUE KEYWORD ENTRIES: 121 (logical, grouping variants)
+TOTAL RAW KEYWORD JSON KEYS: ~132 (including all accent/spelling variants)
+
+
+================================================================================
+3. BUSINESS RULES
+================================================================================
+
+3a. unknown_authorization
+    Action: REFER_TO_HUMAN
+    Reason: Shop authorization status could not be verified
+
+3b. unknown_part_coverage
+    Action: REFER_TO_HUMAN
+    Reason: Part not found in coverage lookup table
+
+3c. missing_damage_date
+    Action: REFER_TO_HUMAN
+    Reason: Cannot verify damage occurred within policy period
+
+3d. payout_near_max_coverage
+    Threshold: 90%
+    Action: use_max_coverage
+    Reason: Adjuster policy - close claim at max to prevent follow-ups
+
+3e. Excluded Items
+    Categories: rental_fee, towing_fee, environmental_fee, diagnostic_fee
+    Keywords: ERSATZFAHRZEUG, MIETWAGEN, ENTSORGUNG, ABSCHLEPP, ELIMINATION, DECHETS
+
+3f. Coverage Tiers (default mileage-based)
+    0-50,000 km:     Parts 80%, Labor 100%
+    50,001-80,000:   Parts 60%, Labor 100%
+    80,001-110,000:  Parts 40%, Labor 100%
+    110,001+:        Parts 20%, Labor 100%
+
+3g. Authorized Partners
+    - 54 named partners (by_name entries, all authorized=true)
+    - 26 regex patterns (by_pattern entries, covering major brands)
+    - Default for unknown: REFER_TO_HUMAN
+    - Eval note: "Simulated lookup: all garages from eval dataset added as authorized for testing"
+
+
+================================================================================
+4. STATISTICS
+================================================================================
+
+PART NUMBERS
+  Total entries: 169
+
+  By System:
+    engine                  : 71  (42.0%)
+    consumables             : 21  (12.4%)
+    automatic_transmission  : 15  (8.9%)
+    axle_drive              : 12  (7.1%)
+    suspension              :  9  (5.3%)
+    electrical_system       :  7  (4.1%)
+    body                    :  6  (3.6%)
+    cooling_system          :  4  (2.4%)
+    hvac                    :  6  (3.6%)
+    electric                :  3  (1.8%)
+    lighting                :  2  (1.2%)
+    turbo_supercharger      :  2  (1.2%)
+    brakes                  :  3  (1.8%)
+    steering                :  3  (1.8%)
+    four_wd                 :  2  (1.2%)
+    fuel_system             :  2  (1.2%)
+    comfort_options         :  2  (1.2%)
+    infotainment            :  1  (0.6%)
+    exhaust                 :  1  (0.6%)
+    emissions               :  1  (0.6%)
+    engine_management       :  1  (0.6%)
+    exhaust_system          :  1  (0.6%)
+
+  Coverage notes:
+    - No explicit "covered: true/false" field on most part entries
+    - Coverage is determined by policy + system mapping, not in this file
+    - Parts with "reason: wear_part" or "reason: accessory" hint at exclusion
+    - Wear parts explicitly noted: brake_pads (#131, #139), brake_disc (#138), battery (#143)
+    - Accessory noted: trunk_lock (#5)
+
+
+KEYWORDS
+  Total logical entries: ~121
+  Total JSON keys (including variants): ~132
+
+  By System:
+    engine                  : 41  (33.9%)
+    labor                   : 21  (17.4%)
+    consumables             : 12  (9.9%)
+    axle_drive              : 10  (8.3%)
+    automatic_transmission  :  8  (6.6%)
+    suspension              :  5  (4.1%)
+    electrical_system       :  4  (3.3%)
+    cooling / cooling_system:  4  (3.3%)
+    emissions               :  2  (1.7%)
+    lighting                :  2  (1.7%)
+    drivetrain              :  2  (1.7%)
+    body                    :  2  (1.7%)
+    transmission            :  2  (1.7%)
+    parts                   :  2  (1.7%)
+    brakes                  :  1  (0.8%)
+    tires                   :  1  (0.8%)
+    mechanical_transmission :  1  (0.8%)
+    hvac                    :  0  (0.0%)  ** no keywords for HVAC **
+
+
+================================================================================
+5. OBSERVATIONS
+================================================================================
+
+STRENGTHS:
+- Very strong engine coverage (42% of parts, 34% of keywords) reflecting the core
+  "motor guarantee" product focus
+- Good bilingual coverage (German + French) for Swiss market
+- Comprehensive timing chain/belt vocabulary in both languages
+- Labor keywords well-represented for diagnostic, installation, calibration tasks
+- Consumables properly separated to allow per-repair coverage decisions
+- Haldex/AWD-specific entries show domain depth
+- BMW DMDC/RDC fuel system parts thoroughly documented (8 entries)
+- Eval batches added systematically with provenance annotations
+
+GAPS AND UNDER-REPRESENTED AREAS:
+
+1. HVAC / Climate Control
+   - 6 part numbers (all Audi Q7/Q8) but ZERO keywords
+   - Missing: klimaanlage, climatisation, compresseur, verdampfer, kondensator,
+     evaporateur, condenseur, heizung, chauffage
+   - Risk: HVAC claims from non-Audi vehicles will fall through to LLM
+
+2. Steering
+   - Only 3 part numbers, 0 keywords
+   - Missing: lenkgetriebe, direction, cremaillere, servolenkung, direction assistee,
+     lenkstange, biellette de direction
+
+3. Brakes (noted as wear parts)
+   - 3 part numbers, only 1 keyword ("bremse")
+   - Missing French: frein, plaquette, disque de frein
+   - Though brakes are typically excluded, keyword mapping helps classification
+
+4. Cooling System
+   - 4 part numbers, 2 keywords (radiateur, refroidissement)
+   - Missing: thermostat, kuehler, ventilator, kuehlerluefter
+
+5. Body / Comfort
+   - Very sparse: 6 body parts (Mercedes roof/cover), 2 comfort parts
+   - Missing: fensterheber, leve-vitre, schiebedach, toit ouvrant
+
+6. Exhaust / Emissions
+   - Only 2 entries (1 exhaust_clamp, 1 urea_tank, 1 particle_filter_sensor)
+   - Missing: katalysator, catalyseur, dpf, russpartikelfilter, auspuff,
+     echappement, lambda (sensor)
+
+7. Electric / Electrical Inconsistency
+   - Two different system names used: "electric" (3 parts) vs "electrical_system" (7 parts)
+   - Keywords use "electrical_system" exclusively
+   - This split could cause matching failures if the coverage policy uses only one name
+
+8. Transmission Inconsistency
+   - Keywords use both "transmission" and "automatic_transmission" and "mechanical_transmission"
+   - Part numbers only use "automatic_transmission"
+   - No manual/mechanical transmission parts at all
+
+9. System Name Inconsistency (keyword vs part number)
+   - "cooling" (keyword) vs "cooling_system" (part number) - different names for same system
+   - "drivetrain" (keyword) vs "axle_drive" (part number) for differential/driveshaft
+   - "exhaust" (part) vs "exhaust_system" (part) - two names for exhaust
+
+10. Duplicate/Overlapping Entries
+    - Part "A176 350 31 00" appears TWICE with different component names:
+      entry #81 (differential) and entry #159 (rear_differential) - possible JSON key conflict
+    - "61LR148059" and "LR148059" may be the same part with/without prefix
+
+11. Missing Fuel System Keywords
+    - 2 part numbers for fuel_system but 0 keywords
+    - Missing: kraftstoffpumpe, pompe a essence, benzinpumpe
+
+12. No Four-Wheel-Drive Keywords
+    - 2 part numbers for four_wd but 0 keywords
+    - Missing: allrad, 4x4, transfert, verteilergetriebe
+
+13. Infotainment
+    - 1 part only, 0 keywords
+    - This is a growing claim category that may need coverage
+
+14. Engine Management
+    - 1 part (Porsche ECU), 0 keywords
+    - Missing: motorsteuerung, steuergeraet motor
+
+AUTHORIZED PARTNERS NOTE:
+- The "_eval_note" indicates all garages were added as authorized for testing
+- In production, this list needs to be cleaned/validated against actual partner contracts
+- Pattern matching is very broad (e.g., ".*Mini.*" would match "Mini Market")
+
+RECOMMENDATIONS:
+1. Add HVAC keywords (both DE and FR) - this is the most critical gap
+2. Normalize system names: pick ONE canonical name per system and align parts + keywords
+3. Add steering keywords (DE + FR)
+4. Add cooling system keywords for thermostat, fan, hoses
+5. Verify the duplicate "A176 350 31 00" key - JSON will silently use the last one
+6. Add fuel_system and four_wd keywords
+7. Review authorized partners list for production readiness

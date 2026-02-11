@@ -104,18 +104,18 @@ class TestMixedSignals:
         for name in COMPONENT_SIGNALS["data_completeness"]:
             signals.append(_make_signal(name, 0.8))
         for name in COMPONENT_SIGNALS["consistency"]:
-            signals.append(_make_signal(name, 0.5))
+            signals.append(_make_signal(name, 0.7))
         for name in COMPONENT_SIGNALS["coverage_reliability"]:
-            signals.append(_make_signal(name, 0.4))
+            signals.append(_make_signal(name, 0.6))
         for name in COMPONENT_SIGNALS["decision_clarity"]:
-            signals.append(_make_signal(name, 0.3))
+            signals.append(_make_signal(name, 0.5))
 
         scorer = ConfidenceScorer()
         summary = scorer.compute(signals)
 
         # Weighted average should fall in the moderate range
         assert summary.band == ConfidenceBand.MODERATE
-        assert 0.55 <= summary.composite_score < 0.80
+        assert 0.65 <= summary.composite_score < 0.80
 
 
 class TestWeightRedistribution:
@@ -203,11 +203,11 @@ class TestScoreToBandBoundaries:
     def test_079_is_moderate(self):
         assert score_to_band(0.79) == ConfidenceBand.MODERATE
 
-    def test_055_is_moderate(self):
-        assert score_to_band(0.55) == ConfidenceBand.MODERATE
+    def test_065_is_moderate(self):
+        assert score_to_band(0.65) == ConfidenceBand.MODERATE
 
-    def test_054_is_low(self):
-        assert score_to_band(0.54) == ConfidenceBand.LOW
+    def test_064_is_low(self):
+        assert score_to_band(0.64) == ConfidenceBand.LOW
 
     def test_100_is_high(self):
         assert score_to_band(1.0) == ConfidenceBand.HIGH
@@ -275,10 +275,9 @@ class TestStagesTracking:
         assert "extraction" in summary.stages_available
         assert "reconciliation" in summary.stages_available
 
-        # Coverage and screening/decision are missing (no signals provided)
+        # Coverage and screening are missing (no signals provided)
         assert "coverage" in summary.stages_missing
         assert "screening" in summary.stages_missing
-        assert "decision" in summary.stages_missing
 
         # assessment contributes to data_completeness, so it should be available
         assert "assessment" in summary.stages_available

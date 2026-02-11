@@ -51,6 +51,8 @@ class LLMMatcherConfig:
     retry_max_delay: float = 15.0  # cap on backoff delay
     # Prompt file for labor relevance classification (without .md)
     labor_relevance_prompt_name: str = "labor_relevance"
+    # Prompt file for primary repair identification (without .md)
+    primary_repair_prompt_name: str = "primary_repair"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
@@ -68,6 +70,7 @@ class LLMMatcherConfig:
             retry_base_delay=config.get("retry_base_delay", 1.0),
             retry_max_delay=config.get("retry_max_delay", 15.0),
             labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
+            primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
         )
 
 
@@ -931,6 +934,237 @@ Determine if this item is covered under the policy."""
                 }
                 for item in labor_items
             ]
+
+    # ------------------------------------------------------------------
+    # Primary repair identification (single LLM call per claim)
+    # ------------------------------------------------------------------
+
+    def determine_primary_repair(
+        self,
+        all_items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+        claim_id: Optional[str] = None,
+        repair_description: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Identify the primary repair component using LLM.
+
+        Makes ONE LLM call that examines all line items and identifies which
+        item represents the main repair being performed.
+
+        Args:
+            all_items: List of dicts with keys: index, description, item_type,
+                       total_price, coverage_status, coverage_category
+            covered_components: Policy's covered components by category
+            claim_id: Claim ID for audit trail
+            repair_description: Damage/diagnostic context from claim documents
+                (error codes, fault descriptions, repair reason)
+
+        Returns:
+            Dict with: primary_item_index, component, category, confidence,
+            reasoning. Returns None on failure (caller falls back to heuristic).
+        """
+        if not all_items:
+            return None
+
+        messages = self._build_primary_repair_prompt(
+            all_items, covered_components, repair_description,
+        )
+
+        client = self._get_client()
+        client.set_context(
+            claim_id=claim_id,
+            call_purpose="primary_repair_identification",
+        )
+
+        last_error = None
+        max_attempts = max(1, self.config.max_retries)
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    last_call_id = getattr(client, "get_last_call_id", lambda: None)()
+                    if last_call_id and hasattr(client, "mark_retry"):
+                        client.mark_retry(last_call_id)
+
+                response = client.chat_completions_create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    response_format={"type": "json_object"},
+                )
+                self._llm_calls += 1
+
+                content = response.choices[0].message.content
+                return self._parse_primary_repair_response(
+                    content, all_items,
+                )
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts - 1:
+                    base_delay = min(
+                        self.config.retry_base_delay * (2 ** attempt),
+                        self.config.retry_max_delay,
+                    )
+                    delay = random.uniform(0, base_delay)
+                    logger.warning(
+                        "Primary repair LLM call failed (attempt %d/%d): %s. "
+                        "Retrying in %.1fs...",
+                        attempt + 1, max_attempts, e, delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        "Primary repair identification failed after %d attempts: %s",
+                        max_attempts, e,
+                    )
+
+        self._llm_calls += 1
+        return None
+
+    def _build_primary_repair_prompt(
+        self,
+        all_items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+        repair_description: Optional[str] = None,
+    ) -> List[Dict[str, str]]:
+        """Build prompt messages for primary repair identification.
+
+        Tries workspace prompt file first, then inline fallback.
+        """
+        # Format line items with index, description, type, price, coverage status
+        item_lines = []
+        for item in all_items:
+            status = item.get("coverage_status", "UNKNOWN")
+            category = item.get("coverage_category") or "N/A"
+            item_lines.append(
+                f"  [{item['index']}] {item['description']} | "
+                f"type={item.get('item_type', 'unknown')} | "
+                f"price={item.get('total_price', 0):.2f} CHF | "
+                f"coverage={status} | category={category}"
+            )
+        items_text = "\n".join(item_lines)
+
+        # Format covered components
+        comp_lines = []
+        for category, parts in covered_components.items():
+            if parts:
+                parts_list = ", ".join(parts[:15])
+                if len(parts) > 15:
+                    parts_list += f", ... ({len(parts)} total)"
+                comp_lines.append(f"  - {category}: {parts_list}")
+        comp_text = "\n".join(comp_lines) if comp_lines else "  (none)"
+
+        # Format repair description context
+        repair_context_text = repair_description or ""
+
+        try:
+            from context_builder.utils.prompt_loader import load_prompt
+
+            prompt_data = load_prompt(
+                self.config.primary_repair_prompt_name,
+                line_items=items_text,
+                covered_components=comp_text,
+                repair_description=repair_context_text,
+            )
+            return prompt_data["messages"]
+        except FileNotFoundError:
+            logger.debug(
+                "Prompt file '%s' not found, using inline primary repair prompt",
+                self.config.primary_repair_prompt_name,
+            )
+
+        # Inline fallback
+        repair_context_block = ""
+        if repair_description:
+            repair_context_block = (
+                f"\n\nDiagnostic / damage context from claim documents:\n"
+                f"{repair_description}\n"
+            )
+
+        system_prompt = (
+            "You are an automotive repair analyst for a warranty insurance "
+            "company. Given a repair invoice, identify the PRIMARY component "
+            "whose failure CAUSED the repair visit.\n\n"
+            "RULES:\n"
+            "1. Use the diagnostic error codes and damage description (if "
+            "provided) as the strongest signal for what actually failed.\n"
+            "2. Look at labor descriptions to understand the repair narrative "
+            "(e.g. 'Mechatronik' labor = electronic/control unit work).\n"
+            "3. The most expensive part is NOT necessarily the primary -- "
+            "a part can be expensive yet only replaced opportunistically "
+            "while the transmission/engine is open.\n"
+            "4. Do NOT pick consumables, fasteners, gaskets, or fluids.\n"
+            "5. If diagnostic codes point to a specific component (e.g. "
+            "parking brake solenoid, control unit), that component is the "
+            "primary -- even if another part costs more.\n\n"
+            "Respond ONLY with valid JSON:\n"
+            '{"primary_item_index": <int>, "component": "<english_type>", '
+            '"category": "<coverage_category>", "confidence": <float 0-1>, '
+            '"reasoning": "<brief>"}'
+        )
+        user_prompt = (
+            f"Line items:\n{items_text}\n\n"
+            f"Policy covered components:\n{comp_text}\n"
+            f"{repair_context_block}\n"
+            "Which line item represents the PRIMARY repair component -- "
+            "the component whose failure caused the repair visit? "
+            "Return the item index."
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_primary_repair_response(
+        self,
+        content: str,
+        all_items: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Parse the LLM response for primary repair identification.
+
+        Args:
+            content: Raw JSON response from LLM
+            all_items: Original items (for index validation)
+
+        Returns:
+            Dict with primary_item_index, component, category, confidence,
+            reasoning. Returns None if parsing fails or index is invalid.
+        """
+        try:
+            # Handle markdown code blocks
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            data = json.loads(content.strip())
+
+            primary_index = data.get("primary_item_index")
+            if primary_index is None:
+                logger.warning("LLM primary repair response missing primary_item_index")
+                return None
+
+            primary_index = int(primary_index)
+            if primary_index < 0 or primary_index >= len(all_items):
+                logger.warning(
+                    "LLM returned out-of-range primary_item_index=%d (valid: 0-%d)",
+                    primary_index, len(all_items) - 1,
+                )
+                return None
+
+            return {
+                "primary_item_index": primary_index,
+                "component": data.get("component"),
+                "category": data.get("category"),
+                "confidence": float(data.get("confidence", 0.5)),
+                "reasoning": data.get("reasoning", "No reasoning provided"),
+            }
+
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning("Failed to parse primary repair response: %s", e)
+            return None
 
     def get_llm_call_count(self) -> int:
         """Get the number of LLM calls made."""

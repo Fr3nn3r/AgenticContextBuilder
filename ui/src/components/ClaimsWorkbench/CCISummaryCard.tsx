@@ -38,7 +38,7 @@ function qualitativeLabel(value: number): { text: string; className: string } {
 
 function scoreLabel(score: number): { text: string; className: string } {
   if (score >= 0.8) return { text: "Strong", className: "text-emerald-600 dark:text-emerald-400" };
-  if (score >= 0.55) return { text: "Adequate", className: "text-amber-600 dark:text-amber-400" };
+  if (score >= 0.65) return { text: "Adequate", className: "text-amber-600 dark:text-amber-400" };
   return { text: "Needs review", className: "text-rose-500 dark:text-rose-400" };
 }
 
@@ -48,7 +48,7 @@ function scoreLabel(score: number): { text: string; className: string } {
 
 function barColor(score: number): string {
   if (score >= 0.80) return "bg-emerald-500 dark:bg-emerald-400";
-  if (score >= 0.55) return "bg-amber-500 dark:bg-amber-400";
+  if (score >= 0.65) return "bg-amber-500 dark:bg-amber-400";
   return "bg-rose-500 dark:bg-rose-400";
 }
 

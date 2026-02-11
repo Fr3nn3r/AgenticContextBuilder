@@ -438,7 +438,7 @@ def test_collect_assessment_full(collector):
 
 
 def test_collect_decision_full(collector):
-    """Full decision result produces both signals."""
+    """Full decision result produces tier1 and assumption signals."""
     result = {
         "clause_evaluations": [
             {"evaluability_tier": 1},
@@ -540,3 +540,6 @@ def test_collect_all_mixed(collector):
 
     # Total: 5 + 4 + 3 = 12
     assert len(signals) == 12
+
+
+

@@ -19,8 +19,8 @@ class ConfidenceBand(str, Enum):
     """Qualitative band derived from the composite score."""
 
     HIGH = "high"          # >= 0.80
-    MODERATE = "moderate"  # >= 0.55
-    LOW = "low"            # < 0.55
+    MODERATE = "moderate"  # >= 0.65
+    LOW = "low"            # < 0.65 (or any red flag override)
 
 
 # ── Signal / Component models ────────────────────────────────────────

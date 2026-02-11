@@ -99,6 +99,7 @@ class ComponentConfig:
     distribution_catch_all_keywords: List[str]
     gasket_seal_indicators: set
     ancillary_keywords: set
+    additional_policy_parts: Dict[str, List[str]]
 
     @classmethod
     def default(cls) -> "ComponentConfig":
@@ -111,6 +112,7 @@ class ComponentConfig:
             distribution_catch_all_keywords=[],
             gasket_seal_indicators=set(),
             ancillary_keywords=set(),
+            additional_policy_parts={},
         )
 
     @classmethod
@@ -141,6 +143,7 @@ class ComponentConfig:
             ancillary_keywords=set(
                 data.get("ancillary_keywords", [])
             ),
+            additional_policy_parts=data.get("additional_policy_parts", {}),
         )
 
 
@@ -167,6 +170,16 @@ class AnalyzerConfig:
     # (e.g., policies with full coverage that have no mileage-based tiering)
     default_coverage_percent: Optional[float] = None
 
+    # Use LLM to identify the primary repair component (Tier 0).
+    # When True, an LLM call reads all line items and picks the main repair
+    # before falling back to the value-based heuristic (Tier 1a-1c).
+    use_llm_primary_repair: bool = False
+
+    # Nominal-price labor threshold: labor items at or below this price
+    # with an item_code are flagged REVIEW_NEEDED (suspected operation
+    # codes where the real cost is hours x rate, not yet supported).
+    nominal_price_threshold: float = 2.0
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "AnalyzerConfig":
         """Create config from dictionary."""
@@ -177,6 +190,8 @@ class AnalyzerConfig:
             llm_max_concurrent=config.get("llm_max_concurrent", 3),
             config_version=config.get("config_version", "1.0"),
             default_coverage_percent=config.get("default_coverage_percent"),
+            use_llm_primary_repair=config.get("use_llm_primary_repair", False),
+            nominal_price_threshold=config.get("nominal_price_threshold", 2.0),
         )
 
 
@@ -724,6 +739,13 @@ class CoverageAnalyzer:
             # No specific parts list for this category - can't determine, needs verification
             return None, f"No specific parts list for category '{system}' - needs verification"
 
+        # Merge additional_policy_parts from customer config (extends the
+        # extracted guarantee parts list with modern components not in older
+        # policy documents).
+        extra = self.component_config.additional_policy_parts.get(system_lower, [])
+        if extra:
+            policy_parts_list = list(policy_parts_list) + extra
+
         # Build lowered + umlaut-normalized policy parts lists for matching.
         # We keep both the raw-lower list (for display) and the normalized list
         # (for substring comparison) so that ü/u, ö/o, ä/a, accents don't
@@ -822,6 +844,128 @@ class CoverageAnalyzer:
             f"({len(policy_parts_list)} parts)"
         )
 
+    def _match_labor_by_component_extraction(
+        self,
+        remaining: List[Dict[str, Any]],
+        keyword_matched: List[LineItemCoverage],
+        covered_categories: List[str],
+        covered_components: Optional[Dict[str, List[str]]] = None,
+    ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
+        """Extract component nouns from labor descriptions and match deterministically.
+
+        Labor items like "AUS-/EINBAUEN OELKUEHLER" contain the component noun
+        (OELKUEHLER) which can be matched against repair_context_keywords without
+        needing the LLM.
+
+        Only processes labor items in `remaining` (unmatched by prior stages).
+        Matched items are appended to keyword_matched; unmatched stay in remaining.
+
+        Args:
+            remaining: Unmatched items (dicts) from prior stages.
+            keyword_matched: Already-matched keyword items (labor matches appended here).
+            covered_categories: Categories covered by the policy.
+            covered_components: Dict mapping category to list of covered parts.
+
+        Returns:
+            Tuple of (updated keyword_matched, updated remaining).
+        """
+        if not self.component_config.repair_context_keywords:
+            return keyword_matched, remaining
+
+        labor_types = {"labor", "labour", "main d'oeuvre", "arbeit"}
+        new_remaining = []
+        covered_cats_lower = [c.lower() for c in covered_categories]
+
+        for item in remaining:
+            item_type = item.get("item_type", "").lower()
+            if item_type not in labor_types:
+                new_remaining.append(item)
+                continue
+
+            description = item.get("description", "")
+            desc_lower = description.lower()
+            if not desc_lower:
+                new_remaining.append(item)
+                continue
+
+            # Find the longest matching keyword (longest = most specific)
+            best_keyword = None
+            best_component = None
+            best_category = None
+            for keyword, (component, category) in self.component_config.repair_context_keywords.items():
+                if keyword in desc_lower and (best_keyword is None or len(keyword) > len(best_keyword)):
+                    best_keyword = keyword
+                    best_component = component
+                    best_category = category
+
+            if best_keyword is None:
+                new_remaining.append(item)
+                continue
+
+            # Check if the category is covered
+            if best_category.lower() not in covered_cats_lower:
+                new_remaining.append(item)
+                continue
+
+            # Verify against policy list if available
+            if covered_components:
+                is_in_list, reason = self._is_component_in_policy_list(
+                    component=best_component,
+                    system=best_category,
+                    covered_components=covered_components,
+                    description=description,
+                )
+                if is_in_list is False:
+                    # Confirmed not in policy list — leave for LLM
+                    new_remaining.append(item)
+                    continue
+                if is_in_list is None:
+                    # Uncertain — leave for LLM
+                    new_remaining.append(item)
+                    continue
+
+            # Match: create a LineItemCoverage for this labor item
+            tb = TraceBuilder()
+            if item.get("_deferred_trace"):
+                tb.extend(item["_deferred_trace"])
+            tb.add("labor_component_extraction", TraceAction.MATCHED,
+                   f"Labor description contains component keyword '{best_keyword}' "
+                   f"-> {best_component} in {best_category}",
+                   verdict=CoverageStatus.COVERED, confidence=0.80,
+                   detail={"keyword": best_keyword,
+                           "component": best_component,
+                           "category": best_category})
+
+            matched_item = LineItemCoverage(
+                item_code=item.get("item_code"),
+                description=description,
+                item_type=item.get("item_type", ""),
+                total_price=item.get("total_price") or 0.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category=best_category,
+                matched_component=best_component,
+                match_method=MatchMethod.KEYWORD,
+                match_confidence=0.80,
+                match_reasoning=(
+                    f"Labor component extraction: '{best_keyword}' in description "
+                    f"-> {best_component} ({best_category})"
+                ),
+                decision_trace=tb.build(),
+                covered_amount=item.get("total_price") or 0.0,
+                not_covered_amount=0.0,
+            )
+            keyword_matched.append(matched_item)
+            logger.debug(
+                "Labor component extraction: '%s' -> %s (%s) at 0.80",
+                description[:60], best_component, best_category,
+            )
+
+        logger.debug(
+            f"Labor component extraction: {len(remaining) - len(new_remaining)} "
+            f"labor items matched out of {len(remaining)} remaining"
+        )
+        return keyword_matched, new_remaining
+
     def _match_by_part_number(
         self,
         items: List[Dict[str, Any]],
@@ -829,10 +973,12 @@ class CoverageAnalyzer:
         covered_components: Optional[Dict[str, List[str]]] = None,
         excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
-        """Match items by part number lookup.
+        """Match items by exact part number lookup.
 
-        First tries exact part number lookup, then falls back to
-        description-based keyword lookup from assumptions.json.
+        Uses exact part number matching only (no keyword fallback).
+        Keyword-based matching is handled by Stage 2 (KeywordMatcher)
+        to ensure all keyword matches pass through Stage 2.5 policy
+        list verification.
 
         Args:
             items: Line items to match
@@ -853,20 +999,14 @@ class CoverageAnalyzer:
             item_code = item.get("item_code")
             description = item.get("description", "")
 
-            # Try exact part number lookup first
+            # Stage 1.5 is pure part-number lookup only.
+            # Keyword-based matching (lookup_by_description) has been moved to
+            # Stage 2 so that all keyword matches pass through Stage 2.5 policy
+            # list verification. This eliminates category conflicts between the
+            # former by_keyword system and nsa_keyword_mappings.yaml.
             result = None
             if item_code:
                 result = self.part_lookup.lookup(item_code)
-
-            # If no exact match, try description-based keyword lookup
-            if (not result or not result.found) and description:
-                result = self.part_lookup.lookup_by_description(description)
-
-            # If description keyword lookup fails, try item_code keyword lookup
-            # This catches cases like "ZAHNRIEMENKIT" where the part name is in item_code
-            # but the description only contains part numbers like "INA 13938585..."
-            if (not result or not result.found) and item_code:
-                result = self.part_lookup.lookup_by_description(item_code)
 
             if not result or not result.found:
                 _skip_tb = TraceBuilder()
@@ -1357,26 +1497,52 @@ class CoverageAnalyzer:
                 linked_part = covered_parts[0]
                 # Pick only the highest-priced generic labor entry
                 labor_item = max(uncovered_generic_labor, key=lambda x: x.total_price)
-                labor_item.coverage_status = CoverageStatus.COVERED
-                labor_item.coverage_category = linked_part.coverage_category
-                labor_item.matched_component = linked_part.matched_component
-                labor_item.match_confidence = 0.75
-                labor_item.match_reasoning = (
-                    f"Simple invoice rule: generic labor linked to covered part "
-                    f"'{linked_part.description}' ({linked_part.coverage_category})"
+
+                # Proportionality guard: labor must not exceed 2x the total
+                # covered parts value. Disproportionate labor is left for
+                # human review to prevent false approvals.
+                total_covered_parts_value = sum(
+                    p.total_price for p in covered_parts
                 )
-                sir_tb = TraceBuilder()
-                sir_tb.extend(labor_item.decision_trace)
-                sir_tb.add("labor_follows_parts", TraceAction.PROMOTED,
-                           f"Simple invoice rule: linked to '{linked_part.description}'",
-                           verdict=CoverageStatus.COVERED, confidence=0.75,
-                           detail={"strategy": "simple_invoice_rule",
-                                   "linked_to": linked_part.description})
-                labor_item.decision_trace = sir_tb.build()
-                logger.debug(
-                    f"Promoted labor '{labor_item.description}' to COVERED "
-                    f"via simple invoice rule (linked to '{linked_part.description}')"
-                )
+                if (total_covered_parts_value > 0
+                        and labor_item.total_price > 2.0 * total_covered_parts_value):
+                    logger.info(
+                        "Simple invoice rule: labor %.2f > 2x parts %.2f, "
+                        "skipping promotion for '%s'",
+                        labor_item.total_price, total_covered_parts_value,
+                        labor_item.description,
+                    )
+                    sir_skip_tb = TraceBuilder()
+                    sir_skip_tb.extend(labor_item.decision_trace)
+                    sir_skip_tb.add("labor_follows_parts", TraceAction.SKIPPED,
+                                    f"Simple invoice rule: labor {labor_item.total_price:.2f} > "
+                                    f"2x parts {total_covered_parts_value:.2f} (disproportionate)",
+                                    detail={"strategy": "simple_invoice_rule",
+                                            "skip_reason": "proportionality_guard",
+                                            "labor_price": labor_item.total_price,
+                                            "covered_parts_value": total_covered_parts_value})
+                    labor_item.decision_trace = sir_skip_tb.build()
+                else:
+                    labor_item.coverage_status = CoverageStatus.COVERED
+                    labor_item.coverage_category = linked_part.coverage_category
+                    labor_item.matched_component = linked_part.matched_component
+                    labor_item.match_confidence = 0.75
+                    labor_item.match_reasoning = (
+                        f"Simple invoice rule: generic labor linked to covered part "
+                        f"'{linked_part.description}' ({linked_part.coverage_category})"
+                    )
+                    sir_tb = TraceBuilder()
+                    sir_tb.extend(labor_item.decision_trace)
+                    sir_tb.add("labor_follows_parts", TraceAction.PROMOTED,
+                               f"Simple invoice rule: linked to '{linked_part.description}'",
+                               verdict=CoverageStatus.COVERED, confidence=0.75,
+                               detail={"strategy": "simple_invoice_rule",
+                                       "linked_to": linked_part.description})
+                    labor_item.decision_trace = sir_tb.build()
+                    logger.debug(
+                        f"Promoted labor '{labor_item.description}' to COVERED "
+                        f"via simple invoice rule (linked to '{linked_part.description}')"
+                    )
                 if len(uncovered_generic_labor) > 1:
                     skipped = len(uncovered_generic_labor) - 1
                     logger.debug(
@@ -1689,6 +1855,70 @@ class CoverageAnalyzer:
 
         return items
 
+    def _flag_nominal_price_labor(
+        self,
+        items: List[LineItemCoverage],
+    ) -> List[LineItemCoverage]:
+        """Flag nominal-price labor items as REVIEW_NEEDED.
+
+        Mercedes-format invoices list labor operations with a nominal price
+        (e.g. 1.00 CHF per operation code) where the real cost should be
+        hours x hourly rate.  Since labor-hours parsing is not yet supported,
+        these items are demoted to REVIEW_NEEDED so they don't silently enter
+        the payout at incorrect amounts.
+
+        Only affects labor items that:
+        - have total_price > 0 and <= nominal_price_threshold
+        - have an item_code (indicating an operation code, not generic labor)
+        - are currently COVERED (leaves NOT_COVERED and REVIEW_NEEDED alone)
+
+        Component identification (coverage_category, matched_component) is
+        preserved for human reviewers.
+        """
+        labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
+        threshold = self.config.nominal_price_threshold
+        flagged_count = 0
+
+        for item in items:
+            if item.item_type not in labor_types:
+                continue
+            if item.coverage_status != CoverageStatus.COVERED:
+                continue
+            if not item.item_code or not item.item_code.strip():
+                continue
+            if item.total_price <= 0 or item.total_price > threshold:
+                continue
+
+            item.coverage_status = CoverageStatus.REVIEW_NEEDED
+            item.match_confidence = 0.30
+            item.exclusion_reason = "nominal_price_labor"
+            item.covered_amount = 0.0
+            item.not_covered_amount = item.total_price
+
+            trace_tb = TraceBuilder()
+            trace_tb.extend(item.decision_trace)
+            trace_tb.add(
+                "nominal_price_audit",
+                TraceAction.DEMOTED,
+                f"Labor item has nominal price ({item.total_price:.2f} CHF) "
+                f"with operation code -- likely missing hourly rate; "
+                f"flagged for review",
+                verdict=CoverageStatus.REVIEW_NEEDED,
+                confidence=0.30,
+            )
+            item.decision_trace = trace_tb.build()
+            flagged_count += 1
+
+        if flagged_count:
+            logger.info(
+                "Flagged %d nominal-price labor item(s) as REVIEW_NEEDED "
+                "(threshold: %.2f)",
+                flagged_count,
+                threshold,
+            )
+
+        return items
+
     def _promote_items_for_covered_primary_repair(
         self,
         items: List[LineItemCoverage],
@@ -1738,11 +1968,48 @@ class CoverageAnalyzer:
         )
 
         if not has_covered:
-            # Mode 1: Zero-payout rescue — promote all LLM-classified items
+            # Mode 1: Zero-payout rescue — promote LLM-classified items
+            # that belong to the same category as the primary repair.
+            category_lower = category.lower()
             for item in items:
                 if item.coverage_status != CoverageStatus.NOT_COVERED:
                     continue
                 if item.match_method != MatchMethod.LLM:
+                    continue
+                # Skip items already excluded by a prior deterministic stage
+                if item.exclusion_reason:
+                    _skip_tb = TraceBuilder()
+                    _skip_tb.extend(item.decision_trace)
+                    _skip_tb.add("primary_repair_boost", TraceAction.SKIPPED,
+                                 f"Zero-payout rescue skipped: item has exclusion_reason='{item.exclusion_reason}'",
+                                 detail={"mode": "zero_payout_rescue",
+                                         "skip_reason": "exclusion_reason",
+                                         "exclusion_reason": item.exclusion_reason})
+                    item.decision_trace = _skip_tb.build()
+                    logger.info(
+                        "Zero-payout rescue: skipping '%s' — exclusion_reason='%s'",
+                        item.description, item.exclusion_reason,
+                    )
+                    continue
+                # Only promote items whose category matches the primary
+                # repair's category, or items with no category assigned
+                # (benefit of the doubt).
+                item_cat = (item.coverage_category or "").lower()
+                if item_cat and item_cat != category_lower:
+                    _skip_tb = TraceBuilder()
+                    _skip_tb.extend(item.decision_trace)
+                    _skip_tb.add("primary_repair_boost", TraceAction.SKIPPED,
+                                 f"Zero-payout rescue skipped: item category '{item.coverage_category}' "
+                                 f"does not match primary repair category '{category}'",
+                                 detail={"mode": "zero_payout_rescue",
+                                         "skip_reason": "category_mismatch",
+                                         "item_category": item.coverage_category,
+                                         "primary_category": category})
+                    item.decision_trace = _skip_tb.build()
+                    logger.info(
+                        "Zero-payout rescue: skipping '%s' — category '%s' != primary '%s'",
+                        item.description, item.coverage_category, category,
+                    )
                     continue
 
                 item.coverage_status = CoverageStatus.COVERED
@@ -1922,12 +2189,92 @@ class CoverageAnalyzer:
 
         return items
 
+    def _llm_determine_primary(
+        self,
+        all_items: List[LineItemCoverage],
+        covered_components: Dict[str, List[str]],
+        claim_id: str = "",
+        repair_description: Optional[str] = None,
+    ) -> Optional[PrimaryRepairResult]:
+        """Use LLM to identify the primary repair component.
+
+        Formats all line items for the LLM, calls determine_primary_repair(),
+        then cross-checks the returned item's coverage_status from our own
+        deterministic/LLM per-item analysis (we do NOT trust the LLM's coverage
+        judgment for is_covered).
+
+        Args:
+            all_items: All analyzed line items
+            covered_components: Policy's covered components by category
+            claim_id: Claim identifier for logging
+            repair_description: Damage/diagnostic context from claim documents
+
+        Returns:
+            PrimaryRepairResult on success, None on failure (triggers fallback).
+        """
+        # Format items for the LLM
+        items_for_llm = []
+        for idx, item in enumerate(all_items):
+            items_for_llm.append({
+                "index": idx,
+                "description": item.description,
+                "item_type": item.item_type,
+                "total_price": item.total_price or 0.0,
+                "coverage_status": item.coverage_status.value if item.coverage_status else "UNKNOWN",
+                "coverage_category": item.coverage_category,
+            })
+
+        try:
+            result = self.llm_matcher.determine_primary_repair(
+                all_items=items_for_llm,
+                covered_components=covered_components,
+                claim_id=claim_id,
+                repair_description=repair_description,
+            )
+        except Exception as e:
+            logger.warning(
+                "LLM primary repair determination failed for claim %s: %s",
+                claim_id, e,
+            )
+            return None
+
+        if result is None:
+            return None
+
+        primary_idx = result["primary_item_index"]
+        source_item = all_items[primary_idx]
+
+        # Cross-check: use OUR coverage_status, not the LLM's opinion
+        is_covered = source_item.coverage_status == CoverageStatus.COVERED
+
+        logger.info(
+            "Primary repair (tier 0 LLM): '%s' (%s, %s, %.0f CHF, covered=%s) "
+            "for claim %s",
+            source_item.description,
+            result.get("component") or source_item.matched_component,
+            result.get("category") or source_item.coverage_category,
+            source_item.total_price or 0,
+            is_covered,
+            claim_id,
+        )
+
+        return PrimaryRepairResult(
+            component=result.get("component") or source_item.matched_component,
+            category=result.get("category") or source_item.coverage_category,
+            description=source_item.description,
+            is_covered=is_covered,
+            confidence=result.get("confidence", 0.80),
+            determination_method="llm",
+            source_item_index=primary_idx,
+        )
+
     def _determine_primary_repair(
         self,
         all_items: List[LineItemCoverage],
         covered_components: Dict[str, List[str]],
         repair_context: Optional["RepairContext"] = None,
         claim_id: str = "",
+        repair_description: Optional[str] = None,
     ) -> PrimaryRepairResult:
         """Determine the primary repair component using a three-tier approach.
 
@@ -1945,10 +2292,20 @@ class CoverageAnalyzer:
             covered_components: Policy's covered components by category
             repair_context: Detected repair context from labor descriptions
             claim_id: Claim identifier for logging
+            repair_description: Damage/diagnostic context from claim documents
 
         Returns:
             PrimaryRepairResult describing the primary component
         """
+        # Tier 0: LLM-based determination (most accurate, 1 LLM call)
+        if self.config.use_llm_primary_repair and self.llm_matcher:
+            llm_primary = self._llm_determine_primary(
+                all_items, covered_components, claim_id,
+                repair_description=repair_description,
+            )
+            if llm_primary is not None:
+                return llm_primary
+
         # Tier 1a: highest-value COVERED parts item
         best_covered_part: Optional[LineItemCoverage] = None
         best_covered_part_idx: Optional[int] = None
@@ -2146,8 +2503,12 @@ class CoverageAnalyzer:
         val_tb.extend(item.decision_trace)
 
         # Check if item is in excluded list -> force NOT_COVERED
-        # BUT skip exclusion when the item is ancillary to a covered repair
-        if self._is_in_excluded_list(item, excluded_components):
+        # BUT skip exclusion for labor items (excluded list targets replacement
+        # parts, not access/disassembly labor) and for ancillary parts
+        # supporting a covered repair.
+        labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
+        is_labor = item.item_type in labor_types
+        if not is_labor and self._is_in_excluded_list(item, excluded_components):
             is_ancillary = repair_context and repair_context.is_covered and any(
                 kw in item.description.lower() for kw in self.component_config.ancillary_keywords
             )
@@ -2304,6 +2665,7 @@ class CoverageAnalyzer:
         on_llm_start: Optional[Callable[[int], None]] = None,
         vehicle_age_years: Optional[float] = None,
         age_threshold_years: Optional[int] = None,
+        repair_description: Optional[str] = None,
     ) -> CoverageAnalysisResult:
         """Analyze coverage for all line items in a claim.
 
@@ -2393,6 +2755,14 @@ class CoverageAnalyzer:
         )
         logger.debug(f"Keywords matched: {len(keyword_matched)}/{len(line_items)}")
 
+        # Stage 2+ : Labor component extraction
+        # Extract component nouns from unmatched labor descriptions and match
+        # deterministically (e.g., "AUS-/EINBAUEN OELKUEHLER" -> OELKUEHLER).
+        if remaining and self.component_config.repair_context_keywords:
+            keyword_matched, remaining = self._match_labor_by_component_extraction(
+                remaining, keyword_matched, covered_categories, covered_components,
+            )
+
         # Stage 2.5: Policy list verification for keyword matches
         # The keyword matcher only checks category-level coverage (e.g., "engine"
         # is covered). But some guarantees cover only specific parts within a
@@ -2434,20 +2804,22 @@ class CoverageAnalyzer:
                         "_deferred_trace": _plv_tb.build(),
                     }
                     remaining.append(demoted_item)
-                elif is_in_list is None and not item.matched_component:
-                    # Category-level keyword match only, description doesn't
-                    # match any specific policy part — demote to LLM for
-                    # component-level verification.
+                elif is_in_list is None:
+                    # Uncertain — component not found in policy list synonyms.
+                    # Demote to LLM regardless of whether matched_component
+                    # is set, to close the synonym-gap false-approval pathway.
                     logger.info(
-                        "Keyword match '%s' (no component) demoted to LLM: %s",
+                        "Keyword match '%s' (%s) demoted to LLM (uncertain): %s",
                         item.description,
+                        item.matched_component or "no component",
                         reason,
                     )
                     _plv_tb2 = TraceBuilder()
                     _plv_tb2.extend(item.decision_trace)
                     _plv_tb2.add("policy_list_check", TraceAction.DEFERRED,
-                                 f"No component, demoted to LLM: {reason}",
-                                 detail={"result": None, "reason": reason})
+                                 f"Uncertain (synonym gap), demoted to LLM: {reason}",
+                                 detail={"result": None, "reason": reason,
+                                         "matched_component": item.matched_component})
                     demoted_item2 = {
                         "item_code": item.item_code,
                         "description": item.description,
@@ -2457,7 +2829,7 @@ class CoverageAnalyzer:
                     }
                     remaining.append(demoted_item2)
                 else:
-                    # True (confirmed) or None with specific component — keep
+                    # is_in_list is True — confirmed in policy list, keep
                     if is_in_list is True:
                         item.match_reasoning += f". Policy check: {reason}"
                         # Append validation trace step
@@ -2641,9 +3013,13 @@ class CoverageAnalyzer:
         # Demote orphaned labor: if no parts are covered, labor has no anchor
         all_items = self._demote_labor_without_covered_parts(all_items)
 
+        # Flag nominal-price labor (suspected operation codes without real pricing)
+        all_items = self._flag_nominal_price_labor(all_items)
+
         # Determine primary repair component (three-tier approach)
         primary_repair = self._determine_primary_repair(
             all_items, covered_components, repair_context, claim_id,
+            repair_description=repair_description,
         )
 
         # Promote orphaned items when the primary repair is confirmed covered.

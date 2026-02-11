@@ -11,6 +11,7 @@ Rules are applied in order:
 5. Non-covered labor patterns (labor only) -> NOT_COVERED
 6. Generic/empty descriptions -> NOT_COVERED
 7. Standalone fastener items -> REVIEW_NEEDED
+7.5. Standalone seal/gasket items -> REVIEW_NEEDED
 """
 
 import logging
@@ -55,6 +56,9 @@ class RuleConfig:
     # Rule 7: Standalone fastener items (screws, nuts, bolts)
     fastener_patterns: List[str]
 
+    # Rule 7.5: Standalone seal/gasket items (DICHTUNG, O-RING, etc.)
+    seal_gasket_standalone_patterns: List[str]
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "RuleConfig":
         """Create config from dictionary."""
@@ -66,6 +70,7 @@ class RuleConfig:
             component_override_patterns=config.get("component_override_patterns", []),
             generic_description_patterns=config.get("generic_description_patterns", []),
             fastener_patterns=config.get("fastener_patterns", []),
+            seal_gasket_standalone_patterns=config.get("seal_gasket_standalone_patterns", []),
         )
 
     @classmethod
@@ -79,6 +84,7 @@ class RuleConfig:
             component_override_patterns=[],
             generic_description_patterns=[],
             fastener_patterns=[],
+            seal_gasket_standalone_patterns=[],
         )
 
 
@@ -129,6 +135,15 @@ class RuleEngine:
             )
         else:
             self._fastener_pattern = None
+
+        # Build combined seal/gasket standalone pattern (anchored ^...$)
+        if self.config.seal_gasket_standalone_patterns:
+            joined = "|".join(self.config.seal_gasket_standalone_patterns)
+            self._seal_gasket_pattern = re.compile(
+                f"^({joined})$", re.IGNORECASE
+            )
+        else:
+            self._seal_gasket_pattern = None
 
     def match(
         self,
@@ -300,6 +315,24 @@ class RuleEngine:
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone fastener - requires context to determine coverage",
+                trace=tb.build(),
+            )
+
+        # Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED
+        # Compound terms like ZYLINDERKOPFDICHTUNG are NOT caught (anchored pattern).
+        # Post-processing (_promote_ancillary_parts) promotes gaskets supporting
+        # a covered repair; standalone gaskets stay REVIEW_NEEDED for human review.
+        if self._seal_gasket_pattern and self._seal_gasket_pattern.match(stripped):
+            tb.add("rule_engine", TraceAction.MATCHED,
+                   "Standalone seal/gasket - requires context to determine coverage",
+                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
+                   detail={"rule": "standalone_seal_gasket"})
+            return self._create_review_needed(
+                description=description,
+                item_type=item_type,
+                item_code=item_code,
+                total_price=total_price,
+                reasoning="Standalone seal/gasket - requires context to determine coverage",
                 trace=tb.build(),
             )
 

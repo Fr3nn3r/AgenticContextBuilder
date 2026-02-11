@@ -15,7 +15,7 @@ const SCORE_COLORS = {
 
 function bandFromScore(score: number): ConfidenceBand {
   if (score >= 0.80) return "high";
-  if (score >= 0.55) return "moderate";
+  if (score >= 0.65) return "moderate";
   return "low";
 }
 

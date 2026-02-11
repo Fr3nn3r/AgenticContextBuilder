@@ -869,3 +869,263 @@ class TestLaborRelevanceClassification:
         assert results[0]["is_relevant"] is False
         assert results[1]["is_relevant"] is False
         assert "Failed to parse" in results[0]["reasoning"]
+
+
+class TestDeterminePrimaryRepair:
+    """Tests for LLMMatcher.determine_primary_repair()."""
+
+    def _make_primary_response(self, index, component, category, confidence=0.85):
+        """Build a mock LLM response for primary repair."""
+        content = json.dumps({
+            "primary_item_index": index,
+            "component": component,
+            "category": category,
+            "confidence": confidence,
+            "reasoning": f"Item {index} is the primary repair",
+        })
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = content
+        return response
+
+    def _make_items(self):
+        """Create test line items for primary repair identification."""
+        return [
+            {"index": 0, "description": "Profildichtung", "item_type": "parts",
+             "total_price": 42.0, "coverage_status": "COVERED", "coverage_category": "engine"},
+            {"index": 1, "description": "Hochdruckpumpe", "item_type": "parts",
+             "total_price": 11500.0, "coverage_status": "NOT_COVERED", "coverage_category": "fuel_system"},
+            {"index": 2, "description": "Aus-/Einbau Pumpe", "item_type": "labor",
+             "total_price": 800.0, "coverage_status": "NOT_COVERED", "coverage_category": None},
+        ]
+
+    def test_determine_primary_repair_success(self):
+        """Happy path: returns valid result with correct item index."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            primary_repair_prompt_name="nonexistent_primary",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_primary_response(1, "high_pressure_pump", "fuel_system"),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        result = matcher.determine_primary_repair(
+            all_items=self._make_items(),
+            covered_components={"engine": ["gasket"]},
+            claim_id="TEST-PR-001",
+        )
+
+        assert result is not None
+        assert result["primary_item_index"] == 1
+        assert result["component"] == "high_pressure_pump"
+        assert result["category"] == "fuel_system"
+        assert result["confidence"] == 0.85
+        client.chat_completions_create.assert_called_once()
+
+    def test_determine_primary_repair_retry_on_failure(self):
+        """Retries on transient error and succeeds on second attempt."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            primary_repair_prompt_name="nonexistent_primary",
+            max_retries=3,
+            retry_base_delay=0.0,
+        )
+        call_count = {"n": 0}
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+
+        def fake_create(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("Rate limit exceeded")
+            return self._make_primary_response(1, "high_pressure_pump", "fuel_system")
+
+        client.chat_completions_create = MagicMock(side_effect=fake_create)
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        result = matcher.determine_primary_repair(
+            all_items=self._make_items(),
+            covered_components={"engine": ["gasket"]},
+        )
+
+        assert result is not None
+        assert result["primary_item_index"] == 1
+        assert call_count["n"] == 2
+
+    def test_determine_primary_repair_returns_none_on_all_failures(self):
+        """All retries fail -> returns None."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            primary_repair_prompt_name="nonexistent_primary",
+            max_retries=2,
+            retry_base_delay=0.0,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            side_effect=RuntimeError("API timeout"),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        result = matcher.determine_primary_repair(
+            all_items=self._make_items(),
+            covered_components={"engine": ["gasket"]},
+        )
+
+        assert result is None
+        assert client.chat_completions_create.call_count == 2
+
+    def test_determine_primary_repair_parse_valid_json(self):
+        """Parses valid JSON response correctly."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()
+
+        content = json.dumps({
+            "primary_item_index": 2,
+            "component": "pump_labor",
+            "category": "fuel_system",
+            "confidence": 0.75,
+            "reasoning": "Labor for pump replacement",
+        })
+
+        result = matcher._parse_primary_repair_response(content, items)
+        assert result is not None
+        assert result["primary_item_index"] == 2
+        assert result["confidence"] == 0.75
+
+    def test_determine_primary_repair_parse_invalid_json(self):
+        """Invalid JSON returns None."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()
+
+        result = matcher._parse_primary_repair_response("NOT VALID {{{}", items)
+        assert result is None
+
+    def test_determine_primary_repair_parse_missing_index(self):
+        """Missing primary_item_index returns None."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()
+
+        content = json.dumps({
+            "component": "pump",
+            "category": "engine",
+            "confidence": 0.8,
+        })
+        result = matcher._parse_primary_repair_response(content, items)
+        assert result is None
+
+    def test_determine_primary_repair_parse_out_of_range_index(self):
+        """Out-of-range index returns None."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()  # 3 items, valid indices 0-2
+
+        content = json.dumps({
+            "primary_item_index": 5,
+            "component": "pump",
+            "category": "engine",
+            "confidence": 0.8,
+        })
+        result = matcher._parse_primary_repair_response(content, items)
+        assert result is None
+
+    def test_determine_primary_repair_parse_negative_index(self):
+        """Negative index returns None."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()
+
+        content = json.dumps({
+            "primary_item_index": -1,
+            "component": "pump",
+            "category": "engine",
+            "confidence": 0.8,
+        })
+        result = matcher._parse_primary_repair_response(content, items)
+        assert result is None
+
+    def test_determine_primary_repair_parse_markdown_code_block(self):
+        """Handles JSON wrapped in markdown code blocks."""
+        matcher = LLMMatcher(config=LLMMatcherConfig())
+        items = self._make_items()
+
+        content = '```json\n{"primary_item_index": 0, "component": "gasket", "category": "engine", "confidence": 0.9, "reasoning": "test"}\n```'
+        result = matcher._parse_primary_repair_response(content, items)
+        assert result is not None
+        assert result["primary_item_index"] == 0
+
+    def test_determine_primary_repair_empty_items(self):
+        """Empty items list returns None without LLM call."""
+        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_retries=1)
+        client = MagicMock()
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        result = matcher.determine_primary_repair(
+            all_items=[],
+            covered_components={"engine": ["gasket"]},
+        )
+
+        assert result is None
+        client.chat_completions_create.assert_not_called()
+
+    def test_determine_primary_repair_with_repair_description(self):
+        """repair_description is included in the LLM prompt."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            primary_repair_prompt_name="nonexistent_primary",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_primary_response(0, "control_unit", "electrical_system"),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        result = matcher.determine_primary_repair(
+            all_items=self._make_items(),
+            covered_components={"engine": ["gasket"]},
+            claim_id="TEST-PR-DESC",
+            repair_description="Error codes: P17F900\nError description: Parksperre, mechanischer Fehler",
+        )
+
+        assert result is not None
+        # Verify the prompt includes the repair description
+        call_args = client.chat_completions_create.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        prompt_text = " ".join(m["content"] for m in messages)
+        assert "P17F900" in prompt_text
+        assert "Parksperre" in prompt_text
+
+    def test_determine_primary_repair_prompt_focuses_on_failure_cause(self):
+        """The inline prompt asks about failure cause, not just most expensive part."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            primary_repair_prompt_name="nonexistent_primary",
+            max_retries=1,
+        )
+        matcher = LLMMatcher(config=config, audited_client=MagicMock())
+
+        messages = matcher._build_primary_repair_prompt(
+            all_items=self._make_items(),
+            covered_components={"engine": ["gasket"]},
+        )
+
+        system_text = messages[0]["content"]
+        assert "failure CAUSED" in system_text or "failure caused" in system_text.lower()
+        # Should NOT tell the LLM to ignore coverage
+        assert "regardless of whether it is covered" not in system_text
+
+    def test_config_primary_repair_prompt_name(self):
+        """primary_repair_prompt_name is configurable."""
+        config = LLMMatcherConfig.from_dict({
+            "primary_repair_prompt_name": "nsa_primary_repair",
+        })
+        assert config.primary_repair_prompt_name == "nsa_primary_repair"
+
+    def test_config_primary_repair_prompt_name_default(self):
+        """Default primary_repair_prompt_name is 'primary_repair'."""
+        config = LLMMatcherConfig.from_dict({})
+        assert config.primary_repair_prompt_name == "primary_repair"

@@ -1,0 +1,1336 @@
+PARTS GAP REPORT - Items missing from assumptions.json
+============================================================
+Generated from 603 line items across 54 claims
+
+CURRENT STATE:
+  Part number matches: 103 (17.1%)
+  Keyword matches:     22 (3.6%)
+  Rule matches:        179 (29.7%)
+  LLM fallback:        299 (49.6%)
+
+GAP: 157 unique part numbers fell to LLM (could be in assumptions)
+PLUS: 10 unique part numbers fell to keyword matching
+
+
+SECTION 1: LLM-MATCHED PARTS (highest priority - each saves an LLM call)
+------------------------------------------------------------
+
+  Part: 00-6555-00
+  Descriptions: EFFECTUER LA VIDANGE D'HUILE : ESSIEU ARRIÈRE
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64659
+  Reasoning: The labor description 'EFFECTUER LA VIDANGE D'HUILE : ESSIEU ARRIÈRE' refers to an oil change for th
+
+  Part: 0000006
+  Descriptions: Fahrzeugtest durchführen | Réaliser un test véhicule
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160, 65113
+  Reasoning: The description 'Fahrzeugtest durchführen' translates to 'Perform vehicle test,' which refers to sta
+
+  Part: 0000008
+  Descriptions: Inspection du display
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160
+  Reasoning: The labor description 'Inspection du display' refers to inspecting a display, which is an electronic
+
+  Part: 00001920TN
+  Descriptions: RINGDICHTUNG
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: RINGDICHTUNG translates to sealing ring, which is associated with 'Ringe' (rings) in the engine cate
+
+  Part: 0000203708
+  Descriptions: SCHRAUBE F SCHWUNGSCHEIBE
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: SCHRAUBE F SCHWUNGSCHEIBE (bolt for flywheel) is a fastener used in the repair context of replacing 
+
+  Part: 00320641
+  Descriptions: BAUTEILE FEDERUNGSSYSTEME: DRUCKREGELUNG NACH FEHLERCODE PRUEFEN
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 64850
+  Reasoning: The labor description 'BAUTEILE FEDERUNGSSYSTEME: DRUCKREGELUNG NACH FEHLERCODE PRUEFEN' translates 
+
+  Part: 00327490
+  Descriptions: ELEKTROHYDRAULISCHE FEDERUNG AUF DICHTHEIT PRUEFEN
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 64850
+  Reasoning: The labor description 'ELEKTROHYDRAULISCHE FEDERUNG AUF DICHTHEIT PRUEFEN' translates to 'Check elec
+
+  Part: 00327498
+  Descriptions: ELEKTROHYDRAULISCHE FEDERUNG ENTLUEFTEN
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 64850
+  Reasoning: The labor description 'ELEKTROHYDRAULISCHE FEDERUNG ENTLUEFTEN' refers to bleeding the electrohydrau
+
+  Part: 00541011
+  Descriptions: KURZTEST DURCHFUEHREN
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 64850
+  Reasoning: KURZTEST DURCHFUEHREN translates to 'perform short test', which is diagnostic labor. Diagnostic labo
+
+  Part: 00655501
+  Descriptions: OELWECHSEL: DURCHFUEHREN
+  Type: labor
+  LLM verdict: not_covered
+  Category: labor
+  Claims: 65258
+  Reasoning: The description 'OELWECHSEL: DURCHFUEHREN' translates to 'oil change: perform'. Oil changes are cons
+
+  Part: 00850001
+  Descriptions: MOTOR UND MOTOR-/AGGREGATERAUM REINIGEN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65258
+  Reasoning: The labor description 'MOTOR UND MOTOR-/AGGREGATERAUM REINIGEN' translates to 'Engine and engine/agg
+
+  Part: 00K05150734AE
+  Descriptions: DISPOSITIF DE COM-
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64386
+  Reasoning: The description 'DISPOSITIF DE COM-' is too vague to identify a specific component. The repair conte
+
+  Part: 01120301
+  Descriptions: KOMPRESSIONSDRUCK PRUEFEN (ZUENDKERZEN AUSGEBAUT)
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: Labor 'KOMPRESSIONSDRUCK PRUEFEN' (compression pressure test) is part of the repair context 'ZYLINDE
+
+  Part: 01130002
+  Descriptions: ZYLINDER AUF DICHTHEIT PRUEFEN (ZUGANGSBOHRUNGEN FREIGELEGT)
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: Labor description 'ZYLINDER AUF DICHTHEIT PRUEFEN' (check cylinder for tightness) is part of the rep
+
+  Part: 01132103
+  Descriptions: ALLE ZYLINDER AUSLEUCHTEN (ZUGANGSBOHRUNGEN FREIGELEGT)
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: The labor description 'ALLE ZYLINDER AUSLEUCHTEN (ZUGANGSBOHRUNGEN FREIGELEGT)' refers to inspecting
+
+  Part: 01500000
+  Descriptions: GFS/GEFUEHRTE FUNKTION
+  Type: labor
+  LLM verdict: not_covered | covered
+  Category: automatic_transmission | labor
+  Claims: 64354, 65174, 65183
+  Reasoning: The labor description 'GFS/GEFUEHRTE FUNKTION' refers to guided function diagnostics, which is diagn
+
+  Part: 01500002
+  Descriptions: SOFTWAREUPDATE MOTOR U. DRUCKSENSOR ANPASSEN
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 65056
+  Reasoning: The labor description 'SOFTWAREUPDATE MOTOR U. DRUCKSENSOR ANPASSEN' refers to a software update and
+
+  Part: 01500060
+  Descriptions: GFS/GEFUEHRTE FUNKTION
+  Type: labor
+  LLM verdict: covered
+  Category: chassis | comfort_options
+  Claims: 65196, 65150
+  Reasoning: The labor description 'GFS/GEFUEHRTE FUNKTION' refers to guided diagnostics for the automatic foldin
+
+  Part: 01M 323 255
+  Descriptions: ANNEAU JOINT
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65211
+  Reasoning: ANNEAU JOINT translates to 'seal ring' or 'gasket', which falls under the excluded components list (
+
+  Part: 03L131547D
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The term 'Joint' refers to a seal or gasket, which falls under the excluded components list (Dichtun
+
+  Part: 03L131547P
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The term 'Joint' refers to a seal or gasket, which falls under the excluded components list (Dichtun
+
+  Part: 04L131120
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The term 'Joint' refers to a seal or gasket, which falls under the excluded components list (Dichtun
+
+  Part: 04L131521AR
+  Descriptions: Tuyau liaison
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: Tuyau liaison translates to 'connection pipe' or 'link pipe'. Pipes, hoses, and similar components a
+
+  Part: 04L131521BH
+  Descriptions: Tuyau liaison
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The part 'Tuyau liaison' translates to 'connection pipe' or 'link pipe'. Pipes, hoses, and similar c
+
+  Part: 04L131547S
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The term 'Joint' refers to a seal or gasket, which falls under the excluded components list (Dichtun
+
+  Part: 06 19 00
+  Descriptions: DE/POSE BATTERIE (BATTERIE DECONNECTEE)
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 64980
+  Reasoning: The labor description 'DE/POSE BATTERIE' refers to removing and installing a battery. The term 'BATT
+
+  Part: 07-0641-00
+  Descriptions: BAUTEILE MOTOR: U02A987 "DIE K OMMUNIKATION MIT DEM BAUTEIL ' KÜHLMITTELPUMPE' HAT FUNKTIONS STÖRUNG. DIE BOTSCHAFT FEHLT." NACH FEHLERCODE PRÜFEN
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 64984
+  Reasoning: The labor description refers to diagnosing a fault with the 'Kühlmittelpumpe' (coolant pump), which 
+
+  Part: 07-2712-00
+  Descriptions: NOX-SENSOR RECHTS AUS-, EINBAUEN, N. B. ERNEUERN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65002
+  Reasoning: NOX-SENSOR refers to a nitrogen oxide sensor, which is part of the emissions system and not listed a
+
+  Part: 07148835169
+  Descriptions: vis à bille convexe 12x1,25x45 ZNS3
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64380
+  Reasoning: The part 'vis à bille convexe 12x1,25x45 ZNS3' translates to 'convex ball screw 12x1.25x45 ZNS3'. Th
+
+  Part: 09-6793-00
+  Descriptions: UMWÄLZPUMPE RECHTS FÜR NIEDERTEMPERATURKREISLAUF AUS- ,EINBAUEN
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 64984
+  Reasoning: The labor description 'UMWÄLZPUMPE RECHTS FÜR NIEDERTEMPERATURKREISLAUF AUS-, EINBAUEN' translates t
+
+  Part: 09-6944-00
+  Descriptions: KÜHLMITTEL FÜR NIEDERTEMPERATU RKREISLAUF ABLASSEN, EINFÜLLEN , RICHTIGSTELLEN (BEI ARBEITEN AN DER ANLAGE)
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 64984
+  Reasoning: The labor description refers to draining, refilling, and correcting coolant for the low-temperature 
+
+  Part: 0CK301131B
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket,' which does not match any specific component in the Covered Componen
+
+  Part: 0CK321371A
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: automatic_transmission
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component under automat
+
+  Part: 0CK325443
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component in any catego
+
+  Part: 0CK325444
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component in any catego
+
+  Part: 0CK325445
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component in any catego
+
+  Part: 0CK927523
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: automatic_transmission
+  Claims: 65056
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component in any catego
+
+  Part: 10821900
+  Descriptions: SCHALLSCHUTZWANNE AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64358
+  Reasoning: SCHALLSCHUTZWANNE translates to 'soundproofing pan' or 'acoustic shield', which is not a covered com
+
+  Part: 1142020
+  Descriptions: Déposer/reposer ou remplacer le filtre à huile sur circuit
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160
+  Reasoning: The labor is for replacing or removing/installing an oil filter, which is a consumable item. Consuma
+
+  Part: 11425B3A1A5
+  Descriptions: Satz Dichtungen DMDC/RDC
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The item 'Satz Dichtungen DMDC/RDC' translates to 'Set of seals DMDC/RDC'. Seals are not explicitly 
+
+  Part: 11428575898
+  Descriptions: support filtre a huile
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 65160
+  Reasoning: The part 'support filtre a huile' translates to 'oil filter support'. This is not a listed component
+
+  Part: 11618571001
+  Descriptions: Profildichtung Lager
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The term 'Profildichtung Lager' translates to 'profile seal bearing'. This does not match any specif
+
+  Part: 1332551
+  Descriptions: Kraftstoffilter ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The description 'Kraftstoffilter ersetzen' translates to 'fuel filter replacement'. Fuel filters are
+
+  Part: 1353558
+  Descriptions: Hochdruckrail aus- und einbauen/ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The labor description 'Hochdruckrail aus- und einbauen/ersetzen' translates to 'High-pressure rail r
+
+  Part: 1353670
+  Descriptions: Alle Druckleitungen ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The description 'Alle Druckleitungen ersetzen' translates to 'Replace all pressure lines'. Pressure 
+
+  Part: 1353719
+  Descriptions: Alle Injektoren der Einspritzanlage ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The labor description refers to replacing all injectors of the injection system. Injectors are not l
+
+  Part: 1353830
+  Descriptions: Alle Leckölleitungen ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The labor description 'Alle Leckölleitungen ersetzen' translates to 'Replace all leak oil lines.' Le
+
+  Part: 13538582140
+  Descriptions: Kraftstoffleitung Motorraum RDC
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 65113
+  Reasoning: The part 'Kraftstoffleitung Motorraum RDC' translates to 'fuel line engine compartment RDC'. Fuel li
+
+  Part: 13831410
+  Descriptions: Rempl. débimètre
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 64978
+  Reasoning: The labor description 'Rempl. débimètre' refers to replacing the mass airflow sensor (débitmètre), w
+
+  Part: 13831410A9
+  Descriptions: Effacement des codes
+  Type: labor
+  LLM verdict: review_needed
+  Category: labor
+  Claims: 64978
+  Reasoning: Effacement des codes (clearing fault codes) is diagnostic labor directly associated with replacing t
+
+  Part: 15101003
+  Descriptions: ZUENDKERZEN AUS-, EINBAUEN, N. B. ERNEUERN
+  Type: labor
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 65258
+  Reasoning: ZUENDKERZEN (spark plugs) are not listed as covered components under any category. Labor for spark p
+
+  Part: 1600650
+  Descriptions: Kraftstoff aus Kraftstoffbehälter absaugen und auffüllen - 50 Liter
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The labor described involves fuel extraction and refilling, which does not relate to any covered com
+
+  Part: 1611535
+  Descriptions: a Kraftstoffbehälter ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: Kraftstoffbehälter translates to fuel tank, which does not match any component in the Covered Compon
+
+  Part: 1614590
+  Descriptions: Fördermodul aus-und einbauen/ ersetzen
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65113
+  Reasoning: The description 'Fördermodul aus-und einbauen/ ersetzen' translates to 'Fuel pump module remove and 
+
+  Part: 1700009
+  Descriptions: Contrôle de l'étanchéité à l'eau du système de
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160
+  Reasoning: The labor description 'Contrôle de l'étanchéité à l'eau du système' translates to 'Waterproofing sys
+
+  Part: 1700039
+  Descriptions: Kühlsystem entlüften und auf Wasser- dichtheit prüfen Wasserdichtheit prüfen
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 65027
+  Reasoning: The labor involves bleeding the cooling system and checking for water tightness, which is directly r
+
+  Part: 18.31.41
+  Descriptions: Remplacement Gicleur d'huile de refroidissement de piston - Électrovanne
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: The labor description 'Remplacement Gicleur d'huile de refroidissement de piston - Électrovanne' ref
+
+  Part: 19290101/01/2
+  Descriptions: STEUERGERÄT THERMOMANAGEMENT GEPRÜFT
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65021
+  Reasoning: The description 'STEUERGERÄT THERMOMANAGEMENT GEPRÜFT' translates to 'Control unit thermal managemen
+
+  Part: 19292551 /01/2
+  Descriptions: STEUERGERÄT THERMOMANAGEMENT PROGRAMMIER
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65021
+  Reasoning: The item is labor for programming a 'Steuergerät Thermomanagement' (Thermal Management Control Unit)
+
+  Part: 19381765/01/1
+  Descriptions: KÜHLMITTEL ABGELASSEN UND AUFGEFÜLLT
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65021
+  Reasoning: The labor description 'KÜHLMITTEL ABGELASSEN UND AUFGEFÜLLT' translates to 'Coolant drained and refi
+
+  Part: 19691970/01/2
+  Descriptions: SCHALTVENTIL AUS- UND EINGEBAUT
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65021
+  Reasoning: The labor description 'SCHALTVENTIL AUS- UND EINGEBAUT' translates to 'Shift valve removed and insta
+
+  Part: 215670
+  Descriptions: Courroie principale
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 65055
+  Reasoning: The part 'Courroie principale' refers to a belt, and the repair context indicates it is related to t
+
+  Part: 234840
+  Descriptions: Durite injection pompe HP / distributeur
+  Type: parts | labor
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 65055
+  Reasoning: The labor description 'Durite injection pompe HP / distributeur' refers to a high-pressure injection
+
+  Part: 26151915
+  Descriptions: WÄRMESCHUTZ AUS- U.EINBAUEN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64354
+  Reasoning: WÄRMESCHUTZ (heat shield) is not listed as a covered component in any category. Labor for its remova
+
+  Part: 27068950
+  Descriptions: BATTERIE GELADEN
+  Type: labor
+  LLM verdict: not_covered | covered
+  Category: chassis | labor
+  Claims: 65056, 65196
+  Reasoning: BATTERIE GELADEN translates to 'battery charged,' which refers to charging the battery. Batteries ar
+
+  Part: 3121181
+  Descriptions: Remplacer les deux roulements de roues avant
+  Type: labor
+  LLM verdict: covered
+  Category: suspension
+  Claims: 64380
+  Reasoning: The labor description 'Remplacer les deux roulements de roues avant' translates to 'Replace the two 
+
+  Part: 34 88 55 50
+  Descriptions: FILT. HUIL BOITE DEP/REPOSER
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 64980
+  Reasoning: The description 'FILT. HUIL BOITE DEP/REPOSER' translates to 'Oil filter for gearbox remove/reinstal
+
+  Part: 34100299
+  Descriptions: MAGNET F. PARKSPERRE AUS- U.EINBAUEN
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 65056
+  Reasoning: MAGNET F. PARKSPERRE refers to a magnet for the parking lock, which is part of the transmission syst
+
+  Part: 34101993
+  Descriptions: GEHÄUSE F SCHALTHEBEL AUS- U.EINBAUEN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64354
+  Reasoning: GEHÄUSE translates to 'housing' and SCHALTHEBEL translates to 'gear lever'. Housing for the gear lev
+
+  Part: 35-1050-00
+  Descriptions: DEGATS DE L'ESSIEU AR CONTROLER
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64659
+  Reasoning: The labor description 'DEGATS DE L'ESSIEU AR CONTROLER' translates to 'Damage to the rear axle to ch
+
+  Part: 35-2500-00
+  Descriptions: REDUCTEUR DE PONT ARRIERE DEPOSER ET POSER
+  Type: labor
+  LLM verdict: covered
+  Category: four_wd
+  Claims: 64659
+  Reasoning: The labor description 'REDUCTEUR DE PONT ARRIERE DEPOSER ET POSER' refers to the removal and install
+
+  Part: 35-2801-00
+  Descriptions: REDUCTEUR DE PONT ARRIERE REMPLACER (DIFFERENTIEL ARRIERE DEPOSE)
+  Type: labor
+  LLM verdict: covered
+  Category: four_wd
+  Claims: 64659
+  Reasoning: The labor description 'REDUCTEUR DE PONT ARRIERE REMPLACER (DIFFERENTIEL ARRIERE DEPOSE)' involves t
+
+  Part: 35111900
+  Descriptions: MECHATRONIK AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 65056
+  Reasoning: MECHATRONIK refers to the Mechatronic unit, which is explicitly listed under the automatic_transmiss
+
+  Part: 39225572
+  Descriptions: DICHTRING F FLANSCHWELLE ERSETZT
+  Type: parts
+  LLM verdict: covered
+  Category: mechanical_transmission
+  Claims: 64358
+  Reasoning: Ancillary part for covered repair: 'dichtring' linked to transmission
+
+  Part: 39901753
+  Descriptions: OEL F ACHSANTRIEB ABG+AUFG
+  Type: parts
+  LLM verdict: not_covered
+  Category: axle_drive
+  Claims: 64358
+  Reasoning: The part 'OEL F ACHSANTRIEB ABG+AUFG' refers to oil for the axle drive. Consumables like oil are exp
+
+  Part: 40-1580-00
+  Descriptions: KOMPLETTRAD AB- , ANMONTIEREN
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 64984
+  Reasoning: The labor description 'KOMPLETTRAD AB-, ANMONTIEREN' translates to 'Complete wheel dismounting and m
+
+  Part: 40411950
+  Descriptions: ARBRE DE PONT: DEPOSE ET REPOSE
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65211
+  Reasoning: The labor description 'ARBRE DE PONT: DEPOSE ET REPOSE' refers to the removal and installation of a 
+
+  Part: 40485550
+  Descriptions: SOUFLLET JOINT HOMOC. EXTG .: REMPLACE | SOUFFLET JOINT HOMOC. EXTD .: REMPLACE
+  Type: parts
+  LLM verdict: not_covered
+  Category: axle_drive
+  Claims: 65211
+  Reasoning: The part 'SOUFLLET JOINT HOMOC. EXTG' translates to 'outer CV joint boot'. While the repair context 
+
+  Part: 40671950
+  Descriptions: RADNABE M LAGER AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 65280
+  Reasoning: RADNABE translates to 'wheel hub,' which is a listed component under the axle_drive category. Labor 
+
+  Part: 40810056
+  Descriptions: LENKRAD AUS+EINGEBAUT UND ERSETZT
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65183
+  Reasoning: LENKRAD translates to 'steering wheel' in English. Steering wheel is not listed as a covered compone
+
+  Part: 41 19 55
+  Descriptions: TUBE PRES DEP/REPOSER
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 64980
+  Reasoning: The description 'TUBE PRES DEP/REPOSER' translates to 'Pressure tube remove/install' in French. This
+
+  Part: 43402050
+  Descriptions: ZENTRALVENTILE AUS-
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 65196
+  Reasoning: ZENTRALVENTILE translates to 'central valves,' and in the context of height control systems (chassis
+
+  Part: 43411850
+  Descriptions: HYDRAULIKFLUESSIGKEIT ABG+AUFG
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 65196
+  Reasoning: HYDRAULIKFLUESSIGKEIT ABG+AUFG translates to 'hydraulic fluid drain and refill'. This is a consumabl
+
+  Part: 44051900
+  Descriptions: ROUE : DEPOSE ET REPOSE | RAD AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: not_covered | covered
+  Category: axle_drive
+  Claims: 65211, 65280
+  Reasoning: The labor description 'ROUE : DEPOSE ET REPOSE' translates to 'Wheel: removal and installation'. Whe
+
+  Part: 44052052
+  Descriptions: RAEDER AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 65196
+  Reasoning: The labor description 'RAEDER AUS- U.EINGEBAUT' translates to 'Wheels removed and installed'. Wheels
+
+  Part: 46501950
+  Descriptions: BREMSSCHEIBE VORN AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: not_covered
+  Category: brakes
+  Claims: 65280
+  Reasoning: BREMSSCHEIBE translates to brake disc, which is not listed as a covered component under the brakes c
+
+  Part: 48101950
+  Descriptions: VOLANT DE DIRECTION : DEPOSEE ET REPOSEE
+  Type: labor
+  LLM verdict: covered
+  Category: electrical_system
+  Claims: 65047
+  Reasoning: The labor 'VOLANT DE DIRECTION : DEPOSEE ET REPOSEE' (steering wheel removal and installation) is di
+
+  Part: 50-008
+  Descriptions: Diagnostic électronique de base Lecture de la mémoire de défauts et suivi des plans de contrôle du testeur, sans démontage d'agrégats.
+  Type: labor
+  LLM verdict: not_covered
+  Category: labor
+  Claims: 65208
+  Reasoning: The labor described is diagnostic work ('Lecture de la mémoire de défauts' and 'suivi des plans de c
+
+  Part: 51757402947
+  Descriptions: Protection de compartiment moteur
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160
+  Reasoning: The part 'Protection de compartiment moteur' translates to 'Engine compartment protection,' which ap
+
+  Part: 54-0650-00
+  Descriptions: TENSION DU RESEAU DE BORD MAINTENIR (POUR TRAVAUX DE CONTROLE ET DIAGNOSTIC)
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64659
+  Reasoning: The labor description 'TENSION DU RESEAU DE BORD MAINTENIR' refers to maintaining the onboard networ
+
+  Part: 54-0765-00
+  Descriptions: LEUCHTEINHEIT- KABELSATZ PRÜFEN (NACH KURZTEST) | ...- KABELSATZ PRÜFEN (NACH KURZTEST) MOTORKABELSATZ VOLL MIT ÖL. DIV. ÜBERGANGSWIDERSTÄNDE DER ELEKTRISCHEN KOMPONENTEN
+  Type: labor
+  LLM verdict: not_covered
+  Category: labor
+  Claims: 65002, 64951
+  Reasoning: The description 'LEUCHTEINHEIT- KABELSATZ PRÜFEN (NACH KURZTEST)' translates to 'Lighting unit - wir
+
+  Part: 54-1011-00
+  Descriptions: KURZTEST DURCHFÜHREN
+  Type: labor
+  LLM verdict: not_covered | covered
+  Category: cooling_system | labor
+  Claims: 64984, 65002, 64951
+  Reasoning: KURZTEST DURCHFÜHREN translates to 'perform short test', which is diagnostic labor. Standalone diagn
+
+  Part: 54-7775-00
+  Descriptions: KABELSATZ AM MOTOR ERNEUERN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65002
+  Reasoning: KABELSATZ AM MOTOR ERNEUERN translates to 'renew wiring harness at engine'. Wiring harness is an ele
+
+  Part: 54-7989-00
+  Descriptions: MASSELEITUNG DER BATTERIE DES 12-V-BORDNETZES AB-, ANSCHLIEßEN (BEI REPARATURARBEITEN) | MASSELEITUNG DER BATTERIE DES 12- V- BORDNETZES AB- , ANSCHLIEßEN (BEI REPARATURARBEITEN) | DEBRANCHER, BRANCHER LE CABLE DE MASSE DE LA BATTERIE DU RESEAU DE BORD 12 V (EN CAS DE TRAVAUX DE REPARATION)
+  Type: labor
+  LLM verdict: not_covered | covered
+  Category: axle_drive
+  Claims: 64659, 65002, 64951
+  Reasoning: The labor description refers to disconnecting and reconnecting the ground cable of the 12V battery, 
+
+  Part: 55551950
+  Descriptions: DESSOUS DE SERRURE AR :DEP.+REP
+  Type: labor
+  LLM verdict: not_covered
+  Category: body
+  Claims: 65128
+  Reasoning: The repair line item refers to labor for a lock mechanism ('dessous de serrure' translates to 'under
+
+  Part: 57171951
+  Descriptions: TUERSCHLOSS AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: comfort_options
+  Claims: 65150
+  Reasoning: TUERSCHLOSS translates to 'door lock', and the labor description 'AUS- U.EINGEBAUT' indicates remova
+
+  Part: 5WA 713 033 CD
+  Descriptions: COMMANDE DES VI
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65307
+  Reasoning: The description 'COMMANDE DES VI' is too vague to determine what the part is. It does not clearly ma
+
+  Part: 61-1071-00
+  Descriptions: MOTORRAUMVERKLEIDUNG UNTEN VORDERTEIL AUS- , EINBAUEN
+  Type: labor
+  LLM verdict: covered
+  Category: cooling_system
+  Claims: 64984
+  Reasoning: The labor description 'MOTORRAUMVERKLEIDUNG UNTEN VORDERTEIL AUS-, EINBAUEN' refers to removing and 
+
+  Part: 6100980
+  Descriptions: Poursuite du test véhicule et effacement de la mémoire des
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65160
+  Reasoning: The labor described as 'Poursuite du test véhicule et effacement de la mémoire des' refers to vehicl
+
+  Part: 61108601
+  Descriptions: MOTORRAUMVERKLEIDUNG UNTEN VORDER- UND MITTELTEIL AUS-, EINBAUEN
+  Type: labor
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: Labor description 'MOTORRAUMVERKLEIDUNG UNTEN VORDER- UND MITTELTEIL AUS-, EINBAUEN' refers to remov
+
+  Part: 61LR073816
+  Descriptions: Joint métal couvercle arr. arbre à cammes
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'joint' linked to timing_chain
+
+  Part: 61LR084639
+  Descriptions: Bague de garniture
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'bague' linked to timing_chain
+
+  Part: 61LR085942
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'joint' linked to timing_chain
+
+  Part: 61LR095556
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'joint' linked to timing_chain
+
+  Part: 61LR183648
+  Descriptions: Bouchon
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'bouchon' linked to timing_chain
+
+  Part: 61LR185233
+  Descriptions: Jeu Mont.
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64288
+  Reasoning: Ancillary part for covered repair: 'jeu mont' linked to timing_chain
+
+  Part: 63691900
+  Descriptions: ABDECKUNG F STOSSFAENGER HINTEN A+E
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 65196
+  Reasoning: ABDECKUNG F STOSSFAENGER HINTEN A+E translates to 'Cover for rear bumper remove and install.' This i
+
+  Part: 66891950
+  Descriptions: RUECKSPIEGEL AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: comfort_options
+  Claims: 65150
+  Reasoning: RUECKSPIEGEL AUS- U.EINGEBAUT translates to 'rearview mirror removed and installed'. The repair invo
+
+  Part: 69581900
+  Descriptions: MODULE ARBAG CONDUCTEUR :DEP.+REP
+  Type: labor
+  LLM verdict: covered
+  Category: comfort_options
+  Claims: 65047
+  Reasoning: The labor description 'MODULE ARBAG CONDUCTEUR :DEP.+REP' refers to the driver's airbag module. The 
+
+  Part: 70391900
+  Descriptions: CACHE P.PORTE- SERRURE :DEP.+REP
+  Type: labor
+  LLM verdict: not_covered
+  Category: body
+  Claims: 65128
+  Reasoning: CACHE P.PORTE- SERRURE translates to 'cover for door lock'. The repair context indicates this is rel
+
+  Part: 70591900
+  Descriptions: TUERVERKLEIDUNG VORN AUS- U.EINGEBAUT
+  Type: labor
+  LLM verdict: covered
+  Category: comfort_options
+  Claims: 65150
+  Reasoning: The labor description 'TUERVERKLEIDUNG VORN AUS- U.EINGEBAUT' refers to removal and installation of 
+
+  Part: 7E0 407 297
+  Descriptions: CIRCLIPS
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65211
+  Reasoning: CIRCLIPS are small retaining rings or fasteners and do not match any specific component in the Cover
+
+  Part: 82-0640-00
+  Descriptions: AUßENBELEUCHTUNG PRÜFEN (NACH KURZTEST)
+  Type: labor
+  LLM verdict: not_covered
+  Category: labor
+  Claims: 64951
+  Reasoning: The description 'AUßENBELEUCHTUNG PRÜFEN (NACH KURZTEST)' translates to 'Check exterior lighting (af
+
+  Part: 84 19 60
+  Descriptions: CONS. BATTERIE DEP/REPOSER
+  Type: labor
+  LLM verdict: covered
+  Category: automatic_transmission
+  Claims: 64980
+  Reasoning: The labor description 'CONS. BATTERIE DEP/REPOSER' translates to 'Battery remove/reinstall'. The ter
+
+  Part: 85 09 50
+  Descriptions: CABLE MAS BATTERIE DEF/REF.
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64980
+  Reasoning: The description 'CABLE MAS BATTERIE DEF/REF' refers to a battery ground cable (cable masse batterie)
+
+  Part: 90831500
+  Descriptions: UMFELD-KAMERA EINGESTELLT
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65150
+  Reasoning: UMFELD-KAMERA EINGESTELLT translates to 'surround camera adjusted,' which is calibration labor for a
+
+  Part: 91-3602-00
+  Descriptions: SIEGE PASSAGER DEPOSER ET POSER
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64659
+  Reasoning: The labor description 'SIEGE PASSAGER DEPOSER ET POSER' refers to removing and installing the passen
+
+  Part: 91-6605-00
+  Descriptions: REGLAGE DU SIEGE POUR SIEGE PASSAGER REMPLACER (SIEGE DEPOSE)
+  Type: labor
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 64659
+  Reasoning: The labor description refers to seat adjustment and replacement for the passenger seat, which is unr
+
+  Part: 91381954
+  Descriptions: ANTENNE AUS- U.EINBAUEN
+  Type: labor
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64354
+  Reasoning: The part 'ANTENNE' (antenna) is explicitly excluded under the comfort_options category, regardless o
+
+  Part: 94491950
+  Descriptions: CALC. ELECTRON. COL. DIR. : DEP.+REP
+  Type: labor
+  LLM verdict: covered
+  Category: electronics
+  Claims: 65047
+  Reasoning: The labor description 'CALC. ELECTRON. COL. DIR. : DEP.+REP' refers to the electronic control unit (
+
+  Part: 96351550
+  Descriptions: STG. F SPURWECHSELASSISTENT EINGESTELLT
+  Type: labor
+  LLM verdict: covered
+  Category: chassis
+  Claims: 65196
+  Reasoning: The labor description 'STG. F SPURWECHSELASSISTENT EINGESTELLT' translates to 'Control unit for lane
+
+  Part: 9801728380
+  Descriptions: DICHTUNG VAKUUMPUMPE
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 64792
+  Reasoning: DICHTUNG VAKUUMPUMPE translates to 'gasket for vacuum pump'. A vacuum pump gasket is not listed as a
+
+  Part: 9802595980
+  Descriptions: DICHTUNG ÖLABSCHEIDER
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: DICHTUNG ÖLABSCHEIDER translates to 'gasket oil separator'. The oil separator is a listed component 
+
+  Part: 9802853980
+  Descriptions: DICHTUNG WASSERGEHÄUSEDECKEL
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 64792
+  Reasoning: The part 'DICHTUNG WASSERGEHÄUSEDECKEL' translates to 'gasket for water housing cover'. While the re
+
+  Part: 9803918580
+  Descriptions: DICHTUNG F LUFTVERTEILER
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64792
+  Reasoning: The part 'DICHTUNG F LUFTVERTEILER' translates to 'gasket for air distributor'. Gaskets are not expl
+
+  Part: 9804617380
+  Descriptions: ZYLINDERKOPFDICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 64792
+  Reasoning: ZYLINDERKOPFDICHTUNG translates to 'cylinder head gasket', which is not listed as a covered componen
+
+  Part: 9809639980
+  Descriptions: FLANSCHDICHTUNG KÜHLUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64792
+  Reasoning: FLANSCHDICHTUNG KÜHLUNG translates to 'flange gasket cooling'. This part is related to the cooling s
+
+  Part: 9809818880
+  Descriptions: DICHTUNG F MOTORÖLPUMPE
+  Type: parts
+  LLM verdict: not_covered
+  Category: engine
+  Claims: 64792
+  Reasoning: DICHTUNG F MOTORÖLPUMPE translates to 'gasket for engine oil pump'. While the oil pump itself is a c
+
+  Part: 9810177780
+  Descriptions: SCHRAUBE H RCN
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: SCHRAUBE H RCN is identified as a bolt used for Kolben replacement in the engine category. Fasteners
+
+  Part: 9813722580
+  Descriptions: (MUL) SELBSTSICHERNDE MUTTER
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: The part 'SELBSTSICHERNDE MUTTER' (self-locking nut) is a fastener used in the context of replacing 
+
+  Part: 9817665180
+  Descriptions: SCHRAUBE KURBELW-RIEMENSCHEIBE
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: SCHRAUBE KURBELW-RIEMENSCHEIBE refers to a bolt for the crankshaft pulley (Kurbelwelle). Fasteners u
+
+  Part: 9851860680
+  Descriptions: BEF-SCHRAUBE AUSGLEICHSWELLE
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: BEF-SCHRAUBE AUSGLEICHSWELLE is identified as a bolt used for the installation of Kolben (piston), w
+
+  Part: 9853111280
+  Descriptions: (MUL) SCHRAUBE CZX RDL
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 64792
+  Reasoning: The part is identified as a bolt (SCHRAUBE) used in the repair context of replacing Kolben (piston),
+
+  Part: A000 826 03 00
+  Descriptions: DICHTUNG LEUCHTENGEHAEUSE
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64951
+  Reasoning: DICHTUNG LEUCHTENGEHAEUSE translates to 'gasket for light housing'. This part is related to the ligh
+
+  Part: A000 910 39 10
+  Descriptions: REGLAGE EN HAUTEUR
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64659
+  Reasoning: REGLAGE EN HAUTEUR translates to 'Height adjustment,' which does not match any specific component in
+
+  Part: A005 990 50 50
+  Descriptions: ECROU TETE HEXAG.A BRIDE
+  Type: parts
+  LLM verdict: review_needed
+  Category: fasteners
+  Claims: 64659
+  Reasoning: ECROU TETE HEXAG.A BRIDE translates to hexagonal head nut with flange, which is a small hardware ite
+
+  Part: A140 991 00 55
+  Descriptions: GOUPILLE DE SECURITE
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64659
+  Reasoning: GOUPILLE DE SECURITE translates to 'safety pin,' which is a fastener or securing hardware. It does n
+
+  Part: A276 150 91 20
+  Descriptions: MOTORLEITUNGSSATZ
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65002
+  Reasoning: MOTORLEITUNGSSATZ translates to 'engine wiring harness,' which is an electrical component and does n
+
+  Part: G 052528A3
+  Descriptions: Graisse Hautes Temperatures
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65211
+  Reasoning: Graisse Hautes Temperatures translates to High-Temperature Grease, which is a consumable. Consumable
+
+  Part: K04884550AB
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64818
+  Reasoning: DICHTUNG translates to 'gasket', which does not match any specific component in the Covered Componen
+
+  Part: K04884551AA
+  Descriptions: DICHTUNG
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64818
+  Reasoning: DICHTUNG translates to 'gasket', which is not explicitly listed as a covered component in any catego
+
+  Part: LR002990
+  Descriptions: Agraffe
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64535
+  Reasoning: The term 'Agraffe' translates to 'clip' or 'fastener' in French. Based on the repair context (client
+
+  Part: LR009014
+  Descriptions: Tube
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64535
+  Reasoning: The description 'Tube' is too vague to determine its function or match it to a specific covered comp
+
+  Part: MA000 016 05 69/64
+  Descriptions: ZYLINDERKOPFSCHRAUBE
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: ZYLINDERKOPFSCHRAUBE translates to 'cylinder head bolt,' which is a type of bolt used in the engine.
+
+  Part: MA000 159 05 00
+  Descriptions: ZUENDKERZE
+  Type: parts
+  LLM verdict: covered
+  Category: engine
+  Claims: 65258
+  Reasoning: Part promoted: covered labor for 'cylinder_head' exists in 'engine'; LLM classification overridden b
+
+  Part: MA177 072 00 00
+  Descriptions: TS HALTEFEDER
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65258
+  Reasoning: The part 'TS HALTEFEDER' translates to 'TS retaining spring'. Retaining springs are not listed as a 
+
+  Part: N 90799102
+  Descriptions: VIS TETE CYL
+  Type: parts
+  LLM verdict: covered
+  Category: electrical_system
+  Claims: 65047
+  Reasoning: VIS TETE CYL translates to 'cylinder head screw/bolt'. It is a small hardware item (screw/bolt) used
+
+  Part: N 909 902 02
+  Descriptions: ZYL SCHRAUBE
+  Type: parts
+  LLM verdict: covered
+  Category: mechanical_transmission
+  Claims: 64358
+  Reasoning: Ancillary part for covered repair: 'schraube' linked to transmission
+
+  Part: N 909 911 02
+  Descriptions: VIS TETE CYL
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65211
+  Reasoning: VIS TETE CYL translates to 'cylinder head bolt'. Bolts and fasteners are not explicitly listed as co
+
+  Part: N000000 007576
+  Descriptions: VIS TETE BOMBEE SIX PANS
+  Type: parts
+  LLM verdict: review_needed
+  Category: fasteners
+  Claims: 64659
+  Reasoning: VIS TETE BOMBEE SIX PANS refers to a screw/bolt, which is considered small hardware used in covered 
+
+  Part: N10644901
+  Descriptions: Vis a tête cylindrique
+  Type: parts
+  LLM verdict: review_needed
+  Category: hardware
+  Claims: 65306
+  Reasoning: The item 'Vis à tête cylindrique' translates to 'cylindrical head screw'. Small fasteners used in a 
+
+  Part: N91046101
+  Descriptions: Vis, système d'échappement
+  Type: parts
+  LLM verdict: not_covered
+  Category: exhaust_system
+  Claims: 65306
+  Reasoning: The part 'Vis, système d'échappement' translates to 'Screw, exhaust system'. Screws are generally co
+
+  Part: PAB121809A
+  Descriptions: PLOMBE
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65021
+  Reasoning: PLOMBE translates to 'seal' or 'plug,' which does not match any specific component in the Covered Co
+
+  Part: PYC101900
+  Descriptions: Agraffe
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 64535
+  Reasoning: The term 'Agraffe' translates to 'clip' or 'fastener' in English. It is not listed as a covered comp
+
+  Part: WHT005538
+  Descriptions: BUNDMUTTER
+  Type: parts
+  LLM verdict: covered
+  Category: axle_drive
+  Claims: 65280
+  Reasoning: BUNDMUTTER translates to 'flange nut,' which is small hardware used in repairs involving covered par
+
+  Part: WHT006151
+  Descriptions: BUNDMUTTER
+  Type: parts
+  LLM verdict: review_needed
+  Category: fasteners
+  Claims: 65056
+  Reasoning: BUNDMUTTER translates to 'flange nut,' which is a type of small hardware used in repairs. Fasteners 
+
+  Part: WHT008226
+  Descriptions: Joint
+  Type: parts
+  LLM verdict: not_covered
+  Category: 
+  Claims: 65306
+  Reasoning: The term 'Joint' refers to a seal or gasket, which falls under the excluded components list (Dichtun
+
+
+SECTION 2: KEYWORD-MATCHED PARTS (lower priority - already matched but could be exact)
+------------------------------------------------------------
+
+  Part: 0000171353
+  Descriptions: AUSPUFFBEFESTIGUNGSSCHELLE
+  Keyword verdict: not_covered
+  Category: exhaust
+  Claims: 64792
+
+  Part: 00327545
+  Descriptions: VENTILEINHEIT DER ELEKTROHYDRAULISCHEN FEDERUNG AN DER VORDERACHSE ERNEUERN (NACH PRUEFUNG)
+  Keyword verdict: covered
+  Category: engine
+  Claims: 64850
+
+  Part: 1153700
+  Descriptions: Kühlwasser-Thermostat aus-und einbauen/ersetzen
+  Keyword verdict: covered
+  Category: cooling_system
+  Claims: 65027
+
+  Part: 1611718680
+  Descriptions: SATZ EINSPRITZVENTILE BENZIN
+  Keyword verdict: not_covered
+  Category: fuel_system
+  Claims: 64792
+
+  Part: 1692647380
+  Descriptions: AUSPUFFBEFESTIGUNGSSCHELLE
+  Keyword verdict: not_covered
+  Category: exhaust
+  Claims: 64792
+
+  Part: 1700039
+  Descriptions: Purge du circuit de refroidissement et contrôle
+  Keyword verdict: not_covered
+  Category: cooling_system
+  Claims: 65160
+
+  Part: 27-1254-00
+  Descriptions: CONTROLER, RECTIFIER LE NIVEAU D'HUILE DE LA BOITE DE
+  Keyword verdict: not_covered
+  Category: chassis
+  Claims: 64659
+
+  Part: 5H0 419 093 C VDH
+  Descriptions: LENKRAD
+  Keyword verdict: not_covered
+  Category: steering
+  Claims: 65183
+
+  Part: 9809148680
+  Descriptions: AUSPUFFBEFESTIGUNGSSCHELLE
+  Keyword verdict: not_covered
+  Category: exhaust
+  Claims: 64792
+
+  Part: 9835304280
+  Descriptions: KURBELWELLENDICHTRING
+  Keyword verdict: covered
+  Category: engine
+  Claims: 64792

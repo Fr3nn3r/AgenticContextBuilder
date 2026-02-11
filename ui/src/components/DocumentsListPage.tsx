@@ -80,7 +80,16 @@ export function DocumentsListPage() {
       .catch(() => setDocTypeOptions([]));
 
     listClaims()
-      .then((claims) => setClaimOptions(claims.map((c) => c.claim_id).sort()))
+      .then((claims) => {
+        const sorted = claims.map((c) => c.claim_id).sort();
+        setClaimOptions(sorted);
+        // Auto-select first claim if none selected in URL
+        if (sorted.length > 0 && !searchParams.get("claim")) {
+          const newParams = new URLSearchParams(searchParams);
+          newParams.set("claim", sorted[0]);
+          setSearchParams(newParams);
+        }
+      })
       .catch(() => setClaimOptions([]));
   }, []);
 
@@ -101,10 +110,15 @@ export function DocumentsListPage() {
       setDocuments(response.documents);
       setTotal(response.total);
 
-      // Auto-select first document if none selected
-      if (response.documents.length > 0 && !selectedDocId) {
+      // Auto-select first document if none selected or current selection
+      // is no longer in the filtered results (e.g. after claim switch)
+      const currentStillVisible = response.documents.some(
+        (d) => d.doc_id === selectedDocId
+      );
+      if (response.documents.length > 0 && !currentStillVisible) {
         setSelectedDocId(response.documents[0].doc_id);
         setSelectedClaimId(response.documents[0].claim_id);
+        setSelectedRunId(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load documents");
@@ -323,8 +337,6 @@ export function DocumentsListPage() {
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="bg-card border-b px-4 py-3 flex items-center gap-4 flex-wrap">
-        <h2 className="font-semibold text-foreground">All Documents</h2>
-
         {/* Search */}
         <div className="relative w-48">
           <input
@@ -345,16 +357,19 @@ export function DocumentsListPage() {
         </div>
 
         {/* Claim Filter */}
-        <select
-          value={claimId}
-          onChange={(e) => updateParam("claim", e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          <option value="">All Claims</option>
-          {claimOptions.map((claim) => (
-            <option key={claim} value={claim}>{claim}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <label className="text-sm font-medium text-foreground">Claim:</label>
+          <select
+            value={claimId}
+            onChange={(e) => updateParam("claim", e.target.value)}
+            className="px-3 py-1.5 text-sm border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">All Claims</option>
+            {claimOptions.map((claim) => (
+              <option key={claim} value={claim}>{claim}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Doc Type Filter */}
         <select

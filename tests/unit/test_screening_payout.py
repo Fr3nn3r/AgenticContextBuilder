@@ -338,10 +338,11 @@ class TestPayoutDeductible:
         payout = _screener()._calculate_payout(facts, coverage)
 
         # Rate first: 5000 * 80% = 4000, cap at 3000 (4000 > 3000)
-        # subtotal = 3000 * 1.081 = 3243.0, deductible = 324.3
+        # When capped, cap IS the VAT-inclusive ceiling (no VAT added on top)
+        # subtotal = 3000, deductible = 3000 * 10% = 300
         assert payout.capped_amount == 3000.0
-        assert payout.deductible_amount == 324.3
-        assert payout.after_deductible == 2918.7
+        assert payout.deductible_amount == 300.0
+        assert payout.after_deductible == 2700.0
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -461,10 +462,10 @@ class TestPayoutFullFlow:
         assert payout.max_coverage_applied is True
         assert payout.capped_amount == 3000.0
 
-        # Step 2: subtotal = 3000 * 1.081 = 3243.0
-        # Deductible = max(3243.0*10%, 200) = max(324.3, 200) = 324.3
-        assert payout.deductible_amount == 324.3
-        assert payout.after_deductible == 2918.7
+        # Step 2: When capped, cap IS the VAT-inclusive ceiling (no VAT added)
+        # subtotal = 3000, Deductible = max(3000*10%, 200) = max(300, 200) = 300
+        assert payout.deductible_amount == 300.0
+        assert payout.after_deductible == 2700.0
 
         # Step 3: Remove VAT for company
         assert payout.vat_adjusted is True

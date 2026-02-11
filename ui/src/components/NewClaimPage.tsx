@@ -525,6 +525,15 @@ export function NewClaimPage() {
                       View {c.claim_id} Assessment
                     </a>
                   ))}
+                {/* Primary CTA: go to workbench when assessments are done */}
+                {Object.values(assessmentProgress).some((c) => c.phase === 'complete') && (
+                  <a
+                    href="/decision"
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    Open Claims Workbench
+                  </a>
+                )}
               </div>
             )}
           </div>
