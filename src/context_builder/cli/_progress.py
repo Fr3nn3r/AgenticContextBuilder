@@ -232,16 +232,43 @@ class RichClaimProgress:
         "extraction": "extract",
     }
 
-    def __init__(self, claim_id: str, doc_count: int, stages: List[str]):
+    def __init__(self, claim_id: str, doc_count: int, stages: List[str],
+                 quiet: bool = False, verbose: bool = False):
         self.claim_id = claim_id
         self.doc_count = doc_count
         self.stages = set(stages)
         self.stage_count = len(stages)
         self.total_steps = doc_count * self.stage_count
+        self.quiet = quiet
+        self.verbose = verbose
         self._console = Console(stderr=True)
         self._progress: Optional[Progress] = None
         self._task = None
         self.current_filename: Optional[str] = None
+        self._configure_logging()
+
+    def _configure_logging(self) -> None:
+        """Suppress INFO logs during progress display."""
+        if self.verbose:
+            return
+        level = logging.ERROR if self.quiet else logging.WARNING
+        for name in (
+            "context_builder",
+            "workspace_screener",
+            "workspace_decision_engine",
+        ):
+            logging.getLogger(name).setLevel(level)
+
+    def _restore_logging(self) -> None:
+        """Restore logger levels after progress display ends."""
+        if self.verbose:
+            return
+        for name in (
+            "context_builder",
+            "workspace_screener",
+            "workspace_decision_engine",
+        ):
+            logging.getLogger(name).setLevel(logging.INFO)
 
     def start(self) -> None:
         """Print claim header and initialize progress bar."""
@@ -294,6 +321,7 @@ class RichClaimProgress:
         if self._progress:
             self._progress.stop()
             self._progress = None
+        self._restore_logging()
 
 
 def create_progress_reporter(
