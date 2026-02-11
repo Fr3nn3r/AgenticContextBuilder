@@ -281,7 +281,7 @@ class TestMapScreeningPayout:
         result = AssessmentProcessor._map_screening_payout(payout)
         assert result["after_deductible"] == 4050.0
         assert result["policyholder_type"] == "company"
-        assert result["vat_adjusted"] is True
+        assert result["company_vat_deducted"] is True
         assert result["vat_deduction"] == 350.0
         assert result["final_payout"] == 3700.0
         assert result["currency"] == "EUR"
@@ -302,9 +302,11 @@ class TestZeroPayout:
         assert result["after_coverage"] == 0.0
         assert result["max_coverage_applied"] is False
         assert result["capped_amount"] is None
+        assert result["vat_amount"] == 0.0
+        assert result["subtotal_with_vat"] == 0.0
         assert result["deductible"] == 0.0
         assert result["after_deductible"] == 0.0
-        assert result["vat_adjusted"] is False
+        assert result["company_vat_deducted"] is False
         assert result["vat_deduction"] == 0.0
         assert result["policyholder_type"] == "individual"
         assert result["final_payout"] == 0.0

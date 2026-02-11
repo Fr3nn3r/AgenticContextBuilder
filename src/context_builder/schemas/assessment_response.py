@@ -59,13 +59,20 @@ class PayoutCalculation(BaseModel):
     capped_amount: Optional[float] = Field(
         default=None, description="Amount after cap (if max_coverage_applied is true)"
     )
+    vat_amount: float = Field(
+        default=0.0, description="VAT amount added (8.1% Swiss VAT on rate-adjusted amount)"
+    )
+    subtotal_with_vat: float = Field(
+        default=0.0, description="Subtotal including VAT before deductible"
+    )
     deductible: float = Field(description="Deductible amount applied")
     after_deductible: float = Field(description="Amount after deductible")
-    vat_adjusted: bool = Field(
-        description="Whether VAT adjustment was applied (company policyholders)"
+    company_vat_deducted: bool = Field(
+        default=False,
+        description="Whether company VAT deduction was applied (companies can deduct input tax)",
     )
     vat_deduction: float = Field(
-        default=0.0, description="VAT amount deducted (0 for individuals)"
+        default=0.0, description="VAT amount deducted for company policyholders (0 for individuals)"
     )
     policyholder_type: Literal["individual", "company"] = Field(
         description="Type of policyholder"
@@ -203,9 +210,11 @@ class AssessmentResponse(BaseModel):
                     "after_coverage": 3600.0,
                     "max_coverage_applied": False,
                     "capped_amount": None,
+                    "vat_amount": 291.6,
+                    "subtotal_with_vat": 3891.6,
                     "deductible": 360.0,
                     "after_deductible": 3240.0,
-                    "vat_adjusted": False,
+                    "company_vat_deducted": False,
                     "vat_deduction": 0.0,
                     "policyholder_type": "individual",
                     "final_payout": 3240.0,

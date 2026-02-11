@@ -80,6 +80,9 @@ class ClaimContext:
     processing_type: str = "assessment"
     processing_result: Optional[Dict[str, Any]] = None
 
+    # Coverage overrides from adjuster (carried forward across runs)
+    coverage_overrides: Optional[Dict[str, bool]] = None
+
     # Set by decision stage
     decision_result: Optional[Dict[str, Any]] = None
 

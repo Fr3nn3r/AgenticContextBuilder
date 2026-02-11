@@ -112,7 +112,9 @@ class ScreeningPayoutCalculation(BaseModel):
         description="Determines VAT treatment",
     )
     vat_adjusted: bool = Field(
-        default=False, description="True when VAT deduction is applied (companies)"
+        default=False,
+        description="True when company VAT deduction is applied (companies can deduct input tax). "
+        "NOTE: This does NOT indicate whether VAT was added — VAT is always added via vat_amount.",
     )
     vat_deduction: float = Field(
         default=0.0, description="VAT amount deducted"

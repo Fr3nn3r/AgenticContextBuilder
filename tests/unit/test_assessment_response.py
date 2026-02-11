@@ -114,7 +114,7 @@ class TestPayoutCalculation:
             max_coverage_applied=False,
             deductible=360.0,
             after_deductible=3240.0,
-            vat_adjusted=False,
+            company_vat_deducted=False,
             policyholder_type="individual",
             final_payout=3240.0,
         )
@@ -134,7 +134,7 @@ class TestPayoutCalculation:
             max_coverage_applied=False,
             deductible=100.0,
             after_deductible=900.0,
-            vat_adjusted=False,
+            company_vat_deducted=False,
             policyholder_type="individual",
             final_payout=900.0,
         )
@@ -152,7 +152,7 @@ class TestPayoutCalculation:
             max_coverage_applied=False,
             deductible=100.0,
             after_deductible=900.0,
-            vat_adjusted=False,
+            company_vat_deducted=False,
             policyholder_type="individual",
             final_payout=900.0,
         )
@@ -170,13 +170,13 @@ class TestPayoutCalculation:
             max_coverage_applied=False,
             deductible=500.0,
             after_deductible=4500.0,
-            vat_adjusted=True,
+            company_vat_deducted=True,
             vat_deduction=336.73,
             policyholder_type="company",
             final_payout=4163.27,
         )
 
-        assert payout.vat_adjusted is True
+        assert payout.company_vat_deducted is True
         assert payout.policyholder_type == "company"
 
     def test_invalid_policyholder_type_rejected(self):
@@ -191,7 +191,7 @@ class TestPayoutCalculation:
                 max_coverage_applied=False,
                 deductible=100.0,
                 after_deductible=900.0,
-                vat_adjusted=False,
+                company_vat_deducted=False,
                 policyholder_type="organization",  # Invalid
                 final_payout=900.0,
             )
@@ -326,7 +326,7 @@ class TestAssessmentResponse:
                 max_coverage_applied=False,
                 deductible=100.0,
                 after_deductible=900.0,
-                vat_adjusted=False,
+                company_vat_deducted=False,
                 policyholder_type="individual",
                 final_payout=900.0,
             ),
@@ -412,7 +412,7 @@ class TestAssessmentResponse:
                 capped_amount=None,
                 deductible=360.0,
                 after_deductible=3240.0,
-                vat_adjusted=False,
+                company_vat_deducted=False,
                 vat_deduction=0.0,
                 policyholder_type="individual",
                 final_payout=3240.0,
@@ -562,7 +562,7 @@ def _create_minimal_payout() -> PayoutCalculation:
         max_coverage_applied=False,
         deductible=100.0,
         after_deductible=900.0,
-        vat_adjusted=False,
+        company_vat_deducted=False,
         policyholder_type="individual",
         final_payout=900.0,
     )

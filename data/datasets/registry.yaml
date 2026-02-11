@@ -1,0 +1,55 @@
+schema_version: "1.0"
+
+datasets:
+  nsa-motor-seed-v1:
+    name: "NSA Motor Guarantee — Seed Set"
+    purpose: development          # development | evaluation | regression
+    customer: NSA
+    domain: motor_guarantee
+    language: [de, fr]
+    claim_count: 4
+    class_balance: {approved: 2, denied: 2}
+    ground_truth_schema: v2       # v2 = line items + amounts, v1 = decision-only
+    path: nsa-motor-seed-v1/
+    ground_truth: nsa-motor-seed-v1/ground_truth.json
+    created: "2026-01-27"
+    curator: "fbrun"
+    frozen: true
+    notes: "Original 4 dev claims used during initial pipeline development"
+    legacy_path: "../07-Claims-Motor-NSA/"
+
+  nsa-motor-eval-v1:
+    name: "NSA Motor Guarantee — Evaluation Set"
+    purpose: evaluation
+    customer: NSA
+    domain: motor_guarantee
+    language: [de, fr]
+    claim_count: 50
+    class_balance: {approved: 25, denied: 24, refer: 1}
+    ground_truth_schema: v1       # decision-only, no line items
+    path: nsa-motor-eval-v1/
+    ground_truth: nsa-motor-eval-v1/ground_truth.json
+    provenance: nsa-motor-eval-v1/provenance/
+    eval_history: nsa-motor-eval-v1-history/metrics_history.json
+    created: "2026-01-28"
+    curator: "fbrun"
+    frozen: true
+    notes: "Primary 50-claim evaluation set. GT corrections: 64980 policy validity not detectable; 64297 APPROVED->REFER_TO_HUMAN (no odometer reading)."
+    legacy_path: "../09-Claims-Motor-NSA-2/"
+
+  nsa-motor-eval-v2:
+    name: "NSA Motor Guarantee — Blind Test Set"
+    purpose: evaluation
+    customer: NSA
+    domain: motor_guarantee
+    language: [de, fr]
+    claim_count: 30
+    class_balance: {approved: 15, denied: 15}
+    ground_truth_schema: v1
+    path: nsa-motor-eval-v2/
+    ground_truth: nsa-motor-eval-v2/ground_truth.json
+    provenance: nsa-motor-eval-v2/provenance/
+    created: "2026-02-02"
+    curator: "fbrun"
+    frozen: false
+    notes: "Blind test set — 30 fresh claims from Stefano (2026-02-02). Ground truth pending."

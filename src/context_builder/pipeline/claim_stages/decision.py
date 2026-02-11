@@ -382,6 +382,32 @@ class DecisionStage:
                     claim_folder, context.run_id
                 )
 
+            # Apply coverage overrides to coverage data (mirrors
+            # DecisionDossierService.evaluate_with_assumptions logic)
+            coverage_overrides = getattr(context, "coverage_overrides", None) or {}
+            if coverage_overrides and coverage_analysis:
+                import copy
+
+                coverage_analysis = copy.deepcopy(coverage_analysis)
+                line_items = coverage_analysis.get("line_items", [])
+                for key, is_covered in coverage_overrides.items():
+                    if key.startswith("item_"):
+                        try:
+                            idx = int(key[5:])
+                            if 0 <= idx < len(line_items):
+                                item = line_items[idx]
+                                total_price = float(item.get("total_price", 0) or 0)
+                                if is_covered:
+                                    item["coverage_status"] = "covered"
+                                    item["covered_amount"] = total_price
+                                    item["not_covered_amount"] = 0
+                                else:
+                                    item["coverage_status"] = "not_covered"
+                                    item["covered_amount"] = 0
+                                    item["not_covered_amount"] = total_price
+                        except (ValueError, IndexError):
+                            pass
+
             # Determine next version
             next_version = 1
             if claim_folder:
@@ -394,11 +420,13 @@ class DecisionStage:
                 screening_result=screening_result,
                 coverage_analysis=coverage_analysis,
                 processing_result=processing_result,
+                coverage_overrides=coverage_overrides or None,
             )
 
             # Convert Pydantic model to dict if needed
+            # mode="json" ensures enums serialize as strings, not "Enum.VALUE"
             if hasattr(dossier, "model_dump"):
-                dossier = dossier.model_dump()
+                dossier = dossier.model_dump(mode="json")
 
             # Set version
             dossier["version"] = next_version

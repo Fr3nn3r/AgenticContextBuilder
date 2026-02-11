@@ -112,9 +112,11 @@ class AssessmentProcessor:
             "after_coverage": capped,
             "max_coverage_applied": max_cov_applied,
             "capped_amount": capped if max_cov_applied else None,
+            "vat_amount": payout_data.get("vat_amount", 0.0),
+            "subtotal_with_vat": payout_data.get("subtotal_with_vat", 0.0),
             "deductible": payout_data.get("deductible_amount", 0.0),
             "after_deductible": payout_data.get("after_deductible", 0.0),
-            "vat_adjusted": payout_data.get("vat_adjusted", False),
+            "company_vat_deducted": payout_data.get("vat_adjusted", False),
             "vat_deduction": payout_data.get("vat_deduction", 0.0),
             "policyholder_type": payout_data.get("policyholder_type", "individual"),
             "final_payout": payout_data.get("final_payout", 0.0),
@@ -135,9 +137,11 @@ class AssessmentProcessor:
             "after_coverage": 0.0,
             "max_coverage_applied": False,
             "capped_amount": None,
+            "vat_amount": 0.0,
+            "subtotal_with_vat": 0.0,
             "deductible": 0.0,
             "after_deductible": 0.0,
-            "vat_adjusted": False,
+            "company_vat_deducted": False,
             "vat_deduction": 0.0,
             "policyholder_type": "individual",
             "final_payout": 0.0,
@@ -486,7 +490,7 @@ class AssessmentProcessor:
                 f"min {currency} {payout.get('deductible_minimum') or 0:,.2f})"
             )
             lines.append(f"- After deductible: {currency} {payout.get('after_deductible') or 0:,.2f}")
-            if payout.get("vat_adjusted"):
+            if payout.get("company_vat_deducted") or payout.get("vat_adjusted"):
                 lines.append(
                     f"- VAT deduction: {currency} {payout.get('vat_deduction') or 0:,.2f} "
                     f"({payout.get('policyholder_type', 'individual')})"

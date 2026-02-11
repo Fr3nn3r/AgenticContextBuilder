@@ -212,6 +212,7 @@ def assess_cmd(
                     confidence=result.confidence_score,
                     payout=result.final_payout,
                     gate=result.gate_status,
+                    confidence_band=result.confidence_band,
                 )
                 return (cid, True, result.decision)
             else:

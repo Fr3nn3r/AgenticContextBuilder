@@ -113,6 +113,7 @@ Available slash commands for common workflows:
 
 ## Conventions
 - Python: snake_case | TypeScript: camelCase | Classes: PascalCase
+- **Prefer long, descriptive names** that disambiguate meaning over short/ambiguous ones. Example: `company_vat_deducted` over `vat_adjusted`, `subtotal_with_vat` over `subtotal`. A name should make the field's purpose obvious without needing to read the docstring.
 - Test new/changed logic with PyTest or Jest
 - Do not start/stop dev servers automatically - ask user first
 - **Never run assess/pipeline on more than 3 claims at a time without explicit user permission** (LLM calls are expensive and slow)

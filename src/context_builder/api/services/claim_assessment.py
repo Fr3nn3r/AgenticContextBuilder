@@ -2,18 +2,27 @@
 
 This service combines reconciliation and assessment into a single operation,
 producing a claim decision. It is the backend for the `assess` CLI command.
+
+Pipeline stages (all non-fatal except reconciliation and assessment):
+1. Reconciliation - aggregates facts, detects conflicts, quality gate
+2. Screening - deterministic checks (auto-reject, payout calc)
+3. Assessment - LLM-based claim assessment
+4. Decision - decision dossier (denial clause evaluation)
+5. Confidence - Composite Confidence Index (CCI)
 """
 
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from context_builder import get_version
 from context_builder.api.services.aggregation import AggregationService
 from context_builder.api.services.reconciliation import ReconciliationService
 from context_builder.pipeline.claim_stages.context import ClaimContext
 from context_builder.pipeline.claim_stages.screening import ScreeningStage
+from context_builder.pipeline.claim_stages.decision import DecisionStage
+from context_builder.confidence.stage import ConfidenceStage
 from context_builder.pipeline.claim_stages.processing import (
     ProcessingStage,
     ProcessorConfig,
@@ -226,16 +235,81 @@ class ClaimAssessmentService:
                 assessment=assessment_response,
             )
 
+        # Step 5a: Load coverage overrides from previous run's dossier
+        coverage_overrides = self._load_previous_overrides(
+            claim_run_storage, claim_run_id
+        )
+
+        # Step 5b: Run DecisionStage (non-fatal)
+        decision_result = None
+        try:
+            decision_context = ClaimContext(
+                claim_id=claim_id,
+                workspace_path=self.storage.output_root,
+                run_id=claim_run_id,
+                aggregated_facts=claim_facts_data,
+                screening_result=screening_result,
+                processing_result=assessment_response.model_dump(mode="json"),
+                coverage_overrides=coverage_overrides,
+                on_stage_update=on_stage_update,
+            )
+            decision_stage = DecisionStage()
+            decision_context = decision_stage.run(decision_context)
+            decision_result = decision_context.decision_result
+            logger.info(
+                f"Decision complete for {claim_id}"
+                + (f" (verdict={decision_result.get('claim_verdict')})"
+                   if decision_result else " (no result)")
+            )
+        except Exception as e:
+            logger.warning(
+                f"Decision stage failed for {claim_id}: {e}, continuing"
+            )
+
+        # Step 5c: Run ConfidenceStage (non-fatal)
+        confidence_summary_data = None
+        try:
+            confidence_context = ClaimContext(
+                claim_id=claim_id,
+                workspace_path=self.storage.output_root,
+                run_id=claim_run_id,
+                aggregated_facts=claim_facts_data,
+                reconciliation_report=(
+                    reconcile_result.report.model_dump(mode="json")
+                    if reconcile_result.report else None
+                ),
+                screening_result=screening_result,
+                processing_result=assessment_response.model_dump(mode="json"),
+                decision_result=decision_result,
+                on_stage_update=on_stage_update,
+            )
+            confidence_stage = ConfidenceStage()
+            confidence_context = confidence_stage.run(confidence_context)
+            # Read back the persisted summary (stage writes it to disk)
+            cs_data = claim_run_storage.read_from_claim_run(
+                claim_run_id, "confidence_summary.json"
+            )
+            if cs_data:
+                confidence_summary_data = cs_data
+                logger.info(
+                    f"Confidence complete for {claim_id}: "
+                    f"CCI={cs_data.get('composite_score')}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Confidence stage failed for {claim_id}: {e}, continuing"
+            )
+
         # Step 6: Update manifest with stages_completed
         try:
             manifest = claim_run_storage.read_manifest(claim_run_id)
             if manifest:
-                if "reconciliation" not in manifest.stages_completed:
-                    manifest.stages_completed.append("reconciliation")
-                if "screening" not in manifest.stages_completed:
-                    manifest.stages_completed.append("screening")
-                if "assessment" not in manifest.stages_completed:
-                    manifest.stages_completed.append("assessment")
+                for stage_name in [
+                    "reconciliation", "screening", "assessment",
+                    "decision", "confidence",
+                ]:
+                    if stage_name not in manifest.stages_completed:
+                        manifest.stages_completed.append(stage_name)
                 claim_run_storage.write_manifest(manifest)
                 logger.info(
                     f"Updated manifest stages_completed: {manifest.stages_completed}"
@@ -263,6 +337,9 @@ class ClaimAssessmentService:
             success=True,
             reconciliation=reconcile_result.report,
             assessment=assessment_response,
+            decision_dossier=decision_result,
+            confidence_summary=confidence_summary_data,
+            screening_payout=_extract_screening_payout(screening_result),
         )
 
     def _load_assessment_config(self) -> ProcessorConfig:
@@ -290,3 +367,54 @@ class ClaimAssessmentService:
             )
 
         return config
+
+    def _load_previous_overrides(
+        self,
+        claim_run_storage: ClaimRunStorage,
+        current_run_id: str,
+    ) -> Optional[Dict[str, bool]]:
+        """Load coverage overrides from the previous run's decision dossier.
+
+        Scans claim runs (newest first) for a run that isn't the current one,
+        then reads its latest decision_dossier_v*.json and extracts
+        ``coverage_overrides``.
+
+        Returns:
+            Dict of overrides, or None if none found.
+        """
+        try:
+            all_runs = claim_run_storage.list_claim_runs()
+            for run_id in all_runs:
+                if run_id == current_run_id:
+                    continue
+                # Find latest dossier in this run
+                run_dir = claim_run_storage.get_claim_run_path(run_id)
+                dossier_files = sorted(run_dir.glob("decision_dossier_v*.json"))
+                if not dossier_files:
+                    continue
+                data = claim_run_storage.read_from_claim_run(
+                    run_id, dossier_files[-1].name
+                )
+                if data and data.get("coverage_overrides"):
+                    overrides = data["coverage_overrides"]
+                    logger.info(
+                        f"Loaded {len(overrides)} coverage override(s) "
+                        f"from previous run {run_id}"
+                    )
+                    return overrides
+        except Exception as e:
+            logger.debug(f"Could not load previous overrides: {e}")
+        return None
+
+
+def _extract_screening_payout(
+    screening_result: Optional[Dict[str, Any]],
+) -> Optional[float]:
+    """Extract final_payout from screening result."""
+    if not screening_result:
+        return None
+    payout = screening_result.get("payout")
+    if isinstance(payout, dict):
+        val = payout.get("final_payout")
+        return float(val) if val is not None else None
+    return None

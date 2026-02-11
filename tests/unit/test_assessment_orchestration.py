@@ -101,7 +101,7 @@ def _make_assessment_response() -> AssessmentResponse:
             max_coverage_applied=False,
             deductible=100.0,
             after_deductible=700.0,
-            vat_adjusted=False,
+            company_vat_deducted=False,
             policyholder_type="individual",
             final_payout=700.0,
             currency="CHF",
@@ -195,6 +195,12 @@ class TestServicePathScreening:
                 "context_builder.api.services.claim_assessment.ScreeningStage"
             ) as MockScreeningStage,
             patch(
+                "context_builder.api.services.claim_assessment.DecisionStage"
+            ) as MockDecisionStage,
+            patch(
+                "context_builder.api.services.claim_assessment.ConfidenceStage"
+            ) as MockConfidenceStage,
+            patch(
                 "context_builder.api.services.claim_assessment.get_processor"
             ) as mock_get_processor,
             patch(
@@ -202,6 +208,30 @@ class TestServicePathScreening:
             ) as MockAssessmentResponse,
             patch.object(service, "_load_assessment_config") as mock_config,
         ):
+            # Mock decision stage (returns context with decision_result)
+            mock_decision = MagicMock()
+            mock_decision_ctx = ClaimContext(
+                claim_id="CLM-001",
+                workspace_path=mock_storage.output_root,
+                run_id="test-run-001",
+                aggregated_facts=sample_facts,
+                decision_result={"claim_verdict": "APPROVE"},
+            )
+            mock_decision.run.return_value = mock_decision_ctx
+            MockDecisionStage.return_value = mock_decision
+
+            # Mock confidence stage (returns context unchanged)
+            mock_confidence = MagicMock()
+            mock_confidence.run.return_value = mock_decision_ctx
+            MockConfidenceStage.return_value = mock_confidence
+
+            # Ensure read_from_claim_run returns None for confidence_summary.json
+            orig_read = mock_claim_run_storage.read_from_claim_run
+            def _read_side_effect(run_id, filename):
+                if filename == "confidence_summary.json":
+                    return None
+                return orig_read(run_id, filename)
+            mock_claim_run_storage.read_from_claim_run.side_effect = _read_side_effect
             # Mock screening
             mock_screening = MagicMock()
             if screening_raises:
@@ -369,4 +399,6 @@ class TestServicePathScreening:
             "reconciliation",
             "screening",
             "assessment",
+            "decision",
+            "confidence",
         ]

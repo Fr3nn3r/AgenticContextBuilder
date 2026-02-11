@@ -59,6 +59,8 @@ class RichProgressReporter:
         loggers = [
             logging.getLogger("context_builder"),
             logging.getLogger("workspace_screener"),
+            # Dynamically-loaded workspace engines use this module name
+            logging.getLogger("workspace_decision_engine"),
         ]
 
         level_map = {
@@ -159,6 +161,7 @@ class RichProgressReporter:
         payout: Optional[float] = None,
         gate: Optional[str] = None,
         error: Optional[str] = None,
+        confidence_band: Optional[str] = None,
     ) -> None:
         """Mark a claim as complete and show summary. Thread-safe."""
         if self.parallel <= 1:
@@ -169,7 +172,10 @@ class RichProgressReporter:
         else:
             parts = [f"[green]✓[/green] {claim_id}: {decision}"]
             if confidence is not None:
-                parts.append(f"{int(confidence * 100)}%")
+                pct = f"{int(confidence * 100)}%"
+                if confidence_band:
+                    pct += f" ({confidence_band})"
+                parts.append(pct)
             if payout is not None:
                 parts.append(f"CHF {payout:,.2f}")
             if gate:
