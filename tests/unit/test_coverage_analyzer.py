@@ -2013,105 +2013,222 @@ class TestExcludedPartGuard:
         )
         assert "repair context" in labor.match_reasoning.lower() or keyword in labor.match_reasoning.lower()
 
-    # -- Mode 2 (primary_repair_boost) guards --
+    # -- Mode 2 (LLM labor relevance) tests --
 
-    def test_primary_repair_boost_blocked_when_labor_code_matches_excluded(self, analyzer):
-        """Mode 2: labor with same item_code as excluded part is NOT promoted."""
+    def test_mode2_promotes_only_llm_approved_labor(self, analyzer):
+        """Mode 2: only labor items the LLM says are relevant get promoted."""
+        from unittest.mock import MagicMock
+
         primary_repair = PrimaryRepairResult(
             component="timing_chain", category="engine",
             is_covered=True, confidence=0.9,
             determination_method="deterministic",
         )
         items = [
-            # Covered part (so Mode 2 activates, not Mode 1)
+            # Covered part (triggers Mode 2)
             self._make_item(
                 item_code="CCCC01", description="Covered engine part",
                 item_type="parts", coverage_status=CoverageStatus.COVERED,
                 coverage_category="engine", total_price=500.0,
                 covered_amount=500.0,
             ),
-            # Excluded part with code 213040
+            # Labor A — LLM will approve
             self._make_item(
-                item_code="213040", description="Timing belt part",
-                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
-                coverage_category="engine", matched_component="timing_belt",
-                covered_amount=0.0, not_covered_amount=200.0,
+                item_code=None, description="Aus-/Einbau Steuerkette",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Not covered",
+                covered_amount=0.0, not_covered_amount=300.0,
             ),
-            # Labor with SAME item_code as excluded part
+            # Labor B — LLM will deny
             self._make_item(
-                item_code="213040", description="Timing belt labor",
+                item_code=None, description="Diagnose Fahrzeug",
                 item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
                 match_method=MatchMethod.LLM, match_reasoning="Not covered",
                 covered_amount=0.0, not_covered_amount=150.0,
             ),
         ]
-        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
-        labor = result[2]
-        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
-            "Mode 2 should NOT promote labor when its code matches an excluded part"
-        )
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_for_primary_repair.return_value = [
+            {"index": 1, "is_relevant": True, "confidence": 0.9,
+             "reasoning": "R&I for timing chain"},
+            {"index": 2, "is_relevant": False, "confidence": 0.85,
+             "reasoning": "Diagnostic not part of repair"},
+        ]
+        analyzer.llm_matcher = mock_matcher
 
-    def test_primary_repair_boost_blocked_when_description_references_excluded(self, analyzer):
-        """Mode 2: labor whose description contains an excluded part code is NOT promoted."""
+        result = analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-001",
+        )
+        assert result[1].coverage_status == CoverageStatus.COVERED
+        assert result[2].coverage_status == CoverageStatus.NOT_COVERED
+        mock_matcher.classify_labor_for_primary_repair.assert_called_once()
+
+    def test_mode2_skips_non_llm_classified_labor(self, analyzer):
+        """Mode 2: KEYWORD/RULE items are not sent to the batch LLM."""
+        from unittest.mock import MagicMock
+
         primary_repair = PrimaryRepairResult(
             component="timing_chain", category="engine",
             is_covered=True, confidence=0.9,
             determination_method="deterministic",
         )
         items = [
-            # Covered part
             self._make_item(
                 item_code="CCCC01", description="Covered engine part",
                 item_type="parts", coverage_status=CoverageStatus.COVERED,
                 coverage_category="engine", total_price=500.0,
                 covered_amount=500.0,
             ),
-            # Excluded part with code 213040
+            # Labor matched by KEYWORD — should NOT be sent to LLM
             self._make_item(
-                item_code="213040", description="Timing belt part",
-                item_type="parts", coverage_status=CoverageStatus.NOT_COVERED,
-                coverage_category="engine", matched_component="timing_belt",
-                covered_amount=0.0, not_covered_amount=200.0,
+                item_code=None, description="Reinigung",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.KEYWORD, match_reasoning="Cleaning",
+                covered_amount=0.0, not_covered_amount=50.0,
             ),
-            # Labor WITHOUT matching item_code but description mentions 213040
+        ]
+        mock_matcher = MagicMock()
+        analyzer.llm_matcher = mock_matcher
+
+        analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-002",
+        )
+        # No LLM-classified candidates → no LLM call
+        mock_matcher.classify_labor_for_primary_repair.assert_not_called()
+
+    def test_mode2_skips_labor_with_exclusion_reason(self, analyzer):
+        """Mode 2: items with exclusion_reason are not sent to the LLM."""
+        from unittest.mock import MagicMock
+
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
             self._make_item(
-                item_code=None, description="GFS/GEFUEHRTE FUNKTION 213040",
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Entsorgung",
                 item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
                 match_method=MatchMethod.LLM, match_reasoning="Not covered",
-                covered_amount=0.0, not_covered_amount=150.0,
+                covered_amount=0.0, not_covered_amount=30.0,
             ),
         ]
-        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
-        labor = result[2]
-        assert labor.coverage_status == CoverageStatus.NOT_COVERED, (
-            "Mode 2 should NOT promote labor when description references excluded part code"
-        )
+        # Set exclusion_reason on the labor item
+        items[1].exclusion_reason = "disposal_fee"
 
-    def test_primary_repair_boost_still_promotes_generic_labor(self, analyzer):
-        """Mode 2: generic labor without excluded match is still promoted (regression guard)."""
+        mock_matcher = MagicMock()
+        analyzer.llm_matcher = mock_matcher
+
+        analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-003",
+        )
+        mock_matcher.classify_labor_for_primary_repair.assert_not_called()
+
+    def test_mode2_conservative_on_llm_failure(self, analyzer):
+        """Mode 2: LLM exception leaves all candidates as NOT_COVERED."""
+        from unittest.mock import MagicMock
+
         primary_repair = PrimaryRepairResult(
             component="timing_chain", category="engine",
             is_covered=True, confidence=0.9,
             determination_method="deterministic",
         )
         items = [
-            # Covered part
             self._make_item(
                 item_code="CCCC01", description="Covered engine part",
                 item_type="parts", coverage_status=CoverageStatus.COVERED,
                 coverage_category="engine", total_price=500.0,
                 covered_amount=500.0,
             ),
-            # Generic labor with no code, no reference to excluded parts
             self._make_item(
-                item_code=None, description="Arbeit allgemein",
+                item_code=None, description="Aus-/Einbau Motor",
                 item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
-                match_method=MatchMethod.LLM, match_reasoning="Generic labor",
-                covered_amount=0.0, not_covered_amount=150.0,
+                match_method=MatchMethod.LLM, match_reasoning="Not covered",
+                covered_amount=0.0, not_covered_amount=400.0,
             ),
         ]
-        result = analyzer._promote_items_for_covered_primary_repair(items, primary_repair)
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_for_primary_repair.side_effect = RuntimeError("API down")
+        analyzer.llm_matcher = mock_matcher
+
+        result = analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-004",
+        )
+        assert result[1].coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_mode2_no_llm_call_when_no_candidates(self, analyzer):
+        """Mode 2: no LLM call when all labor is already covered or excluded."""
+        from unittest.mock import MagicMock
+
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
+            self._make_item(
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            # Already covered labor
+            self._make_item(
+                item_code=None, description="Motor R&I",
+                item_type="labor", coverage_status=CoverageStatus.COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Covered",
+                covered_amount=300.0, not_covered_amount=0.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        analyzer.llm_matcher = mock_matcher
+
+        analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-005",
+        )
+        mock_matcher.classify_labor_for_primary_repair.assert_not_called()
+
+    def test_mode2_trace_records_llm_verdict(self, analyzer):
+        """Mode 2: promoted items have primary_repair_boost_llm trace."""
+        from unittest.mock import MagicMock
+
+        primary_repair = PrimaryRepairResult(
+            component="oil_separator", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        items = [
+            self._make_item(
+                item_code="CCCC01", description="Covered engine part",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0,
+                covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Aus-/Einbau Oelabscheider",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM, match_reasoning="Not covered",
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_for_primary_repair.return_value = [
+            {"index": 1, "is_relevant": True, "confidence": 0.9,
+             "reasoning": "R&I for oil separator"},
+        ]
+        analyzer.llm_matcher = mock_matcher
+
+        result = analyzer._promote_items_for_covered_primary_repair(
+            items, primary_repair, claim_id="TEST-006",
+        )
         labor = result[1]
-        assert labor.coverage_status == CoverageStatus.COVERED, (
-            "Generic labor should still be promoted when no excluded parts match"
-        )
+        assert labor.coverage_status == CoverageStatus.COVERED
+        # Check trace contains the new stage name
+        trace_stages = [step.stage for step in labor.decision_trace]
+        assert "primary_repair_boost_llm" in trace_stages

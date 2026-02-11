@@ -12,6 +12,37 @@ import type {
 } from "../../types";
 
 // =============================================================================
+// HUMAN-READABLE HELPERS
+// =============================================================================
+
+const COMPONENT_DESCRIPTIONS: Record<string, string> = {
+  document_quality: "How reliably documents were read and classified",
+  data_completeness: "Whether all critical claim information was found",
+  consistency: "How well facts from different sources agree",
+  coverage_reliability: "How confidently coverage was matched to the policy",
+  decision_clarity: "How clear-cut the approval or denial decision was",
+};
+
+const BAND_EXPLANATIONS: Record<ConfidenceBand, string> = {
+  high: "Strong supporting evidence across all dimensions",
+  moderate: "Adequate evidence with some gaps or uncertainties",
+  low: "Significant gaps or inconsistencies requiring manual review",
+};
+
+function qualitativeLabel(value: number): { text: string; className: string } {
+  if (value >= 0.9) return { text: "Strong", className: "text-emerald-600 dark:text-emerald-400" };
+  if (value >= 0.7) return { text: "Good", className: "text-emerald-500 dark:text-emerald-400" };
+  if (value >= 0.5) return { text: "Fair", className: "text-amber-500 dark:text-amber-400" };
+  return { text: "Weak", className: "text-rose-500 dark:text-rose-400" };
+}
+
+function scoreLabel(score: number): { text: string; className: string } {
+  if (score >= 0.8) return { text: "Strong", className: "text-emerald-600 dark:text-emerald-400" };
+  if (score >= 0.55) return { text: "Adequate", className: "text-amber-600 dark:text-amber-400" };
+  return { text: "Needs review", className: "text-rose-500 dark:text-rose-400" };
+}
+
+// =============================================================================
 // CCI COMPONENT BAR
 // =============================================================================
 
@@ -32,6 +63,9 @@ function ComponentBar({
 }) {
   const pct = Math.round(comp.score * 100);
   const label = comp.component.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const description = COMPONENT_DESCRIPTIONS[comp.component];
+  const sl = scoreLabel(comp.score);
+  const hasDetail = comp.signals_used.length > 0 || comp.detail;
 
   return (
     <div>
@@ -48,13 +82,13 @@ function ComponentBar({
             style={{ width: `${pct}%` }}
           />
         </div>
+        <span className={cn("text-xs font-medium w-16 text-right flex-shrink-0", sl.className)}>
+          {sl.text}
+        </span>
         <span className="text-xs tabular-nums font-medium w-10 text-right flex-shrink-0">
           {pct}%
         </span>
-        <span className="text-[10px] text-muted-foreground w-8 text-right flex-shrink-0">
-          w:{comp.weight.toFixed(1)}
-        </span>
-        {(comp.signals_used.length > 0 || comp.detail) && (
+        {hasDetail && (
           <ChevronRight
             className={cn(
               "h-3 w-3 text-muted-foreground transition-transform flex-shrink-0",
@@ -63,20 +97,30 @@ function ComponentBar({
           />
         )}
       </button>
-      {isOpen && (comp.signals_used.length > 0 || comp.detail) && (
-        <div className="ml-44 pl-3 border-l border-border mb-1 space-y-0.5">
-          {comp.signals_used.map((sig, idx) => (
-            <div key={idx} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="truncate flex-1">{sig.description || sig.signal_name}</span>
-              <span className="tabular-nums flex-shrink-0">
-                {sig.raw_value != null ? sig.raw_value.toFixed(2) : "-"}
-              </span>
-              <span className="text-muted-foreground/50 flex-shrink-0">-&gt;</span>
-              <span className="tabular-nums font-medium flex-shrink-0">
-                {sig.normalized_value.toFixed(2)}
-              </span>
-            </div>
-          ))}
+      {isOpen && hasDetail && (
+        <div className="ml-44 pl-3 border-l border-border mb-1 space-y-1">
+          {/* Component description */}
+          {description && (
+            <p className="text-[11px] text-muted-foreground/70 italic">
+              {description}
+            </p>
+          )}
+          {/* Signals as qualitative rows */}
+          {comp.signals_used.map((sig, idx) => {
+            const q = qualitativeLabel(sig.normalized_value);
+            const sigPct = Math.round(sig.normalized_value * 100);
+            return (
+              <div key={idx} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="truncate flex-1">{sig.description || sig.signal_name}</span>
+                <span className={cn("font-medium flex-shrink-0", q.className)}>
+                  {q.text}
+                </span>
+                <span className="tabular-nums flex-shrink-0 w-8 text-right">
+                  {sigPct}%
+                </span>
+              </div>
+            );
+          })}
           {comp.detail && <DataCompletenessDetail detail={comp.detail} />}
         </div>
       )}
@@ -182,6 +226,13 @@ export function CCISummaryCard({ summary }: { summary: ConfidenceSummary }) {
         </div>
         <span className="text-lg font-bold tabular-nums text-foreground">{pct}%</span>
       </div>
+
+      {/* Human-readable explanation */}
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        {BAND_EXPLANATIONS[summary.band]}. This score reflects how much evidence
+        supports the claim decision across document quality, data completeness,
+        source consistency, coverage matching, and decision clarity.
+      </p>
 
       {/* Component bars */}
       <div className="space-y-0.5">

@@ -45,7 +45,16 @@ def setup_logging(*, verbose: bool = False, quiet: bool = False) -> None:
     root.setLevel(level)
 
     # Suppress noisy third-party loggers
-    for name in ("openai._base_client", "httpx", "httpcore"):
+    for name in (
+        "openai._base_client",
+        "httpx",
+        "httpcore",
+        "azure",
+        "azure.core",
+        "azure.core.http",
+        "azure.identity",
+        "azure.ai.documentintelligence",
+    ):
         logging.getLogger(name).setLevel(logging.WARNING)
 
 

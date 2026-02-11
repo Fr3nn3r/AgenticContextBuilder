@@ -758,3 +758,114 @@ class TestAnalyzerConfigConcurrency:
         from context_builder.coverage.analyzer import AnalyzerConfig
         config = AnalyzerConfig.from_dict({})
         assert config.llm_max_concurrent == 3
+
+
+class TestLaborRelevanceClassification:
+    """Tests for classify_labor_for_primary_repair and response parsing."""
+
+    def _make_labor_response(self, items):
+        """Build a mock LLM response for labor relevance."""
+        content = json.dumps({"labor_items": items})
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = content
+        return response
+
+    def test_classify_labor_happy_path(self):
+        """Mock OpenAI, verify prompt construction + response parsing."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            labor_relevance_prompt_name="nonexistent_labor_prompt",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_labor_response([
+                {"index": 0, "is_relevant": True, "confidence": 0.9,
+                 "reasoning": "R&I for valve"},
+                {"index": 1, "is_relevant": False, "confidence": 0.85,
+                 "reasoning": "Diagnostic not needed"},
+            ]),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_for_primary_repair(
+            labor_items=[
+                {"index": 0, "description": "Aus-/Einbau Ventil", "item_code": None, "total_price": 200},
+                {"index": 1, "description": "Diagnose", "item_code": None, "total_price": 100},
+            ],
+            primary_component="valve",
+            primary_category="engine",
+            covered_parts_in_claim=[{"item_code": "V001", "description": "Valve"}],
+            claim_id="TEST-LR-001",
+        )
+
+        assert len(results) == 2
+        assert results[0]["is_relevant"] is True
+        assert results[0]["confidence"] == 0.9
+        assert results[1]["is_relevant"] is False
+        client.chat_completions_create.assert_called_once()
+        # Verify model and response_format were passed
+        call_kwargs = client.chat_completions_create.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_classify_labor_missing_indices(self):
+        """Missing indices from LLM response default to not relevant."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        # LLM only returns verdict for index 0, not index 1
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_labor_response([
+                {"index": 0, "is_relevant": True, "confidence": 0.9, "reasoning": "Needed"},
+            ]),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_for_primary_repair(
+            labor_items=[
+                {"index": 0, "description": "R&I", "item_code": None, "total_price": 200},
+                {"index": 1, "description": "Battery charging", "item_code": None, "total_price": 50},
+            ],
+            primary_component="valve",
+            primary_category="engine",
+            covered_parts_in_claim=[],
+        )
+
+        assert len(results) == 2
+        assert results[0]["is_relevant"] is True
+        assert results[1]["is_relevant"] is False
+        assert "Missing from LLM response" in results[1]["reasoning"]
+
+    def test_classify_labor_invalid_json(self):
+        """Invalid JSON response results in all items marked as not relevant."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        bad_response = MagicMock()
+        bad_response.choices = [MagicMock()]
+        bad_response.choices[0].message.content = "NOT VALID JSON {{{}"
+        client.chat_completions_create = MagicMock(return_value=bad_response)
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_for_primary_repair(
+            labor_items=[
+                {"index": 0, "description": "R&I", "item_code": None, "total_price": 200},
+                {"index": 1, "description": "Diagnose", "item_code": None, "total_price": 100},
+            ],
+            primary_component="valve",
+            primary_category="engine",
+            covered_parts_in_claim=[],
+        )
+
+        assert len(results) == 2
+        assert results[0]["is_relevant"] is False
+        assert results[1]["is_relevant"] is False
+        assert "Failed to parse" in results[0]["reasoning"]

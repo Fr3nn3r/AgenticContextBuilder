@@ -300,12 +300,6 @@ def pipeline_cmd(
     from context_builder.classification import ClassifierFactory
     classifier = ClassifierFactory.create("openai")
 
-    # Suppress INFO during pipeline when showing progress
-    if show_progress:
-        for handler in logging.getLogger().handlers:
-            if isinstance(handler, logging.StreamHandler):
-                handler.setLevel(logging.WARNING)
-
     # Process each claim
     from context_builder.cli._progress import RichClaimProgress
     from context_builder.pipeline.paths import create_workspace_run_structure, get_claim_paths
@@ -326,6 +320,8 @@ def pipeline_cmd(
                 claim_id=claim.claim_id,
                 doc_count=len(claim.documents),
                 stages=stage_names,
+                quiet=ctx.obj["quiet"],
+                verbose=ctx.obj["verbose"],
             )
             display.start()
 

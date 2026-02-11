@@ -49,6 +49,8 @@ class LLMMatcherConfig:
     max_retries: int = 3
     retry_base_delay: float = 1.0  # seconds, doubles each attempt
     retry_max_delay: float = 15.0  # cap on backoff delay
+    # Prompt file for labor relevance classification (without .md)
+    labor_relevance_prompt_name: str = "labor_relevance"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
@@ -65,6 +67,7 @@ class LLMMatcherConfig:
             max_retries=config.get("max_retries", 3),
             retry_base_delay=config.get("retry_base_delay", 1.0),
             retry_max_delay=config.get("retry_max_delay", 15.0),
+            labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
         )
 
 
@@ -688,6 +691,246 @@ Determine if this item is covered under the policy."""
 
         logger.info(f"LLM matcher processed {len(items)} items in parallel with {self._llm_calls} LLM calls")
         return results
+
+    # ------------------------------------------------------------------
+    # Labor relevance classification (batch LLM call for Mode 2)
+    # ------------------------------------------------------------------
+
+    def classify_labor_for_primary_repair(
+        self,
+        labor_items: List[Dict[str, Any]],
+        primary_component: str,
+        primary_category: str,
+        covered_parts_in_claim: List[Dict[str, str]],
+        claim_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Classify which labor items are mechanically necessary for the primary repair.
+
+        Makes ONE batch LLM call asking the model to evaluate all candidate
+        labor items against the identified primary repair.
+
+        Args:
+            labor_items: List of dicts with keys: index, description, item_code, total_price
+            primary_component: The primary repair component (e.g. "timing_chain")
+            primary_category: The coverage category (e.g. "engine")
+            covered_parts_in_claim: Covered parts for context
+            claim_id: Claim ID for audit trail
+
+        Returns:
+            List of dicts with keys: index, is_relevant, confidence, reasoning.
+            On failure, all items are returned with is_relevant=False.
+        """
+        if not labor_items:
+            return []
+
+        messages = self._build_labor_relevance_prompt(
+            labor_items, primary_component, primary_category,
+            covered_parts_in_claim,
+        )
+
+        client = self._get_client()
+        client.set_context(
+            claim_id=claim_id,
+            call_purpose="labor_relevance_classification",
+        )
+
+        last_error = None
+        max_attempts = max(1, self.config.max_retries)
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    last_call_id = getattr(client, "get_last_call_id", lambda: None)()
+                    if last_call_id and hasattr(client, "mark_retry"):
+                        client.mark_retry(last_call_id)
+
+                response = client.chat_completions_create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=1024,  # larger limit for batch response
+                    response_format={"type": "json_object"},
+                )
+                self._llm_calls += 1
+
+                content = response.choices[0].message.content
+                return self._parse_labor_relevance_response(
+                    content, labor_items,
+                )
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts - 1:
+                    base_delay = min(
+                        self.config.retry_base_delay * (2 ** attempt),
+                        self.config.retry_max_delay,
+                    )
+                    delay = random.uniform(0, base_delay)
+                    logger.warning(
+                        "Labor relevance LLM call failed (attempt %d/%d): %s. "
+                        "Retrying in %.1fs...",
+                        attempt + 1, max_attempts, e, delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        "Labor relevance classification failed after %d attempts: %s",
+                        max_attempts, e,
+                    )
+
+        self._llm_calls += 1
+        # Conservative fallback: mark all as not relevant
+        return [
+            {
+                "index": item["index"],
+                "is_relevant": False,
+                "confidence": 0.0,
+                "reasoning": f"LLM call failed after {max_attempts} attempts: {last_error}",
+            }
+            for item in labor_items
+        ]
+
+    def _build_labor_relevance_prompt(
+        self,
+        labor_items: List[Dict[str, Any]],
+        primary_component: str,
+        primary_category: str,
+        covered_parts_in_claim: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        """Build prompt messages for labor relevance classification.
+
+        Tries workspace prompt file first, then core fallback, then inline.
+        """
+        # Format labor items and covered parts for the template
+        labor_lines = []
+        for item in labor_items:
+            code_str = item.get("item_code") or "N/A"
+            labor_lines.append(
+                f"  {item['index']}: [{code_str}] {item['description']} "
+                f"({item.get('total_price', 0):.2f} CHF)"
+            )
+        labor_text = "\n".join(labor_lines)
+
+        parts_lines = []
+        for part in covered_parts_in_claim:
+            code_str = part.get("item_code") or "N/A"
+            comp_str = f" ({part['matched_component']})" if part.get("matched_component") else ""
+            parts_lines.append(f"  - [{code_str}] {part.get('description', '')}{comp_str}")
+        parts_text = "\n".join(parts_lines) if parts_lines else "  (none)"
+
+        try:
+            from context_builder.utils.prompt_loader import load_prompt
+
+            prompt_data = load_prompt(
+                self.config.labor_relevance_prompt_name,
+                primary_component=primary_component,
+                primary_category=primary_category,
+                covered_parts_text=parts_text,
+                labor_items_text=labor_text,
+            )
+            return prompt_data["messages"]
+        except FileNotFoundError:
+            logger.debug(
+                "Prompt file '%s' not found, using inline labor relevance prompt",
+                self.config.labor_relevance_prompt_name,
+            )
+
+        # Inline fallback
+        system_prompt = (
+            "You are an automotive repair labor analyst.\n"
+            "Given the primary repair being performed, determine which labor "
+            "items are mechanically necessary to complete that specific repair.\n\n"
+            "NECESSARY labor (is_relevant = true):\n"
+            "- Removing/reinstalling components to access the repair area\n"
+            "- Draining/refilling fluids required by the disassembly\n"
+            "- The repair labor itself (removal/installation of the covered part)\n\n"
+            "NOT NECESSARY labor (is_relevant = false):\n"
+            "- Diagnostic/investigative labor\n"
+            "- Battery charging\n"
+            "- Calibration/programming of unrelated systems\n"
+            "- Cleaning or conservation\n"
+            "- Environmental/disposal fees\n\n"
+            "Respond ONLY with valid JSON:\n"
+            '{"labor_items": [{"index": <int>, "is_relevant": <bool>, '
+            '"confidence": <float 0-1>, "reasoning": "<brief>"}]}'
+        )
+        user_prompt = (
+            f"Primary repair: {primary_component} ({primary_category})\n\n"
+            f"Covered parts in this claim:\n{parts_text}\n\n"
+            f"Uncovered labor items to evaluate:\n{labor_text}\n\n"
+            "For each labor item, determine if it is mechanically necessary "
+            "for the primary repair. Return JSON."
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_labor_relevance_response(
+        self,
+        content: str,
+        labor_items: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Parse the LLM response for labor relevance classification.
+
+        Args:
+            content: Raw JSON response from LLM
+            labor_items: Original labor items (for index reference)
+
+        Returns:
+            List of dicts with index, is_relevant, confidence, reasoning.
+            Missing indices default to is_relevant=False (conservative).
+        """
+        try:
+            # Handle markdown code blocks
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            data = json.loads(content.strip())
+            llm_results = data.get("labor_items", [])
+
+            # Index the LLM results by index
+            by_index = {}
+            for r in llm_results:
+                idx = r.get("index")
+                if idx is not None:
+                    by_index[idx] = r
+
+            # Build output, defaulting missing indices to not relevant
+            results = []
+            for item in labor_items:
+                idx = item["index"]
+                if idx in by_index:
+                    r = by_index[idx]
+                    results.append({
+                        "index": idx,
+                        "is_relevant": bool(r.get("is_relevant", False)),
+                        "confidence": float(r.get("confidence", 0.5)),
+                        "reasoning": r.get("reasoning", "No reasoning provided"),
+                    })
+                else:
+                    results.append({
+                        "index": idx,
+                        "is_relevant": False,
+                        "confidence": 0.0,
+                        "reasoning": "Missing from LLM response (conservative default)",
+                    })
+
+            return results
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Failed to parse labor relevance response: %s", e)
+            return [
+                {
+                    "index": item["index"],
+                    "is_relevant": False,
+                    "confidence": 0.0,
+                    "reasoning": f"Failed to parse LLM response: {str(e)[:200]}",
+                }
+                for item in labor_items
+            ]
 
     def get_llm_call_count(self) -> int:
         """Get the number of LLM calls made."""
