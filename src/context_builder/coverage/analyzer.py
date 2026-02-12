@@ -2782,134 +2782,46 @@ class CoverageAnalyzer:
         )
         logger.debug(f"Rules matched: {len(rule_matched)}/{len(line_items)}")
 
-        # Stage 1.5: Part number lookup (if workspace configured)
-        part_matched = []
-        if self.part_lookup and remaining:
-            part_matched, remaining = self._match_by_part_number(
-                remaining, covered_categories, covered_components,
-                excluded_components,
-            )
-            logger.debug(f"Part numbers matched: {len(part_matched)}/{len(line_items)}")
-
-        # Stage 2: Keyword matcher
-        keyword_matched, remaining = self.keyword_matcher.batch_match(
-            remaining,
-            covered_categories=covered_categories,
-            min_confidence=self.config.keyword_min_confidence,
+        # Stage 2: Generate advisory hints (no coverage decisions)
+        # Part-number and keyword hints are passed to the LLM as context.
+        keyword_hints = self.keyword_matcher.generate_hints(remaining)
+        keyword_hints_count = sum(1 for h in keyword_hints if h is not None)
+        logger.debug(
+            f"Keyword hints generated: {keyword_hints_count}/{len(remaining)}"
         )
-        logger.debug(f"Keywords matched: {len(keyword_matched)}/{len(line_items)}")
 
-        # Stage 2+ : Labor component extraction
-        # Extract component nouns from unmatched labor descriptions and match
-        # deterministically (e.g., "AUS-/EINBAUEN OELKUEHLER" -> OELKUEHLER).
-        if remaining and self.component_config.repair_context_keywords:
-            keyword_matched, remaining = self._match_labor_by_component_extraction(
-                remaining, keyword_matched, covered_categories, covered_components,
-            )
-
-        # Stage 2.5: Policy list verification for keyword matches
-        # The keyword matcher only checks category-level coverage (e.g., "engine"
-        # is covered). But some guarantees cover only specific parts within a
-        # category. Verify keyword-matched items against the policy's parts list
-        # and demote to LLM any item whose component is confirmed NOT in the list.
-        if covered_components and keyword_matched:
-            verified_keyword = []
-            for item in keyword_matched:
-                if item.coverage_status != CoverageStatus.COVERED:
-                    verified_keyword.append(item)
-                    continue
-
-                is_in_list, reason = self._is_component_in_policy_list(
-                    component=item.matched_component,
-                    system=item.coverage_category,
-                    covered_components=covered_components,
-                    description=item.description,
+        part_number_hints = []
+        if self.part_lookup:
+            for item in remaining:
+                hint = self.part_lookup.lookup_as_hint(
+                    item_code=item.get("item_code"),
+                    description=item.get("description", ""),
                 )
+                part_number_hints.append(hint)
+        else:
+            part_number_hints = [None] * len(remaining)
+        pn_hints_count = sum(1 for h in part_number_hints if h is not None)
+        logger.debug(
+            f"Part-number hints generated: {pn_hints_count}/{len(remaining)}"
+        )
 
-                if is_in_list is False:
-                    # Confirmed NOT in policy list — demote to LLM
-                    logger.info(
-                        "Keyword match '%s' (%s) demoted to LLM: %s",
-                        item.description,
-                        item.matched_component,
-                        reason,
-                    )
-                    # Carry existing trace forward and add deferral step
-                    _plv_tb = TraceBuilder()
-                    _plv_tb.extend(item.decision_trace)
-                    _plv_tb.add("policy_list_check", TraceAction.DEFERRED,
-                                f"Demoted to LLM: {reason}",
-                                detail={"result": False, "reason": reason},
-                                decision_source=DecisionSource.VALIDATION)
-                    demoted_item = {
-                        "item_code": item.item_code,
-                        "description": item.description,
-                        "item_type": item.item_type,
-                        "total_price": item.total_price,
-                        "_deferred_trace": _plv_tb.build(),
-                    }
-                    remaining.append(demoted_item)
-                elif is_in_list is None:
-                    # Uncertain — component not found in policy list synonyms.
-                    # Demote to LLM regardless of whether matched_component
-                    # is set, to close the synonym-gap false-approval pathway.
-                    logger.info(
-                        "Keyword match '%s' (%s) demoted to LLM (uncertain): %s",
-                        item.description,
-                        item.matched_component or "no component",
-                        reason,
-                    )
-                    _plv_tb2 = TraceBuilder()
-                    _plv_tb2.extend(item.decision_trace)
-                    _plv_tb2.add("policy_list_check", TraceAction.DEFERRED,
-                                 f"Uncertain (synonym gap), demoted to LLM: {reason}",
-                                 detail={"result": None, "reason": reason,
-                                         "matched_component": item.matched_component},
-                                 decision_source=DecisionSource.VALIDATION)
-                    demoted_item2 = {
-                        "item_code": item.item_code,
-                        "description": item.description,
-                        "item_type": item.item_type,
-                        "total_price": item.total_price,
-                        "_deferred_trace": _plv_tb2.build(),
-                    }
-                    remaining.append(demoted_item2)
-                else:
-                    # is_in_list is True — confirmed in policy list, keep
-                    if is_in_list is True:
-                        item.match_reasoning += f". Policy check: {reason}"
-                        # Append validation trace step
-                        plv_tb = TraceBuilder()
-                        plv_tb.extend(item.decision_trace)
-                        plv_tb.add("policy_list_check", TraceAction.VALIDATED,
-                                   f"Confirmed in policy list: {reason}",
-                                   detail={"result": True, "reason": reason},
-                                   decision_source=DecisionSource.VALIDATION)
-                        item.decision_trace = plv_tb.build()
-                    verified_keyword.append(item)
-
-            demoted = len(keyword_matched) - len(verified_keyword)
-            if demoted:
-                logger.info(
-                    f"Policy list verification: {demoted} keyword match(es) "
-                    f"demoted to LLM out of {len(keyword_matched)}"
-                )
-            keyword_matched = verified_keyword
-
-        # Stage 3: LLM fallback (if enabled and items remain)
+        # Stage 3: LLM-first classification (all remaining items)
         llm_matched = []
+        keyword_matched = []  # No keyword-level decisions in LLM-first mode
+        part_matched = []  # No part-number-level decisions in LLM-first mode
+
         if remaining and self.config.use_llm_fallback:
             # Limit LLM calls
             items_for_llm = remaining[: self.config.llm_max_items]
+            hints_for_llm = keyword_hints[: self.config.llm_max_items]
+            pn_hints_for_llm = part_number_hints[: self.config.llm_max_items]
             skipped = remaining[self.config.llm_max_items :]
 
-            # Warn if items exceed LLM limit
             if len(remaining) > self.config.llm_max_items:
                 logger.warning(
                     f"LLM item limit exceeded: {len(remaining)} items need LLM processing "
                     f"but limit is {self.config.llm_max_items}. "
-                    f"{len(skipped)} items will be skipped and marked as review_needed. "
-                    f"Consider adding keyword rules for frequently skipped item types."
+                    f"{len(skipped)} items will be skipped and marked as review_needed."
                 )
 
             if items_for_llm:
@@ -2918,14 +2830,12 @@ class CoverageAnalyzer:
                         config=LLMMatcherConfig(max_concurrent=self.config.llm_max_concurrent),
                     )
 
-                # Notify about LLM work starting
                 if on_llm_start:
                     on_llm_start(len(items_for_llm))
 
-                # Collect covered parts from prior stages to give LLM context
-                # This helps LLM make nuanced labor decisions based on what parts are covered
+                # Collect covered parts from rule stage for LLM context
                 covered_parts_in_claim = []
-                for item in rule_matched + part_matched + keyword_matched:
+                for item in rule_matched:
                     if (
                         item.coverage_status == CoverageStatus.COVERED
                         and item.item_type in ("parts", "part", "piece")
@@ -2936,11 +2846,8 @@ class CoverageAnalyzer:
                             "matched_component": item.matched_component or "",
                         })
 
-                # Enrich items with repair context description for LLM
-                # Priority: extraction-level repair_description > labor keyword context
+                # Enrich items with repair context description
                 labor_context_desc = repair_context.source_description
-                # Collect deferred trace steps (from prior stages) before LLM
-                deferred_traces = []
                 for item in items_for_llm:
                     if not item.get("repair_context_description"):
                         item["repair_context_description"] = (
@@ -2949,40 +2856,17 @@ class CoverageAnalyzer:
                             or None
                         )
 
-                    # Pass part-lookup context so the LLM knows the item
-                    # was already identified as belonging to a category.
-                    lookup_sys = item.pop("_part_lookup_system", None)
-                    lookup_comp = item.pop("_part_lookup_component", None)
-                    if lookup_sys:
-                        hint = (
-                            f"Pre-identified as '{lookup_comp}' "
-                            f"in category '{lookup_sys}'."
-                        )
-                        existing = item.get("repair_context_description") or ""
-                        item["repair_context_description"] = (
-                            f"{hint} {existing}".strip()
-                        )
-                    # Extract deferred trace for merge after LLM
-                    deferred_traces.append(item.pop("_deferred_trace", None))
-
-                llm_matched = self.llm_matcher.batch_match(
-                    items_for_llm,
-                    covered_categories=covered_categories,
+                llm_matched = self.llm_matcher.classify_items(
+                    items=items_for_llm,
                     covered_components=covered_components,
                     excluded_components=excluded_components,
+                    keyword_hints=hints_for_llm,
+                    part_number_hints=pn_hints_for_llm,
                     claim_id=claim_id,
                     on_progress=on_llm_progress,
                     covered_parts_in_claim=covered_parts_in_claim,
+                    repair_context_description=labor_context_desc,
                 )
-
-                # Merge deferred trace steps from prior stages into LLM results
-                for idx, llm_item in enumerate(llm_matched):
-                    prior = deferred_traces[idx] if idx < len(deferred_traces) else None
-                    if prior:
-                        merged_tb = TraceBuilder()
-                        merged_tb.extend(prior)
-                        merged_tb.extend(llm_item.decision_trace)
-                        llm_item.decision_trace = merged_tb.build()
 
                 # Validate LLM decisions against explicit policy lists
                 llm_matched = [
@@ -2996,7 +2880,6 @@ class CoverageAnalyzer:
             # Mark skipped items as review needed
             for item in skipped:
                 skip_tb = TraceBuilder()
-                skip_tb.extend(item.get("_deferred_trace") if isinstance(item, dict) else None)
                 skip_tb.add("llm", TraceAction.SKIPPED,
                             "Skipped due to LLM item limit",
                             verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
@@ -3023,9 +2906,8 @@ class CoverageAnalyzer:
             # LLM disabled, mark all remaining as review needed
             for item in remaining:
                 dis_tb = TraceBuilder()
-                dis_tb.extend(item.get("_deferred_trace") if isinstance(item, dict) else None)
                 dis_tb.add("llm", TraceAction.SKIPPED,
-                            "LLM fallback disabled",
+                            "LLM classification disabled",
                             verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
                             detail={"reason": "llm_disabled"},
                             decision_source=DecisionSource.LLM)
@@ -3038,9 +2920,9 @@ class CoverageAnalyzer:
                         coverage_status=CoverageStatus.REVIEW_NEEDED,
                         coverage_category=None,
                         matched_component=None,
-                        match_method=MatchMethod.KEYWORD,
+                        match_method=MatchMethod.LLM,
                         match_confidence=0.0,
-                        match_reasoning="No rule or keyword match; LLM fallback disabled",
+                        match_reasoning="LLM classification disabled",
                         decision_trace=dis_tb.build(),
                         covered_amount=0.0,
                         not_covered_amount=item.get("total_price") or 0.0,
@@ -3096,6 +2978,8 @@ class CoverageAnalyzer:
             part_numbers_applied=len(part_matched),
             keywords_applied=len(keyword_matched),
             llm_calls=llm_calls,
+            keyword_hints_generated=keyword_hints_count,
+            part_number_hints_generated=pn_hints_count,
             processing_time_ms=processing_time_ms,
             config_version=self.config.config_version,
         )

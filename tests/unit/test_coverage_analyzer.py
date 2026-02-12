@@ -1,6 +1,8 @@
 """Tests for the coverage analyzer."""
 
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -12,6 +14,7 @@ from context_builder.coverage.analyzer import (
     _normalize_coverage_scale,
 )
 from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatcher
+from context_builder.coverage.llm_matcher import LLMMatcherConfig
 from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -20,11 +23,98 @@ from context_builder.coverage.schemas import (
     PrimaryRepairResult,
     TraceAction,
 )
+from context_builder.coverage.trace import TraceBuilder
 
 _WORKSPACE_COVERAGE_DIR = (
     Path(__file__).resolve().parents[2]
     / "workspaces" / "nsa" / "config" / "coverage"
 )
+
+
+class FakeLLMMatcher:
+    """Fake LLM matcher for unit tests.
+
+    Uses the keyword matcher internally to simulate LLM coverage decisions
+    based on keyword hints.  Items matching known keywords are COVERED;
+    items without a match are NOT_COVERED.
+    """
+
+    def __init__(self, keyword_matcher: KeywordMatcher):
+        self._keyword_matcher = keyword_matcher
+        self._llm_calls = 0
+
+    def classify_items(
+        self,
+        items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        keyword_hints: Optional[List[Optional[Dict[str, Any]]]] = None,
+        part_number_hints: Optional[List[Optional[Dict[str, Any]]]] = None,
+        claim_id: Optional[str] = None,
+        on_progress: Optional[Callable] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_context_description: Optional[str] = None,
+    ) -> List[LineItemCoverage]:
+        results = []
+        covered_categories = list(covered_components.keys())
+        for i, item in enumerate(items):
+            hint = keyword_hints[i] if keyword_hints and i < len(keyword_hints) else None
+            if hint and hint.get("category") in covered_categories:
+                tb = TraceBuilder()
+                tb.add("llm", TraceAction.MATCHED,
+                       f"Fake LLM: keyword hint '{hint.get('keyword')}' -> covered",
+                       verdict=CoverageStatus.COVERED, confidence=0.85)
+                results.append(LineItemCoverage(
+                    item_code=item.get("item_code"),
+                    description=item.get("description", ""),
+                    item_type=item.get("item_type", ""),
+                    total_price=item.get("total_price") or 0.0,
+                    coverage_status=CoverageStatus.COVERED,
+                    coverage_category=hint["category"],
+                    matched_component=hint.get("component"),
+                    match_method=MatchMethod.LLM,
+                    match_confidence=0.85,
+                    match_reasoning=f"Fake LLM: keyword '{hint.get('keyword')}' -> {hint['category']}",
+                    decision_trace=tb.build(),
+                    covered_amount=item.get("total_price") or 0.0,
+                    not_covered_amount=0.0,
+                ))
+            else:
+                tb = TraceBuilder()
+                tb.add("llm", TraceAction.MATCHED,
+                       "Fake LLM: no keyword hint or not covered",
+                       verdict=CoverageStatus.NOT_COVERED, confidence=0.80)
+                results.append(LineItemCoverage(
+                    item_code=item.get("item_code"),
+                    description=item.get("description", ""),
+                    item_type=item.get("item_type", ""),
+                    total_price=item.get("total_price") or 0.0,
+                    coverage_status=CoverageStatus.NOT_COVERED,
+                    coverage_category=hint["category"] if hint else None,
+                    matched_component=None,
+                    match_method=MatchMethod.LLM,
+                    match_confidence=0.80,
+                    match_reasoning="Fake LLM: not covered",
+                    decision_trace=tb.build(),
+                    covered_amount=0.0,
+                    not_covered_amount=item.get("total_price") or 0.0,
+                ))
+            self._llm_calls += 1
+            if on_progress:
+                on_progress(1)
+        return results
+
+    def classify_labor_for_primary_repair(self, **kwargs):
+        return []
+
+    def determine_primary_repair(self, **kwargs):
+        return None
+
+    def get_llm_call_count(self) -> int:
+        return self._llm_calls
+
+    def reset_call_count(self) -> None:
+        self._llm_calls = 0
 
 
 def _load_yaml(filename: str) -> dict:
@@ -64,16 +154,19 @@ class TestCoverageAnalyzer:
 
     @pytest.fixture
     def analyzer(self, nsa_rule_config, nsa_keyword_config, nsa_component_config):
-        """Create analyzer with NSA config, LLM disabled for faster tests."""
+        """Create analyzer with NSA config, using FakeLLMMatcher."""
+        kw_matcher = KeywordMatcher(nsa_keyword_config)
         config = AnalyzerConfig(
-            use_llm_fallback=False,  # Disable LLM for unit tests
+            use_llm_fallback=True,
         )
-        return CoverageAnalyzer(
+        analyzer = CoverageAnalyzer(
             config=config,
             rule_engine=RuleEngine(nsa_rule_config),
-            keyword_matcher=KeywordMatcher(nsa_keyword_config),
+            keyword_matcher=kw_matcher,
             component_config=nsa_component_config,
         )
+        analyzer.llm_matcher = FakeLLMMatcher(kw_matcher)
+        return analyzer
 
     @pytest.fixture
     def sample_line_items(self):
@@ -143,7 +236,7 @@ class TestCoverageAnalyzer:
             assert item.match_method == MatchMethod.RULE
 
     def test_keyword_matches(self, analyzer, covered_components):
-        """Test that keyword matching works."""
+        """Test that keyword-hinted items are covered by LLM-first pipeline."""
         items = [
             {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 500.0},
             {"description": "STOSSDAEMPFER VORNE", "item_type": "parts", "total_price": 300.0},
@@ -155,13 +248,13 @@ class TestCoverageAnalyzer:
             covered_components=covered_components,
         )
 
-        # Both should be covered via keywords
+        # Both should be covered via LLM (with keyword hints)
         for item in result.line_items:
             assert item.coverage_status == CoverageStatus.COVERED
-            assert item.match_method == MatchMethod.KEYWORD
+            assert item.match_method == MatchMethod.LLM
 
-    def test_unmatched_items_flagged_for_review(self, analyzer, covered_components):
-        """Test that unmatched items are flagged for review (LLM disabled)."""
+    def test_unmatched_items_not_covered(self, analyzer, covered_components):
+        """Test that items without keyword hints are NOT_COVERED by fake LLM."""
         items = [
             {"description": "COMPLETELY UNKNOWN PART ABC", "item_type": "parts", "total_price": 100.0},
         ]
@@ -172,9 +265,8 @@ class TestCoverageAnalyzer:
             covered_components=covered_components,
         )
 
-        # Should be flagged for review since LLM is disabled
         assert len(result.line_items) == 1
-        assert result.line_items[0].coverage_status == CoverageStatus.REVIEW_NEEDED
+        assert result.line_items[0].coverage_status == CoverageStatus.NOT_COVERED
 
     def test_summary_calculation(self, analyzer, sample_line_items, covered_components):
         """Test that summary is calculated correctly."""
@@ -283,7 +375,9 @@ class TestCoverageAnalyzer:
         metadata = result.metadata
         assert metadata.rules_applied >= 0
         assert metadata.keywords_applied >= 0
-        assert metadata.llm_calls == 0  # LLM disabled
+        assert metadata.llm_calls >= 0
+        assert metadata.keyword_hints_generated >= 0
+        assert metadata.part_number_hints_generated >= 0
         assert metadata.processing_time_ms > 0
 
     def test_empty_line_items(self, analyzer, covered_components):
@@ -397,7 +491,6 @@ class TestCoverageAnalyzer:
         labor_item = next(i for i in result.line_items if i.item_type == "labor")
 
         # Labor should NOT be auto-linked (description is specific, not generic)
-        # It will be REVIEW_NEEDED since LLM is disabled
         assert labor_item.coverage_status != CoverageStatus.COVERED or \
             "simple invoice rule" not in labor_item.match_reasoning.lower()
 
@@ -1980,13 +2073,16 @@ class TestPerTierAgeCoverage:
 
     @pytest.fixture
     def analyzer(self, nsa_rule_config, nsa_keyword_config, nsa_component_config):
-        config = AnalyzerConfig(use_llm_fallback=False)
-        return CoverageAnalyzer(
+        kw_matcher = KeywordMatcher(nsa_keyword_config)
+        config = AnalyzerConfig(use_llm_fallback=True)
+        analyzer = CoverageAnalyzer(
             config=config,
             rule_engine=RuleEngine(nsa_rule_config),
-            keyword_matcher=KeywordMatcher(nsa_keyword_config),
+            keyword_matcher=kw_matcher,
             component_config=nsa_component_config,
         )
+        analyzer.llm_matcher = FakeLLMMatcher(kw_matcher)
+        return analyzer
 
     @pytest.fixture
     def covered_components(self):
