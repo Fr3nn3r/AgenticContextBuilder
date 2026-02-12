@@ -50,8 +50,24 @@ def load_ground_truth() -> dict:
     return {claim["claim_id"]: claim for claim in data["claims"]}
 
 
+def _find_latest_dossier(run_folder: Path) -> Optional[dict]:
+    """Find the latest decision_dossier_v*.json in a run folder."""
+    candidates = sorted(run_folder.glob("decision_dossier_v*.json"))
+    if not candidates:
+        return None
+    try:
+        with open(candidates[-1], "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
 def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, target_run_ids: Optional[list] = None) -> Optional[dict]:
-    """Find the most recent assessment for a claim, or from specific run(s)."""
+    """Find the most recent assessment for a claim, or from specific run(s).
+
+    Also loads the decision dossier (if available) and stores the
+    authoritative verdict under ``_dossier_verdict`` for eval comparison.
+    """
     claim_runs_path = WORKSPACE_PATH / "claims" / claim_id / "claim_runs"
 
     if not claim_runs_path.exists():
@@ -72,6 +88,10 @@ def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, t
                 with open(assessment_file, "r", encoding="utf-8") as f:
                     assessment = json.load(f)
                 assessment["_run_id"] = run_folder.name
+                # Load dossier verdict (authoritative)
+                dossier = _find_latest_dossier(run_folder)
+                if dossier:
+                    assessment["_dossier_verdict"] = dossier.get("claim_verdict")
                 return assessment
         return None
 
@@ -84,6 +104,10 @@ def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, t
             with open(assessment_file, "r", encoding="utf-8") as f:
                 assessment = json.load(f)
             assessment["_run_id"] = run_folder.name
+            # Load dossier verdict (authoritative)
+            dossier = _find_latest_dossier(run_folder)
+            if dossier:
+                assessment["_dossier_verdict"] = dossier.get("claim_verdict")
             return assessment
 
     return None
@@ -194,7 +218,9 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
             })
         else:
             gt_decision_norm = normalize_decision(gt.get("decision", ""))
-            pred_decision_norm = normalize_decision(assessment.get("decision", ""))
+            # Use dossier verdict (authoritative) if available, fall back to assessment
+            pred_decision_raw = assessment.get("_dossier_verdict") or assessment.get("recommendation", "")
+            pred_decision_norm = normalize_decision(pred_decision_raw)
             decision_match = gt_decision_norm == pred_decision_norm
 
             pred_amount = assessment.get("payout", {}).get("final_payout", 0)
@@ -217,7 +243,7 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
                 deductible_match = None
 
             row.update({
-                "pred_decision": assessment.get("decision"),
+                "pred_decision": pred_decision_raw,
                 "pred_amount": pred_amount,
                 "pred_deductible": pred_deductible,
                 "decision_match": decision_match,
@@ -227,7 +253,7 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
                 "failed_checks": get_failed_checks(assessment),
                 "error_category": categorize_error(gt, assessment, decision_match),
                 "run_id": assessment.get("_run_id"),
-                "decision_rationale": assessment.get("decision_rationale"),
+                "decision_rationale": assessment.get("recommendation_rationale"),
             })
 
         results.append(row)

@@ -361,7 +361,7 @@ class TestAutoRejectFlow:
         mock_get_client.assert_not_called()
 
         # Verify: result is REJECT with auto_reject method
-        assert result["decision"] == "REJECT"
+        assert result["recommendation"] == "REJECT"
         assert result["assessment_method"] == "auto_reject"
         assert result["confidence_score"] == 1.0
 
@@ -528,8 +528,8 @@ class TestLLMAssessmentFlow:
             "assessment_method": "llm",
             "claim_id": "CLM-INTEG-001",
             "assessment_timestamp": datetime.utcnow().isoformat(),
-            "decision": "APPROVE",
-            "decision_rationale": "All checks passed, payout calculated",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All checks passed, payout calculated",
             "confidence_score": 0.92,
             "checks": [
                 {
@@ -561,7 +561,7 @@ class TestLLMAssessmentFlow:
         mock_get_client.assert_called_once()
 
         # Verify: result is from LLM
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
         assert result["assessment_method"] == "llm"
 
     @patch("context_builder.pipeline.claim_stages.assessment_processor.get_openai_client")
@@ -624,8 +624,8 @@ class TestLLMAssessmentFlow:
             "assessment_method": "llm",
             "claim_id": "CLM-INTEG-001",
             "assessment_timestamp": datetime.utcnow().isoformat(),
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": AssessmentProcessor._zero_payout(),
@@ -642,7 +642,7 @@ class TestLLMAssessmentFlow:
 
         # LLM should be called (backward compatible)
         mock_get_client.assert_called_once()
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
 
 
 # ═══════════════════════════════════════════════════════════════════════

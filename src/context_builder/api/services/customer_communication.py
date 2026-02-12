@@ -122,8 +122,8 @@ class CustomerCommunicationService:
         )
 
         # Extract data from assessment
-        decision = assessment.get("decision", "REFER_TO_HUMAN")
-        decision_rationale = assessment.get("decision_rationale", "")
+        decision = assessment.get("recommendation", "REFER_TO_HUMAN")
+        decision_rationale = assessment.get("recommendation_rationale", "")
         checks = assessment.get("checks", [])
         payout = assessment.get("payout")
         currency = assessment.get("currency") or assessment.get("payout_breakdown", {}).get("currency") or "CHF"

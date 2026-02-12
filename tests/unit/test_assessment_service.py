@@ -27,7 +27,7 @@ class TestAssessmentService:
             "schema_version": "claims_assessment_v1",
             "claim_id": "12345",
             "assessment_timestamp": "2026-01-24T22:14:20.485908",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [
                 {
@@ -99,7 +99,7 @@ class TestAssessmentService:
 
         assert result is not None
         assert result["claim_id"] == "12345"
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
         # confidence_score is converted from decimal (0.95) to percentage (95)
         assert result["confidence_score"] == 95.0
 
@@ -192,7 +192,7 @@ class TestAssessmentService:
         entry = result[0]
 
         assert entry["timestamp"] == "2026-01-24T22:14:20.485908"
-        assert entry["decision"] == "APPROVE"
+        assert entry["recommendation"] == "APPROVE"
         # confidence_score is converted from decimal (0.95) to percentage (95)
         assert entry["confidence_score"] == 95.0
         assert entry["payout"] == 4500.0
@@ -213,7 +213,7 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "67890",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.8,
             "payout": 0,  # Direct number, not nested
             "checks": [],
@@ -226,7 +226,7 @@ class TestAssessmentService:
         result = service.get_assessment("67890")
 
         assert result["payout"] == 0
-        assert result["decision"] == "REJECT"
+        assert result["recommendation"] == "REJECT"
         # confidence_score 0.8 -> 80%
         assert result["confidence_score"] == 80.0
 
@@ -237,7 +237,7 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "test123",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 1.0,  # 100%
             "payout": 1000,
             "checks": [],
@@ -259,7 +259,7 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "test456",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 85.5,  # Already a percentage
             "payout": 1000,
             "checks": [],
@@ -281,7 +281,7 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "test789",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.9,
             "payout": 0,
             "checks": [
@@ -333,9 +333,9 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "breakdown1",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
-            "decision_rationale": "All checks passed and policy is valid",
+            "recommendation_rationale": "All checks passed and policy is valid",
             "payout": {
                 "total_claimed": 7315.95,
                 "non_covered_deductions": 0,
@@ -372,7 +372,7 @@ class TestAssessmentService:
         assessment = {
             "claim_id": "direct_payout",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.9,
             "payout": 0,  # Direct number
             "currency": "EUR",
@@ -392,14 +392,14 @@ class TestAssessmentService:
         # Other fields should be None
         assert breakdown.get("total_claimed") is None
 
-    def test_decision_rationale_preserved(self, service, temp_claims_dir):
-        """Test that decision_rationale is preserved."""
+    def test_recommendation_rationale_preserved(self, service, temp_claims_dir):
+        """Test that recommendation_rationale is preserved."""
         assessment = {
             "claim_id": "rationale1",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.85,
-            "decision_rationale": "Policy expired before incident date",
+            "recommendation_rationale": "Policy expired before incident date",
             "payout": 0,
             "checks": [],
             "assumptions": [],
@@ -410,14 +410,14 @@ class TestAssessmentService:
 
         result = service.get_assessment("rationale1")
 
-        assert result["decision_rationale"] == "Policy expired before incident date"
+        assert result["recommendation_rationale"] == "Policy expired before incident date"
 
-    def test_decision_rationale_null_when_missing(self, service, temp_claims_dir):
-        """Test that missing decision_rationale returns None."""
+    def test_recommendation_rationale_null_when_missing(self, service, temp_claims_dir):
+        """Test that missing recommendation_rationale returns None."""
         assessment = {
             "claim_id": "no_rationale",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "payout": 1000,
             "checks": [],
@@ -429,14 +429,14 @@ class TestAssessmentService:
 
         result = service.get_assessment("no_rationale")
 
-        assert result.get("decision_rationale") is None
+        assert result.get("recommendation_rationale") is None
 
     def test_payout_breakdown_currency_fallback(self, service, temp_claims_dir):
         """Test currency fallback from top-level when not in payout structure."""
         assessment = {
             "claim_id": "currency_fallback",
             "assessment_timestamp": "2026-01-25T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "currency": "USD",  # Top-level currency
             "payout": {
@@ -473,7 +473,7 @@ class TestAssessmentServiceVersioning:
     def test_save_assessment_creates_versioned_file(self, service, temp_claims_dir):
         """Test that save_assessment creates a timestamped file."""
         assessment_data = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [],
             "assumptions": [],
@@ -503,7 +503,7 @@ class TestAssessmentServiceVersioning:
     def test_save_assessment_updates_index(self, service, temp_claims_dir):
         """Test that save_assessment updates the index file."""
         assessment_data = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -531,7 +531,7 @@ class TestAssessmentServiceVersioning:
     def test_save_assessment_marks_previous_not_current(self, service, temp_claims_dir):
         """Test that saving a new assessment marks previous as not current."""
         assessment_v1 = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.8,
             "checks": [],
             "assumptions": [],
@@ -539,7 +539,7 @@ class TestAssessmentServiceVersioning:
             "recommendations": [],
         }
         assessment_v2 = {
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -563,7 +563,7 @@ class TestAssessmentServiceVersioning:
     def test_save_assessment_copies_to_main_file(self, service, temp_claims_dir):
         """Test that save_assessment also updates the main assessment.json."""
         assessment_data = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [],
             "assumptions": [],
@@ -579,13 +579,13 @@ class TestAssessmentServiceVersioning:
         with open(main_path) as f:
             data = json.load(f)
 
-        assert data["decision"] == "APPROVE"
+        assert data["recommendation"] == "APPROVE"
         assert data["prompt_version"] == "v1.0"
 
     def test_get_assessment_by_id_found(self, service, temp_claims_dir):
         """Test retrieving a specific assessment by ID."""
         assessment_data = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.85,
             "checks": [{"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}],
             "assumptions": [],
@@ -599,7 +599,7 @@ class TestAssessmentServiceVersioning:
         loaded = service.get_assessment_by_id("CLM-005", assessment_id)
 
         assert loaded is not None
-        assert loaded["decision"] == "APPROVE"
+        assert loaded["recommendation"] == "APPROVE"
         # Should be transformed (confidence as percentage)
         assert loaded["confidence_score"] == 85.0
 
@@ -611,7 +611,7 @@ class TestAssessmentServiceVersioning:
     def test_get_assessment_history_with_versioned_entries(self, service, temp_claims_dir):
         """Test get_assessment_history returns versioned entries."""
         assessment_v1 = {
-            "decision": "REFER_TO_HUMAN",
+            "recommendation": "REFER_TO_HUMAN",
             "confidence_score": 0.6,
             "checks": [{"check_number": 1, "check_name": "test", "result": "INCONCLUSIVE", "details": "", "evidence_refs": []}],
             "assumptions": [],
@@ -619,7 +619,7 @@ class TestAssessmentServiceVersioning:
             "recommendations": [],
         }
         assessment_v2 = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [{"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}],
             "assumptions": [],
@@ -634,9 +634,9 @@ class TestAssessmentServiceVersioning:
 
         assert len(history) == 2
         # Newest first
-        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["recommendation"] == "APPROVE"
         assert history[0]["is_current"] is True
-        assert history[1]["decision"] == "REFER_TO_HUMAN"
+        assert history[1]["recommendation"] == "REFER_TO_HUMAN"
         assert history[1]["is_current"] is False
 
 
@@ -676,7 +676,7 @@ class TestAssessmentServiceClaimRuns:
         assessment1 = {
             "claim_id": "CLM-100",
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -687,7 +687,7 @@ class TestAssessmentServiceClaimRuns:
         assessment2 = {
             "claim_id": "CLM-100",
             "assessment_timestamp": "2026-01-28T11:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.85,
             "checks": [],
             "assumptions": [],
@@ -707,10 +707,10 @@ class TestAssessmentServiceClaimRuns:
 
         assert len(history) == 2
         # Newest first
-        assert history[0]["decision"] == "REJECT"
+        assert history[0]["recommendation"] == "REJECT"
         assert history[0]["run_id"] == "run_20260128_110000"
         assert history[0]["is_current"] is True
-        assert history[1]["decision"] == "APPROVE"
+        assert history[1]["recommendation"] == "APPROVE"
         assert history[1]["run_id"] == "run_20260128_100000"
         assert history[1]["is_current"] is False
 
@@ -722,7 +722,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-101",
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -751,7 +751,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-102",
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [
                 {"check_number": 1, "check_name": "test", "result": "PASS", "details": "", "evidence_refs": []}
@@ -768,7 +768,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment_by_id("CLM-102", "run_abc123")
 
         assert result is not None
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
         assert result["confidence_score"] == 95.0  # Converted to percentage
         assert result["payout"] == 1500
 
@@ -792,7 +792,7 @@ class TestAssessmentServiceClaimRuns:
         assessment_old = {
             "claim_id": "CLM-104",
             "assessment_timestamp": "2026-01-28T09:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.7,
             "checks": [],
             "assumptions": [],
@@ -804,7 +804,7 @@ class TestAssessmentServiceClaimRuns:
         assessment_new = {
             "claim_id": "CLM-104",
             "assessment_timestamp": "2026-01-28T12:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [],
             "assumptions": [],
@@ -823,7 +823,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment("CLM-104")
 
         # Should return the newer one (based on timestamp)
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
         assert result["payout"] == 2000
 
     def test_get_assessment_history_fallback_to_legacy(
@@ -841,7 +841,7 @@ class TestAssessmentServiceClaimRuns:
                     "id": "2026-01-26T10-00-00_v1.0.0",
                     "filename": "2026-01-26T10-00-00_v1.0.0.json",
                     "timestamp": "2026-01-26T10:00:00",
-                    "decision": "APPROVE",
+                    "recommendation": "APPROVE",
                     "confidence_score": 0.9,
                     "is_current": True,
                 }
@@ -854,7 +854,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-105",
             "assessment_timestamp": "2026-01-26T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -868,7 +868,7 @@ class TestAssessmentServiceClaimRuns:
         history = service.get_assessment_history("CLM-105")
 
         assert len(history) == 1
-        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["recommendation"] == "APPROVE"
         assert history[0]["run_id"] == "2026-01-26T10-00-00_v1.0.0"
 
     def test_get_assessment_by_id_fallback_to_legacy(
@@ -885,7 +885,7 @@ class TestAssessmentServiceClaimRuns:
                     "id": "legacy_id_123",
                     "filename": "legacy_id_123.json",
                     "timestamp": "2026-01-26T10:00:00",
-                    "decision": "REJECT",
+                    "recommendation": "REJECT",
                     "confidence_score": 0.8,
                     "is_current": True,
                 }
@@ -897,7 +897,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-106",
             "assessment_timestamp": "2026-01-26T10:00:00",
-            "decision": "REJECT",
+            "recommendation": "REJECT",
             "confidence_score": 0.8,
             "checks": [],
             "assumptions": [],
@@ -911,7 +911,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment_by_id("CLM-106", "legacy_id_123")
 
         assert result is not None
-        assert result["decision"] == "REJECT"
+        assert result["recommendation"] == "REJECT"
 
     def test_get_assessment_fallback_to_context_assessment_json(
         self, service, temp_claims_dir
@@ -924,7 +924,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-107",
             "assessment_timestamp": "2026-01-26T10:00:00",
-            "decision": "REFER_TO_HUMAN",
+            "recommendation": "REFER_TO_HUMAN",
             "confidence_score": 0.6,
             "checks": [],
             "assumptions": [],
@@ -938,7 +938,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment("CLM-107")
 
         assert result is not None
-        assert result["decision"] == "REFER_TO_HUMAN"
+        assert result["recommendation"] == "REFER_TO_HUMAN"
 
     def test_get_assessment_history_handles_invalid_json(
         self, service, temp_claims_dir
@@ -948,7 +948,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-108",
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.9,
             "checks": [],
             "assumptions": [],
@@ -978,7 +978,7 @@ class TestAssessmentServiceClaimRuns:
         assessment = {
             "claim_id": "CLM-109",
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "REFER_TO_HUMAN",
+            "recommendation": "REFER_TO_HUMAN",
             "confidence_score": 0.7,
             "checks": [
                 {"check_number": 1, "check_name": "test1", "result": "PASS", "details": "", "evidence_refs": []},
@@ -1021,7 +1021,7 @@ class TestAssessmentServiceClaimRuns:
                     "id": "legacy_old",
                     "filename": "legacy_old.json",
                     "timestamp": "2026-01-25T10:00:00",
-                    "decision": "REJECT",
+                    "recommendation": "REJECT",
                     "confidence_score": 0.5,
                     "is_current": True,
                 }
@@ -1030,13 +1030,13 @@ class TestAssessmentServiceClaimRuns:
         with open(assessments_dir / "index.json", "w") as f:
             json.dump(legacy_index, f)
         with open(assessments_dir / "legacy_old.json", "w") as f:
-            json.dump({"decision": "REJECT", "confidence_score": 0.5, "checks": [], "assumptions": [], "fraud_indicators": [], "recommendations": []}, f)
+            json.dump({"recommendation": "REJECT", "confidence_score": 0.5, "checks": [], "assumptions": [], "fraud_indicators": [], "recommendations": []}, f)
 
         # Create newer assessment in claim_runs
         new_assessment = {
             "claim_id": claim_id,
             "assessment_timestamp": "2026-01-28T10:00:00",
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.95,
             "checks": [],
             "assumptions": [],
@@ -1052,7 +1052,7 @@ class TestAssessmentServiceClaimRuns:
         history = service.get_assessment_history(claim_id)
 
         assert len(history) == 1
-        assert history[0]["decision"] == "APPROVE"
+        assert history[0]["recommendation"] == "APPROVE"
         assert history[0]["run_id"] == "run_new"
 
 

@@ -135,7 +135,13 @@ def assess_cmd(
         if not ctx.obj["quiet"]:
             console.print(f"\nFound {len(claim_ids_list)} claims from input folder")
     else:
-        claim_ids_list = list(claim_id)
+        # Support both --claim-id A --claim-id B and --claim-id A,B,C
+        claim_ids_list = [
+            cid.strip()
+            for raw in claim_id
+            for cid in raw.split(",")
+            if cid.strip()
+        ]
 
     # Apply exclusions
     if exclude_claims:
@@ -286,7 +292,7 @@ def assess_cmd(
                 crs = ClaimRunStorage(claim_folder)
                 assessment_data = crs.read_from_claim_run(shared_id, "assessment.json")
                 if assessment_data:
-                    dec = assessment_data.get("decision", "UNKNOWN")
+                    dec = assessment_data.get("recommendation", "UNKNOWN")
                     decision_counts[dec] = decision_counts.get(dec, 0) + 1
 
         ws_summary = {

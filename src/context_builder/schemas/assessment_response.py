@@ -154,11 +154,11 @@ class AssessmentResponse(BaseModel):
     assessment_timestamp: str = Field(
         description="ISO timestamp of when assessment was performed"
     )
-    decision: Literal["APPROVE", "REJECT", "REFER_TO_HUMAN"] = Field(
-        description="Final assessment decision"
+    recommendation: Literal["APPROVE", "REJECT", "REFER_TO_HUMAN"] = Field(
+        description="Advisory recommendation from assessment (not authoritative -- see decision dossier)"
     )
-    decision_rationale: str = Field(
-        description="Brief explanation of the decision"
+    recommendation_rationale: str = Field(
+        description="Brief explanation of the recommendation"
     )
     confidence_score: float = Field(
         ge=0.0, le=1.0, description="Confidence score from 0.0 to 1.0"
@@ -190,8 +190,8 @@ class AssessmentResponse(BaseModel):
                 "assessment_method": "llm",
                 "claim_id": "CLM-12345",
                 "assessment_timestamp": "2026-01-28T10:30:00Z",
-                "decision": "APPROVE",
-                "decision_rationale": "All checks passed, claim is valid",
+                "recommendation": "APPROVE",
+                "recommendation_rationale": "All checks passed, claim is valid",
                 "confidence_score": 0.85,
                 "checks": [
                     {

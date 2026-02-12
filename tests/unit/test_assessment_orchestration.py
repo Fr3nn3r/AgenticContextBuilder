@@ -88,8 +88,8 @@ def _make_assessment_response() -> AssessmentResponse:
     return AssessmentResponse(
         claim_id="CLM-001",
         assessment_timestamp="2026-01-28T10:00:00Z",
-        decision="APPROVE",
-        decision_rationale="All checks passed",
+        recommendation="APPROVE",
+        recommendation_rationale="All checks passed",
         confidence_score=0.9,
         checks=[],
         payout=PayoutCalculation(
@@ -249,7 +249,7 @@ class TestServicePathScreening:
 
             # Mock processor
             mock_processor = MagicMock()
-            mock_processor.process.return_value = {"decision": "APPROVE"}
+            mock_processor.process.return_value = {"recommendation": "APPROVE"}
             mock_get_processor.return_value = mock_processor
 
             # Mock AssessmentResponse.model_validate to return a real instance

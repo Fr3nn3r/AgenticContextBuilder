@@ -128,9 +128,16 @@ class AssessmentRunnerService:
                     )
 
                 if on_complete:
+                    # Prefer dossier verdict (authoritative), fall back to
+                    # assessment recommendation (advisory)
+                    verdict = None
+                    if context.decision_result:
+                        verdict = context.decision_result.get("claim_verdict")
+                    if not verdict:
+                        verdict = context.processing_result.get("recommendation")
                     await _maybe_await(
                         on_complete,
-                        context.processing_result.get("decision"),
+                        verdict,
                         saved.get("id"),
                         claim_id,
                     )

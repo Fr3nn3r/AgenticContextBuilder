@@ -129,16 +129,110 @@ class PartsClassificationService(Protocol):
 
 
 class DefaultDecisionEngine:
-    """Default engine that returns an empty dossier (no-op).
+    """Default engine that derives a verdict from assessment check results.
 
     Used when no workspace-specific decision engine is configured.
+    Produces no clause evaluations but derives a meaningful verdict
+    from the upstream assessment (processing_result) when available.
     """
 
     engine_id: str = "default"
-    engine_version: str = "0.0.0"
+    engine_version: str = "0.1.0"
+
+    # Check IDs whose FAIL does not block approval (override in subclasses)
+    SOFT_CHECK_IDS: set = set()
 
     def __init__(self, workspace_path: Path):
         self.workspace_path = workspace_path
+
+    def _derive_verdict_from_assessment(
+        self, processing_result: Optional[Dict[str, Any]]
+    ) -> tuple:
+        """Derive verdict and reason from assessment check results.
+
+        Priority order:
+        1. No processing_result -> REFER (no data to decide)
+        2. Any hard check FAIL -> DENY
+        3. Any INCONCLUSIVE check -> REFER
+        4. Only soft checks failed -> APPROVE
+        5. APPROVE + zero payout -> DENY
+        6. Otherwise -> use LLM advisory decision
+
+        Returns:
+            (verdict: str, reason: str)
+        """
+        if not processing_result:
+            return "REFER", "No assessment data available to derive verdict"
+
+        checks = processing_result.get("checks", [])
+        llm_decision = (processing_result.get("recommendation") or "").upper()
+
+        # Classify check results
+        hard_fails = []
+        inconclusive_checks = []
+        soft_fails = []
+
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            result = (check.get("result") or "").upper()
+            check_number = check.get("check_number", "")
+            check_name = check.get("check_name", "")
+            # Skip the final_decision meta-check
+            if check_name == "final_decision":
+                continue
+
+            if result == "FAIL":
+                if check_number in self.SOFT_CHECK_IDS:
+                    soft_fails.append(check_name or check_number)
+                else:
+                    hard_fails.append(check_name or check_number)
+            elif result == "INCONCLUSIVE":
+                inconclusive_checks.append(check_name or check_number)
+
+        # 1. Hard check FAIL -> DENY
+        if hard_fails:
+            return "DENY", f"Hard check(s) failed: {', '.join(hard_fails)}"
+
+        # 2. Any INCONCLUSIVE -> REFER
+        if inconclusive_checks:
+            return (
+                "REFER",
+                f"Inconclusive check(s) require review: {', '.join(inconclusive_checks)}",
+            )
+
+        # 3. Only soft checks failed -> APPROVE (soft checks don't block)
+        # (If no hard fails and no inconclusive, approve even with soft fails)
+
+        # 4. Zero payout -> DENY
+        final_payout = (processing_result.get("payout") or {}).get("final_payout", 0.0)
+        if llm_decision in ("APPROVE", "APPROVED") and final_payout <= 0:
+            payout_data = processing_result.get("payout") or {}
+            covered = payout_data.get("covered_subtotal", 0.0)
+            deductible = payout_data.get("deductible", 0.0)
+            currency = payout_data.get("currency", "CHF")
+            return (
+                "DENY",
+                f"Covered amount ({currency} {covered:,.2f}) does not exceed "
+                f"the deductible ({currency} {deductible:,.2f}), "
+                f"resulting in zero payout",
+            )
+
+        # 5. Fall back to LLM advisory decision (normalized)
+        if llm_decision in ("APPROVE", "APPROVED"):
+            if soft_fails:
+                return (
+                    "APPROVE",
+                    f"Approved despite soft check(s): {', '.join(soft_fails)}",
+                )
+            return "APPROVE", "All checks passed"
+        if llm_decision in ("REJECT", "REJECTED", "DENY", "DENIED"):
+            return "DENY", processing_result.get("recommendation_rationale", "Rejected by assessment")
+        if llm_decision in ("REFER_TO_HUMAN", "REFER"):
+            return "REFER", processing_result.get("recommendation_rationale", "Referred by assessment")
+
+        # No recognizable decision
+        return "REFER", "Could not derive verdict from assessment"
 
     def evaluate(
         self,
@@ -150,13 +244,15 @@ class DefaultDecisionEngine:
         assumptions: Optional[Dict[str, bool]] = None,
         coverage_overrides: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Any]:
-        """Return empty dossier — no clauses evaluated."""
+        """Return dossier with verdict derived from assessment checks."""
+        verdict, reason = self._derive_verdict_from_assessment(processing_result)
+
         return {
             "schema_version": "decision_dossier_v1",
             "claim_id": claim_id,
             "version": 1,
-            "claim_verdict": "REFER",
-            "verdict_reason": "No decision engine configured for this workspace",
+            "claim_verdict": verdict,
+            "verdict_reason": reason,
             "clause_evaluations": [],
             "line_item_decisions": [],
             "assumptions_used": [],

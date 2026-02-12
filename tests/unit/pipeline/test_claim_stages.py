@@ -200,12 +200,12 @@ class TestClaimProcessingResult:
             run_id="run_001",
             status="success",
             processing_type="assessment",
-            result={"decision": "APPROVE"},
+            result={"recommendation": "APPROVE"},
         )
 
         assert result.claim_id == "CLM-001"
         assert result.status == "success"
-        assert result.result["decision"] == "APPROVE"
+        assert result.result["recommendation"] == "APPROVE"
         assert result.error is None
 
     def test_error_result(self):

@@ -143,9 +143,17 @@ class DashboardService:
 
         return None, None
 
-    def _derive_result_code(self, assessment: Dict[str, Any]) -> str:
-        """Derive a human-readable result code from assessment checks."""
-        decision = assessment.get("decision", "")
+    def _derive_result_code(
+        self, assessment: Dict[str, Any], decision: Optional[str] = None,
+    ) -> str:
+        """Derive a human-readable result code from assessment checks.
+
+        Args:
+            assessment: Assessment data dict (for check results).
+            decision: Authoritative verdict (from dossier). Falls back to
+                assessment recommendation if not provided.
+        """
+        decision = decision or assessment.get("recommendation", "")
         if decision == "APPROVE" or decision == "APPROVED":
             return "Approved"
 
@@ -333,7 +341,7 @@ class DashboardService:
             assessment_method = None
 
             if assessment:
-                decision = assessment.get("decision")
+                # decision is populated from dossier below, not from assessment
                 confidence_raw = assessment.get("confidence_score", 0)
                 if isinstance(confidence_raw, (int, float)):
                     confidence = (
@@ -341,7 +349,6 @@ class DashboardService:
                         if confidence_raw <= 1.0
                         else confidence_raw
                     )
-                result_code = self._derive_result_code(assessment)
                 inconclusive_warnings = self._get_inconclusive_warnings(assessment)
                 assessment_method = assessment.get("assessment_method")
 
@@ -406,6 +413,13 @@ class DashboardService:
                         if isinstance(sp, dict):
                             wb_screening_payout = sp.get("final_payout")
 
+            # Set decision from dossier verdict (authoritative source)
+            decision = wb_verdict
+
+            # Derive result code using authoritative decision
+            if assessment:
+                result_code = self._derive_result_code(assessment, decision=decision)
+
             # Ground truth fields
             gt_decision = gt.get("decision")
             gt_payout = gt.get("total_approved_amount")
@@ -414,7 +428,7 @@ class DashboardService:
             gt_coverage_notes = gt.get("coverage_notes")
             claim_date = gt.get("date")
 
-            # Match comparison
+            # Match comparison — decision is already set from dossier (authoritative)
             decision_match = None
             payout_diff = None
             norm_decision = self._normalize_decision(decision)

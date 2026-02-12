@@ -130,7 +130,7 @@ class AssessmentStorageService:
             "timestamp": now.isoformat(),
             "prompt_version": prompt_version,
             "extraction_bundle_id": extraction_bundle_id,
-            "decision": assessment_data.get("decision"),
+            "recommendation": assessment_data.get("recommendation"),
             "confidence_score": assessment_data.get("confidence_score"),
             "is_current": True,
         }
@@ -335,14 +335,14 @@ class AssessmentStorageService:
 
         return {
             "claim_id": data.get("claim_id", ""),
-            "decision": data.get("decision", "REFER_TO_HUMAN"),
+            "recommendation": data.get("recommendation", "REFER_TO_HUMAN"),
             "confidence_score": confidence_score,
             "checks": [self._transform_check(c) for c in data.get("checks", [])],
             "assumptions": [self._transform_assumption(a) for a in data.get("assumptions", [])],
             "payout": payout,
             "currency": currency,
             "payout_breakdown": self._transform_payout(data),
-            "decision_rationale": data.get("decision_rationale"),
+            "recommendation_rationale": data.get("recommendation_rationale"),
             "fraud_indicators": [
                 self._transform_fraud_indicator(f) for f in data.get("fraud_indicators", [])
             ],
@@ -549,7 +549,7 @@ class AssessmentStorageService:
                     history.append({
                         "run_id": run_dir.name,
                         "timestamp": data.get("assessment_timestamp"),
-                        "decision": data.get("decision"),
+                        "recommendation": data.get("recommendation"),
                         "confidence_score": confidence,
                         "payout": payout,
                         "prompt_version": data.get("prompt_version"),
@@ -599,7 +599,7 @@ class AssessmentStorageService:
                 history.append({
                     "run_id": entry.get("id"),
                     "timestamp": entry.get("timestamp"),
-                    "decision": entry.get("decision"),
+                    "recommendation": entry.get("recommendation"),
                     "confidence_score": confidence,
                     "payout": assessment.get("payout") if assessment else None,
                     "prompt_version": entry.get("prompt_version"),
@@ -625,7 +625,7 @@ class AssessmentStorageService:
             {
                 "run_id": None,
                 "timestamp": assessment.get("assessed_at"),
-                "decision": assessment.get("decision"),
+                "recommendation": assessment.get("recommendation"),
                 "confidence_score": assessment.get("confidence_score"),
                 "payout": assessment.get("payout"),
                 "prompt_version": None,

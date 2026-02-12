@@ -1,7 +1,9 @@
 """Assessment processor for claim-level pipeline.
 
 This processor evaluates a claim based on aggregated facts and produces
-a decision (APPROVE, REJECT, REFER_TO_HUMAN) with supporting checks and rationale.
+an advisory recommendation (APPROVE, REJECT, REFER_TO_HUMAN) with supporting
+checks and rationale.  The authoritative verdict is determined by the
+decision engine (see decision.py).
 
 All LLM calls are logged via the compliance audit service.
 """
@@ -225,8 +227,8 @@ class AssessmentProcessor:
             "assessment_method": "auto_reject",
             "claim_id": claim_id,
             "assessment_timestamp": datetime.now(timezone.utc).isoformat(),
-            "decision": "REJECT",
-            "decision_rationale": screening.get(
+            "recommendation": "REJECT",
+            "recommendation_rationale": screening.get(
                 "auto_reject_reason", "Auto-rejected by screening"
             ),
             "confidence_score": 1.0,
@@ -328,87 +330,11 @@ class AssessmentProcessor:
                 context.claim_id, screening_payout.get("final_payout"),
             )
 
-        # Override REJECT → APPROVE when only soft checks (non-hard-fail) caused rejection.
-        # Check 4b (service_compliance) is a soft/informational check that should never
-        # cause rejection on its own. If the LLM rejected solely because of soft checks,
-        # override to APPROVE and restore the screening payout.
-        SOFT_CHECK_IDS = {"4b"}
-        if result.get("decision") == "REJECT" and screening and not screening.get("auto_reject"):
-            failing_checks = [
-                c for c in result.get("checks", [])
-                if isinstance(c, dict)
-                and c.get("result") == "FAIL"
-                and c.get("check_number") not in ("7",)  # exclude final_decision
-            ]
-            all_soft = failing_checks and all(
-                c.get("check_number") in SOFT_CHECK_IDS for c in failing_checks
-            )
-            if all_soft:
-                soft_names = ", ".join(
-                    c.get("check_name", c.get("check_number", "?"))
-                    for c in failing_checks
-                )
-                logger.info(
-                    "Overriding REJECT → APPROVE for claim %s: "
-                    "only soft checks failed (%s)",
-                    context.claim_id, soft_names,
-                )
-                result["decision"] = "APPROVE"
-                result["decision_rationale"] = (
-                    f"Approved: soft check(s) ({soft_names}) noted but do not block approval. "
-                    f"Original LLM rationale: {result.get('decision_rationale', '')}"
-                )
-                # Restore screening payout (may have been zeroed by LLM)
-                if screening.get("payout"):
-                    result["payout"] = self._map_screening_payout(screening["payout"])
-                # Fix final_decision check
-                for check in result.get("checks", []):
-                    if check.get("check_name") == "final_decision":
-                        check["result"] = "PASS"
-                        check["details"] = (
-                            f"Approved despite soft check failure(s): {soft_names}. "
-                            "Service compliance is informational only."
-                        )
-                        break
-
-        # Override APPROVE → REJECT when payout is zero
-        final_payout = (result.get("payout") or {}).get("final_payout", 0.0)
-        if result.get("decision") == "APPROVE" and final_payout <= 0:
-            payout_data = result.get("payout") or {}
-            covered = payout_data.get("covered_subtotal", 0.0)
-            deductible = payout_data.get("deductible", 0.0)
-            currency = payout_data.get("currency", "CHF")
-            logger.info(
-                f"Overriding APPROVE → REJECT for claim {context.claim_id}: "
-                f"final_payout={final_payout}"
-            )
-            result["decision"] = "REJECT"
-            override_reason = (
-                f"Covered amount ({currency} {covered:,.2f}) does not exceed "
-                f"the deductible ({currency} {deductible:,.2f}), "
-                f"resulting in zero payout."
-            )
-            result["decision_rationale"] = (
-                f"Rejected: {override_reason} "
-                f"Original rationale: {result.get('decision_rationale', '')}"
-            )
-
-            # Update final_decision check to reflect the override — without
-            # this, checks show all-PASS while the decision says REJECT,
-            # which is confusing and looks like a bug.
-            for check in result.get("checks", []):
-                if check.get("check_name") == "final_decision":
-                    check["result"] = "FAIL"
-                    check["details"] = override_reason
-                    break
-
-        # Zero payout when decision is REJECT (rejected claims must not show positive payout)
-        if result.get("decision") == "REJECT" and final_payout > 0:
-            logger.info(
-                f"Zeroing payout for rejected claim {context.claim_id}: "
-                f"final_payout was {final_payout}"
-            )
-            result.setdefault("payout", {})["final_payout"] = 0.0
+        # NOTE: The `recommendation` field in assessment.json is advisory only.
+        # The authoritative verdict comes from the decision engine
+        # (decision_dossier_v*.json), which applies soft-check exceptions,
+        # zero-payout rules, and REFER logic using assessment check results.
+        # No verdict overrides are applied here.
 
         # Add metadata to result
         result["claim_id"] = context.claim_id
@@ -417,7 +343,7 @@ class AssessmentProcessor:
 
         logger.info(
             f"Assessment complete for {context.claim_id}: "
-            f"decision={result.get('decision')}, "
+            f"recommendation={result.get('recommendation')}, "
             f"confidence={result.get('confidence_score')}"
         )
 

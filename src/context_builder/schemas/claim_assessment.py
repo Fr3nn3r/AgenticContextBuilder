@@ -19,8 +19,9 @@ class ClaimAssessmentResult(BaseModel):
     providing a unified result structure for the `assess` CLI command.
 
     The ``decision``, ``confidence_score``, and ``final_payout`` properties
-    prefer authoritative sources (dossier verdict, CCI score, screener
-    payout) and fall back to LLM assessment values when unavailable.
+    use authoritative sources only (dossier verdict, CCI score, screener
+    payout).  The assessment's ``recommendation`` field is advisory and
+    is NOT used as a fallback for the verdict.
     """
 
     claim_id: str = Field(..., description="Claim identifier")
@@ -58,16 +59,15 @@ class ClaimAssessmentResult(BaseModel):
     # Summary fields for CLI display (extracted from nested objects)
     @property
     def decision(self) -> Optional[str]:
-        """Final claim verdict.
+        """Final claim verdict (from dossier only).
 
-        Prefers dossier claim_verdict; falls back to LLM assessment decision.
+        Returns the authoritative dossier claim_verdict.
+        Does NOT fall back to the assessment recommendation.
         """
         if self.decision_dossier:
             verdict = self.decision_dossier.get("claim_verdict")
             if verdict:
                 return verdict
-        if self.assessment:
-            return self.assessment.decision
         return None
 
     @property
@@ -95,8 +95,12 @@ class ClaimAssessmentResult(BaseModel):
     def final_payout(self) -> Optional[float]:
         """Final recommended payout amount.
 
-        Prefers screener payout; falls back to LLM assessment payout.
+        Returns 0.0 for rejected claims.  Otherwise prefers screener
+        payout, falling back to LLM assessment payout.
         """
+        decision = self.decision
+        if decision and decision.upper() in ("REJECT", "DENY"):
+            return 0.0
         if self.screening_payout is not None:
             return self.screening_payout
         if self.assessment and self.assessment.payout:

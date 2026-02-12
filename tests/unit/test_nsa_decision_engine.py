@@ -676,7 +676,7 @@ class TestDossierStructure:
         assert dossier.claim_id == "CLM-001"
         assert dossier.version == 1
         assert dossier.engine_id == "nsa_decision_v1"
-        assert dossier.engine_version == "1.2.0"
+        assert dossier.engine_version == "1.3.0"
         assert dossier.evaluation_timestamp
 
     def test_dossier_evaluates_all_enabled_clauses(self, engine):

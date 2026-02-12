@@ -424,7 +424,7 @@ async def assessment_websocket(websocket: WebSocket, claim_id: str, run_id: str)
             if run_info["status"] == "completed":
                 await websocket.send_json({
                     "type": "complete",
-                    "decision": run_info.get("result", {}).get("decision"),
+                    "decision": run_info.get("result", {}).get("recommendation"),
                     "assessment_id": run_info.get("result", {}).get("id"),
                     "input_tokens": run_info.get("input_tokens", 0),
                     "output_tokens": run_info.get("output_tokens", 0),

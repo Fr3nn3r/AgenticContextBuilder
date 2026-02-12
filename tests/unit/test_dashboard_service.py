@@ -45,7 +45,7 @@ def _make_claim(workspace, claim_id="CLM-001", run_id="run-001",
                 json.dump(screening, f)
 
         # Always write assessment so claim_run_id is resolved
-        assess = assessment or {"decision": "REFER", "checks": []}
+        assess = assessment or {"recommendation": "REFER", "checks": []}
         with open(run_dir / "assessment.json", "w") as f:
             json.dump(assess, f)
 
@@ -184,7 +184,7 @@ class TestListClaimsWorkbenchFields:
             "confidence_index": {"composite_score": 0.8, "band": "moderate"},
         }
         assessment = {
-            "decision": "APPROVE",
+            "recommendation": "APPROVE",
             "confidence_score": 0.8,
             "checks": [],
             "payout": {"final_payout": 2000.0, "currency": "CHF"},

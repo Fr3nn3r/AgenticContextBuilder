@@ -97,6 +97,11 @@ class ClaimAssessmentService:
         logger.info(f"Starting assessment for claim {claim_id}")
 
         # Step 1: Run reconciliation
+        if on_stage_update:
+            try:
+                on_stage_update("reconciliation", "running")
+            except Exception:
+                pass
         reconcile_result = self.reconciliation.reconcile(claim_id, run_context=run_context)
         if not reconcile_result.success:
             logger.error(f"Reconciliation failed for {claim_id}: {reconcile_result.error}")
@@ -188,6 +193,12 @@ class ClaimAssessmentService:
         )
 
         try:
+            if on_stage_update:
+                try:
+                    on_stage_update("assessment", "running")
+                except Exception:
+                    pass
+
             # Get assessment processor
             processor = get_processor("assessment")
             if not processor:
@@ -206,6 +217,12 @@ class ClaimAssessmentService:
 
             # Parse into AssessmentResponse model
             assessment_response = AssessmentResponse.model_validate(assessment_result)
+
+            if on_stage_update:
+                try:
+                    on_stage_update("assessment", "complete")
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.error(f"Assessment failed for {claim_id}: {e}")
@@ -327,7 +344,7 @@ class ClaimAssessmentService:
 
         logger.info(
             f"Assessment complete for {claim_id}: "
-            f"decision={assessment_response.decision}, "
+            f"recommendation={assessment_response.recommendation}, "
             f"confidence={assessment_response.confidence_score}"
         )
 
@@ -410,9 +427,16 @@ class ClaimAssessmentService:
 def _extract_screening_payout(
     screening_result: Optional[Dict[str, Any]],
 ) -> Optional[float]:
-    """Extract final_payout from screening result."""
+    """Extract final_payout from screening result.
+
+    Returns 0.0 when the screener auto-rejected the claim, because the
+    payout breakdown still contains the hypothetical covered-item total
+    even on rejection.
+    """
     if not screening_result:
         return None
+    if screening_result.get("auto_reject"):
+        return 0.0
     payout = screening_result.get("payout")
     if isinstance(payout, dict):
         val = payout.get("final_payout")

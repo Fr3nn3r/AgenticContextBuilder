@@ -306,8 +306,8 @@ class TestAssessmentResponse:
         response = AssessmentResponse(
             claim_id="CLM-12345",
             assessment_timestamp="2026-01-28T10:00:00Z",
-            decision="APPROVE",
-            decision_rationale="All checks passed",
+            recommendation="APPROVE",
+            recommendation_rationale="All checks passed",
             confidence_score=0.85,
             checks=[
                 CheckResult(
@@ -333,7 +333,7 @@ class TestAssessmentResponse:
         )
 
         assert response.claim_id == "CLM-12345"
-        assert response.decision == "APPROVE"
+        assert response.recommendation == "APPROVE"
 
     def test_default_schema_version(self):
         """Test that schema_version defaults to v2."""
@@ -345,7 +345,7 @@ class TestAssessmentResponse:
         """Test that only valid decision values are allowed."""
         for decision in ["APPROVE", "REJECT", "REFER_TO_HUMAN"]:
             response = _create_minimal_response(decision=decision)
-            assert response.decision == decision
+            assert response.recommendation == decision
 
     def test_invalid_decision_rejected(self):
         """Test that invalid decision values are rejected."""
@@ -383,8 +383,8 @@ class TestAssessmentResponse:
             schema_version="claims_assessment_v2",
             claim_id="CLM-12345",
             assessment_timestamp="2026-01-28T10:00:00Z",
-            decision="APPROVE",
-            decision_rationale="All checks passed, claim is valid",
+            recommendation="APPROVE",
+            recommendation_rationale="All checks passed, claim is valid",
             confidence_score=0.85,
             checks=[
                 CheckResult(
@@ -434,7 +434,7 @@ class TestAssessmentResponse:
 
         assert data["schema_version"] == "claims_assessment_v2"
         assert data["claim_id"] == "CLM-12345"
-        assert data["decision"] == "APPROVE"
+        assert data["recommendation"] == "APPROVE"
         assert len(data["checks"]) == 2
         assert data["payout"]["final_payout"] == 3240.0
         assert len(data["data_gaps"]) == 1
@@ -454,7 +454,7 @@ class TestAssessmentResponse:
         restored = AssessmentResponse.model_validate(data)
 
         assert restored.claim_id == original.claim_id
-        assert restored.decision == original.decision
+        assert restored.recommendation == original.recommendation
         assert restored.confidence_score == original.confidence_score
 
 
@@ -484,8 +484,8 @@ class TestValidateAssessmentCompleteness:
         response = AssessmentResponse(
             claim_id="CLM-12345",
             assessment_timestamp="2026-01-28T10:00:00Z",
-            decision="APPROVE",
-            decision_rationale="Test",
+            recommendation="APPROVE",
+            recommendation_rationale="Test",
             confidence_score=0.8,
             checks=[
                 CheckResult(check_number="1", check_name="policy_validity", result="PASS", details="OK"),
@@ -534,7 +534,7 @@ class TestJsonSchemaGeneration:
         assert schema is not None
         assert "properties" in schema
         assert "claim_id" in schema["properties"]
-        assert "decision" in schema["properties"]
+        assert "recommendation" in schema["properties"]
         assert "checks" in schema["properties"]
         assert "payout" in schema["properties"]
 
@@ -576,8 +576,8 @@ def _create_minimal_response(
     return AssessmentResponse(
         claim_id="CLM-12345",
         assessment_timestamp="2026-01-28T10:00:00Z",
-        decision=decision,
-        decision_rationale="Test response",
+        recommendation=decision,
+        recommendation_rationale="Test response",
         confidence_score=confidence_score,
         checks=[
             CheckResult(
@@ -610,8 +610,8 @@ def _create_complete_response() -> AssessmentResponse:
     return AssessmentResponse(
         claim_id="CLM-12345",
         assessment_timestamp="2026-01-28T10:00:00Z",
-        decision="APPROVE",
-        decision_rationale="All checks passed",
+        recommendation="APPROVE",
+        recommendation_rationale="All checks passed",
         confidence_score=0.95,
         checks=checks,
         payout=_create_minimal_payout(),

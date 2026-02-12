@@ -2498,7 +2498,7 @@ def main():
                         crs = ClaimRunStorage(claim_folder)
                         assessment_data = crs.read_from_claim_run(shared_id, "assessment.json")
                         if assessment_data:
-                            dec = assessment_data.get("decision", "UNKNOWN")
+                            dec = assessment_data.get("recommendation", "UNKNOWN")
                             decision_counts[dec] = decision_counts.get(dec, 0) + 1
 
                 ws_summary = {

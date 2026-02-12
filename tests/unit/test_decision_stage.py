@@ -96,9 +96,10 @@ class TestDefaultDecisionEngine:
     def test_engine_attributes(self, workspace):
         engine = DefaultDecisionEngine(workspace)
         assert engine.engine_id == "default"
-        assert engine.engine_version == "0.0.0"
+        assert engine.engine_version == "0.1.0"
 
-    def test_evaluate_returns_refer(self, workspace):
+    def test_evaluate_returns_refer_without_processing_result(self, workspace):
+        """Without processing_result, verdict is REFER (no data to decide)."""
         engine = DefaultDecisionEngine(workspace)
         result = engine.evaluate(
             claim_id="CLM-001",
@@ -108,6 +109,93 @@ class TestDefaultDecisionEngine:
         assert result["schema_version"] == "decision_dossier_v1"
         assert result["claim_id"] == "CLM-001"
         assert result["clause_evaluations"] == []
+
+    def test_evaluate_approve_when_all_checks_pass(self, workspace):
+        """All checks PASS + APPROVE -> APPROVE."""
+        engine = DefaultDecisionEngine(workspace)
+        processing = {
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "PASS"},
+                {"check_number": "5", "check_name": "component_coverage", "result": "PASS"},
+                {"check_number": "7", "check_name": "final_decision", "result": "PASS"},
+            ],
+            "payout": {"final_payout": 1000.0},
+        }
+        result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
+        assert result["claim_verdict"] == "APPROVE"
+
+    def test_evaluate_deny_on_hard_check_fail(self, workspace):
+        """Hard check FAIL -> DENY."""
+        engine = DefaultDecisionEngine(workspace)
+        processing = {
+            "recommendation": "APPROVE",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "FAIL"},
+                {"check_number": "7", "check_name": "final_decision", "result": "FAIL"},
+            ],
+            "payout": {"final_payout": 1000.0},
+        }
+        result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
+        assert result["claim_verdict"] == "DENY"
+        assert "policy_validity" in result["verdict_reason"]
+
+    def test_evaluate_refer_on_inconclusive(self, workspace):
+        """INCONCLUSIVE check -> REFER."""
+        engine = DefaultDecisionEngine(workspace)
+        processing = {
+            "recommendation": "REFER_TO_HUMAN",
+            "recommendation_rationale": "Mileage unclear",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "PASS"},
+                {"check_number": "3", "check_name": "mileage_compliance", "result": "INCONCLUSIVE"},
+                {"check_number": "7", "check_name": "final_decision", "result": "FAIL"},
+            ],
+            "payout": {"final_payout": 1000.0},
+        }
+        result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
+        assert result["claim_verdict"] == "REFER"
+        assert "mileage_compliance" in result["verdict_reason"]
+
+    def test_evaluate_deny_on_zero_payout(self, workspace):
+        """APPROVE + zero payout -> DENY."""
+        engine = DefaultDecisionEngine(workspace)
+        processing = {
+            "recommendation": "APPROVE",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "PASS"},
+                {"check_number": "7", "check_name": "final_decision", "result": "PASS"},
+            ],
+            "payout": {
+                "final_payout": 0.0,
+                "covered_subtotal": 80.0,
+                "deductible": 150.0,
+                "currency": "CHF",
+            },
+        }
+        result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
+        assert result["claim_verdict"] == "DENY"
+        assert "deductible" in result["verdict_reason"]
+
+    def test_evaluate_refer_from_llm(self, workspace):
+        """REFER_TO_HUMAN from LLM with no INCONCLUSIVE checks -> REFER."""
+        engine = DefaultDecisionEngine(workspace)
+        processing = {
+            "recommendation": "REFER_TO_HUMAN",
+            "recommendation_rationale": "Uncertain about claim",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "PASS"},
+            ],
+            "payout": {"final_payout": 1000.0},
+        }
+        result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
+        assert result["claim_verdict"] == "REFER"
+
+    def test_soft_check_ids_empty_by_default(self, workspace):
+        """Default engine has no soft checks."""
+        engine = DefaultDecisionEngine(workspace)
+        assert engine.SOFT_CHECK_IDS == set()
 
     def test_get_clause_registry_empty(self, workspace):
         engine = DefaultDecisionEngine(workspace)
@@ -185,11 +273,28 @@ class TestDecisionStage:
         result = stage.run(context)
         assert result.decision_result is None
 
-    def test_run_with_default_engine(self, context):
+    def test_run_with_default_engine_no_processing(self, context):
+        """Without processing_result, default engine returns REFER."""
         stage = DecisionStage()
         result = stage.run(context)
         assert result.decision_result is not None
         assert result.decision_result["claim_verdict"] == "REFER"
+        assert result.decision_result["engine_id"] == "default"
+
+    def test_run_with_default_engine_derives_verdict(self, context):
+        """With processing_result, default engine derives verdict from checks."""
+        context.processing_result = {
+            "recommendation": "APPROVE",
+            "checks": [
+                {"check_number": "1", "check_name": "policy_validity", "result": "PASS"},
+                {"check_number": "7", "check_name": "final_decision", "result": "PASS"},
+            ],
+            "payout": {"final_payout": 1000.0},
+        }
+        stage = DecisionStage()
+        result = stage.run(context)
+        assert result.decision_result is not None
+        assert result.decision_result["claim_verdict"] == "APPROVE"
         assert result.decision_result["engine_id"] == "default"
 
     def test_run_writes_dossier_file(self, context, workspace):

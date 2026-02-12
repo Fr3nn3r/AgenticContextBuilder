@@ -327,8 +327,8 @@ class TestAssessmentMethodField:
         base = {
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:30:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All checks passed",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All checks passed",
             "confidence_score": 0.85,
             "checks": [
                 {

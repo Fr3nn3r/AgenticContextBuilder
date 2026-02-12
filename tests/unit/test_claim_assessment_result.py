@@ -44,21 +44,23 @@ class TestDecisionProperty:
         object.__setattr__(result, "assessment", _fake_assessment(decision="APPROVE"))
         assert result.decision == "DENY"
 
-    def test_falls_back_to_assessment(self):
+    def test_no_fallback_to_assessment(self):
+        """Without dossier, decision is None (no fallback to assessment recommendation)."""
         result = _make_result()
         object.__setattr__(result, "assessment", _fake_assessment(decision="APPROVE"))
-        assert result.decision == "APPROVE"
+        assert result.decision is None
 
     def test_none_when_both_missing(self):
         result = _make_result()
         assert result.decision is None
 
-    def test_falls_back_when_dossier_verdict_missing(self):
+    def test_none_when_dossier_verdict_missing(self):
+        """Dossier without claim_verdict returns None (no fallback to assessment)."""
         result = _make_result(
             decision_dossier={"some_other_field": True},
         )
         object.__setattr__(result, "assessment", _fake_assessment(decision="REFER_TO_HUMAN"))
-        assert result.decision == "REFER_TO_HUMAN"
+        assert result.decision is None
 
 
 # ── confidence_score property ───────────────────────────────────────

@@ -384,7 +384,7 @@ class TestBuildAutoRejectResponse:
         screening = _make_auto_reject_screening()
         result = self.processor._build_auto_reject_response("CLM-001", screening)
 
-        assert result["decision"] == "REJECT"
+        assert result["recommendation"] == "REJECT"
         assert result["confidence_score"] == 1.0
         assert result["assessment_method"] == "auto_reject"
 
@@ -411,7 +411,7 @@ class TestBuildAutoRejectResponse:
 
         # Should not raise
         validated = AssessmentResponse.model_validate(result)
-        assert validated.decision == "REJECT"
+        assert validated.recommendation == "REJECT"
 
     def test_meets_min_checks(self):
         screening = _make_auto_reject_screening()
@@ -460,7 +460,7 @@ class TestBuildAutoRejectResponse:
         screening = _make_auto_reject_screening(hard_fail_check_id="3")
         result = self.processor._build_auto_reject_response("CLM-001", screening)
 
-        assert "3" in result["decision_rationale"]
+        assert "3" in result["recommendation_rationale"]
 
     def test_fraud_indicators_from_hard_fails(self):
         screening = _make_auto_reject_screening(hard_fail_check_id="3")
@@ -525,7 +525,7 @@ class TestProcessBranching:
         mock_get_client.assert_not_called()
 
         # Result should be auto-reject
-        assert result["decision"] == "REJECT"
+        assert result["recommendation"] == "REJECT"
         assert result["assessment_method"] == "auto_reject"
         assert result["model"] == "none (auto-reject)"
         assert result["prompt_version"] == "v1"
@@ -561,8 +561,8 @@ class TestProcessBranching:
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": payout,
@@ -580,7 +580,7 @@ class TestProcessBranching:
 
         # OpenAI client SHOULD be initialized
         mock_get_client.assert_called_once()
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
 
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
@@ -608,8 +608,8 @@ class TestProcessBranching:
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": payout,
@@ -628,7 +628,7 @@ class TestProcessBranching:
 
         # LLM should be called
         mock_get_client.assert_called_once()
-        assert result["decision"] == "APPROVE"
+        assert result["recommendation"] == "APPROVE"
 
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
@@ -658,8 +658,8 @@ class TestProcessBranching:
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": llm_payout,
@@ -709,8 +709,8 @@ class TestProcessBranching:
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": llm_payout,
@@ -740,10 +740,13 @@ class TestProcessBranching:
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
     )
-    def test_zero_payout_approve_overridden_to_reject(
+    def test_approve_with_zero_payout_stays_approve(
         self, mock_logs_dir, mock_audit_service, mock_get_client
     ):
-        """When LLM says APPROVE but payout is 0, override to REJECT."""
+        """Assessment preserves LLM decision as-is — no verdict overrides.
+
+        Zero-payout override logic moved to the decision engine.
+        """
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_audit_service.return_value = MagicMock()
@@ -754,8 +757,8 @@ class TestProcessBranching:
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All good",
+            "recommendation": "APPROVE",
+            "recommendation_rationale": "All good",
             "confidence_score": 0.9,
             "checks": [],
             "payout": AssessmentProcessor._zero_payout(),
@@ -771,14 +774,8 @@ class TestProcessBranching:
             config = self._make_config()
             result = self.processor.process(context, config)
 
-        assert result["decision"] == "REJECT"
-        assert "does not exceed" in result["decision_rationale"]
-        assert "deductible" in result["decision_rationale"]
-        assert "Original rationale: All good" in result["decision_rationale"]
-        # final_decision check should be updated to FAIL
-        final_checks = [c for c in result.get("checks", []) if c.get("check_name") == "final_decision"]
-        if final_checks:
-            assert final_checks[0]["result"] == "FAIL"
+        # Decision is advisory — preserved as LLM returned it
+        assert result["recommendation"] == "APPROVE"
 
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_openai_client"
@@ -789,34 +786,33 @@ class TestProcessBranching:
     @patch(
         "context_builder.pipeline.claim_stages.assessment_processor.get_workspace_logs_dir"
     )
-    def test_zero_payout_override_updates_final_decision_check(
+    def test_reject_from_soft_check_stays_reject(
         self, mock_logs_dir, mock_audit_service, mock_get_client
     ):
-        """When APPROVE→REJECT override triggers, final_decision check must flip to FAIL."""
+        """Assessment preserves LLM REJECT as-is — no soft-check override.
+
+        Soft-check exception logic moved to the decision engine.
+        """
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_audit_service.return_value = MagicMock()
         mock_logs_dir.return_value = Path("/tmp/logs")
-
-        payout = AssessmentProcessor._zero_payout()
-        payout["covered_subtotal"] = 80.0
-        payout["deductible"] = 150.0
 
         mock_response = {
             "schema_version": "claims_assessment_v2",
             "assessment_method": "llm",
             "claim_id": "CLM-001",
             "assessment_timestamp": "2026-01-28T10:00:00Z",
-            "decision": "APPROVE",
-            "decision_rationale": "All checks passed",
+            "recommendation": "REJECT",
+            "recommendation_rationale": "Service compliance failed",
             "confidence_score": 0.95,
             "checks": [
-                {"check_number": "5", "check_name": "component_coverage", "result": "PASS",
-                 "details": "Covered", "evidence_refs": []},
-                {"check_number": "7", "check_name": "final_decision", "result": "PASS",
-                 "details": "All checks passed", "evidence_refs": []},
+                {"check_number": "4b", "check_name": "service_compliance", "result": "FAIL",
+                 "details": "Old service", "evidence_refs": []},
+                {"check_number": "7", "check_name": "final_decision", "result": "FAIL",
+                 "details": "Rejected", "evidence_refs": []},
             ],
-            "payout": payout,
+            "payout": AssessmentProcessor._zero_payout(),
             "data_gaps": [],
             "fraud_indicators": [],
             "recommendations": [],
@@ -829,19 +825,13 @@ class TestProcessBranching:
             config = self._make_config()
             result = self.processor.process(context, config)
 
-        assert result["decision"] == "REJECT"
-        # final_decision check must be FAIL with explanation
+        # Decision is advisory — preserved as LLM returned it
+        assert result["recommendation"] == "REJECT"
+        # Checks not modified by assessment processor
         final_check = next(
             c for c in result["checks"] if c["check_name"] == "final_decision"
         )
         assert final_check["result"] == "FAIL"
-        assert "80.00" in final_check["details"]
-        assert "150.00" in final_check["details"]
-        # Other checks should remain unchanged
-        comp_check = next(
-            c for c in result["checks"] if c["check_name"] == "component_coverage"
-        )
-        assert comp_check["result"] == "PASS"
 
 
 # ── _build_prompts tests ────────────────────────────────────────────
