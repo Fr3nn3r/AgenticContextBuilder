@@ -317,3 +317,43 @@ class PartNumberLookup:
                 logger.warning(f"Keyword lookup failed: {e}")
 
         return None
+
+    def lookup_as_hint(
+        self,
+        item_code: Optional[str],
+        description: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """Generate an advisory hint from part number / description lookup.
+
+        Unlike ``lookup()``, this returns a lightweight dict suitable for
+        embedding in an LLM prompt, without making a coverage decision.
+
+        Tries exact part-number lookup first, then falls back to
+        description-keyword lookup.
+
+        Args:
+            item_code: Part number / item code (may be None).
+            description: Item description for keyword fallback.
+
+        Returns:
+            Dict with keys {part_number, system, component, lookup_source,
+            covered} if a match was found, else None.
+        """
+        result: Optional[PartLookupResult] = None
+
+        if item_code:
+            result = self.lookup(item_code)
+
+        if (not result or not result.found) and description:
+            result = self.lookup_by_description(description)
+
+        if not result or not result.found:
+            return None
+
+        return {
+            "part_number": result.part_number,
+            "system": result.system,
+            "component": result.component or result.component_description,
+            "lookup_source": result.lookup_source,
+            "covered": result.covered,
+        }

@@ -38,6 +38,7 @@ def compute_confidence(
     processing_result: Optional[Dict[str, Any]] = None,
     decision_result: Optional[Dict[str, Any]] = None,
     weights: Optional[Dict[str, float]] = None,
+    verdict: str = "",
 ) -> Optional[ConfidenceSummary]:
     """Compute the Composite Confidence Index from upstream stage data.
 
@@ -62,13 +63,21 @@ def compute_confidence(
         decision_result: Decision dossier dict with
             ``clause_evaluations``, ``assumptions_used``, etc.
         weights: Optional custom component weights.  If None, uses
-            DEFAULT_WEIGHTS (document_quality=0.25, ...).
+            DEFAULT_WEIGHTS for APPROVE/REFER or DENY_WEIGHTS for DENY.
+        verdict: Claim verdict (``"APPROVE"``, ``"DENY"``, ``"REFER"``).
+            Controls signal polarity, weight selection, and whether
+            the coverage concordance signal is emitted.  If empty,
+            auto-detected from ``decision_result["claim_verdict"]``.
 
     Returns:
         A ConfidenceSummary with composite score, band, component
         breakdown, and collected signals.  Returns None if no signals
         could be collected from any stage.
     """
+    # Auto-detect verdict from decision dossier if not provided
+    if not verdict and decision_result:
+        verdict = (decision_result.get("claim_verdict") or "").upper()
+
     collector = ConfidenceCollector()
     signals = collector.collect_all(
         extraction_results=extraction_results or [],
@@ -77,6 +86,7 @@ def compute_confidence(
         screening_result=screening_result,
         processing_result=processing_result,
         decision_result=decision_result,
+        verdict=verdict,
     )
 
     if not signals:
@@ -87,6 +97,7 @@ def compute_confidence(
         signals=signals,
         claim_id=claim_id,
         claim_run_id=claim_run_id,
+        verdict=verdict,
     )
     _enrich_data_completeness_detail(summary, reconciliation_report, processing_result)
     return summary

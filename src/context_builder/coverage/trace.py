@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
+    DecisionSource,
     TraceAction,
     TraceStep,
 )
@@ -27,6 +28,7 @@ class TraceBuilder:
         verdict: Optional[CoverageStatus] = None,
         confidence: Optional[float] = None,
         detail: Optional[Dict[str, Any]] = None,
+        decision_source: Optional[DecisionSource] = None,
     ) -> "TraceBuilder":
         """Append a trace step."""
         self._steps.append(
@@ -37,6 +39,7 @@ class TraceBuilder:
                 verdict=verdict,
                 confidence=confidence,
                 detail=detail,
+                decision_source=decision_source,
             )
         )
         return self

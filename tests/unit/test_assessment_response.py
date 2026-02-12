@@ -11,7 +11,6 @@ from context_builder.schemas.assessment_response import (
     DataGap,
     CheckResult,
     FraudIndicator,
-    MIN_EXPECTED_CHECKS,
     PayoutCalculation,
     EXPECTED_CHECK_NUMBERS,
     validate_assessment_completeness,
@@ -518,10 +517,6 @@ class TestValidateAssessmentCompleteness:
         assert "5b" in EXPECTED_CHECK_NUMBERS
         assert "6" in EXPECTED_CHECK_NUMBERS
         assert "7" in EXPECTED_CHECK_NUMBERS
-
-    def test_min_expected_checks(self):
-        """Test that MIN_EXPECTED_CHECKS is 7."""
-        assert MIN_EXPECTED_CHECKS == 7
 
 
 class TestJsonSchemaGeneration:

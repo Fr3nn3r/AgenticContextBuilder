@@ -42,6 +42,18 @@ class TraceAction(str, Enum):
     VALIDATED = "validated"
 
 
+class DecisionSource(str, Enum):
+    """Source of a coverage decision for audit trail."""
+
+    RULE = "rule"
+    PART_NUMBER = "part_number"
+    KEYWORD = "keyword"
+    LLM = "llm"
+    PROMOTION = "promotion"
+    DEMOTION = "demotion"
+    VALIDATION = "validation"
+
+
 class TraceStep(BaseModel):
     """Single step in the coverage decision trace."""
 
@@ -54,6 +66,9 @@ class TraceStep(BaseModel):
     reasoning: str = Field(..., description="Human-readable explanation")
     detail: Optional[Dict[str, Any]] = Field(
         None, description="Stage-specific metadata"
+    )
+    decision_source: Optional[DecisionSource] = Field(
+        None, description="Source of this decision (rule, llm, promotion, etc.)"
     )
 
 
@@ -179,8 +194,17 @@ class CoverageMetadata(BaseModel):
     part_numbers_applied: int = Field(
         0, description="Count of items matched by part number lookup"
     )
-    keywords_applied: int = Field(0, description="Count of items matched by keywords")
+    keywords_applied: int = Field(
+        0,
+        description="Count of items matched by keywords (0 in LLM-first mode)",
+    )
     llm_calls: int = Field(0, description="Count of LLM calls made")
+    keyword_hints_generated: int = Field(
+        0, description="Count of keyword hints generated for LLM enrichment"
+    )
+    part_number_hints_generated: int = Field(
+        0, description="Count of part-number hints generated for LLM enrichment"
+    )
     processing_time_ms: Optional[float] = Field(
         None, description="Processing time in milliseconds"
     )
@@ -193,10 +217,9 @@ class PrimaryRepairResult(BaseModel):
     """Result of primary repair component determination.
 
     Identifies the main component being repaired, used by the screener
-    to decide coverage verdict. Determined via a three-tier approach:
-    1. Deterministic: highest-value covered parts item
-    2. Repair context: labor-derived primary component
-    3. LLM fallback: focused LLM call (when tiers 1-2 fail)
+    to decide coverage verdict. Determined via a two-tier approach:
+    1. LLM: focused LLM call that sees all items and picks the primary
+    2. Deterministic fallback: highest-value covered parts item
     """
 
     component: Optional[str] = Field(None, description="Component type (e.g., 'timing_chain')")
@@ -205,7 +228,7 @@ class PrimaryRepairResult(BaseModel):
     is_covered: Optional[bool] = Field(None, description="Whether the component is covered by policy")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence in the determination")
     determination_method: str = Field(
-        "none", description="How primary was determined: 'deterministic', 'repair_context', 'llm', 'none'"
+        "none", description="How primary was determined: 'llm', 'deterministic', 'none'"
     )
     source_item_index: Optional[int] = Field(
         None, description="Index of the source line item (for deterministic method)"

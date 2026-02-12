@@ -12,11 +12,13 @@ Confidence levels:
 
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     TraceAction,
@@ -46,6 +48,14 @@ class KeywordConfig:
     labor_coverage_categories: List[str] = field(default_factory=list)
     consumable_indicators: List[str] = field(default_factory=list)
 
+    # Multiplier applied to confidence when a consumable indicator is
+    # found alongside a component keyword (e.g. gasket + engine).
+    consumable_confidence_penalty: float = 0.7
+
+    # Additive boost applied to confidence when a context hint matches
+    # in addition to the primary keyword.
+    context_confidence_boost: float = 0.05
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "KeywordConfig":
         """Create config from dictionary (loaded from YAML)."""
@@ -65,6 +75,8 @@ class KeywordConfig:
             min_confidence_threshold=config.get("min_confidence_threshold", 0.70),
             labor_coverage_categories=config.get("labor_coverage_categories", []),
             consumable_indicators=config.get("consumable_indicators", []),
+            consumable_confidence_penalty=config.get("consumable_confidence_penalty", 0.7),
+            context_confidence_boost=config.get("context_confidence_boost", 0.05),
         )
 
 
@@ -118,6 +130,10 @@ class KeywordMatcher:
     ) -> Optional[LineItemCoverage]:
         """Attempt to match a line item using keyword mappings.
 
+        .. deprecated::
+            Use :meth:`generate_hints` instead. In LLM-first mode, keywords
+            provide hints to the LLM rather than making final coverage decisions.
+
         Args:
             description: Item description (usually in German)
             item_type: Item type (parts, labor, fee)
@@ -128,6 +144,11 @@ class KeywordMatcher:
         Returns:
             LineItemCoverage if matched by keywords, None otherwise
         """
+        warnings.warn(
+            "KeywordMatcher.match() is deprecated. Use generate_hints() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         covered_categories = covered_categories or []
         description_upper = description.upper()
 
@@ -142,7 +163,7 @@ class KeywordMatcher:
                 # Boost confidence if context hints match
                 for hint in mapping.context_hints:
                     if hint.upper() in description_upper:
-                        confidence = min(0.95, confidence + 0.05)
+                        confidence = min(0.95, confidence + self.config.context_confidence_boost)
                         break
 
                 matches.append((keyword, mapping, confidence))
@@ -160,7 +181,7 @@ class KeywordMatcher:
         # the component or is a consumable FOR the component.
         for indicator in self.config.consumable_indicators:
             if indicator.upper() in description_upper:
-                confidence *= 0.7
+                confidence *= self.config.consumable_confidence_penalty
                 logger.debug(
                     f"Consumable indicator '{indicator}' found in '{description}', "
                     f"reduced confidence to {confidence:.2f}"
@@ -197,7 +218,8 @@ class KeywordMatcher:
             tb.add("keyword", TraceAction.MATCHED,
                    f"Keyword '{keyword}' maps to covered category '{category}'",
                    verdict=CoverageStatus.COVERED, confidence=confidence,
-                   detail=trace_detail)
+                   detail=trace_detail,
+                   decision_source=DecisionSource.KEYWORD)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -217,7 +239,8 @@ class KeywordMatcher:
             tb.add("keyword", TraceAction.MATCHED,
                    f"Keyword '{keyword}' maps to category '{category}' which is not covered",
                    verdict=CoverageStatus.NOT_COVERED, confidence=confidence,
-                   detail=trace_detail)
+                   detail=trace_detail,
+                   decision_source=DecisionSource.KEYWORD)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -258,6 +281,85 @@ class KeywordMatcher:
                 return True
         return False
 
+    def generate_hint(
+        self,
+        description: str,
+        item_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate an advisory keyword hint for an item without making a coverage decision.
+
+        Unlike ``match()``, this method does NOT produce a LineItemCoverage.
+        It returns a lightweight dict summarising the best keyword match,
+        intended to be embedded in an LLM prompt as contextual signal.
+
+        Args:
+            description: Item description (usually in German)
+            item_type: Item type (parts, labor, fee)
+
+        Returns:
+            Dict with keys {keyword, category, component, confidence,
+            has_consumable_indicator} if a keyword matched, else None.
+        """
+        description_upper = description.upper()
+
+        matches: List[Tuple[str, KeywordMapping, float]] = []
+        for keyword, mapping in self._keyword_to_mapping.items():
+            if keyword in description_upper:
+                confidence = mapping.confidence
+                for hint in mapping.context_hints:
+                    if hint.upper() in description_upper:
+                        confidence = min(0.95, confidence + self.config.context_confidence_boost)
+                        break
+                matches.append((keyword, mapping, confidence))
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda x: x[2], reverse=True)
+        keyword, best_mapping, confidence = matches[0]
+
+        has_consumable_indicator = False
+        for indicator in self.config.consumable_indicators:
+            if indicator.upper() in description_upper:
+                confidence *= self.config.consumable_confidence_penalty
+                has_consumable_indicator = True
+                break
+
+        return {
+            "keyword": keyword,
+            "category": best_mapping.category,
+            "component": best_mapping.component_name,
+            "confidence": round(confidence, 3),
+            "has_consumable_indicator": has_consumable_indicator,
+        }
+
+    def generate_hints(
+        self,
+        items: List[Dict[str, Any]],
+    ) -> List[Optional[Dict[str, Any]]]:
+        """Generate keyword hints for a batch of items.
+
+        Returns a list parallel to *items* where each entry is either a
+        hint dict (see ``generate_hint()``) or ``None`` if no keyword
+        matched the item.
+
+        Args:
+            items: List of line item dicts (must have ``description`` and ``item_type``).
+
+        Returns:
+            List of hint dicts (or None), same length as *items*.
+        """
+        hints: List[Optional[Dict[str, Any]]] = []
+        for item in items:
+            hint = self.generate_hint(
+                description=item.get("description", ""),
+                item_type=item.get("item_type", ""),
+            )
+            hints.append(hint)
+        matched_count = sum(1 for h in hints if h is not None)
+        logger.debug("Keyword hints: %d/%d items matched", matched_count, len(items))
+        return hints
+
     def batch_match(
         self,
         items: List[Dict[str, Any]],
@@ -265,6 +367,10 @@ class KeywordMatcher:
         min_confidence: Optional[float] = None,
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match multiple items, returning matched and unmatched lists.
+
+        .. deprecated::
+            Use :meth:`generate_hints` instead. In LLM-first mode, keywords
+            provide hints to the LLM rather than making final coverage decisions.
 
         Args:
             items: List of line item dictionaries
@@ -274,6 +380,11 @@ class KeywordMatcher:
         Returns:
             Tuple of (matched items, unmatched items for LLM processing)
         """
+        warnings.warn(
+            "KeywordMatcher.batch_match() is deprecated. Use generate_hints() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         min_conf = min_confidence or self.config.min_confidence_threshold
         matched = []
         unmatched = []

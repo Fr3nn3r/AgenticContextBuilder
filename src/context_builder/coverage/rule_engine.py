@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     TraceAction,
@@ -59,6 +60,9 @@ class RuleConfig:
     # Rule 7.5: Standalone seal/gasket items (DICHTUNG, O-RING, etc.)
     seal_gasket_standalone_patterns: List[str]
 
+    # Confidence assigned to REVIEW_NEEDED items (fasteners, seals).
+    review_needed_confidence: float = 0.45
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "RuleConfig":
         """Create config from dictionary."""
@@ -71,6 +75,7 @@ class RuleConfig:
             generic_description_patterns=config.get("generic_description_patterns", []),
             fastener_patterns=config.get("fastener_patterns", []),
             seal_gasket_standalone_patterns=config.get("seal_gasket_standalone_patterns", []),
+            review_needed_confidence=config.get("review_needed_confidence", 0.45),
         )
 
     @classmethod
@@ -85,6 +90,7 @@ class RuleConfig:
             generic_description_patterns=[],
             fastener_patterns=[],
             seal_gasket_standalone_patterns=[],
+            review_needed_confidence=0.45,
         )
 
 
@@ -175,7 +181,8 @@ class RuleEngine:
             tb.add("rule_engine", TraceAction.EXCLUDED,
                    f"Fee items ({item_type}) are not covered by policy",
                    verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
-                   detail={"rule": "fee_item", "item_type": item_type})
+                   detail={"rule": "fee_item", "item_type": item_type},
+                   decision_source=DecisionSource.RULE)
             return self._create_not_covered(
                 description=description,
                 item_type=item_type,
@@ -192,7 +199,8 @@ class RuleEngine:
                 tb.add("rule_engine", TraceAction.EXCLUDED,
                        f"Item matches exclusion pattern: {pattern.pattern}",
                        verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
-                       detail={"rule": "exclusion_pattern", "pattern": pattern.pattern})
+                       detail={"rule": "exclusion_pattern", "pattern": pattern.pattern},
+                       decision_source=DecisionSource.RULE)
                 return self._create_not_covered(
                     description=description,
                     item_type=item_type,
@@ -222,7 +230,8 @@ class RuleEngine:
                     tb.add("rule_engine", TraceAction.EXCLUDED,
                            f"Consumable item not covered: {pattern.pattern}",
                            verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
-                           detail={"rule": "consumable", "pattern": pattern.pattern})
+                           detail={"rule": "consumable", "pattern": pattern.pattern},
+                           decision_source=DecisionSource.RULE)
                     return self._create_not_covered(
                         description=description,
                         item_type=item_type,
@@ -239,7 +248,8 @@ class RuleEngine:
                     tb.add("rule_engine", TraceAction.SKIPPED,
                            f"Consumable check skipped - repair context: {repair_context_component}",
                            detail={"rule": "consumable_override_by_repair_context",
-                                   "repair_component": repair_context_component})
+                                   "repair_component": repair_context_component},
+                           decision_source=DecisionSource.RULE)
                     logger.info(
                         f"Skipped consumable exclusion for '{description}' - "
                         f"repair context indicates '{repair_context_component}' (covered)"
@@ -251,7 +261,8 @@ class RuleEngine:
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Zero-price item - no coverage calculation needed",
                    verdict=CoverageStatus.COVERED, confidence=1.0,
-                   detail={"rule": "zero_price"})
+                   detail={"rule": "zero_price"},
+                   decision_source=DecisionSource.RULE)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -275,7 +286,8 @@ class RuleEngine:
                     tb.add("rule_engine", TraceAction.EXCLUDED,
                            f"Labor matches non-covered pattern: {pattern.pattern}",
                            verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
-                           detail={"rule": "non_covered_labor", "pattern": pattern.pattern})
+                           detail={"rule": "non_covered_labor", "pattern": pattern.pattern},
+                           decision_source=DecisionSource.RULE)
                     return self._create_not_covered(
                         description=description,
                         item_type=item_type,
@@ -292,7 +304,8 @@ class RuleEngine:
             tb.add("rule_engine", TraceAction.EXCLUDED,
                    "Generic description - insufficient detail for coverage determination",
                    verdict=CoverageStatus.NOT_COVERED, confidence=1.0,
-                   detail={"rule": "generic_description"})
+                   detail={"rule": "generic_description"},
+                   decision_source=DecisionSource.RULE)
             return self._create_not_covered(
                 description=description,
                 item_type=item_type,
@@ -307,32 +320,38 @@ class RuleEngine:
         if self._fastener_pattern and self._fastener_pattern.match(stripped):
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Standalone fastener - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
-                   detail={"rule": "standalone_fastener"})
+                   verdict=CoverageStatus.REVIEW_NEEDED,
+                   confidence=self.config.review_needed_confidence,
+                   detail={"rule": "standalone_fastener"},
+                   decision_source=DecisionSource.RULE)
             return self._create_review_needed(
                 description=description,
                 item_type=item_type,
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone fastener - requires context to determine coverage",
+                confidence=self.config.review_needed_confidence,
                 trace=tb.build(),
             )
 
         # Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED
         # Compound terms like ZYLINDERKOPFDICHTUNG are NOT caught (anchored pattern).
-        # Post-processing (_promote_ancillary_parts) promotes gaskets supporting
-        # a covered repair; standalone gaskets stay REVIEW_NEEDED for human review.
+        # LLM labor linkage may promote gaskets supporting a covered repair;
+        # standalone gaskets stay REVIEW_NEEDED for human review.
         if self._seal_gasket_pattern and self._seal_gasket_pattern.match(stripped):
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Standalone seal/gasket - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
-                   detail={"rule": "standalone_seal_gasket"})
+                   verdict=CoverageStatus.REVIEW_NEEDED,
+                   confidence=self.config.review_needed_confidence,
+                   detail={"rule": "standalone_seal_gasket"},
+                   decision_source=DecisionSource.RULE)
             return self._create_review_needed(
                 description=description,
                 item_type=item_type,
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone seal/gasket - requires context to determine coverage",
+                confidence=self.config.review_needed_confidence,
                 trace=tb.build(),
             )
 

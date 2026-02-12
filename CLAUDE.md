@@ -139,8 +139,6 @@ The core product (`src/context_builder/`) must remain **customer-agnostic**. Cus
 - New customer-specific config files follow the existing YAML pattern (see `nsa_keyword_mappings.yaml`, `nsa_coverage_config.yaml`)
 - The `_find_sibling()` pattern in the analyzer auto-discovers config files by glob (e.g., `*_keyword_mappings.yaml`)
 
-**Known tech debt:** `COMPONENT_SYNONYMS`, `CATEGORY_ALIASES`, and `REPAIR_CONTEXT_KEYWORDS` are still hardcoded in `src/context_builder/coverage/analyzer.py`. These are being externalized — see `docs/REFACTOR-coverage-primary-component.md`.
-
 ### Code Organization
 
 **NEVER add code to these files - they are being refactored:**

@@ -32,6 +32,8 @@ ConfidenceScorer = _mod.ConfidenceScorer
 score_to_band = _mod.score_to_band
 COMPONENT_SIGNALS = _mod.COMPONENT_SIGNALS
 DEFAULT_WEIGHTS = _mod.DEFAULT_WEIGHTS
+DENY_WEIGHTS = _mod.DENY_WEIGHTS
+DENY_POLARITY_FLIPS = _mod.DENY_POLARITY_FLIPS
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -317,3 +319,168 @@ class TestSignalsUsedPerComponent:
                 f"Component {cs.component}: expected {expected_names}, "
                 f"got {actual_names}"
             )
+
+
+# ── Verdict-aware scoring tests ─────────────────────────────────────
+
+
+class TestDenyPolarityFlip:
+    """Test 13: DENY verdict inverts polarity of specific signals."""
+
+    def test_pass_rate_flipped_for_deny(self):
+        """screening.pass_rate is flipped (1 - value) for DENY."""
+        signals = _make_all_signals(0.8)
+        # Set pass_rate to 0.3 (low = many fails)
+        for s in signals:
+            if s.signal_name == "screening.pass_rate":
+                s.normalized_value = 0.3
+
+        scorer = ConfidenceScorer()
+
+        # APPROVE: pass_rate = 0.3 (as-is)
+        approve_summary = scorer.compute(signals, verdict="APPROVE")
+        approve_dc = next(
+            c for c in approve_summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        approve_pass_rate = next(
+            s for s in approve_dc.signals_used
+            if s.signal_name == "screening.pass_rate"
+        )
+        assert approve_pass_rate.normalized_value == pytest.approx(0.3)
+
+        # DENY: pass_rate flipped to 0.7
+        deny_summary = scorer.compute(signals, verdict="DENY")
+        deny_dc = next(
+            c for c in deny_summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        deny_pass_rate = next(
+            s for s in deny_dc.signals_used
+            if s.signal_name == "screening.pass_rate"
+        )
+        assert deny_pass_rate.normalized_value == pytest.approx(0.7, abs=0.001)
+
+    def test_hard_fail_clarity_flipped_for_deny(self):
+        """screening.hard_fail_clarity is flipped for DENY."""
+        signals = _make_all_signals(0.8)
+        for s in signals:
+            if s.signal_name == "screening.hard_fail_clarity":
+                s.normalized_value = 0.0  # hard fail present
+
+        scorer = ConfidenceScorer()
+
+        # DENY: flipped to 1.0 (hard fail supports denial)
+        deny_summary = scorer.compute(signals, verdict="DENY")
+        deny_dc = next(
+            c for c in deny_summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        deny_hf = next(
+            s for s in deny_dc.signals_used
+            if s.signal_name == "screening.hard_fail_clarity"
+        )
+        assert deny_hf.normalized_value == pytest.approx(1.0)
+
+    def test_approve_no_polarity_flip(self):
+        """APPROVE verdict does not flip any signals."""
+        signals = _make_all_signals(0.5)
+        scorer = ConfidenceScorer()
+
+        approve = scorer.compute(signals, verdict="APPROVE")
+        no_verdict = scorer.compute(signals, verdict="")
+
+        # Should produce identical scores
+        assert approve.composite_score == pytest.approx(
+            no_verdict.composite_score, abs=0.001
+        )
+
+
+class TestDenyWeightSelection:
+    """Test 14: DENY verdict selects DENY_WEIGHTS."""
+
+    def test_deny_uses_deny_weights(self):
+        """DENY verdict gives decision_clarity higher weight (0.25 vs 0.15)."""
+        signals = _make_all_signals(0.8)
+        scorer = ConfidenceScorer()
+
+        summary = scorer.compute(signals, verdict="DENY")
+
+        # decision_clarity should have weight 0.25 in DENY_WEIGHTS
+        dc = next(
+            c for c in summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        assert dc.weight == pytest.approx(DENY_WEIGHTS["decision_clarity"])
+
+        # coverage_reliability should have weight 0.30 in DENY_WEIGHTS
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        assert cr.weight == pytest.approx(DENY_WEIGHTS["coverage_reliability"])
+
+    def test_approve_uses_default_weights(self):
+        """APPROVE verdict uses DEFAULT_WEIGHTS."""
+        signals = _make_all_signals(0.8)
+        scorer = ConfidenceScorer()
+
+        summary = scorer.compute(signals, verdict="APPROVE")
+
+        dc = next(
+            c for c in summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        assert dc.weight == pytest.approx(DEFAULT_WEIGHTS["decision_clarity"])
+
+    def test_custom_weights_override_deny_weights(self):
+        """Custom weights take priority over DENY_WEIGHTS."""
+        custom = {
+            "document_quality": 0.10,
+            "data_completeness": 0.10,
+            "consistency": 0.10,
+            "coverage_reliability": 0.30,
+            "decision_clarity": 0.40,
+        }
+        scorer = ConfidenceScorer(weights=custom)
+
+        signals = _make_all_signals(0.8)
+        summary = scorer.compute(signals, verdict="DENY")
+
+        dc = next(
+            c for c in summary.component_scores
+            if c.component == "decision_clarity"
+        )
+        # Custom weight should be used, not DENY_WEIGHTS
+        assert dc.weight == pytest.approx(0.40)
+
+
+class TestDenyVsApproveComposite:
+    """Test 15: Deny-style signals produce higher CCI under DENY verdict."""
+
+    def test_deny_higher_than_approve_for_denial_evidence(self):
+        """A claim with hard fails + low pass rate should score
+        higher when verdict=DENY than verdict=APPROVE."""
+        signals = []
+        # Good data quality
+        for name in COMPONENT_SIGNALS["document_quality"]:
+            signals.append(_make_signal(name, 0.85))
+        for name in COMPONENT_SIGNALS["data_completeness"]:
+            signals.append(_make_signal(name, 0.80))
+        for name in COMPONENT_SIGNALS["consistency"]:
+            signals.append(_make_signal(name, 0.75))
+        for name in COMPONENT_SIGNALS["coverage_reliability"]:
+            signals.append(_make_signal(name, 0.70))
+        # Decision clarity with denial-supporting signals
+        signals.append(_make_signal("screening.pass_rate", 0.25))
+        signals.append(_make_signal("screening.inconclusive_rate", 0.10))
+        signals.append(_make_signal("screening.hard_fail_clarity", 0.0))
+        signals.append(_make_signal("assessment.fraud_indicator_penalty", 0.15))
+
+        scorer = ConfidenceScorer()
+
+        approve = scorer.compute(signals, verdict="APPROVE")
+        deny = scorer.compute(signals, verdict="DENY")
+
+        # DENY should score higher because polarity flips + weight shift
+        assert deny.composite_score > approve.composite_score

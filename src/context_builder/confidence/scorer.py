@@ -3,6 +3,24 @@
 Takes a list of ``SignalSnapshot`` objects and computes a weighted
 composite score with five components.  If a component has zero signals
 its weight is redistributed proportionally to the remaining components.
+
+Verdict-aware scoring
+---------------------
+When a ``verdict`` is supplied (typically ``"DENY"`` or ``"APPROVE"``),
+the scorer applies three adjustments:
+
+1. **Signal polarity flip** -- for DENY verdicts, signals like
+   ``screening.pass_rate`` and ``screening.hard_fail_clarity`` have their
+   polarity inverted because failed checks and hard-fail presence are
+   *evidence supporting* the denial.
+
+2. **Weight rebalancing** -- for DENY verdicts, ``decision_clarity``
+   receives higher weight (0.25 vs 0.15) to emphasise the strength of
+   denial evidence, with corresponding reductions elsewhere.
+
+3. **Coverage verdict concordance** -- an optional signal
+   (``coverage.verdict_concordance``) measures how strongly the coverage
+   analysis outcome aligns with the verdict.  Only emitted for DENY.
 """
 
 import logging
@@ -18,7 +36,7 @@ from context_builder.schemas.confidence import (
 
 logger = logging.getLogger(__name__)
 
-# ── Default weights ──────────────────────────────────────────────────
+# ── Default weights (used for APPROVE / REFER / unknown) ────────────
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
     "document_quality": 0.20,
@@ -27,6 +45,22 @@ DEFAULT_WEIGHTS: Dict[str, float] = {
     "coverage_reliability": 0.35,
     "decision_clarity": 0.15,
 }
+
+# For DENY: shift weight to decision_clarity (strength of denial evidence)
+DENY_WEIGHTS: Dict[str, float] = {
+    "document_quality": 0.15,
+    "data_completeness": 0.15,
+    "consistency": 0.15,
+    "coverage_reliability": 0.30,
+    "decision_clarity": 0.25,
+}
+
+# Signals whose polarity is inverted for DENY verdicts.
+# Low screening pass rate and hard-fail presence both *support* a denial.
+DENY_POLARITY_FLIPS = frozenset({
+    "screening.pass_rate",
+    "screening.hard_fail_clarity",
+})
 
 # ── Signal-to-component mapping ─────────────────────────────────────
 
@@ -52,6 +86,7 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
         # coverage.review_needed_rate removed: zero variance across all eval claims
         "coverage.method_diversity",
         "coverage.primary_repair_confidence",
+        "coverage.verdict_concordance",
     ],
     "decision_clarity": [
         "screening.pass_rate",
@@ -83,11 +118,25 @@ class ConfidenceScorer:
     ) -> None:
         self.weights = dict(weights or DEFAULT_WEIGHTS)
 
+    def _select_weights(self, verdict: str) -> Dict[str, float]:
+        """Select component weights based on verdict.
+
+        For DENY verdicts (and no custom weights override), uses
+        DENY_WEIGHTS which shifts weight toward decision_clarity.
+        """
+        # If custom weights were provided, honour them for all verdicts
+        if self.weights != DEFAULT_WEIGHTS:
+            return self.weights
+        if verdict == "DENY":
+            return dict(DENY_WEIGHTS)
+        return dict(DEFAULT_WEIGHTS)
+
     def compute(
         self,
         signals: List[SignalSnapshot],
         claim_id: str = "",
         claim_run_id: str = "",
+        verdict: str = "",
     ) -> ConfidenceSummary:
         """Compute full CCI summary from signals.
 
@@ -95,14 +144,33 @@ class ConfidenceScorer:
             signals: All collected SignalSnapshot objects.
             claim_id: Claim identifier (for the summary).
             claim_run_id: Run ID (for the summary).
+            verdict: Claim verdict (``"APPROVE"``, ``"DENY"``,
+                ``"REFER"``, or empty).  Controls signal polarity
+                and weight selection for verdict-aware scoring.
 
         Returns:
             Complete ConfidenceSummary with component breakdown.
         """
+        verdict = verdict.upper().strip()
+        weights = self._select_weights(verdict)
+
         # Index signals by name for fast lookup
         signal_map: Dict[str, SignalSnapshot] = {
             s.signal_name: s for s in signals
         }
+
+        # Apply verdict-aware polarity flips for DENY
+        if verdict == "DENY":
+            for sig_name in DENY_POLARITY_FLIPS:
+                if sig_name in signal_map:
+                    original = signal_map[sig_name]
+                    signal_map[sig_name] = SignalSnapshot(
+                        signal_name=original.signal_name,
+                        raw_value=original.raw_value,
+                        normalized_value=round(1.0 - original.normalized_value, 4),
+                        source_stage=original.source_stage,
+                        description=original.description + " (polarity flipped for DENY)",
+                    )
 
         # Build component scores
         component_scores: List[ComponentScore] = []
@@ -115,7 +183,7 @@ class ConfidenceScorer:
 
             if matched:
                 score = sum(s.normalized_value for s in matched) / len(matched)
-                active_weights[comp_name] = self.weights.get(comp_name, 0.0)
+                active_weights[comp_name] = weights.get(comp_name, 0.0)
                 for s in matched:
                     stages_available.add(s.source_stage)
             else:
@@ -128,7 +196,7 @@ class ConfidenceScorer:
             component_scores.append(ComponentScore(
                 component=comp_name,
                 score=round(score, 4),
-                weight=self.weights.get(comp_name, 0.0),
+                weight=weights.get(comp_name, 0.0),
                 weighted_contribution=0.0,  # filled below
                 signals_used=matched,
                 notes="" if matched else "no signals available",
@@ -151,8 +219,13 @@ class ConfidenceScorer:
                 if cs.component in active_weights:
                     effective_weight = active_weights[cs.component] / total_active_weight
                     cs.weighted_contribution = round(cs.score * effective_weight, 4)
-                    if total_active_weight < 0.999:  # some weights redistributed
-                        cs.notes = f"effective weight {effective_weight:.3f} (redistributed)"
+                    notes_parts = []
+                    if verdict == "DENY":
+                        notes_parts.append("DENY weights")
+                    if total_active_weight < 0.999:
+                        notes_parts.append(f"effective weight {effective_weight:.3f} (redistributed)")
+                    if notes_parts:
+                        cs.notes = "; ".join(notes_parts)
         else:
             total_active_weight = 1.0  # avoid division by zero
 

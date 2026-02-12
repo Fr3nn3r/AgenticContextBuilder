@@ -14,6 +14,7 @@ Architecture:
 from context_builder.coverage.schemas import (
     CoverageAnalysisResult,
     CoverageSummary,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     CoverageStatus,
@@ -27,6 +28,7 @@ from context_builder.coverage.explanation_generator import ExplanationGenerator
 __all__ = [
     "CoverageAnalysisResult",
     "CoverageSummary",
+    "DecisionSource",
     "LineItemCoverage",
     "MatchMethod",
     "CoverageStatus",
