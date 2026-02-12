@@ -11,10 +11,10 @@ Pipeline order:
 
 import logging
 import time
-from dataclasses import dataclass, replace as _dc_replace
+from dataclasses import dataclass, field, replace as _dc_replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -181,10 +181,31 @@ class AnalyzerConfig:
     # codes where the real cost is hours x rate, not yet supported).
     nominal_price_threshold: float = 2.0
 
+    # Generic labor descriptions that mean "work" without referencing
+    # specific parts.  Used by _is_generic_labor_description() to detect
+    # generic labor lines eligible for simple-invoice-rule promotion.
+    generic_labor_descriptions: Set[str] = field(default_factory=lambda: {
+        "main d'oeuvre", "main d'œuvre", "main-d'oeuvre", "main-d'œuvre",
+        "arbeit", "arbeitszeit",
+        "labor", "labour",
+        "travail", "manodopera",
+        "mécanicien", "mecanicien",
+    })
+
+    # Maximum ratio of labor to covered parts value for the
+    # simple-invoice-rule promotion (proportionality guard).
+    labor_proportionality_max_ratio: float = 2.0
+
+    # Minimum confidence for ancillary/primary-repair promotion.
+    promotion_min_confidence: float = 0.75
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "AnalyzerConfig":
         """Create config from dictionary."""
-        return cls(
+        raw_generic = config.get("generic_labor_descriptions")
+        generic = set(raw_generic) if raw_generic else None
+
+        kwargs: Dict[str, Any] = dict(
             keyword_min_confidence=config.get("keyword_min_confidence", 0.80),
             use_llm_fallback=config.get("use_llm_fallback", True),
             llm_max_items=config.get("llm_max_items", 35),
@@ -193,7 +214,14 @@ class AnalyzerConfig:
             default_coverage_percent=config.get("default_coverage_percent"),
             use_llm_primary_repair=config.get("use_llm_primary_repair", False),
             nominal_price_threshold=config.get("nominal_price_threshold", 2.0),
+            labor_proportionality_max_ratio=config.get(
+                "labor_proportionality_max_ratio", 2.0
+            ),
+            promotion_min_confidence=config.get("promotion_min_confidence", 0.75),
         )
+        if generic is not None:
+            kwargs["generic_labor_descriptions"] = generic
+        return cls(**kwargs)
 
 
 @dataclass
@@ -1360,27 +1388,15 @@ class CoverageAnalyzer:
             coverage_percent_missing=coverage_percent is None,
         )
 
-    # Generic labor descriptions that mean "work" without referencing specific parts.
-    # Matched after stripping trailing punctuation (colon, period) so that
-    # invoice-level variants like "ARBEIT:" or "Arbeit." are recognised.
-    _GENERIC_LABOR_DESCRIPTIONS = {
-        "main d'oeuvre", "main d'œuvre", "main-d'oeuvre", "main-d'œuvre",
-        "arbeit", "arbeitszeit",
-        "labor", "labour",
-        "travail", "manodopera",
-        "mécanicien", "mecanicien",  # French: "mechanic" (generic labor line)
-    }
-
-    @staticmethod
-    def _is_generic_labor_description(description: str) -> bool:
+    def _is_generic_labor_description(self, description: str) -> bool:
         """Check if a description is a generic labor term.
 
         Normalises the description by lower-casing and stripping trailing
         punctuation so that invoice variants like ``"ARBEIT:"`` match the
-        canonical set entry ``"arbeit"``.
+        configurable set ``config.generic_labor_descriptions``.
         """
         normalized = description.lower().strip().rstrip(":.")
-        return normalized in CoverageAnalyzer._GENERIC_LABOR_DESCRIPTIONS
+        return normalized in self.config.generic_labor_descriptions
 
     @staticmethod
     def _build_excluded_parts_index(
@@ -1512,7 +1528,7 @@ class CoverageAnalyzer:
                     p.total_price for p in covered_parts
                 )
                 if (total_covered_parts_value > 0
-                        and labor_item.total_price > 2.0 * total_covered_parts_value):
+                        and labor_item.total_price > self.config.labor_proportionality_max_ratio * total_covered_parts_value):
                     logger.info(
                         "Simple invoice rule: labor %.2f > 2x parts %.2f, "
                         "skipping promotion for '%s'",

@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -55,10 +55,26 @@ class LLMMatcherConfig:
     # Prompt file for primary repair identification (without .md)
     primary_repair_prompt_name: str = "primary_repair"
 
+    # Descriptions too vague for confident coverage determination.
+    # Matched (uppercased) to trigger confidence capping.
+    vague_description_terms: Set[str] = field(default_factory=lambda: {
+        "PART", "PARTS", "PIECE", "PIECES", "PIÈCE", "PIÈCES",
+        "MISC", "MISCELLANEOUS", "DIVERS", "DIVERSE",
+        "OTHER", "OTHERS", "AUTRE", "AUTRES",
+        "ITEM", "ITEMS", "ARTICLE", "ARTICLES",
+        "ARRIVEE", "ARRIVAL", "LIVRAISON",
+        "WORK", "TRAVAIL", "SERVICE", "SERVICES",
+        "MATERIAL", "MATERIEL", "MATÉRIEL",
+        "ARBEIT", "ARBEIT:",
+    })
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
         """Create config from dictionary."""
-        return cls(
+        raw_vague = config.get("vague_description_terms")
+        vague = {t.upper() for t in raw_vague} if raw_vague else None
+
+        kwargs: Dict[str, Any] = dict(
             prompt_name=config.get("prompt_name", "coverage"),
             model=config.get("model", "gpt-4o"),
             temperature=config.get("temperature", 0.0),
@@ -73,6 +89,9 @@ class LLMMatcherConfig:
             labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
             primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
         )
+        if vague is not None:
+            kwargs["vague_description_terms"] = vague
+        return cls(**kwargs)
 
 
 @dataclass
@@ -249,6 +268,8 @@ Determine if this item is covered under the policy."""
         """Detect descriptions too vague for confident coverage determination.
 
         Vague descriptions should trigger low confidence to ensure human review.
+        The set of vague terms is configurable via
+        ``LLMMatcherConfig.vague_description_terms``.
 
         Args:
             description: Item description to check
@@ -266,20 +287,7 @@ Determine if this item is covered under the policy."""
         if len(desc) <= 4:
             return True
 
-        # Generic terms that don't indicate specific parts
-        # Note: We explicitly list vague terms rather than using length/pattern rules
-        # because valid component names like "ÖLPUMPE", "CONTACTEUR" would be wrongly flagged
-        vague_terms = {
-            "PART", "PARTS", "PIECE", "PIECES", "PIÈCE", "PIÈCES",
-            "MISC", "MISCELLANEOUS", "DIVERS", "DIVERSE",
-            "OTHER", "OTHERS", "AUTRE", "AUTRES",
-            "ITEM", "ITEMS", "ARTICLE", "ARTICLES",
-            "ARRIVEE", "ARRIVAL", "LIVRAISON",
-            "WORK", "TRAVAIL", "SERVICE", "SERVICES",
-            "MATERIAL", "MATERIEL", "MATÉRIEL",
-            "ARBEIT", "ARBEIT:",
-        }
-        if desc in vague_terms:
+        if desc in self.config.vague_description_terms:
             return True
 
         return False
