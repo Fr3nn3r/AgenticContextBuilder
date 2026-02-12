@@ -174,7 +174,7 @@ class AnalyzerConfig:
     # Use LLM to identify the primary repair component (Tier 0).
     # When True, an LLM call reads all line items and picks the main repair
     # before falling back to the value-based heuristic (Tier 1a-1c).
-    use_llm_primary_repair: bool = False
+    use_llm_primary_repair: bool = True
 
     # Nominal-price labor threshold: labor items at or below this price
     # with an item_code are flagged REVIEW_NEEDED (suspected operation
@@ -212,7 +212,7 @@ class AnalyzerConfig:
             llm_max_concurrent=config.get("llm_max_concurrent", 3),
             config_version=config.get("config_version", "1.0"),
             default_coverage_percent=config.get("default_coverage_percent"),
-            use_llm_primary_repair=config.get("use_llm_primary_repair", False),
+            use_llm_primary_repair=config.get("use_llm_primary_repair", True),
             nominal_price_threshold=config.get("nominal_price_threshold", 2.0),
             labor_proportionality_max_ratio=config.get(
                 "labor_proportionality_max_ratio", 2.0
@@ -2314,13 +2314,10 @@ class CoverageAnalyzer:
         claim_id: str = "",
         repair_description: Optional[str] = None,
     ) -> PrimaryRepairResult:
-        """Determine the primary repair component using a three-tier approach.
+        """Determine the primary repair component (LLM-first, 2-tier).
 
-        Tier 1a: highest-value COVERED parts item
-        Tier 1b: highest-value COVERED item of any type
-        Tier 1c: highest-value NOT_COVERED/REVIEW_NEEDED item with matched_component
-        Tier 2:  repair context (from labor keyword detection)
-        Tier 3:  LLM fallback (reserved for future use)
+        Tier 1: LLM-based determination (most accurate, 1 LLM call).
+        Tier 2: Deterministic fallback -- highest-value covered part.
 
         Fallback: returns PrimaryRepairResult(determination_method="none"),
             which signals the screener to REFER.
@@ -2335,7 +2332,7 @@ class CoverageAnalyzer:
         Returns:
             PrimaryRepairResult describing the primary component
         """
-        # Tier 0: LLM-based determination (most accurate, 1 LLM call)
+        # Tier 1: LLM-based determination
         if self.config.use_llm_primary_repair and self.llm_matcher:
             llm_primary = self._llm_determine_primary(
                 all_items, covered_components, claim_id,
@@ -2344,7 +2341,7 @@ class CoverageAnalyzer:
             if llm_primary is not None:
                 return llm_primary
 
-        # Tier 1a: highest-value COVERED parts item
+        # Tier 2: Deterministic fallback -- highest-value covered part
         best_covered_part: Optional[LineItemCoverage] = None
         best_covered_part_idx: Optional[int] = None
         for idx, item in enumerate(all_items):
@@ -2358,7 +2355,7 @@ class CoverageAnalyzer:
 
         if best_covered_part is not None:
             logger.info(
-                "Primary repair (tier 1a): '%s' (%s, %.0f CHF) for claim %s",
+                "Primary repair (deterministic fallback): '%s' (%s, %.0f CHF) for claim %s",
                 best_covered_part.description,
                 best_covered_part.coverage_category,
                 best_covered_part.total_price,
@@ -2374,104 +2371,9 @@ class CoverageAnalyzer:
                 source_item_index=best_covered_part_idx,
             )
 
-        # Tier 1b: highest-value COVERED item (any type, e.g. labor)
-        best_covered_any: Optional[LineItemCoverage] = None
-        best_covered_any_idx: Optional[int] = None
-        for idx, item in enumerate(all_items):
-            if item.coverage_status == CoverageStatus.COVERED and item.matched_component:
-                if best_covered_any is None or (item.total_price or 0) > (best_covered_any.total_price or 0):
-                    best_covered_any = item
-                    best_covered_any_idx = idx
-
-        if best_covered_any is not None:
-            logger.info(
-                "Primary repair (tier 1b): '%s' (%s, %.0f CHF) for claim %s",
-                best_covered_any.description,
-                best_covered_any.coverage_category,
-                best_covered_any.total_price,
-                claim_id,
-            )
-            return PrimaryRepairResult(
-                component=best_covered_any.matched_component,
-                category=best_covered_any.coverage_category,
-                description=best_covered_any.description,
-                is_covered=True,
-                confidence=best_covered_any.match_confidence or 0.85,
-                determination_method="deterministic",
-                source_item_index=best_covered_any_idx,
-            )
-
-        # Tier 2: repair context (works even if component is not covered)
-        if repair_context and repair_context.primary_component:
-            # Cross-check: if no line items are covered, the repair context's
-            # coverage determination was wrong (likely a false keyword match).
-            effective_covered = repair_context.is_covered
-            if effective_covered:
-                any_covered = any(
-                    item.coverage_status == CoverageStatus.COVERED
-                    for item in all_items
-                )
-                if not any_covered:
-                    logger.warning(
-                        "Primary repair (tier 2): overriding is_covered=True→False "
-                        "for claim %s — no covered line items", claim_id,
-                    )
-                    effective_covered = False
-
-            logger.info(
-                "Primary repair (tier 2): '%s' (%s, covered=%s) from repair context for claim %s",
-                repair_context.primary_component,
-                repair_context.primary_category,
-                effective_covered,
-                claim_id,
-            )
-            return PrimaryRepairResult(
-                component=repair_context.primary_component,
-                category=repair_context.primary_category,
-                description=repair_context.source_description,
-                is_covered=effective_covered,
-                confidence=0.80,
-                determination_method="repair_context",
-            )
-
-        # Tier 1c: highest-value NOT_COVERED or REVIEW_NEEDED item with
-        # a matched_component — so the screener can make a verdict even
-        # when nothing is covered.
-        best_uncovered: Optional[LineItemCoverage] = None
-        best_uncovered_idx: Optional[int] = None
-        for idx, item in enumerate(all_items):
-            if (
-                item.coverage_status in (CoverageStatus.NOT_COVERED, CoverageStatus.REVIEW_NEEDED)
-                and item.matched_component
-            ):
-                if best_uncovered is None or (item.total_price or 0) > (best_uncovered.total_price or 0):
-                    best_uncovered = item
-                    best_uncovered_idx = idx
-
-        if best_uncovered is not None:
-            logger.info(
-                "Primary repair (tier 1c): '%s' (%s, %.0f CHF, NOT_COVERED) for claim %s",
-                best_uncovered.description,
-                best_uncovered.coverage_category,
-                best_uncovered.total_price,
-                claim_id,
-            )
-            return PrimaryRepairResult(
-                component=best_uncovered.matched_component,
-                category=best_uncovered.coverage_category,
-                description=best_uncovered.description,
-                is_covered=False,
-                confidence=best_uncovered.match_confidence or 0.70,
-                determination_method="deterministic",
-                source_item_index=best_uncovered_idx,
-            )
-
-        # Tier 3: LLM fallback (reserved for future implementation)
-        # For now, fall through to "none"
-
         # Fallback: could not determine primary repair
         logger.info(
-            "Primary repair: could not determine for claim %s — will REFER",
+            "Primary repair: could not determine for claim %s -- will REFER",
             claim_id,
         )
         return PrimaryRepairResult(determination_method="none")

@@ -1330,12 +1330,12 @@ class TestDistributionCatchAll:
 
 
 class TestDeterminePrimaryRepair:
-    """Tests for _determine_primary_repair (three-tier approach)."""
+    """Tests for _determine_primary_repair (LLM-first, 2-tier)."""
 
     @pytest.fixture
     def analyzer(self, nsa_component_config):
         return CoverageAnalyzer(
-            config=AnalyzerConfig(use_llm_fallback=False),
+            config=AnalyzerConfig(use_llm_fallback=False, use_llm_primary_repair=False),
             component_config=nsa_component_config,
         )
 
@@ -1357,8 +1357,8 @@ class TestDeterminePrimaryRepair:
         defaults.update(overrides)
         return LineItemCoverage(**defaults)
 
-    def test_tier1a_highest_value_covered_part(self, analyzer):
-        """Tier 1a: highest-value COVERED parts item is selected."""
+    def test_highest_value_covered_part(self, analyzer):
+        """Deterministic fallback: highest-value COVERED parts item is selected."""
         items = [
             self._make_item(description="Small part", total_price=50.0),
             self._make_item(description="Big part", total_price=500.0, matched_component="water_pump"),
@@ -1370,48 +1370,8 @@ class TestDeterminePrimaryRepair:
         assert result.is_covered is True
         assert result.confidence >= 0.85
 
-    def test_tier1b_highest_value_covered_any_when_no_parts(self, analyzer):
-        """Tier 1b: when no covered parts, use highest covered item of any type."""
-        items = [
-            self._make_item(
-                description="Motor repair labor", item_type="labor",
-                total_price=400.0, matched_component="engine",
-            ),
-            self._make_item(
-                description="Not covered part", item_type="parts",
-                total_price=200.0, coverage_status=CoverageStatus.NOT_COVERED,
-                matched_component="turbocharger",
-            ),
-        ]
-        result = analyzer._determine_primary_repair(items, {}, None, "TEST")
-        assert result.determination_method == "deterministic"
-        assert result.description == "Motor repair labor"
-        assert result.is_covered is True
-
-    def test_tier2_repair_context(self, analyzer):
-        """Tier 2: repair context used but is_covered overridden when no covered items."""
-        from types import SimpleNamespace
-        items = [
-            self._make_item(
-                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
-                matched_component=None,
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="timing_chain",
-            primary_category="engine",
-            source_description="Steuerkette ersetzen",
-            is_covered=True,
-        )
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.component == "timing_chain"
-        assert result.confidence == 0.80
-        # Safety net: no covered line items → is_covered overridden to False
-        assert result.is_covered is False
-
-    def test_fallback_none_when_no_tiers_match(self, analyzer):
-        """Fallback: no covered items, no repair context → determination_method='none'."""
+    def test_fallback_none_when_no_covered_parts(self, analyzer):
+        """Fallback: no covered parts -> determination_method='none'."""
         items = [
             self._make_item(
                 description="Unknown part", coverage_status=CoverageStatus.REVIEW_NEEDED,
@@ -1423,12 +1383,12 @@ class TestDeterminePrimaryRepair:
         assert result.is_covered is None
 
     def test_empty_items_returns_none(self, analyzer):
-        """Empty line items → determination_method='none'."""
+        """Empty line items -> determination_method='none'."""
         result = analyzer._determine_primary_repair([], {}, None, "TEST")
         assert result.determination_method == "none"
 
-    def test_tier1a_over_tier1b(self, analyzer):
-        """Tier 1a (parts) takes priority over tier 1b (any type) even if labor is higher value."""
+    def test_covered_parts_over_covered_labor(self, analyzer):
+        """Covered parts take priority over covered labor in deterministic fallback."""
         items = [
             self._make_item(description="Covered part", total_price=100.0, item_type="parts"),
             self._make_item(
@@ -1450,67 +1410,16 @@ class TestDeterminePrimaryRepair:
         result = analyzer._determine_primary_repair(items, {}, None, "TEST")
         assert result.source_item_index == 2
 
-    def test_tier2_repair_context_not_covered(self, analyzer):
-        """Tier 2: repair context works even if component is not covered."""
-        from types import SimpleNamespace
+    def test_no_covered_labor_only_returns_none(self, analyzer):
+        """When only covered labor exists (no covered parts), fallback returns none."""
         items = [
             self._make_item(
-                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
-                matched_component=None,
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="turbocharger",
-            primary_category="turbo_supercharger",
-            source_description="Turbolader ersetzen",
-            is_covered=False,
-        )
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.component == "turbocharger"
-        assert result.is_covered is False
-
-    def test_tier1c_highest_value_uncovered_item(self, analyzer):
-        """Tier 1c: when nothing is covered and no repair context, pick highest uncovered with matched_component."""
-        items = [
-            self._make_item(
-                description="Small uncovered", coverage_status=CoverageStatus.NOT_COVERED,
-                total_price=200.0, matched_component="gasket",
-            ),
-            self._make_item(
-                description="Trunk control unit", coverage_status=CoverageStatus.NOT_COVERED,
-                total_price=1164.0, matched_component="control_unit",
-                coverage_category="electronics",
-            ),
-            self._make_item(
-                description="No component match", coverage_status=CoverageStatus.NOT_COVERED,
-                total_price=500.0, matched_component=None,
+                description="Motor repair labor", item_type="labor",
+                total_price=400.0, matched_component="engine",
             ),
         ]
         result = analyzer._determine_primary_repair(items, {}, None, "TEST")
-        assert result.determination_method == "deterministic"
-        assert result.description == "Trunk control unit"
-        assert result.is_covered is False
-        assert result.source_item_index == 1
-
-    def test_tier2_before_tier1c(self, analyzer):
-        """Tier 2 (repair context) takes priority over tier 1c (uncovered items)."""
-        from types import SimpleNamespace
-        items = [
-            self._make_item(
-                description="Expensive uncovered", coverage_status=CoverageStatus.NOT_COVERED,
-                total_price=1000.0, matched_component="control_unit",
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="angle_gearbox",
-            primary_category="axle_drive",
-            source_description="Winkelgetriebe aus/einbau",
-            is_covered=True,
-        )
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.component == "angle_gearbox"
+        assert result.determination_method == "none"
 
 
 class TestDeterminePrimaryRepairLLM:
@@ -1909,99 +1818,6 @@ class TestDemoteLaborWithoutCoveredParts:
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.COVERED
         assert labor.covered_amount == 300.0
-
-
-class TestTier2SafetyNet:
-    """Tests for tier 2 safety net — is_covered cross-check (Fix 3)."""
-
-    @pytest.fixture
-    def analyzer(self, nsa_component_config):
-        return CoverageAnalyzer(
-            config=AnalyzerConfig(use_llm_fallback=False),
-            component_config=nsa_component_config,
-        )
-
-    def _make_item(self, **overrides):
-        defaults = dict(
-            item_code="P001",
-            description="test part",
-            item_type="parts",
-            total_price=100.0,
-            coverage_status=CoverageStatus.COVERED,
-            coverage_category="engine",
-            matched_component="timing_belt",
-            match_method=MatchMethod.KEYWORD,
-            match_confidence=0.90,
-            match_reasoning="Keyword match",
-            covered_amount=100.0,
-            not_covered_amount=0.0,
-        )
-        defaults.update(overrides)
-        return LineItemCoverage(**defaults)
-
-    def test_tier2_is_covered_overridden_when_no_covered_items(self, analyzer):
-        """Tier 2: is_covered=True overridden to False when zero items are covered."""
-        from types import SimpleNamespace
-        items = [
-            self._make_item(
-                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
-                matched_component=None, covered_amount=0.0, not_covered_amount=100.0,
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="cylinder_head",
-            primary_category="engine",
-            source_description="Remplacement culasse",
-            is_covered=True,
-        )
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.component == "cylinder_head"
-        assert result.is_covered is False  # Overridden by safety net
-
-    def test_tier2_is_covered_preserved_when_covered_items_exist(self, analyzer):
-        """Tier 2: is_covered=True preserved when covered items exist."""
-        from types import SimpleNamespace
-        items = [
-            self._make_item(
-                description="Covered part", coverage_status=CoverageStatus.COVERED,
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="timing_chain",
-            primary_category="engine",
-            source_description="Steuerkette ersetzen",
-            is_covered=True,
-        )
-        # Note: tier 1a will normally pick up the covered item first, so
-        # we need to ensure nothing matches tier 1a by removing matched_component
-        items[0].matched_component = None
-        # Tier 1a/1b skip items without matched_component for COVERED
-        # Actually tier 1a checks coverage_status == COVERED + item_type parts
-        # Let's set item_type to something that won't match tier 1a
-        items[0].item_type = "fee"
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.is_covered is True  # Preserved — covered item exists
-
-    def test_tier2_not_covered_passes_through(self, analyzer):
-        """Tier 2: is_covered=False passes through without modification."""
-        from types import SimpleNamespace
-        items = [
-            self._make_item(
-                description="Uncovered part", coverage_status=CoverageStatus.NOT_COVERED,
-                matched_component=None, covered_amount=0.0, not_covered_amount=100.0,
-            ),
-        ]
-        repair_ctx = SimpleNamespace(
-            primary_component="control_arm",
-            primary_category="suspension",
-            source_description="Querlenker ersetzen",
-            is_covered=False,
-        )
-        result = analyzer._determine_primary_repair(items, {}, repair_ctx, "TEST")
-        assert result.determination_method == "repair_context"
-        assert result.is_covered is False
 
 
 class TestNormalizeCoverageScale:
