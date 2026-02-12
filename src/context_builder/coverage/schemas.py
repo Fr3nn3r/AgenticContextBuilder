@@ -42,6 +42,18 @@ class TraceAction(str, Enum):
     VALIDATED = "validated"
 
 
+class DecisionSource(str, Enum):
+    """Source of a coverage decision for audit trail."""
+
+    RULE = "rule"
+    PART_NUMBER = "part_number"
+    KEYWORD = "keyword"
+    LLM = "llm"
+    PROMOTION = "promotion"
+    DEMOTION = "demotion"
+    VALIDATION = "validation"
+
+
 class TraceStep(BaseModel):
     """Single step in the coverage decision trace."""
 
@@ -54,6 +66,9 @@ class TraceStep(BaseModel):
     reasoning: str = Field(..., description="Human-readable explanation")
     detail: Optional[Dict[str, Any]] = Field(
         None, description="Stage-specific metadata"
+    )
+    decision_source: Optional[DecisionSource] = Field(
+        None, description="Source of this decision (rule, llm, promotion, etc.)"
     )
 
 
