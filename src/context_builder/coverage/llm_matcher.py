@@ -56,6 +56,8 @@ class LLMMatcherConfig:
     primary_repair_prompt_name: str = "primary_repair"
     # Prompt file for coverage classification (LLM-first mode, without .md)
     classify_prompt_name: str = "coverage_classify"
+    # Prompt file for labor linkage classification (without .md)
+    labor_linkage_prompt_name: str = "labor_linkage"
 
     # Descriptions too vague for confident coverage determination.
     # Matched (uppercased) to trigger confidence capping.
@@ -91,6 +93,7 @@ class LLMMatcherConfig:
             labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
             primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
             classify_prompt_name=config.get("classify_prompt_name", "coverage_classify"),
+            labor_linkage_prompt_name=config.get("labor_linkage_prompt_name", "labor_linkage"),
         )
         if vague is not None:
             kwargs["vague_description_terms"] = vague
@@ -825,6 +828,270 @@ Determine if this item is covered under the policy."""
             )
         finally:
             self.config.prompt_name = original_prompt_name
+
+    # ------------------------------------------------------------------
+    # LLM labor linkage (links labor items to parts)
+    # ------------------------------------------------------------------
+
+    def classify_labor_linkage(
+        self,
+        labor_items: List[Dict[str, Any]],
+        parts_items: List[Dict[str, Any]],
+        primary_repair: Optional[Dict[str, Any]] = None,
+        claim_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Link labor items to parts and determine labor coverage.
+
+        Makes ONE batch LLM call that sees ALL labor and ALL parts together.
+        The model determines which labor items are mechanically necessary for
+        which covered parts.
+
+        Args:
+            labor_items: List of dicts with keys: index, description,
+                item_code, total_price, coverage_status.
+            parts_items: List of dicts with keys: index, description,
+                item_code, total_price, coverage_status, coverage_category,
+                matched_component.
+            primary_repair: Optional dict with keys: component, category,
+                is_covered. Provides repair context.
+            claim_id: Claim ID for audit trail.
+
+        Returns:
+            List of dicts with keys: index, is_covered, linked_part_index,
+            confidence, reasoning.
+            On failure, all items are returned with is_covered=False.
+        """
+        if not labor_items:
+            return []
+
+        messages = self._build_labor_linkage_prompt(
+            labor_items, parts_items, primary_repair,
+        )
+
+        client = self._get_client()
+        client.set_context(
+            claim_id=claim_id,
+            call_purpose="labor_linkage",
+        )
+
+        last_error = None
+        max_attempts = max(1, self.config.max_retries)
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    last_call_id = getattr(client, "get_last_call_id", lambda: None)()
+                    if last_call_id and hasattr(client, "mark_retry"):
+                        client.mark_retry(last_call_id)
+
+                response = client.chat_completions_create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=1024,
+                    response_format={"type": "json_object"},
+                )
+                self._llm_calls += 1
+
+                content = response.choices[0].message.content
+                return self._parse_labor_linkage_response(
+                    content, labor_items,
+                )
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts - 1:
+                    base_delay = min(
+                        self.config.retry_base_delay * (2 ** attempt),
+                        self.config.retry_max_delay,
+                    )
+                    delay = random.uniform(0, base_delay)
+                    logger.warning(
+                        "Labor linkage LLM call failed (attempt %d/%d): %s. "
+                        "Retrying in %.1fs...",
+                        attempt + 1, max_attempts, e, delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        "Labor linkage classification failed after %d attempts: %s",
+                        max_attempts, e,
+                    )
+
+        self._llm_calls += 1
+        return [
+            {
+                "index": item["index"],
+                "is_covered": False,
+                "linked_part_index": None,
+                "confidence": 0.0,
+                "reasoning": f"LLM call failed after {max_attempts} attempts: {last_error}",
+            }
+            for item in labor_items
+        ]
+
+    def _build_labor_linkage_prompt(
+        self,
+        labor_items: List[Dict[str, Any]],
+        parts_items: List[Dict[str, Any]],
+        primary_repair: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, str]]:
+        """Build prompt messages for labor linkage classification.
+
+        Tries workspace prompt file first, then inline fallback.
+        """
+        # Format parts with coverage status
+        parts_lines = []
+        for item in parts_items:
+            status = item.get("coverage_status", "unknown")
+            cat = item.get("coverage_category") or "N/A"
+            comp = item.get("matched_component") or "N/A"
+            code_str = item.get("item_code") or "N/A"
+            parts_lines.append(
+                f"  [{item['index']}] {item['description']} | "
+                f"code={code_str} | price={item.get('total_price', 0):.2f} CHF | "
+                f"status={status} | category={cat} | component={comp}"
+            )
+        parts_text = "\n".join(parts_lines) if parts_lines else "  (no parts)"
+
+        # Format labor items
+        labor_lines = []
+        for item in labor_items:
+            code_str = item.get("item_code") or "N/A"
+            labor_lines.append(
+                f"  [{item['index']}] {item['description']} | "
+                f"code={code_str} | price={item.get('total_price', 0):.2f} CHF"
+            )
+        labor_text = "\n".join(labor_lines)
+
+        # Format primary repair context
+        primary_text = ""
+        if primary_repair:
+            primary_text = (
+                f"\nPrimary repair: {primary_repair.get('component', 'unknown')} "
+                f"({primary_repair.get('category', 'unknown')}, "
+                f"covered={primary_repair.get('is_covered', False)})\n"
+            )
+
+        try:
+            from context_builder.utils.prompt_loader import load_prompt
+
+            prompt_data = load_prompt(
+                self.config.labor_linkage_prompt_name,
+                parts_text=parts_text,
+                labor_text=labor_text,
+                primary_repair_text=primary_text,
+            )
+            return prompt_data["messages"]
+        except FileNotFoundError:
+            logger.debug(
+                "Prompt file '%s' not found, using inline labor linkage prompt",
+                self.config.labor_linkage_prompt_name,
+            )
+
+        # Inline fallback
+        system_prompt = (
+            "You are an automotive repair labor analyst for a warranty "
+            "insurance company.\n\n"
+            "Given the parts and labor from a repair invoice, determine "
+            "which labor items are mechanically necessary for which parts.\n\n"
+            "LABOR IS COVERED when:\n"
+            "- It is for installing, removing, or replacing a COVERED part\n"
+            "- It is access labor (removing components to reach the covered "
+            "part)\n"
+            "- It is fluid draining/refilling required by the disassembly\n"
+            "- It is the repair work itself on a covered component\n\n"
+            "LABOR IS NOT COVERED when:\n"
+            "- It is standalone diagnostic/investigative labor with no "
+            "covered part\n"
+            "- It is for an unrelated system (not mechanically connected)\n"
+            "- It is cleaning, environmental fees, or rental car\n"
+            "- It is battery charging or unrelated calibration\n\n"
+            "For each labor item, return whether it should be covered and "
+            "which part (by index) it is linked to.\n\n"
+            "Respond ONLY with valid JSON:\n"
+            '{"labor_items": [{"index": <int>, "is_covered": <bool>, '
+            '"linked_part_index": <int or null>, '
+            '"confidence": <float 0-1>, "reasoning": "<brief>"}]}'
+        )
+        user_prompt = (
+            f"Parts in this invoice:\n{parts_text}\n\n"
+            f"Labor items to evaluate:\n{labor_text}\n"
+            f"{primary_text}\n"
+            "For each labor item, determine if it is mechanically necessary "
+            "for a covered part. Link it to the most relevant part by index. "
+            "Return JSON."
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_labor_linkage_response(
+        self,
+        content: str,
+        labor_items: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Parse the LLM response for labor linkage classification.
+
+        Args:
+            content: Raw JSON response from LLM
+            labor_items: Original labor items (for index reference)
+
+        Returns:
+            List of dicts with index, is_covered, linked_part_index,
+            confidence, reasoning.
+        """
+        try:
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            data = json.loads(content.strip())
+            llm_results = data.get("labor_items", [])
+
+            by_index = {}
+            for r in llm_results:
+                idx = r.get("index")
+                if idx is not None:
+                    by_index[idx] = r
+
+            results = []
+            for item in labor_items:
+                idx = item["index"]
+                if idx in by_index:
+                    r = by_index[idx]
+                    results.append({
+                        "index": idx,
+                        "is_covered": bool(r.get("is_covered", False)),
+                        "linked_part_index": r.get("linked_part_index"),
+                        "confidence": float(r.get("confidence", 0.5)),
+                        "reasoning": r.get("reasoning", "No reasoning provided"),
+                    })
+                else:
+                    results.append({
+                        "index": idx,
+                        "is_covered": False,
+                        "linked_part_index": None,
+                        "confidence": 0.0,
+                        "reasoning": "Missing from LLM response (conservative default)",
+                    })
+
+            return results
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Failed to parse labor linkage response: %s", e)
+            return [
+                {
+                    "index": item["index"],
+                    "is_covered": False,
+                    "linked_part_index": None,
+                    "confidence": 0.0,
+                    "reasoning": f"Failed to parse LLM response: {str(e)[:200]}",
+                }
+                for item in labor_items
+            ]
 
     # ------------------------------------------------------------------
     # Labor relevance classification (batch LLM call for Mode 2)
