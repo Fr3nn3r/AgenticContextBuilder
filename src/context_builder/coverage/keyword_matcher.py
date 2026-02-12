@@ -12,6 +12,7 @@ Confidence levels:
 
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -129,6 +130,10 @@ class KeywordMatcher:
     ) -> Optional[LineItemCoverage]:
         """Attempt to match a line item using keyword mappings.
 
+        .. deprecated::
+            Use :meth:`generate_hints` instead. In LLM-first mode, keywords
+            provide hints to the LLM rather than making final coverage decisions.
+
         Args:
             description: Item description (usually in German)
             item_type: Item type (parts, labor, fee)
@@ -139,6 +144,11 @@ class KeywordMatcher:
         Returns:
             LineItemCoverage if matched by keywords, None otherwise
         """
+        warnings.warn(
+            "KeywordMatcher.match() is deprecated. Use generate_hints() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         covered_categories = covered_categories or []
         description_upper = description.upper()
 
@@ -358,6 +368,10 @@ class KeywordMatcher:
     ) -> Tuple[List[LineItemCoverage], List[Dict[str, Any]]]:
         """Match multiple items, returning matched and unmatched lists.
 
+        .. deprecated::
+            Use :meth:`generate_hints` instead. In LLM-first mode, keywords
+            provide hints to the LLM rather than making final coverage decisions.
+
         Args:
             items: List of line item dictionaries
             covered_categories: List of categories from policy
@@ -366,6 +380,11 @@ class KeywordMatcher:
         Returns:
             Tuple of (matched items, unmatched items for LLM processing)
         """
+        warnings.warn(
+            "KeywordMatcher.batch_match() is deprecated. Use generate_hints() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         min_conf = min_confidence or self.config.min_confidence_threshold
         matched = []
         unmatched = []

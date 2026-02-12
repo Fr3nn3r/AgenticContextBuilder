@@ -217,10 +217,9 @@ class PrimaryRepairResult(BaseModel):
     """Result of primary repair component determination.
 
     Identifies the main component being repaired, used by the screener
-    to decide coverage verdict. Determined via a three-tier approach:
-    1. Deterministic: highest-value covered parts item
-    2. Repair context: labor-derived primary component
-    3. LLM fallback: focused LLM call (when tiers 1-2 fail)
+    to decide coverage verdict. Determined via a two-tier approach:
+    1. LLM: focused LLM call that sees all items and picks the primary
+    2. Deterministic fallback: highest-value covered parts item
     """
 
     component: Optional[str] = Field(None, description="Component type (e.g., 'timing_chain')")
@@ -229,7 +228,7 @@ class PrimaryRepairResult(BaseModel):
     is_covered: Optional[bool] = Field(None, description="Whether the component is covered by policy")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence in the determination")
     determination_method: str = Field(
-        "none", description="How primary was determined: 'deterministic', 'repair_context', 'llm', 'none'"
+        "none", description="How primary was determined: 'llm', 'deterministic', 'none'"
     )
     source_item_index: Optional[int] = Field(
         None, description="Index of the source line item (for deterministic method)"
