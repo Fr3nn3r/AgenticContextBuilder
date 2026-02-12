@@ -23,136 +23,12 @@ from context_builder.schemas.assessment_response import (
     AssessmentResponse,
     validate_assessment_completeness,
 )
-
-
-# ── Helpers ──────────────────────────────────────────────────────────
-
-
-def _make_screening_check(
-    check_id="1",
-    check_name="policy_validity",
-    verdict="PASS",
-    reason="OK",
-    evidence=None,
-    is_hard_fail=False,
-    requires_llm=False,
-):
-    """Build a screening check dict (as from ScreeningResult.model_dump())."""
-    return {
-        "check_id": check_id,
-        "check_name": check_name,
-        "verdict": verdict,
-        "reason": reason,
-        "evidence": evidence or {},
-        "is_hard_fail": is_hard_fail,
-        "requires_llm": requires_llm,
-    }
-
-
-def _make_screening_payout(**overrides):
-    """Build a screening payout dict."""
-    defaults = {
-        "covered_total": 4500.0,
-        "not_covered_total": 500.0,
-        "coverage_percent": 80.0,
-        "max_coverage": 10000.0,
-        "max_coverage_applied": False,
-        "capped_amount": 4500.0,
-        "deductible_percent": 10.0,
-        "deductible_minimum": 200.0,
-        "deductible_amount": 450.0,
-        "after_deductible": 4050.0,
-        "policyholder_type": "individual",
-        "vat_adjusted": False,
-        "vat_deduction": 0.0,
-        "final_payout": 4050.0,
-        "currency": "CHF",
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-def _all_nine_screening_checks():
-    """Return all 9 screening checks (1, 1b, 2, 2b, 3, 4a, 4b, 5, 5b)."""
-    ids_names = [
-        ("1", "policy_validity"),
-        ("1b", "damage_date_validity"),
-        ("2", "vehicle_id_consistency"),
-        ("2b", "owner_policyholder_match"),
-        ("3", "mileage_compliance"),
-        ("4a", "shop_authorization"),
-        ("4b", "service_compliance"),
-        ("5", "component_coverage"),
-        ("5b", "assistance_package_items"),
-    ]
-    return [
-        _make_screening_check(check_id=cid, check_name=cname)
-        for cid, cname in ids_names
-    ]
-
-
-def _make_auto_reject_screening(hard_fail_check_id="3", with_payout=True):
-    """Build a complete auto-reject screening result dict."""
-    checks = _all_nine_screening_checks()
-    # Set the specified check to FAIL + is_hard_fail
-    for c in checks:
-        if c["check_id"] == hard_fail_check_id:
-            c["verdict"] = "FAIL"
-            c["is_hard_fail"] = True
-            c["reason"] = f"Check {hard_fail_check_id} failed deterministically"
-            c["evidence"] = {"key1": "val1", "key2": "val2"}
-
-    screening = {
-        "schema_version": "screening_v1",
-        "claim_id": "CLM-TEST",
-        "screening_timestamp": "2026-01-28T10:00:00Z",
-        "checks": checks,
-        "checks_passed": 8,
-        "checks_failed": 1,
-        "checks_inconclusive": 0,
-        "checks_for_llm": [],
-        "coverage_analysis_ref": None,
-        "auto_reject": True,
-        "auto_reject_reason": f"Hard fail on check(s): {hard_fail_check_id}",
-        "hard_fails": [hard_fail_check_id],
-    }
-
-    if with_payout:
-        screening["payout"] = _make_screening_payout()
-        screening["payout_error"] = None
-    else:
-        screening["payout"] = None
-        screening["payout_error"] = "Missing policy terms"
-
-    return screening
-
-
-def _make_non_auto_reject_screening():
-    """Build a screening result that does NOT auto-reject (for LLM path)."""
-    checks = _all_nine_screening_checks()
-    # Mark one as INCONCLUSIVE + requires_llm
-    for c in checks:
-        if c["check_id"] == "2b":
-            c["verdict"] = "INCONCLUSIVE"
-            c["requires_llm"] = True
-            c["reason"] = "Owner name needs LLM review"
-
-    return {
-        "schema_version": "screening_v1",
-        "claim_id": "CLM-TEST",
-        "screening_timestamp": "2026-01-28T10:00:00Z",
-        "checks": checks,
-        "checks_passed": 8,
-        "checks_failed": 0,
-        "checks_inconclusive": 1,
-        "checks_for_llm": ["2b"],
-        "coverage_analysis_ref": None,
-        "payout": _make_screening_payout(),
-        "payout_error": None,
-        "auto_reject": False,
-        "auto_reject_reason": None,
-        "hard_fails": [],
-    }
+from unit.coverage_test_helpers import (
+    make_screening_check as _make_screening_check,
+    make_screening_payout as _make_screening_payout,
+    make_auto_reject_screening as _make_auto_reject_screening,
+    make_non_auto_reject_screening as _make_non_auto_reject_screening,
+)
 
 
 # ── _map_screening_checks tests ─────────────────────────────────────
@@ -230,9 +106,9 @@ class TestMapScreeningPayout:
     def test_field_renames(self):
         payout = _make_screening_payout()
         result = AssessmentProcessor._map_screening_payout(payout)
-        assert result["covered_subtotal"] == 4500.0
-        assert result["non_covered_deductions"] == 500.0
-        assert result["deductible"] == 450.0
+        assert result["covered_subtotal"] == payout["covered_total"]
+        assert result["non_covered_deductions"] == payout["not_covered_total"]
+        assert result["deductible"] == payout["deductible_amount"]
 
     def test_total_claimed_computed(self):
         payout = _make_screening_payout(covered_total=3000.0, not_covered_total=700.0)
@@ -393,9 +269,10 @@ class TestBuildAutoRejectResponse:
         result = self.processor._build_auto_reject_response("CLM-001", screening)
 
         # Payout should be mapped from screening
-        assert result["payout"]["covered_subtotal"] == 4500.0
-        assert result["payout"]["non_covered_deductions"] == 500.0
-        assert result["payout"]["total_claimed"] == 5000.0
+        payout_defaults = _make_screening_payout()
+        assert result["payout"]["covered_subtotal"] == payout_defaults["covered_total"]
+        assert result["payout"]["non_covered_deductions"] == payout_defaults["not_covered_total"]
+        assert result["payout"]["total_claimed"] == payout_defaults["covered_total"] + payout_defaults["not_covered_total"]
 
     def test_without_payout(self):
         screening = _make_auto_reject_screening(with_payout=False)
@@ -676,9 +553,10 @@ class TestProcessBranching:
             config = self._make_config()
             result = self.processor.process(context, config)
 
-        # Screening payout wins (4050 from _make_screening_payout defaults)
-        assert result["payout"]["final_payout"] == 4050.0
-        assert result["payout"]["covered_subtotal"] == 4500.0
+        # Screening payout wins (from _make_screening_payout defaults)
+        payout_defaults = _make_screening_payout()
+        assert result["payout"]["final_payout"] == payout_defaults["final_payout"]
+        assert result["payout"]["covered_subtotal"] == payout_defaults["covered_total"]
         # LLM payout preserved for audit
         assert result["llm_payout"]["final_payout"] == 9999.0
         assert result["llm_payout"]["covered_subtotal"] == 9999.0

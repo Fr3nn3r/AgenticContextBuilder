@@ -17,6 +17,7 @@ from context_builder.pipeline.claim_stages.decision import (
     DefaultDecisionEngine,
     load_engine_from_workspace,
 )
+from context_builder.schemas.decision_dossier import ClaimVerdict
 
 
 # ── Fixtures ────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ def sample_dossier():
         "schema_version": "decision_dossier_v1",
         "claim_id": "CLM-001",
         "version": 1,
-        "claim_verdict": "APPROVE",
+        "claim_verdict": ClaimVerdict.APPROVE,
         "verdict_reason": "All clauses passed",
         "clause_evaluations": [
             {
@@ -105,7 +106,7 @@ class TestDefaultDecisionEngine:
             claim_id="CLM-001",
             aggregated_facts={"facts": []},
         )
-        assert result["claim_verdict"] == "REFER"
+        assert result["claim_verdict"] == ClaimVerdict.REFER
         assert result["schema_version"] == "decision_dossier_v1"
         assert result["claim_id"] == "CLM-001"
         assert result["clause_evaluations"] == []
@@ -124,7 +125,7 @@ class TestDefaultDecisionEngine:
             "payout": {"final_payout": 1000.0},
         }
         result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
-        assert result["claim_verdict"] == "APPROVE"
+        assert result["claim_verdict"] == ClaimVerdict.APPROVE
 
     def test_evaluate_deny_on_hard_check_fail(self, workspace):
         """Hard check FAIL -> DENY."""
@@ -138,7 +139,7 @@ class TestDefaultDecisionEngine:
             "payout": {"final_payout": 1000.0},
         }
         result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
-        assert result["claim_verdict"] == "DENY"
+        assert result["claim_verdict"] == ClaimVerdict.DENY
         assert "policy_validity" in result["verdict_reason"]
 
     def test_evaluate_refer_on_inconclusive(self, workspace):
@@ -155,7 +156,7 @@ class TestDefaultDecisionEngine:
             "payout": {"final_payout": 1000.0},
         }
         result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
-        assert result["claim_verdict"] == "REFER"
+        assert result["claim_verdict"] == ClaimVerdict.REFER
         assert "mileage_compliance" in result["verdict_reason"]
 
     def test_evaluate_deny_on_zero_payout(self, workspace):
@@ -175,7 +176,7 @@ class TestDefaultDecisionEngine:
             },
         }
         result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
-        assert result["claim_verdict"] == "DENY"
+        assert result["claim_verdict"] == ClaimVerdict.DENY
         assert "deductible" in result["verdict_reason"]
 
     def test_evaluate_refer_from_llm(self, workspace):
@@ -190,7 +191,7 @@ class TestDefaultDecisionEngine:
             "payout": {"final_payout": 1000.0},
         }
         result = engine.evaluate("CLM-001", {"facts": []}, processing_result=processing)
-        assert result["claim_verdict"] == "REFER"
+        assert result["claim_verdict"] == ClaimVerdict.REFER
 
     def test_soft_check_ids_empty_by_default(self, workspace):
         """Default engine has no soft checks."""
@@ -235,7 +236,7 @@ class TestEngine:
         assert engine is not None
         assert engine.engine_id == "test"
         result = engine.evaluate("CLM-001", {"facts": []})
-        assert result["claim_verdict"] == "APPROVE"
+        assert result["claim_verdict"] == ClaimVerdict.APPROVE
 
     def test_handles_import_error(self, workspace):
         engine_dir = workspace / "config" / "decision"
@@ -278,7 +279,7 @@ class TestDecisionStage:
         stage = DecisionStage()
         result = stage.run(context)
         assert result.decision_result is not None
-        assert result.decision_result["claim_verdict"] == "REFER"
+        assert result.decision_result["claim_verdict"] == ClaimVerdict.REFER
         assert result.decision_result["engine_id"] == "default"
 
     def test_run_with_default_engine_derives_verdict(self, context):
@@ -294,7 +295,7 @@ class TestDecisionStage:
         stage = DecisionStage()
         result = stage.run(context)
         assert result.decision_result is not None
-        assert result.decision_result["claim_verdict"] == "APPROVE"
+        assert result.decision_result["claim_verdict"] == ClaimVerdict.APPROVE
         assert result.decision_result["engine_id"] == "default"
 
     def test_run_writes_dossier_file(self, context, workspace):
@@ -442,7 +443,7 @@ class TestContextIntegration:
         )
         assert ctx.decision_result is None
         ctx.decision_result = {"claim_verdict": "APPROVE"}
-        assert ctx.decision_result["claim_verdict"] == "APPROVE"
+        assert ctx.decision_result["claim_verdict"] == ClaimVerdict.APPROVE
 
     def test_decision_ms_timing(self):
         timings = ClaimStageTimings()
