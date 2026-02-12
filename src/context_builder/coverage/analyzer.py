@@ -2517,13 +2517,15 @@ class CoverageAnalyzer:
     ) -> LineItemCoverage:
         """Validate and potentially override LLM coverage decision.
 
-        This method provides a safety net against LLM category inference errors.
-        If the LLM approved a part based on category membership rather than
-        explicit list matching, this validation will catch it.
+        Simplified safety net for LLM-first mode.  The LLM now receives the
+        full policy matrix and per-item hints, so synonym-based overrides are
+        no longer needed.  Two checks remain:
 
-        When a covered repair context is active, exclusion overrides are
-        skipped for ancillary parts (gaskets, plugs, etc.) that support
-        the covered repair.
+        1. **Exclusion check** -- force NOT_COVERED when the item is in the
+           excluded components list (unless it is labor or an ancillary part
+           supporting a covered repair).
+        2. **Category check** -- if the LLM said COVERED but assigned a
+           category that is not in the policy, flag for review.
 
         Args:
             item: Line item coverage result from LLM
@@ -2540,10 +2542,10 @@ class CoverageAnalyzer:
         val_tb = TraceBuilder()
         val_tb.extend(item.decision_trace)
 
-        # Check if item is in excluded list -> force NOT_COVERED
-        # BUT skip exclusion for labor items (excluded list targets replacement
-        # parts, not access/disassembly labor) and for ancillary parts
-        # supporting a covered repair.
+        # Check 1: Exclusion list -- force NOT_COVERED
+        # Skip for labor items (excluded list targets replacement parts,
+        # not access/disassembly labor) and for ancillary parts supporting
+        # a covered repair.
         labor_types = ("labor", "labour", "main d'oeuvre", "arbeit")
         is_labor = item.item_type in labor_types
         if not is_labor and self._is_in_excluded_list(item, excluded_components):
@@ -2576,94 +2578,14 @@ class CoverageAnalyzer:
                 )
                 return item
 
-        # If LLM said NOT_COVERED, check if a known synonym from
-        # COMPONENT_SYNONYMS matches the description AND is confirmed
-        # in the policy's parts list.  This catches cases where the LLM
-        # missed a synonym that the deterministic lookup would have found.
-        if item.coverage_status == CoverageStatus.NOT_COVERED:
-            category = item.coverage_category
-            if category:
-                covered_categories = list(covered_components.keys())
-                category_is_covered = self._is_system_covered(
-                    category, covered_categories
-                )
-
-                if category_is_covered:
-                    desc_lower = item.description.lower()
-                    for comp_type, synonyms in self.component_config.component_synonyms.items():
-                        for synonym in synonyms:
-                            # Skip short synonyms to avoid false positives
-                            if len(synonym) < 4:
-                                continue
-                            if synonym in desc_lower or desc_lower in synonym:
-                                # Guard: if description contains a gasket/seal
-                                # indicator, the synonym match is for a sealing
-                                # part (e.g. "joint de soupape") not the
-                                # component itself.  Don't override the LLM.
-                                gasket_hit = any(
-                                    ind.lower() in desc_lower
-                                    for ind in self.component_config.gasket_seal_indicators
-                                )
-                                if gasket_hit:
-                                    logger.info(
-                                        "Synonym override blocked: gasket/seal"
-                                        " indicator in '%s'",
-                                        item.description,
-                                    )
-                                    continue
-
-                                is_in_list, reason = (
-                                    self._is_component_in_policy_list(
-                                        comp_type,
-                                        category,
-                                        covered_components,
-                                        item.description,
-                                    )
-                                )
-                                if is_in_list is True:
-                                    original_status = item.coverage_status
-                                    item.coverage_status = CoverageStatus.COVERED
-                                    item.matched_component = comp_type
-                                    item.match_confidence = max(
-                                        item.match_confidence or 0, 0.75
-                                    )
-                                    item.match_reasoning += (
-                                        f" [SYNONYM OVERRIDE: '{item.description}'"
-                                        f" matches '{synonym}' -> '{comp_type}',"
-                                        f" confirmed in policy: {reason}]"
-                                    )
-                                    val_tb.add("llm_validation", TraceAction.OVERRIDDEN,
-                                               f"Synonym override: '{synonym}' -> '{comp_type}', {reason}",
-                                               verdict=CoverageStatus.COVERED,
-                                               confidence=item.match_confidence,
-                                               detail={"check": "synonym_override",
-                                                       "component": comp_type,
-                                                       "synonym": synonym,
-                                                       "policy_reason": reason},
-                                               decision_source=DecisionSource.VALIDATION)
-                                    item.decision_trace = val_tb.build()
-                                    logger.info(
-                                        "Post-LLM synonym override: '%s' changed"
-                                        " from %s to COVERED (synonym '%s' ->"
-                                        " '%s', %s)",
-                                        item.description,
-                                        original_status.value,
-                                        synonym,
-                                        comp_type,
-                                        reason,
-                                    )
-                                    return item
-
-        # If LLM said COVERED, only override when the category itself is
-        # NOT covered.  The explicit component list is a known-incomplete
-        # reference — absence from it does not mean the part is excluded.
+        # Check 2: Category coverage -- if LLM said COVERED but the category
+        # is not in the policy at all, flag for review.
         if item.coverage_status == CoverageStatus.COVERED:
             category = item.coverage_category
             covered_categories = list(covered_components.keys())
             category_is_covered = self._is_system_covered(category, covered_categories)
 
             if not category_is_covered:
-                # LLM assigned a category that isn't in the policy at all
                 item.coverage_status = CoverageStatus.REVIEW_NEEDED
                 item.exclusion_reason = "category_not_covered"
                 item.match_confidence = 0.45

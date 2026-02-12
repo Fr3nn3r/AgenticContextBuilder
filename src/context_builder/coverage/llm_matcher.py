@@ -808,16 +808,23 @@ Determine if this item is covered under the policy."""
 
             enriched_items.append(enriched)
 
-        # Delegate to existing batch_match which handles parallelism and retries
-        return self.batch_match(
-            items=enriched_items,
-            covered_categories=covered_categories,
-            covered_components=covered_components,
-            excluded_components=excluded_components,
-            claim_id=claim_id,
-            on_progress=on_progress,
-            covered_parts_in_claim=covered_parts_in_claim,
-        )
+        # Use the classify-specific prompt template for LLM-first mode.
+        # Temporarily swap prompt_name so _build_prompt_messages picks up
+        # the new template, then restore the original after the batch call.
+        original_prompt_name = self.config.prompt_name
+        self.config.prompt_name = self.config.classify_prompt_name
+        try:
+            return self.batch_match(
+                items=enriched_items,
+                covered_categories=covered_categories,
+                covered_components=covered_components,
+                excluded_components=excluded_components,
+                claim_id=claim_id,
+                on_progress=on_progress,
+                covered_parts_in_claim=covered_parts_in_claim,
+            )
+        finally:
+            self.config.prompt_name = original_prompt_name
 
     # ------------------------------------------------------------------
     # Labor relevance classification (batch LLM call for Mode 2)
