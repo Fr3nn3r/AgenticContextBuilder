@@ -271,6 +271,85 @@ class KeywordMatcher:
                 return True
         return False
 
+    def generate_hint(
+        self,
+        description: str,
+        item_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate an advisory keyword hint for an item without making a coverage decision.
+
+        Unlike ``match()``, this method does NOT produce a LineItemCoverage.
+        It returns a lightweight dict summarising the best keyword match,
+        intended to be embedded in an LLM prompt as contextual signal.
+
+        Args:
+            description: Item description (usually in German)
+            item_type: Item type (parts, labor, fee)
+
+        Returns:
+            Dict with keys {keyword, category, component, confidence,
+            has_consumable_indicator} if a keyword matched, else None.
+        """
+        description_upper = description.upper()
+
+        matches: List[Tuple[str, KeywordMapping, float]] = []
+        for keyword, mapping in self._keyword_to_mapping.items():
+            if keyword in description_upper:
+                confidence = mapping.confidence
+                for hint in mapping.context_hints:
+                    if hint.upper() in description_upper:
+                        confidence = min(0.95, confidence + self.config.context_confidence_boost)
+                        break
+                matches.append((keyword, mapping, confidence))
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda x: x[2], reverse=True)
+        keyword, best_mapping, confidence = matches[0]
+
+        has_consumable_indicator = False
+        for indicator in self.config.consumable_indicators:
+            if indicator.upper() in description_upper:
+                confidence *= self.config.consumable_confidence_penalty
+                has_consumable_indicator = True
+                break
+
+        return {
+            "keyword": keyword,
+            "category": best_mapping.category,
+            "component": best_mapping.component_name,
+            "confidence": round(confidence, 3),
+            "has_consumable_indicator": has_consumable_indicator,
+        }
+
+    def generate_hints(
+        self,
+        items: List[Dict[str, Any]],
+    ) -> List[Optional[Dict[str, Any]]]:
+        """Generate keyword hints for a batch of items.
+
+        Returns a list parallel to *items* where each entry is either a
+        hint dict (see ``generate_hint()``) or ``None`` if no keyword
+        matched the item.
+
+        Args:
+            items: List of line item dicts (must have ``description`` and ``item_type``).
+
+        Returns:
+            List of hint dicts (or None), same length as *items*.
+        """
+        hints: List[Optional[Dict[str, Any]]] = []
+        for item in items:
+            hint = self.generate_hint(
+                description=item.get("description", ""),
+                item_type=item.get("item_type", ""),
+            )
+            hints.append(hint)
+        matched_count = sum(1 for h in hints if h is not None)
+        logger.debug("Keyword hints: %d/%d items matched", matched_count, len(items))
+        return hints
+
     def batch_match(
         self,
         items: List[Dict[str, Any]],
