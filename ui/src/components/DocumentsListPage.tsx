@@ -13,12 +13,14 @@ import type { DocumentListItem, DocRunInfo } from "../api/client";
 import type { DocPayload, FieldLabel, DocLabels } from "../types";
 import { DocumentViewer } from "./DocumentViewer";
 import { FieldsTable } from "./FieldsTable";
+import { useClaims } from "../context/ClaimsContext";
 import { cn } from "../lib/utils";
 
 type TruthFilter = "" | "yes" | "no";
 
 export function DocumentsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { selectedClaim: contextSelectedClaim, claims: contextClaims, selectClaim: selectClaimInContext } = useClaims();
 
   // Data
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
@@ -71,6 +73,14 @@ export function DocumentsListPage() {
       newParams.delete(key);
     }
     setSearchParams(newParams);
+
+    // Sync claim selection to context so it persists across navigation
+    if (key === "claim" && value) {
+      const claim = contextClaims.find((c) => c.claim_id === value);
+      if (claim) {
+        selectClaimInContext(claim);
+      }
+    }
   };
 
   // Load filter options
@@ -83,10 +93,14 @@ export function DocumentsListPage() {
       .then((claims) => {
         const sorted = claims.map((c) => c.claim_id).sort();
         setClaimOptions(sorted);
-        // Auto-select first claim if none selected in URL
+        // Auto-select claim: use context's selected claim if available, else first
         if (sorted.length > 0 && !searchParams.get("claim")) {
+          const defaultClaim =
+            contextSelectedClaim && sorted.includes(contextSelectedClaim.claim_id)
+              ? contextSelectedClaim.claim_id
+              : sorted[0];
           const newParams = new URLSearchParams(searchParams);
-          newParams.set("claim", sorted[0]);
+          newParams.set("claim", defaultClaim);
           setSearchParams(newParams);
         }
       })
@@ -316,21 +330,6 @@ export function DocumentsListPage() {
     }
   }
 
-  // Quality status badge
-  const QualityBadge = ({ status }: { status: string | null }) => {
-    if (!status) return null;
-    const styles: Record<string, string> = {
-      pass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-      warn: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-      fail: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    };
-    return (
-      <span className={`px-1.5 py-0.5 rounded text-xs ${styles[status] || ""}`}>
-        {status}
-      </span>
-    );
-  };
-
   const selectedDoc = documents.find((d) => d.doc_id === selectedDocId);
 
   return (
@@ -364,7 +363,6 @@ export function DocumentsListPage() {
             onChange={(e) => updateParam("claim", e.target.value)}
             className="px-3 py-1.5 text-sm border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="">All Claims</option>
             {claimOptions.map((claim) => (
               <option key={claim} value={claim}>{claim}</option>
             ))}
@@ -440,16 +438,8 @@ export function DocumentsListPage() {
                       </svg>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-muted-foreground truncate">
-                      {doc.claim_id}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {doc.doc_type.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <QualityBadge status={doc.quality_status} />
+                  <div className="text-xs text-muted-foreground mt-1 truncate">
+                    {doc.doc_type.replace(/_/g, " ")}
                   </div>
                 </div>
               ))}

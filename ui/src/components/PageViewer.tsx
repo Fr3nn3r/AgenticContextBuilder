@@ -22,6 +22,11 @@ export function PageViewer({
 
   const currentPage = pages.find((p) => p.page === selectedPage);
 
+  // Reset to page 1 when document content changes (new document loaded)
+  useEffect(() => {
+    setSelectedPage(1);
+  }, [pages]);
+
   // Auto-switch to highlight page when it changes
   useEffect(() => {
     if (highlightPage && highlightPage !== selectedPage) {

@@ -329,6 +329,12 @@ export const PDFViewer = forwardRef<PDFViewerHandle, PDFViewerProps>(
       }
     }, [highlightQuery, pageRendered, pageNumber, applyHighlight]);
 
+    // Reset to page 1 when a new document is loaded
+    useEffect(() => {
+      setPageNumber(1);
+      setPageRendered(false);
+    }, [url]);
+
     // Update highlight when initial prop changes
     useEffect(() => {
       if (initialHighlight) {

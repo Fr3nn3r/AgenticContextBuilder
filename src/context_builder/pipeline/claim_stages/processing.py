@@ -118,10 +118,12 @@ class ProcessingStage:
             Updated context with processing_result set.
         """
         context.current_stage = self.name
+        context.notify_stage_update(self.name, "running")
         start = time.time()
 
         if not context.stage_config.run_processing:
             logger.info(f"Processing skipped for claim {context.claim_id}")
+            context.notify_stage_update(self.name, "skipped")
             context.timings.processing_ms = 0
             return context
 
@@ -162,10 +164,12 @@ class ProcessingStage:
             )
 
             context.processing_result = result
+            context.notify_stage_update(self.name, "complete")
             logger.info(f"Processing complete for claim {context.claim_id}")
 
         except Exception as e:
             logger.error(f"Processing failed for {context.claim_id}: {e}")
+            context.notify_stage_update(self.name, "warning")
             context.status = "error"
             context.error = f"Processing failed: {str(e)}"
             return context

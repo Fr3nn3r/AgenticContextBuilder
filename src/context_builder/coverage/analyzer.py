@@ -1109,19 +1109,20 @@ class CoverageAnalyzer:
                     # Override coverage_category to the cross-matched category
                     result = _dc_replace(result, system=cross_category)
                 else:
-                    # Per GCI §2.1A the insured parts are "exhaustively listed"
-                    # in the specific conditions — not on the list means not covered.
-                    is_exact_pn = result.lookup_source and "keyword" not in result.lookup_source
-                    status = CoverageStatus.NOT_COVERED
-                    exclusion_reason = "component_not_in_list"
-                    reasoning = (
-                        f"Part {part_ref} identified as "
-                        f"'{result.component_description or result.component}' "
-                        f"in category '{result.system}' "
-                        f"({'exact part number' if is_exact_pn else 'keyword match'}). "
-                        f"Component not in policy's exhaustive parts list. "
-                        f"Policy list note: {policy_check_reason}"
+                    # Component is in a covered category but not in the
+                    # policy's specific parts list.  Defer to LLM — the
+                    # policy list is representative, not exhaustive for
+                    # component variants (e.g., Haldex fluid → axle_drive,
+                    # trunk ECU → Motorsteuergerät family).
+                    logger.info(
+                        f"Deferring {part_ref} ({result.component}) to LLM: "
+                        f"category '{result.system}' covered but component "
+                        f"not in policy parts list. {policy_check_reason}"
                     )
+                    item["_part_lookup_system"] = result.system
+                    item["_part_lookup_component"] = result.component or result.component_description
+                    unmatched.append(item)
+                    continue
             elif is_category_covered and is_in_policy_list is None:
                 # Category is covered but we couldn't determine whether the
                 # component is in the policy list (synonym gap, no mapping).

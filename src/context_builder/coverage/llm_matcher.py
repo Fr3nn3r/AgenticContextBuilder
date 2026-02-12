@@ -1033,16 +1033,15 @@ Determine if this item is covered under the policy."""
 
         Tries workspace prompt file first, then inline fallback.
         """
-        # Format line items with index, description, type, price, coverage status
+        # Format line items with index, description, type, price, category
         item_lines = []
         for item in all_items:
-            status = item.get("coverage_status", "UNKNOWN")
             category = item.get("coverage_category") or "N/A"
             item_lines.append(
                 f"  [{item['index']}] {item['description']} | "
                 f"type={item.get('item_type', 'unknown')} | "
                 f"price={item.get('total_price', 0):.2f} CHF | "
-                f"coverage={status} | category={category}"
+                f"category={category}"
             )
         items_text = "\n".join(item_lines)
 
@@ -1096,7 +1095,10 @@ Determine if this item is covered under the policy."""
             "a part can be expensive yet only replaced opportunistically "
             "while the transmission/engine is open.\n"
             "4. Do NOT pick consumables, fasteners, gaskets, or fluids.\n"
-            "5. If diagnostic codes point to a specific component (e.g. "
+            "5. A part costing less than 5% of the total invoice is almost "
+            "certainly ancillary. Only select it as primary if the labor "
+            "descriptions explicitly name that component as the repair subject.\n"
+            "6. If diagnostic codes point to a specific component (e.g. "
             "parking brake solenoid, control unit), that component is the "
             "primary -- even if another part costs more.\n\n"
             "Respond ONLY with valid JSON:\n"
