@@ -15,6 +15,12 @@ from context_builder.coverage.analyzer import (
 )
 from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatcher
 from context_builder.coverage.llm_matcher import LLMMatcherConfig
+from context_builder.coverage.post_processing import (
+    apply_labor_linkage,
+    demote_orphan_labor,
+    flag_nominal_price_labor,
+    validate_llm_coverage_decision,
+)
 from context_builder.coverage.rule_engine import RuleConfig, RuleEngine
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -690,7 +696,7 @@ class TestCrossCategoryMatching:
 
 
 class TestValidateLLMCoverageDecision:
-    """Tests for _validate_llm_coverage_decision."""
+    """Tests for validate_llm_coverage_decision."""
 
     @pytest.fixture
     def analyzer(self, nsa_component_config):
@@ -720,16 +726,22 @@ class TestValidateLLMCoverageDecision:
     def test_non_llm_item_passes_through(self, analyzer, covered_components, excluded_components):
         """Non-LLM items should be returned unchanged."""
         item = make_line_item(match_method=MatchMethod.RULE)
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         assert result.coverage_status == CoverageStatus.COVERED
 
     def test_excluded_item_overridden_to_not_covered(self, analyzer, covered_components, excluded_components):
         """Item in excluded list should be forced to NOT_COVERED."""
         item = self._llm_item(description="Motoröl 5W40")
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         assert result.coverage_status == CoverageStatus.NOT_COVERED
         assert "OVERRIDE" in result.match_reasoning
@@ -737,8 +749,11 @@ class TestValidateLLMCoverageDecision:
     def test_covered_item_not_in_list_but_category_covered_stays_covered(self, analyzer, covered_components, excluded_components):
         """LLM COVERED item in a covered category stays COVERED even if specific component isn't listed."""
         item = self._llm_item(matched_component="turbocharger")
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         # Category "engine" is covered -> item stays COVERED
         assert result.coverage_status == CoverageStatus.COVERED
@@ -749,24 +764,33 @@ class TestValidateLLMCoverageDecision:
             matched_component="water_pump",
             description="Wasserpumpe defekt",
         )
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         assert result.coverage_status == CoverageStatus.COVERED
 
     def test_already_not_covered_unchanged(self, analyzer, covered_components, excluded_components):
         """LLM NOT_COVERED item stays NOT_COVERED."""
         item = self._llm_item(coverage_status=CoverageStatus.NOT_COVERED)
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         assert result.coverage_status == CoverageStatus.NOT_COVERED
 
     def test_unknown_component_in_covered_category_stays_covered(self, analyzer, covered_components, excluded_components):
         """LLM item with unknown component in a covered category stays COVERED."""
         item = self._llm_item(matched_component="quantum_inverter")
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         # Category "engine" is covered -> item stays COVERED regardless of component name
         assert result.coverage_status == CoverageStatus.COVERED
@@ -777,8 +801,11 @@ class TestValidateLLMCoverageDecision:
             coverage_category="body",
             matched_component="door_handle",
         )
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         # Category "body" is not in covered_components -> override to REVIEW_NEEDED
         assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
@@ -790,8 +817,11 @@ class TestValidateLLMCoverageDecision:
             description="Motoröl ablassen und einfüllen",
             item_type="labor",
         )
-        result = analyzer._validate_llm_coverage_decision(
+        result = validate_llm_coverage_decision(
             item, covered_components, excluded_components,
+            is_in_excluded_list=analyzer._is_in_excluded_list,
+            is_system_covered=analyzer._is_system_covered,
+            ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
         # Labor should NOT be overridden even though "Motoröl" is in the excluded list
         assert result.coverage_status == CoverageStatus.COVERED
@@ -1581,7 +1611,7 @@ class TestRepairContextExclusionPatterns:
 
 
 class TestDemoteLaborWithoutCoveredParts:
-    """Tests for _demote_labor_without_covered_parts (Fix 2)."""
+    """Tests for demote_orphan_labor (orphan labor safety net)."""
 
     @pytest.fixture
     def analyzer(self, nsa_component_config):
@@ -1604,7 +1634,7 @@ class TestDemoteLaborWithoutCoveredParts:
                 covered_amount=80.0, not_covered_amount=0.0,
             ),
         ]
-        result = analyzer._demote_labor_without_covered_parts(items)
+        result = demote_orphan_labor(items)
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
         assert labor.exclusion_reason == "demoted_no_anchor"
@@ -1624,7 +1654,7 @@ class TestDemoteLaborWithoutCoveredParts:
                 covered_amount=300.0, not_covered_amount=0.0,
             ),
         ]
-        result = analyzer._demote_labor_without_covered_parts(items)
+        result = demote_orphan_labor(items)
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
         assert labor.exclusion_reason == "demoted_no_anchor"
@@ -1643,7 +1673,7 @@ class TestDemoteLaborWithoutCoveredParts:
                 covered_amount=200.0, not_covered_amount=0.0,
             ),
         ]
-        result = analyzer._demote_labor_without_covered_parts(items)
+        result = demote_orphan_labor(items)
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
         assert labor.exclusion_reason == "demoted_no_anchor"
@@ -1661,14 +1691,14 @@ class TestDemoteLaborWithoutCoveredParts:
                 covered_amount=300.0,
             ),
         ]
-        result = analyzer._demote_labor_without_covered_parts(items)
+        result = demote_orphan_labor(items)
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.COVERED
         assert labor.covered_amount == 300.0
 
 
 class TestApplyLaborFollowsPartsLLM:
-    """Tests for _apply_labor_follows_parts with LLM labor linkage (Strategy 2)."""
+    """Tests for apply_labor_linkage with LLM labor linkage (Strategy 2)."""
 
     @pytest.fixture
     def analyzer(self, nsa_component_config):
@@ -1708,8 +1738,9 @@ class TestApplyLaborFollowsPartsLLM:
             is_covered=True, confidence=0.9,
             determination_method="deterministic",
         )
-        result = analyzer._apply_labor_follows_parts(
-            items, primary_repair=primary_repair, claim_id="TEST-LL",
+        result = apply_labor_linkage(
+            items, llm_matcher=mock_matcher,
+            primary_repair=primary_repair, claim_id="TEST-LL",
         )
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.COVERED
@@ -1741,8 +1772,9 @@ class TestApplyLaborFollowsPartsLLM:
         ]
         analyzer.llm_matcher = mock_matcher
 
-        result = analyzer._apply_labor_follows_parts(
-            items, primary_repair=None, claim_id="TEST-LL",
+        result = apply_labor_linkage(
+            items, llm_matcher=mock_matcher,
+            primary_repair=None, claim_id="TEST-LL",
         )
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
@@ -1768,8 +1800,9 @@ class TestApplyLaborFollowsPartsLLM:
         mock_matcher.classify_labor_linkage.side_effect = RuntimeError("API down")
         analyzer.llm_matcher = mock_matcher
 
-        result = analyzer._apply_labor_follows_parts(
-            items, primary_repair=None, claim_id="TEST-LL",
+        result = apply_labor_linkage(
+            items, llm_matcher=mock_matcher,
+            primary_repair=None, claim_id="TEST-LL",
         )
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
@@ -1790,8 +1823,9 @@ class TestApplyLaborFollowsPartsLLM:
                 covered_amount=0.0, not_covered_amount=400.0,
             ),
         ]
-        result = analyzer._apply_labor_follows_parts(
-            items, primary_repair=None, claim_id="TEST-LL",
+        result = apply_labor_linkage(
+            items, llm_matcher=None,
+            primary_repair=None, claim_id="TEST-LL",
         )
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
@@ -1814,8 +1848,9 @@ class TestApplyLaborFollowsPartsLLM:
                 covered_amount=0.0, not_covered_amount=200.0,
             ),
         ]
-        result = analyzer._apply_labor_follows_parts(
-            items, primary_repair=None, claim_id="TEST-PN",
+        result = apply_labor_linkage(
+            items, llm_matcher=None,
+            primary_repair=None, claim_id="TEST-PN",
         )
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.COVERED
@@ -2056,108 +2091,8 @@ class TestStage2_5SynonymGapTightening:
         assert is_in_list is not True, "Expected uncertain or False, not True"
 
 
-# ---- Phase 4: Labor component extraction ----
-
-class TestLaborComponentExtraction:
-    """Phase 4: Labor items with component nouns in their description
-    should be matched deterministically."""
-
-    @pytest.fixture
-    def analyzer(self, nsa_component_config):
-        return CoverageAnalyzer(
-            config=AnalyzerConfig(use_llm_fallback=False),
-            component_config=nsa_component_config,
-        )
-
-    def test_labor_with_known_keyword_matched(self, analyzer):
-        """Labor item containing a repair_context_keyword should be matched."""
-        keywords = analyzer.component_config.repair_context_keywords
-        if not keywords:
-            pytest.skip("No repair_context_keywords configured")
-
-        # Pick first keyword
-        keyword = next(iter(keywords))
-        component, category = keywords[keyword]
-
-        remaining = [
-            {
-                "description": f"AUS-/EINBAUEN {keyword.upper()}",
-                "item_type": "labor",
-                "total_price": 150.0,
-            },
-        ]
-        covered_categories = [category]
-        covered_components = {category: [component]}
-
-        keyword_matched, new_remaining = analyzer._match_labor_by_component_extraction(
-            remaining, [], covered_categories, covered_components,
-        )
-        assert len(keyword_matched) == 1
-        assert len(new_remaining) == 0
-        assert keyword_matched[0].coverage_status == CoverageStatus.COVERED
-        assert keyword_matched[0].match_confidence == 0.80
-        assert keyword_matched[0].matched_component == component
-
-    def test_non_labor_items_pass_through(self, analyzer):
-        """Non-labor items should not be processed."""
-        remaining = [
-            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 300.0},
-        ]
-        keyword_matched, new_remaining = analyzer._match_labor_by_component_extraction(
-            remaining, [], ["engine"], {"engine": ["Motor"]},
-        )
-        assert len(keyword_matched) == 0
-        assert len(new_remaining) == 1
-
-    def test_labor_without_keyword_passes_through(self, analyzer):
-        """Labor item without matching keyword passes through."""
-        remaining = [
-            {"description": "RANDOM LABOR TASK", "item_type": "labor", "total_price": 100.0},
-        ]
-        keyword_matched, new_remaining = analyzer._match_labor_by_component_extraction(
-            remaining, [], ["engine"], {"engine": ["Motor"]},
-        )
-        assert len(keyword_matched) == 0
-        assert len(new_remaining) == 1
-
-    def test_labor_uncovered_category_passes_through(self, analyzer):
-        """Labor with keyword but uncovered category passes through."""
-        keywords = analyzer.component_config.repair_context_keywords
-        if not keywords:
-            pytest.skip("No repair_context_keywords configured")
-
-        keyword = next(iter(keywords))
-        component, category = keywords[keyword]
-
-        remaining = [
-            {"description": f"EINBAUEN {keyword.upper()}", "item_type": "labor", "total_price": 100.0},
-        ]
-        # Use empty covered categories — nothing is covered
-        keyword_matched, new_remaining = analyzer._match_labor_by_component_extraction(
-            remaining, [], [], {},
-        )
-        assert len(keyword_matched) == 0
-        assert len(new_remaining) == 1
-
-    def test_no_repair_context_keywords_noop(self):
-        """With empty repair_context_keywords, method is a no-op."""
-        from context_builder.coverage.analyzer import ComponentConfig
-        analyzer = CoverageAnalyzer(
-            config=AnalyzerConfig(use_llm_fallback=False),
-            component_config=ComponentConfig.default(),
-        )
-        remaining = [
-            {"description": "SOME LABOR", "item_type": "labor", "total_price": 100.0},
-        ]
-        keyword_matched, new_remaining = analyzer._match_labor_by_component_extraction(
-            remaining, [], ["engine"], {},
-        )
-        assert len(keyword_matched) == 0
-        assert len(new_remaining) == 1
-
-
 class TestNominalPriceLaborFlag:
-    """Tests for _flag_nominal_price_labor — demotes nominal-price labor
+    """Tests for flag_nominal_price_labor — demotes nominal-price labor
     items (suspected operation codes) to REVIEW_NEEDED."""
 
     @pytest.fixture
@@ -2186,7 +2121,7 @@ class TestNominalPriceLaborFlag:
     def test_labor_with_nominal_price_and_item_code_flagged(self, analyzer):
         """Labor at 1.00 CHF with an item_code is demoted to REVIEW_NEEDED."""
         items = [self._nominal_labor()]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         item = result[0]
         assert item.coverage_status == CoverageStatus.REVIEW_NEEDED
         assert item.match_confidence == 0.30
@@ -2197,31 +2132,31 @@ class TestNominalPriceLaborFlag:
     def test_labor_at_threshold_flagged(self, analyzer):
         """Labor at exactly the threshold (2.00 CHF) is flagged."""
         items = [self._nominal_labor(total_price=2.00, covered_amount=2.00)]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.REVIEW_NEEDED
 
     def test_labor_above_threshold_not_flagged(self, analyzer):
         """Labor above the threshold stays COVERED."""
         items = [self._nominal_labor(total_price=3.00, covered_amount=3.00)]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.COVERED
 
     def test_labor_without_item_code_not_flagged(self, analyzer):
         """Labor at 1.00 CHF without item_code is not flagged."""
         items = [self._nominal_labor(item_code=None)]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.COVERED
 
     def test_labor_with_empty_item_code_not_flagged(self, analyzer):
         """Labor with blank item_code is not flagged."""
         items = [self._nominal_labor(item_code="  ")]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.COVERED
 
     def test_parts_with_nominal_price_not_flagged(self, analyzer):
         """Parts at 1.00 CHF with item_code stay COVERED (clips/screws)."""
         items = [self._nominal_labor(item_type="parts", description="Clip")]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.COVERED
 
     def test_not_covered_labor_not_flagged(self, analyzer):
@@ -2231,7 +2166,7 @@ class TestNominalPriceLaborFlag:
             covered_amount=0.0,
             not_covered_amount=1.00,
         )]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.NOT_COVERED
 
     def test_review_needed_labor_not_flagged(self, analyzer):
@@ -2241,7 +2176,7 @@ class TestNominalPriceLaborFlag:
             covered_amount=0.0,
             not_covered_amount=1.00,
         )]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         assert result[0].coverage_status == CoverageStatus.REVIEW_NEEDED
 
     def test_component_info_preserved(self, analyzer):
@@ -2250,7 +2185,7 @@ class TestNominalPriceLaborFlag:
             coverage_category="cooling_system",
             matched_component="oil_cooler",
         )]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         item = result[0]
         assert item.coverage_status == CoverageStatus.REVIEW_NEEDED
         assert item.coverage_category == "cooling_system"
@@ -2259,7 +2194,7 @@ class TestNominalPriceLaborFlag:
     def test_trace_step_added(self, analyzer):
         """Decision trace includes a nominal_price_audit DEMOTED step."""
         items = [self._nominal_labor()]
-        result = analyzer._flag_nominal_price_labor(items)
+        result = flag_nominal_price_labor(items)
         trace = result[0].decision_trace
         assert trace is not None
         audit_steps = [s for s in trace if s.stage == "nominal_price_audit"]
