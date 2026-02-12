@@ -107,6 +107,28 @@ class FakeLLMMatcher:
     def classify_labor_for_primary_repair(self, **kwargs):
         return []
 
+    def classify_labor_linkage(self, labor_items=None, parts_items=None,
+                               primary_repair=None, claim_id=None):
+        """Fake labor linkage: covers all labor if there are covered parts."""
+        if not labor_items:
+            return []
+        has_covered_parts = any(
+            p.get("coverage_status") in ("covered", CoverageStatus.COVERED)
+            for p in (parts_items or [])
+        )
+        results = []
+        for item in labor_items:
+            results.append({
+                "index": item["index"],
+                "is_covered": has_covered_parts,
+                "linked_part_index": (parts_items[0]["index"]
+                                      if has_covered_parts and parts_items else None),
+                "confidence": 0.85 if has_covered_parts else 0.0,
+                "reasoning": ("Fake: linked to covered part"
+                              if has_covered_parts else "Fake: no covered parts"),
+            })
+        return results
+
     def determine_primary_repair(self, **kwargs):
         return None
 
@@ -1704,6 +1726,179 @@ class TestDemoteLaborWithoutCoveredParts:
         labor = result[1]
         assert labor.coverage_status == CoverageStatus.COVERED
         assert labor.covered_amount == 300.0
+
+
+class TestApplyLaborFollowsPartsLLM:
+    """Tests for _apply_labor_follows_parts with LLM labor linkage (Strategy 2)."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_component_config):
+        return CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_fallback=False),
+            component_config=nsa_component_config,
+        )
+
+    def _make_item(self, **overrides):
+        defaults = dict(
+            item_code=None,
+            description="test item",
+            item_type="parts",
+            total_price=100.0,
+            coverage_status=CoverageStatus.COVERED,
+            coverage_category="engine",
+            matched_component="motor",
+            match_method=MatchMethod.KEYWORD,
+            match_confidence=0.90,
+            match_reasoning="Keyword match",
+            covered_amount=100.0,
+            not_covered_amount=0.0,
+        )
+        defaults.update(overrides)
+        return LineItemCoverage(**defaults)
+
+    def test_llm_linkage_promotes_linked_labor(self, analyzer):
+        """Strategy 2: LLM links labor to covered part -> labor is COVERED."""
+        from unittest.mock import MagicMock
+
+        items = [
+            self._make_item(
+                item_code="P001", description="Steuerkette",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", matched_component="timing_chain",
+                total_price=500.0, covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Aus-/Einbau Steuerkette",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                match_method=MatchMethod.LLM, total_price=300.0,
+                covered_amount=0.0, not_covered_amount=300.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_linkage.return_value = [
+            {"index": 1, "is_covered": True, "linked_part_index": 0,
+             "confidence": 0.9, "reasoning": "R&I for timing chain"},
+        ]
+        analyzer.llm_matcher = mock_matcher
+
+        primary_repair = PrimaryRepairResult(
+            component="timing_chain", category="engine",
+            is_covered=True, confidence=0.9,
+            determination_method="deterministic",
+        )
+        result = analyzer._apply_labor_follows_parts(
+            items, primary_repair=primary_repair, claim_id="TEST-LL",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 300.0
+        mock_matcher.classify_labor_linkage.assert_called_once()
+
+    def test_llm_linkage_does_not_promote_unlinked_labor(self, analyzer):
+        """Strategy 2: LLM says labor is not linked -> stays NOT_COVERED."""
+        from unittest.mock import MagicMock
+
+        items = [
+            self._make_item(
+                item_code="P001", description="Steuerkette",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0, covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Diagnose Fahrzeug",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                match_method=MatchMethod.LLM,
+                covered_amount=0.0, not_covered_amount=100.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_linkage.return_value = [
+            {"index": 1, "is_covered": False, "linked_part_index": None,
+             "confidence": 0.85, "reasoning": "Standalone diagnostic"},
+        ]
+        analyzer.llm_matcher = mock_matcher
+
+        result = analyzer._apply_labor_follows_parts(
+            items, primary_repair=None, claim_id="TEST-LL",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_llm_failure_leaves_labor_not_covered(self, analyzer):
+        """Strategy 2: LLM failure -> labor stays NOT_COVERED (conservative)."""
+        from unittest.mock import MagicMock
+
+        items = [
+            self._make_item(
+                item_code="P001", description="Motor",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0, covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Aus-/Einbau Motor",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM,
+                covered_amount=0.0, not_covered_amount=400.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_linkage.side_effect = RuntimeError("API down")
+        analyzer.llm_matcher = mock_matcher
+
+        result = analyzer._apply_labor_follows_parts(
+            items, primary_repair=None, claim_id="TEST-LL",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_no_llm_matcher_skips_strategy2(self, analyzer):
+        """Without LLM matcher, Strategy 2 is skipped."""
+        analyzer.llm_matcher = None
+        items = [
+            self._make_item(
+                item_code="P001", description="Motor",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", total_price=500.0, covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None, description="Aus-/Einbau Motor",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                match_method=MatchMethod.LLM,
+                covered_amount=0.0, not_covered_amount=400.0,
+            ),
+        ]
+        result = analyzer._apply_labor_follows_parts(
+            items, primary_repair=None, claim_id="TEST-LL",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_part_number_match_still_works(self, analyzer):
+        """Strategy 1: labor description containing a covered part's code is promoted."""
+        analyzer.llm_matcher = None
+        items = [
+            self._make_item(
+                item_code="07-0641-00", description="Oelkuehler",
+                item_type="parts", coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine", matched_component="oil_cooler",
+                total_price=500.0, covered_amount=500.0,
+            ),
+            self._make_item(
+                item_code=None,
+                description="07-0641-00 Oelkuehler aus/einbauen",
+                item_type="labor", coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None, matched_component=None,
+                covered_amount=0.0, not_covered_amount=200.0,
+            ),
+        ]
+        result = analyzer._apply_labor_follows_parts(
+            items, primary_repair=None, claim_id="TEST-PN",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert "part number" in labor.match_reasoning.lower()
 
 
 class TestNormalizeCoverageScale:

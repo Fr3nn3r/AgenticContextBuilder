@@ -1129,3 +1129,188 @@ class TestDeterminePrimaryRepair:
         """Default primary_repair_prompt_name is 'primary_repair'."""
         config = LLMMatcherConfig.from_dict({})
         assert config.primary_repair_prompt_name == "primary_repair"
+
+    def test_config_labor_linkage_prompt_name(self):
+        """labor_linkage_prompt_name is configurable."""
+        config = LLMMatcherConfig.from_dict({
+            "labor_linkage_prompt_name": "nsa_labor_linkage",
+        })
+        assert config.labor_linkage_prompt_name == "nsa_labor_linkage"
+
+    def test_config_labor_linkage_prompt_name_default(self):
+        """Default labor_linkage_prompt_name is 'labor_linkage'."""
+        config = LLMMatcherConfig.from_dict({})
+        assert config.labor_linkage_prompt_name == "labor_linkage"
+
+
+class TestClassifyLaborLinkage:
+    """Tests for classify_labor_linkage() and response parsing."""
+
+    def _make_linkage_response(self, items):
+        """Build a mock LLM response for labor linkage."""
+        content = json.dumps({"labor_items": items})
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = content
+        return response
+
+    def test_happy_path(self):
+        """Labor items linked to covered parts are returned with is_covered=True."""
+        config = LLMMatcherConfig(
+            prompt_name="nonexistent_prompt",
+            labor_linkage_prompt_name="nonexistent_labor_linkage",
+            max_retries=1,
+        )
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_linkage_response([
+                {"index": 0, "is_covered": True, "linked_part_index": 2,
+                 "confidence": 0.9, "reasoning": "R&I for timing chain"},
+                {"index": 1, "is_covered": False, "linked_part_index": None,
+                 "confidence": 0.85, "reasoning": "Standalone diagnostic"},
+            ]),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_linkage(
+            labor_items=[
+                {"index": 0, "description": "Aus-/Einbau Steuerkette",
+                 "item_code": None, "total_price": 300},
+                {"index": 1, "description": "Diagnose Fahrzeug",
+                 "item_code": None, "total_price": 100},
+            ],
+            parts_items=[
+                {"index": 2, "description": "Steuerkette",
+                 "item_code": "ST001", "total_price": 500,
+                 "coverage_status": "covered", "coverage_category": "engine",
+                 "matched_component": "timing_chain"},
+            ],
+            primary_repair={"component": "timing_chain", "category": "engine",
+                            "is_covered": True},
+            claim_id="TEST-LL-001",
+        )
+
+        assert len(results) == 2
+        assert results[0]["is_covered"] is True
+        assert results[0]["linked_part_index"] == 2
+        assert results[0]["confidence"] == 0.9
+        assert results[1]["is_covered"] is False
+        client.chat_completions_create.assert_called_once()
+        call_kwargs = client.chat_completions_create.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_empty_labor_items(self):
+        """Empty labor list returns empty results without LLM call."""
+        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        client = MagicMock()
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_linkage(
+            labor_items=[],
+            parts_items=[{"index": 0, "description": "Part"}],
+        )
+        assert results == []
+        client.chat_completions_create.assert_not_called()
+
+    def test_missing_indices_default_to_not_covered(self):
+        """Missing indices from LLM response default to is_covered=False."""
+        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        # LLM only returns verdict for index 0
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_linkage_response([
+                {"index": 0, "is_covered": True, "linked_part_index": 2,
+                 "confidence": 0.9, "reasoning": "R&I labor"},
+            ]),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_linkage(
+            labor_items=[
+                {"index": 0, "description": "R&I", "item_code": None, "total_price": 200},
+                {"index": 1, "description": "Battery charging", "item_code": None, "total_price": 50},
+            ],
+            parts_items=[],
+        )
+
+        assert len(results) == 2
+        assert results[0]["is_covered"] is True
+        assert results[1]["is_covered"] is False
+        assert "Missing from LLM response" in results[1]["reasoning"]
+
+    def test_invalid_json_returns_all_not_covered(self):
+        """Invalid JSON response returns all items with is_covered=False."""
+        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        bad_response = MagicMock()
+        bad_response.choices = [MagicMock()]
+        bad_response.choices[0].message.content = "NOT VALID JSON {{{}"
+        client.chat_completions_create = MagicMock(return_value=bad_response)
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_linkage(
+            labor_items=[
+                {"index": 0, "description": "R&I", "item_code": None, "total_price": 200},
+            ],
+            parts_items=[],
+        )
+
+        assert len(results) == 1
+        assert results[0]["is_covered"] is False
+        assert "Failed to parse" in results[0]["reasoning"]
+
+    def test_llm_failure_returns_all_not_covered(self):
+        """LLM exception returns all items with is_covered=False."""
+        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            side_effect=RuntimeError("API down"),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        results = matcher.classify_labor_linkage(
+            labor_items=[
+                {"index": 0, "description": "R&I", "item_code": None, "total_price": 200},
+                {"index": 1, "description": "Diagnose", "item_code": None, "total_price": 100},
+            ],
+            parts_items=[],
+        )
+
+        assert len(results) == 2
+        assert all(r["is_covered"] is False for r in results)
+        assert all("failed" in r["reasoning"].lower() for r in results)
+
+    def test_prompt_includes_primary_repair_context(self):
+        """When primary_repair is given, it appears in the prompt."""
+        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        client = MagicMock()
+        client.set_context = MagicMock(return_value=client)
+        client.chat_completions_create = MagicMock(
+            return_value=self._make_linkage_response([
+                {"index": 0, "is_covered": True, "linked_part_index": None,
+                 "confidence": 0.8, "reasoning": "linked"},
+            ]),
+        )
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        matcher.classify_labor_linkage(
+            labor_items=[
+                {"index": 0, "description": "R&I Motor", "item_code": None, "total_price": 200},
+            ],
+            parts_items=[
+                {"index": 1, "description": "Motor", "item_code": "M001",
+                 "total_price": 1000, "coverage_status": "covered",
+                 "coverage_category": "engine", "matched_component": "motor"},
+            ],
+            primary_repair={"component": "motor", "category": "engine",
+                            "is_covered": True},
+        )
+
+        call_kwargs = client.chat_completions_create.call_args[1]
+        messages = call_kwargs["messages"]
+        user_msg = messages[-1]["content"]
+        assert "motor" in user_msg.lower() or "Primary repair" in user_msg
