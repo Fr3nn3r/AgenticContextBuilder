@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     TraceAction,
@@ -410,7 +411,8 @@ Determine if this item is covered under the policy."""
 
                 tb.add("llm", TraceAction.MATCHED, reasoning,
                        verdict=status, confidence=confidence,
-                       detail=trace_detail)
+                       detail=trace_detail,
+                       decision_source=DecisionSource.LLM)
 
                 return LineItemCoverage(
                     item_code=item_code,
@@ -454,7 +456,8 @@ Determine if this item is covered under the policy."""
                      f"LLM analysis failed after {max_attempts} attempts: {str(last_error)}",
                      verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
                      detail={"reason": "llm_error", "retries": max_attempts,
-                             "model": self.config.model})
+                             "model": self.config.model},
+                     decision_source=DecisionSource.LLM)
         return LineItemCoverage(
             item_code=item_code,
             description=description,

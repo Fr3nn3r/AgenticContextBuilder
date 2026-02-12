@@ -28,6 +28,7 @@ from context_builder.coverage.schemas import (
     CoverageMetadata,
     CoverageStatus,
     CoverageSummary,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     PrimaryRepairResult,
@@ -934,7 +935,8 @@ class CoverageAnalyzer:
                    verdict=CoverageStatus.COVERED, confidence=0.80,
                    detail={"keyword": best_keyword,
                            "component": best_component,
-                           "category": best_category})
+                           "category": best_category},
+                   decision_source=DecisionSource.KEYWORD)
 
             matched_item = LineItemCoverage(
                 item_code=item.get("item_code"),
@@ -1012,7 +1014,8 @@ class CoverageAnalyzer:
                 _skip_tb = TraceBuilder()
                 _skip_tb.add("part_number", TraceAction.SKIPPED,
                              "No part number match found",
-                             detail={"part": item_code})
+                             detail={"part": item_code},
+                             decision_source=DecisionSource.PART_NUMBER)
                 item["_deferred_trace"] = _skip_tb.build()
                 unmatched.append(item)
                 continue
@@ -1046,7 +1049,8 @@ class CoverageAnalyzer:
                             detail={"part": item_code, "lookup_source": result.lookup_source,
                                     "reason": "gasket_seal_deferral",
                                     "system": result.system,
-                                    "component": result.component})
+                                    "component": result.component},
+                            decision_source=DecisionSource.PART_NUMBER)
                     item["_deferred_trace"] = _tb.build()
                     unmatched.append(item)
                     continue
@@ -1232,7 +1236,8 @@ class CoverageAnalyzer:
             pn_action = (TraceAction.MATCHED if status == CoverageStatus.COVERED
                          else TraceAction.EXCLUDED)
             pn_tb.add("part_number", pn_action, reasoning,
-                       verdict=status, confidence=0.95, detail=pn_trace_detail)
+                       verdict=status, confidence=0.95, detail=pn_trace_detail,
+                       decision_source=DecisionSource.PART_NUMBER)
 
             matched.append(
                 LineItemCoverage(
@@ -1472,7 +1477,8 @@ class CoverageAnalyzer:
                                    f"Labor linked to covered part via part number {part_code}",
                                    verdict=CoverageStatus.COVERED, confidence=0.85,
                                    detail={"strategy": "part_number_in_description",
-                                           "linked_part_code": part_code})
+                                           "linked_part_code": part_code},
+                                   decision_source=DecisionSource.PROMOTION)
                         item.decision_trace = lfp_tb.build()
                         logger.debug(
                             f"Promoted labor '{item.description}' to COVERED "
@@ -1521,7 +1527,8 @@ class CoverageAnalyzer:
                                     detail={"strategy": "simple_invoice_rule",
                                             "skip_reason": "proportionality_guard",
                                             "labor_price": labor_item.total_price,
-                                            "covered_parts_value": total_covered_parts_value})
+                                            "covered_parts_value": total_covered_parts_value},
+                                    decision_source=DecisionSource.PROMOTION)
                     labor_item.decision_trace = sir_skip_tb.build()
                 else:
                     labor_item.coverage_status = CoverageStatus.COVERED
@@ -1538,7 +1545,8 @@ class CoverageAnalyzer:
                                f"Simple invoice rule: linked to '{linked_part.description}'",
                                verdict=CoverageStatus.COVERED, confidence=0.75,
                                detail={"strategy": "simple_invoice_rule",
-                                       "linked_to": linked_part.description})
+                                       "linked_to": linked_part.description},
+                               decision_source=DecisionSource.PROMOTION)
                     labor_item.decision_trace = sir_tb.build()
                     logger.debug(
                         f"Promoted labor '{labor_item.description}' to COVERED "
@@ -1588,6 +1596,7 @@ class CoverageAnalyzer:
                                     detail={"reason": "excluded_part_guard",
                                             "strategy": "repair_context_keyword",
                                             "blocked_by": "item_code_match"},
+                                    decision_source=DecisionSource.PROMOTION,
                                 )
                                 item.decision_trace = skip_tb.build()
                                 continue
@@ -1609,6 +1618,7 @@ class CoverageAnalyzer:
                                 detail={"reason": "excluded_part_guard",
                                         "strategy": "repair_context_keyword",
                                         "blocked_by": "component_match"},
+                                decision_source=DecisionSource.PROMOTION,
                             )
                             item.decision_trace = skip_tb.build()
                             continue
@@ -1634,7 +1644,8 @@ class CoverageAnalyzer:
                                        verdict=CoverageStatus.COVERED, confidence=0.80,
                                        detail={"strategy": "repair_context_keyword",
                                                "keyword": keyword,
-                                               "linked_to": category})
+                                               "linked_to": category},
+                                       decision_source=DecisionSource.PROMOTION)
                             item.decision_trace = rck_tb.build()
                             logger.debug(
                                 f"Promoted labor '{item.description}' to COVERED "
@@ -1696,7 +1707,8 @@ class CoverageAnalyzer:
                                f"Ancillary part '{pattern}' linked to {repair_context.primary_component}",
                                verdict=CoverageStatus.COVERED, confidence=0.70,
                                detail={"pattern": pattern,
-                                       "repair_component": repair_context.primary_component})
+                                       "repair_component": repair_context.primary_component},
+                               decision_source=DecisionSource.PROMOTION)
                     item.decision_trace = anc_tb.build()
                     logger.debug(
                         f"Promoted ancillary '{item.description}' to COVERED "
@@ -1782,7 +1794,8 @@ class CoverageAnalyzer:
                        f"Covered labor exists for '{repair_context.primary_component}'",
                        verdict=CoverageStatus.COVERED, confidence=0.85,
                        detail={"repair_component": repair_context.primary_component,
-                               "repair_category": repair_context.primary_category})
+                               "repair_category": repair_context.primary_category},
+                       decision_source=DecisionSource.PROMOTION)
             item.decision_trace = pfr_tb.build()
             logger.info(
                 f"Promoted part '{item.description}' to COVERED "
@@ -1845,7 +1858,8 @@ class CoverageAnalyzer:
             dem_tb.add("labor_demotion", TraceAction.DEMOTED,
                        "No covered parts in claim — labor has no anchor",
                        verdict=CoverageStatus.NOT_COVERED,
-                       detail={"reason": "no_covered_parts_anchor"})
+                       detail={"reason": "no_covered_parts_anchor"},
+                       decision_source=DecisionSource.DEMOTION)
             item.decision_trace = dem_tb.build()
             logger.info(
                 "Demoted labor '%s' (%s) from COVERED to NOT_COVERED: "
@@ -1906,6 +1920,7 @@ class CoverageAnalyzer:
                 f"flagged for review",
                 verdict=CoverageStatus.REVIEW_NEEDED,
                 confidence=0.30,
+                decision_source=DecisionSource.DEMOTION,
             )
             item.decision_trace = trace_tb.build()
             flagged_count += 1
@@ -1985,7 +2000,8 @@ class CoverageAnalyzer:
                                  f"Zero-payout rescue skipped: item has exclusion_reason='{item.exclusion_reason}'",
                                  detail={"mode": "zero_payout_rescue",
                                          "skip_reason": "exclusion_reason",
-                                         "exclusion_reason": item.exclusion_reason})
+                                         "exclusion_reason": item.exclusion_reason},
+                                 decision_source=DecisionSource.PROMOTION)
                     item.decision_trace = _skip_tb.build()
                     logger.info(
                         "Zero-payout rescue: skipping '%s' — exclusion_reason='%s'",
@@ -2005,7 +2021,8 @@ class CoverageAnalyzer:
                                  detail={"mode": "zero_payout_rescue",
                                          "skip_reason": "category_mismatch",
                                          "item_category": item.coverage_category,
-                                         "primary_category": category})
+                                         "primary_category": category},
+                                 decision_source=DecisionSource.PROMOTION)
                     item.decision_trace = _skip_tb.build()
                     logger.info(
                         "Zero-payout rescue: skipping '%s' — category '%s' != primary '%s'",
@@ -2029,7 +2046,8 @@ class CoverageAnalyzer:
                            f"Zero-payout rescue: primary repair '{primary_repair.component}' is covered",
                            verdict=CoverageStatus.COVERED,
                            detail={"mode": "zero_payout_rescue",
-                                   "primary_component": primary_repair.component})
+                                   "primary_component": primary_repair.component},
+                           decision_source=DecisionSource.PROMOTION)
                 item.decision_trace = prb_tb.build()
                 logger.info(
                     "Promoted '%s' to COVERED via primary repair anchor "
@@ -2114,6 +2132,7 @@ class CoverageAnalyzer:
                         f"LLM labor relevance failed: {e}",
                         detail={"mode": "llm_labor_relevance",
                                 "error": str(e)},
+                        decision_source=DecisionSource.PROMOTION,
                     )
                     item.decision_trace = fail_tb.build()
                 return items
@@ -2149,6 +2168,7 @@ class CoverageAnalyzer:
                             "llm_confidence": verdict.get("confidence", 0),
                             "llm_reasoning": verdict.get("reasoning", ""),
                         },
+                        decision_source=DecisionSource.PROMOTION,
                     )
                     item.decision_trace = prb2_tb.build()
                     logger.info(
@@ -2178,6 +2198,7 @@ class CoverageAnalyzer:
                             ),
                             "llm_reasoning": reasoning,
                         },
+                        decision_source=DecisionSource.PROMOTION,
                     )
                     item.decision_trace = skip_tb.build()
                     logger.debug(
@@ -2520,7 +2541,8 @@ class CoverageAnalyzer:
                 )
                 val_tb.add("llm_validation", TraceAction.VALIDATED,
                            f"Exclusion skipped: ancillary to covered repair '{repair_context.primary_component}'",
-                           detail={"check": "excluded_list_ancillary_skip"})
+                           detail={"check": "excluded_list_ancillary_skip"},
+                           decision_source=DecisionSource.VALIDATION)
             else:
                 original_status = item.coverage_status
                 item.coverage_status = CoverageStatus.NOT_COVERED
@@ -2529,7 +2551,8 @@ class CoverageAnalyzer:
                 val_tb.add("llm_validation", TraceAction.OVERRIDDEN,
                            "Component is in excluded list",
                            verdict=CoverageStatus.NOT_COVERED,
-                           detail={"check": "excluded_list"})
+                           detail={"check": "excluded_list"},
+                           decision_source=DecisionSource.VALIDATION)
                 item.decision_trace = val_tb.build()
                 logger.info(
                     f"LLM validation override: '{item.description}' changed from "
@@ -2600,7 +2623,8 @@ class CoverageAnalyzer:
                                                detail={"check": "synonym_override",
                                                        "component": comp_type,
                                                        "synonym": synonym,
-                                                       "policy_reason": reason})
+                                                       "policy_reason": reason},
+                                               decision_source=DecisionSource.VALIDATION)
                                     item.decision_trace = val_tb.build()
                                     logger.info(
                                         "Post-LLM synonym override: '%s' changed"
@@ -2634,7 +2658,8 @@ class CoverageAnalyzer:
                            f"Category '{category}' is not covered by policy",
                            verdict=CoverageStatus.REVIEW_NEEDED,
                            confidence=0.45,
-                           detail={"check": "category_not_covered", "category": category})
+                           detail={"check": "category_not_covered", "category": category},
+                           decision_source=DecisionSource.VALIDATION)
                 logger.info(
                     f"LLM validation override: '{item.description}' changed from "
                     f"COVERED to REVIEW_NEEDED (category '{category}' not covered)"
@@ -2642,11 +2667,13 @@ class CoverageAnalyzer:
             else:
                 val_tb.add("llm_validation", TraceAction.VALIDATED,
                            "LLM coverage decision confirmed",
-                           verdict=item.coverage_status)
+                           verdict=item.coverage_status,
+                           decision_source=DecisionSource.VALIDATION)
         else:
             val_tb.add("llm_validation", TraceAction.VALIDATED,
                        "No override needed",
-                       verdict=item.coverage_status)
+                       verdict=item.coverage_status,
+                       decision_source=DecisionSource.VALIDATION)
 
         item.decision_trace = val_tb.build()
         return item
@@ -2796,7 +2823,8 @@ class CoverageAnalyzer:
                     _plv_tb.extend(item.decision_trace)
                     _plv_tb.add("policy_list_check", TraceAction.DEFERRED,
                                 f"Demoted to LLM: {reason}",
-                                detail={"result": False, "reason": reason})
+                                detail={"result": False, "reason": reason},
+                                decision_source=DecisionSource.VALIDATION)
                     demoted_item = {
                         "item_code": item.item_code,
                         "description": item.description,
@@ -2820,7 +2848,8 @@ class CoverageAnalyzer:
                     _plv_tb2.add("policy_list_check", TraceAction.DEFERRED,
                                  f"Uncertain (synonym gap), demoted to LLM: {reason}",
                                  detail={"result": None, "reason": reason,
-                                         "matched_component": item.matched_component})
+                                         "matched_component": item.matched_component},
+                                 decision_source=DecisionSource.VALIDATION)
                     demoted_item2 = {
                         "item_code": item.item_code,
                         "description": item.description,
@@ -2838,7 +2867,8 @@ class CoverageAnalyzer:
                         plv_tb.extend(item.decision_trace)
                         plv_tb.add("policy_list_check", TraceAction.VALIDATED,
                                    f"Confirmed in policy list: {reason}",
-                                   detail={"result": True, "reason": reason})
+                                   detail={"result": True, "reason": reason},
+                                   decision_source=DecisionSource.VALIDATION)
                         item.decision_trace = plv_tb.build()
                     verified_keyword.append(item)
 
@@ -2954,7 +2984,8 @@ class CoverageAnalyzer:
                 skip_tb.add("llm", TraceAction.SKIPPED,
                             "Skipped due to LLM item limit",
                             verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
-                            detail={"reason": "llm_item_limit", "limit": self.config.llm_max_items})
+                            detail={"reason": "llm_item_limit", "limit": self.config.llm_max_items},
+                            decision_source=DecisionSource.LLM)
                 llm_matched.append(
                     LineItemCoverage(
                         item_code=item.get("item_code"),
@@ -2980,7 +3011,8 @@ class CoverageAnalyzer:
                 dis_tb.add("llm", TraceAction.SKIPPED,
                             "LLM fallback disabled",
                             verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
-                            detail={"reason": "llm_disabled"})
+                            detail={"reason": "llm_disabled"},
+                            decision_source=DecisionSource.LLM)
                 llm_matched.append(
                     LineItemCoverage(
                         item_code=item.get("item_code"),

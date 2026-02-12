@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
+    DecisionSource,
     LineItemCoverage,
     MatchMethod,
     TraceAction,
@@ -197,7 +198,8 @@ class KeywordMatcher:
             tb.add("keyword", TraceAction.MATCHED,
                    f"Keyword '{keyword}' maps to covered category '{category}'",
                    verdict=CoverageStatus.COVERED, confidence=confidence,
-                   detail=trace_detail)
+                   detail=trace_detail,
+                   decision_source=DecisionSource.KEYWORD)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
@@ -217,7 +219,8 @@ class KeywordMatcher:
             tb.add("keyword", TraceAction.MATCHED,
                    f"Keyword '{keyword}' maps to category '{category}' which is not covered",
                    verdict=CoverageStatus.NOT_COVERED, confidence=confidence,
-                   detail=trace_detail)
+                   detail=trace_detail,
+                   decision_source=DecisionSource.KEYWORD)
             return LineItemCoverage(
                 item_code=item_code,
                 description=description,
