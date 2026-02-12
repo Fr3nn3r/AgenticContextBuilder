@@ -43,7 +43,6 @@ Important:
 - Extract the ACTUAL values visible in the document
 - For owner_name, include the full name as written (first name and last name)
 - For text_quote, use the exact text as it appears in the document
-- Set confidence based on how clearly readable the value is (0.0 to 1.0)
 - Set value to null if a field is not present or unreadable
 
 user:

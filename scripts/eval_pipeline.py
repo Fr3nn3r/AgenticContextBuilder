@@ -2,14 +2,17 @@
 Pipeline Evaluation Script
 
 Compares pipeline assessment output against ground truth and generates Excel reports.
+Auto-detects which datasets are involved via workspace config/datasets.json.
 
 Usage:
-    python scripts/eval_pipeline.py
+    python scripts/eval_pipeline.py                           # Latest claim run, auto-detect datasets
+    python scripts/eval_pipeline.py --run-id <claim_run_id>   # Specific claim run
+    python scripts/eval_pipeline.py --dataset nsa-motor-eval-v1  # Override: single dataset (legacy)
 
 Outputs:
     workspaces/nsa/eval/eval_YYYYMMDD_HHMMSS/
         - summary.xlsx       # High-level metrics
-        - details.xlsx       # Per-claim breakdown
+        - details.xlsx       # Per-claim breakdown (includes dataset_id column)
         - errors.xlsx        # Only mismatches (for investigation)
 """
 
@@ -17,7 +20,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Set, Tuple
 import sys
 
 # Add src to path for imports
@@ -36,19 +39,95 @@ except ImportError:
     sys.exit(1)
 
 
-# Configuration
-WORKSPACE_PATH = Path("workspaces/nsa")
-GROUND_TRUTH_PATH = Path("data/datasets/nsa-motor-eval-v1/ground_truth.json")
+# Default workspace
+DEFAULT_WORKSPACE_PATH = Path("workspaces/nsa")
 
 
-def load_ground_truth() -> dict:
-    """Load ground truth and return as dict keyed by claim_id."""
-    with open(GROUND_TRUTH_PATH, "r", encoding="utf-8") as f:
+# ---------------------------------------------------------------------------
+# Dataset & claim-run discovery helpers
+# ---------------------------------------------------------------------------
+
+def load_dataset_assignments(workspace_path: Path) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Load dataset assignments and labels from workspace config.
+
+    Returns (assignments, labels) where:
+      assignments maps claim_id -> dataset_id
+      labels maps dataset_id -> human-readable label
+    If file is missing or malformed, returns ({}, {}).
+    """
+    ds_path = workspace_path / "config" / "datasets.json"
+    if not ds_path.exists():
+        return {}, {}
+    try:
+        with open(ds_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        labels = {d["id"]: d["label"] for d in data.get("datasets", [])}
+        assignments = data.get("assignments", {})
+        return assignments, labels
+    except (json.JSONDecodeError, IOError, KeyError):
+        return {}, {}
+
+
+def load_multi_dataset_ground_truth(dataset_ids: Set[str]) -> Dict[str, dict]:
+    """Load ground truth from multiple datasets and merge into a single dict.
+
+    Returns dict keyed by claim_id. Each entry gets a ``_dataset_id`` field.
+    Skips datasets whose ground_truth.json doesn't exist (with a warning).
+    """
+    merged = {}
+    for dataset_id in sorted(dataset_ids):
+        gt_path = Path(f"data/datasets/{dataset_id}/ground_truth.json")
+        if not gt_path.exists():
+            print(f"  WARNING: Ground truth not found for {dataset_id}: {gt_path}")
+            continue
+        with open(gt_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        count = 0
+        for claim in data.get("claims", []):
+            cid = claim["claim_id"]
+            claim["_dataset_id"] = dataset_id
+            merged[cid] = claim
+            count += 1
+        print(f"  Loaded {count} GT claims from {dataset_id}")
+    return merged
+
+
+def discover_run_claims(workspace_path: Path, run_id: str) -> Optional[List[str]]:
+    """Read manifest.json for a claim run and return list of claim IDs.
+
+    Uses ``claims_succeeded`` if present, falls back to ``claims_assessed``.
+    Returns None if manifest not found.
+    """
+    manifest_path = workspace_path / "claim_runs" / run_id / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    return manifest.get("claims_succeeded") or manifest.get("claims_assessed") or []
+
+
+def find_latest_claim_run(workspace_path: Path) -> Optional[str]:
+    """Find the most recent claim run folder (sorted by name, which is timestamp-based)."""
+    claim_runs_dir = workspace_path / "claim_runs"
+    if not claim_runs_dir.exists():
+        return None
+    folders = sorted(
+        [d.name for d in claim_runs_dir.iterdir() if d.is_dir()],
+        reverse=True,
+    )
+    return folders[0] if folders else None
+
+
+def load_single_ground_truth(gt_path: Path) -> Dict[str, dict]:
+    """Load ground truth from a single file (legacy mode)."""
+    with open(gt_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
-    # Convert to dict keyed by claim_id
     return {claim["claim_id"]: claim for claim in data["claims"]}
 
+
+# ---------------------------------------------------------------------------
+# Assessment loading
+# ---------------------------------------------------------------------------
 
 def _find_latest_dossier(run_folder: Path) -> Optional[dict]:
     """Find the latest decision_dossier_v*.json in a run folder."""
@@ -62,40 +141,35 @@ def _find_latest_dossier(run_folder: Path) -> Optional[dict]:
         return None
 
 
-def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, target_run_ids: Optional[list] = None) -> Optional[dict]:
-    """Find the most recent assessment for a claim, or from specific run(s).
+def find_latest_assessment(
+    claim_id: str,
+    workspace_path: Path,
+    target_run_id: Optional[str] = None,
+) -> Optional[dict]:
+    """Find the assessment for a claim from a specific run, or the most recent.
 
     Also loads the decision dossier (if available) and stores the
     authoritative verdict under ``_dossier_verdict`` for eval comparison.
     """
-    claim_runs_path = WORKSPACE_PATH / "claims" / claim_id / "claim_runs"
+    claim_runs_path = workspace_path / "claims" / claim_id / "claim_runs"
 
     if not claim_runs_path.exists():
         return None
 
-    # Support multiple run IDs — try each in order, return first hit
-    run_ids_to_try = []
-    if target_run_ids:
-        run_ids_to_try = target_run_ids
-    elif target_run_id:
-        run_ids_to_try = [target_run_id]
-
-    if run_ids_to_try:
-        for rid in run_ids_to_try:
-            run_folder = claim_runs_path / rid
-            assessment_file = run_folder / "assessment.json"
-            if assessment_file.exists():
-                with open(assessment_file, "r", encoding="utf-8") as f:
-                    assessment = json.load(f)
-                assessment["_run_id"] = run_folder.name
-                # Load dossier verdict (authoritative)
-                dossier = _find_latest_dossier(run_folder)
-                if dossier:
-                    assessment["_dossier_verdict"] = dossier.get("claim_verdict")
-                return assessment
+    if target_run_id:
+        run_folder = claim_runs_path / target_run_id
+        assessment_file = run_folder / "assessment.json"
+        if assessment_file.exists():
+            with open(assessment_file, "r", encoding="utf-8") as f:
+                assessment = json.load(f)
+            assessment["_run_id"] = run_folder.name
+            dossier = _find_latest_dossier(run_folder)
+            if dossier:
+                assessment["_dossier_verdict"] = dossier.get("claim_verdict")
+            return assessment
         return None
 
-    # Get all run folders, sorted by name (timestamp-based)
+    # No specific run -- get most recent
     run_folders = sorted(claim_runs_path.iterdir(), reverse=True)
 
     for run_folder in run_folders:
@@ -104,7 +178,6 @@ def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, t
             with open(assessment_file, "r", encoding="utf-8") as f:
                 assessment = json.load(f)
             assessment["_run_id"] = run_folder.name
-            # Load dossier verdict (authoritative)
             dossier = _find_latest_dossier(run_folder)
             if dossier:
                 assessment["_dossier_verdict"] = dossier.get("claim_verdict")
@@ -112,6 +185,10 @@ def find_latest_assessment(claim_id: str, target_run_id: Optional[str] = None, t
 
     return None
 
+
+# ---------------------------------------------------------------------------
+# Evaluation helpers (unchanged logic)
+# ---------------------------------------------------------------------------
 
 def normalize_decision(decision: str) -> str:
     """Normalize decision values for comparison."""
@@ -183,20 +260,65 @@ def categorize_error(gt: dict, pred: dict, decision_match: bool) -> str:
     return "unknown"
 
 
-def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional[list] = None) -> dict:
-    """Run the full evaluation and return results."""
-    ground_truth = load_ground_truth()
+# ---------------------------------------------------------------------------
+# Core evaluation
+# ---------------------------------------------------------------------------
 
+def run_evaluation(
+    claim_ids: List[str],
+    ground_truth: Dict[str, dict],
+    dataset_assignments: Dict[str, str],
+    workspace_path: Path,
+    target_run_id: Optional[str] = None,
+) -> List[dict]:
+    """Run evaluation by iterating run claims, looking up GT for each.
+
+    Claims without GT are recorded with error_category='no_ground_truth'
+    and excluded from accuracy metrics downstream.
+    """
     results = []
 
-    for claim_id, gt in ground_truth.items():
-        assessment = find_latest_assessment(claim_id, target_run_id=target_run_id, target_run_ids=target_run_ids)
+    for claim_id in claim_ids:
+        gt = ground_truth.get(claim_id)
+        dataset_id = dataset_assignments.get(claim_id, "unknown")
+        assessment = find_latest_assessment(
+            claim_id, workspace_path, target_run_id=target_run_id,
+        )
 
-        # Support both v1 (total_approved_amount) and v2 (approved_amount) ground truth schemas
+        if gt is None:
+            # Claim has no ground truth -- record but don't evaluate
+            row = {
+                "claim_id": claim_id,
+                "dataset_id": dataset_id,
+                "gt_decision": None,
+                "gt_amount": None,
+                "gt_deductible": None,
+                "gt_denial_reason": None,
+                "gt_vehicle": None,
+                "pred_decision": assessment.get("_dossier_verdict") or assessment.get("recommendation", "N/A") if assessment else "NOT_PROCESSED",
+                "pred_amount": assessment.get("payout", {}).get("final_payout") if assessment else None,
+                "pred_deductible": assessment.get("payout", {}).get("deductible") if assessment else None,
+                "decision_match": None,
+                "amount_diff": None,
+                "amount_diff_pct": None,
+                "deductible_match": None,
+                "failed_checks": get_failed_checks(assessment) if assessment else "-",
+                "error_category": "no_ground_truth",
+                "run_id": assessment.get("_run_id") if assessment else None,
+                "decision_rationale": assessment.get("recommendation_rationale") if assessment else None,
+            }
+            results.append(row)
+            continue
+
+        # GT exists -- use dataset_id from GT if tagged, else from assignments
+        dataset_id = gt.get("_dataset_id", dataset_id)
+
+        # Support both v1 (total_approved_amount) and v2 (approved_amount) GT schemas
         gt_amount = gt.get("total_approved_amount") or gt.get("approved_amount")
 
         row = {
             "claim_id": claim_id,
+            "dataset_id": dataset_id,
             "gt_decision": gt.get("decision"),
             "gt_amount": gt_amount,
             "gt_deductible": gt.get("deductible"),
@@ -220,7 +342,7 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
             })
         else:
             gt_decision_norm = normalize_decision(gt.get("decision", ""))
-            # Use dossier verdict (authoritative) if available, fall back to assessment
+            # Use dossier verdict (authoritative) if available
             pred_decision_raw = assessment.get("_dossier_verdict") or assessment.get("recommendation", "")
             pred_decision_norm = normalize_decision(pred_decision_raw)
             decision_match = gt_decision_norm == pred_decision_norm
@@ -229,7 +351,6 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
             pred_deductible = assessment.get("payout", {}).get("deductible", 0)
 
             # Amount comparison (only meaningful for approved claims)
-            gt_amount = gt.get("total_approved_amount") or gt.get("approved_amount")
             if gt_amount and gt_amount > 0:
                 amount_diff = pred_amount - gt_amount
                 amount_diff_pct = (amount_diff / gt_amount) * 100
@@ -263,16 +384,24 @@ def run_evaluation(target_run_id: Optional[str] = None, target_run_ids: Optional
     return results
 
 
-def calculate_summary(results: list) -> dict:
-    """Calculate summary metrics."""
-    total = len(results)
-    processed = sum(1 for r in results if r["pred_decision"] != "NOT_PROCESSED")
+# ---------------------------------------------------------------------------
+# Summary / metrics
+# ---------------------------------------------------------------------------
 
-    decision_correct = sum(1 for r in results if r["decision_match"])
+def calculate_summary(results: List[dict]) -> dict:
+    """Calculate summary metrics. Excludes no_ground_truth claims from accuracy."""
+    # Separate claims with GT from those without
+    with_gt = [r for r in results if r["error_category"] != "no_ground_truth"]
+    no_gt_count = len(results) - len(with_gt)
+
+    total = len(with_gt)
+    processed = sum(1 for r in with_gt if r["pred_decision"] != "NOT_PROCESSED")
+
+    decision_correct = sum(1 for r in with_gt if r["decision_match"])
 
     # Split by ground truth decision
-    gt_approved = [r for r in results if normalize_decision(r["gt_decision"]) == "APPROVED"]
-    gt_denied = [r for r in results if normalize_decision(r["gt_decision"]) == "DENIED"]
+    gt_approved = [r for r in with_gt if normalize_decision(r["gt_decision"] or "") == "APPROVED"]
+    gt_denied = [r for r in with_gt if normalize_decision(r["gt_decision"] or "") == "DENIED"]
 
     approved_correct = sum(1 for r in gt_approved if r["decision_match"])
     denied_correct = sum(1 for r in gt_denied if r["decision_match"])
@@ -283,13 +412,15 @@ def calculate_summary(results: list) -> dict:
 
     # Error category distribution
     error_categories = {}
-    for r in results:
+    for r in with_gt:
         cat = r["error_category"]
         if cat != "-":
             error_categories[cat] = error_categories.get(cat, 0) + 1
 
     return {
         "total_claims": total,
+        "total_in_run": len(results),
+        "no_ground_truth": no_gt_count,
         "processed_claims": processed,
         "not_processed": total - processed,
         "decision_accuracy": decision_correct / processed if processed > 0 else 0,
@@ -308,10 +439,28 @@ def calculate_summary(results: list) -> dict:
     }
 
 
-def save_results(results: list, summary: dict):
+def calculate_per_dataset_summary(results: List[dict]) -> Dict[str, dict]:
+    """Group results by dataset_id and calculate summary per dataset."""
+    by_dataset: Dict[str, List[dict]] = {}
+    for r in results:
+        ds = r.get("dataset_id", "unknown")
+        by_dataset.setdefault(ds, []).append(r)
+
+    per_dataset = {}
+    for ds_id, ds_results in sorted(by_dataset.items()):
+        per_dataset[ds_id] = calculate_summary(ds_results)
+
+    return per_dataset
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+def save_results(results: List[dict], summary: dict, workspace_path: Path) -> Path:
     """Save results to Excel files."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = WORKSPACE_PATH / "eval" / f"eval_{timestamp}"
+    output_dir = workspace_path / "eval" / f"eval_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Convert to DataFrame
@@ -320,6 +469,7 @@ def save_results(results: list, summary: dict):
     # Reorder columns for readability
     column_order = [
         "claim_id",
+        "dataset_id",
         "gt_decision", "pred_decision", "decision_match",
         "gt_amount", "pred_amount", "amount_diff", "amount_diff_pct",
         "gt_deductible", "pred_deductible", "deductible_match",
@@ -336,8 +486,8 @@ def save_results(results: list, summary: dict):
     df.to_excel(details_path, index=False, sheet_name="All Claims")
     print(f"Saved: {details_path}")
 
-    # Save errors only
-    errors_df = df[df["error_category"] != "-"]
+    # Save errors only (exclude no_ground_truth from errors sheet)
+    errors_df = df[(df["error_category"] != "-") & (df["error_category"] != "no_ground_truth")]
     if not errors_df.empty:
         errors_path = output_dir / "errors.xlsx"
         errors_df.to_excel(errors_path, index=False, sheet_name="Errors")
@@ -346,7 +496,9 @@ def save_results(results: list, summary: dict):
     # Save summary
     summary_data = [
         ["Metric", "Value"],
-        ["Total Claims", summary["total_claims"]],
+        ["Total Claims (with GT)", summary["total_claims"]],
+        ["Claims in Run", summary["total_in_run"]],
+        ["Without Ground Truth", summary["no_ground_truth"]],
         ["Processed Claims", summary["processed_claims"]],
         ["Not Processed", summary["not_processed"]],
         ["", ""],
@@ -364,7 +516,7 @@ def save_results(results: list, summary: dict):
         ["  - Wrongly Approved", summary["gt_denied_wrong"]],
         ["False Approve Rate", f"{summary['false_approve_rate']:.1%}"],
         ["", ""],
-        ["Amount Accuracy (±5%)", f"{summary['amount_accuracy_5pct']:.1%}" if summary['amount_accuracy_5pct'] else "N/A"],
+        ["Amount Accuracy (+/-5%)", f"{summary['amount_accuracy_5pct']:.1%}" if summary['amount_accuracy_5pct'] else "N/A"],
         ["", ""],
         ["Error Categories", ""],
     ]
@@ -386,9 +538,17 @@ def save_results(results: list, summary: dict):
     return output_dir
 
 
-def update_metrics_history(output_dir: Path, summary: dict, description: str = "", ground_truth_path: Path = None):
+def update_metrics_history(
+    output_dir: Path,
+    summary: dict,
+    workspace_path: Path,
+    claim_run_id: str = "",
+    datasets_evaluated: List[str] = None,
+    per_dataset: Dict[str, dict] = None,
+    description: str = "",
+):
     """Append this run to metrics_history.json for tracking over time."""
-    history_path = WORKSPACE_PATH / "eval" / "metrics_history.json"
+    history_path = workspace_path / "eval" / "metrics_history.json"
 
     # Load existing history or create new
     if history_path.exists():
@@ -396,9 +556,7 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
             history = json.load(f)
     else:
         history = {
-            "schema_version": "metrics_history_v1",
-            "ground_truth_path": str(ground_truth_path or GROUND_TRUTH_PATH),
-            "ground_truth_claims": summary["total_claims"],
+            "schema_version": "metrics_history_v2",
             "runs": []
         }
 
@@ -411,11 +569,27 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
         )[:5]
     ]
 
-    # Create new run entry
+    # Build per-dataset metrics sub-object
+    per_dataset_metrics = {}
+    if per_dataset:
+        for ds_id, ds_summary in per_dataset.items():
+            per_dataset_metrics[ds_id] = {
+                "claims_with_gt": ds_summary["total_claims"],
+                "decision_accuracy": round(ds_summary["decision_accuracy"], 3),
+                "decision_correct": ds_summary["decision_correct"],
+                "decision_wrong": ds_summary["decision_wrong"],
+                "false_reject_rate": round(ds_summary["false_reject_rate"], 3),
+                "false_approve_rate": round(ds_summary["false_approve_rate"], 3),
+            }
+
+    # Create new run entry (backward-compatible: top-level aggregate + new per_dataset)
     run_entry = {
         "run_id": output_dir.name,
         "timestamp": datetime.now().isoformat(),
         "description": description or "Evaluation run",
+        "claim_run_id": claim_run_id or None,
+        "datasets_evaluated": datasets_evaluated or [],
+        "claims_in_run": summary.get("total_in_run", summary["total_claims"]),
         "git_commit": None,
         "pipeline_version": None,
         "metrics": {
@@ -429,6 +603,7 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
             "false_reject_rate": round(summary["false_reject_rate"], 3),
             "false_approve_rate": round(summary["false_approve_rate"], 3)
         },
+        "per_dataset": per_dataset_metrics,
         "top_errors": top_errors,
         "notes": ""
     }
@@ -443,69 +618,191 @@ def update_metrics_history(output_dir: Path, summary: dict, description: str = "
     print(f"Updated: {history_path}")
 
 
+# ---------------------------------------------------------------------------
+# Console output
+# ---------------------------------------------------------------------------
+
+def print_per_dataset_report(per_dataset: Dict[str, dict], labels: Dict[str, str]):
+    """Print per-dataset breakdown to console."""
+    print("BY DATASET")
+    print("-" * 60)
+    for ds_id, ds_summary in per_dataset.items():
+        label = labels.get(ds_id, ds_id)
+        n = ds_summary["total_claims"]
+        if n == 0:
+            print(f"{label} ({ds_id}): 0 claims with GT")
+            print()
+            continue
+        processed = ds_summary["processed_claims"]
+        correct = ds_summary["decision_correct"]
+        acc = ds_summary["decision_accuracy"]
+        print(f"{label} -- {ds_id} ({n} claims):")
+        print(f"  Decision Accuracy: {acc:.1%} ({correct}/{processed})")
+        if ds_summary["gt_approved_total"] > 0:
+            print(f"  False Reject Rate: {ds_summary['false_reject_rate']:.1%}")
+        if ds_summary["gt_denied_total"] > 0:
+            print(f"  False Approve Rate: {ds_summary['false_approve_rate']:.1%}")
+        print()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Pipeline Evaluation")
-    parser.add_argument("--run-id", nargs="+", default=None, help="Evaluate specific run ID(s). Multiple IDs: tries each in order per claim, uses first hit.")
+    parser = argparse.ArgumentParser(description="Claims Assessment Evaluation")
+    parser.add_argument("--run-id", type=str, default=None,
+        help="Claim run ID to evaluate. If omitted, uses latest claim run.")
     gt_group = parser.add_mutually_exclusive_group()
     gt_group.add_argument("--ground-truth", type=Path, default=None,
-        help="Path to ground truth JSON file")
+        help="Path to ground truth JSON file (legacy override)")
     gt_group.add_argument("--dataset", type=str, default=None,
-        help="Dataset ID from data/datasets/ (e.g., nsa-motor-eval-v1)")
+        help="Single dataset ID override (e.g., nsa-motor-eval-v1)")
     parser.add_argument("--workspace", type=Path, default=None,
         help="Workspace path (default: workspaces/nsa)")
     args = parser.parse_args()
 
-    global GROUND_TRUTH_PATH, WORKSPACE_PATH
+    workspace_path = args.workspace or DEFAULT_WORKSPACE_PATH
+
+    if not workspace_path.exists():
+        print(f"ERROR: Workspace not found: {workspace_path}")
+        sys.exit(1)
+
+    # ---------------------------------------------------------------
+    # Determine claim run
+    # ---------------------------------------------------------------
+    claim_run_id = args.run_id
+    if not claim_run_id:
+        claim_run_id = find_latest_claim_run(workspace_path)
+        if not claim_run_id:
+            print("ERROR: No claim runs found. Run the pipeline first.")
+            sys.exit(1)
+        print(f"Auto-detected latest claim run: {claim_run_id}")
+
+    # Discover claims from manifest
+    run_claim_ids = discover_run_claims(workspace_path, claim_run_id)
+    if run_claim_ids is None:
+        print(f"ERROR: Manifest not found for claim run: {claim_run_id}")
+        print(f"  Expected: {workspace_path / 'claim_runs' / claim_run_id / 'manifest.json'}")
+        sys.exit(1)
+
+    if not run_claim_ids:
+        print(f"ERROR: No claims in manifest for {claim_run_id}")
+        sys.exit(1)
+
+    # ---------------------------------------------------------------
+    # Load ground truth
+    # ---------------------------------------------------------------
+    dataset_assignments: Dict[str, str] = {}
+    dataset_labels: Dict[str, str] = {}
+    datasets_used: List[str] = []
+
     if args.ground_truth:
-        GROUND_TRUTH_PATH = args.ground_truth
+        # Legacy: single GT file override
+        if not args.ground_truth.exists():
+            print(f"ERROR: Ground truth not found: {args.ground_truth}")
+            sys.exit(1)
+        ground_truth = load_single_ground_truth(args.ground_truth)
+        datasets_used = ["custom"]
+        print(f"Ground truth override: {args.ground_truth} ({len(ground_truth)} claims)")
+
     elif args.dataset:
-        GROUND_TRUTH_PATH = Path(f"data/datasets/{args.dataset}/ground_truth.json")
-    if args.workspace:
-        WORKSPACE_PATH = args.workspace
+        # Legacy: single dataset override
+        gt_path = Path(f"data/datasets/{args.dataset}/ground_truth.json")
+        if not gt_path.exists():
+            print(f"ERROR: Ground truth not found: {gt_path}")
+            sys.exit(1)
+        ground_truth = load_single_ground_truth(gt_path)
+        datasets_used = [args.dataset]
+        print(f"Dataset override: {args.dataset} ({len(ground_truth)} claims)")
 
-    print("=" * 60)
-    print("Pipeline Evaluation")
-    print("=" * 60)
-    print(f"Ground Truth: {GROUND_TRUTH_PATH}")
-    print(f"Workspace: {WORKSPACE_PATH}")
-    if args.run_id:
-        if len(args.run_id) == 1:
-            print(f"Target Run:  {args.run_id[0]}")
-        else:
-            print(f"Target Runs: {', '.join(args.run_id)} (priority order)")
-    print()
-
-    # Check paths exist
-    if not GROUND_TRUTH_PATH.exists():
-        print(f"ERROR: Ground truth not found: {GROUND_TRUTH_PATH}")
-        sys.exit(1)
-
-    if not WORKSPACE_PATH.exists():
-        print(f"ERROR: Workspace not found: {WORKSPACE_PATH}")
-        sys.exit(1)
-
-    # Run evaluation
-    print("Running evaluation...")
-    if args.run_id and len(args.run_id) == 1:
-        results = run_evaluation(target_run_id=args.run_id[0])
-    elif args.run_id:
-        results = run_evaluation(target_run_ids=args.run_id)
     else:
-        results = run_evaluation()
+        # Auto-detect: load dataset assignments, figure out which datasets the run touches
+        dataset_assignments, dataset_labels = load_dataset_assignments(workspace_path)
+        if not dataset_assignments:
+            print("ERROR: No dataset assignments found.")
+            print(f"  Expected: {workspace_path / 'config' / 'datasets.json'}")
+            print("  Use --ground-truth or --dataset to specify manually.")
+            sys.exit(1)
 
-    # Calculate summary
+        # Find which datasets are needed for the claims in this run
+        needed_datasets: Set[str] = set()
+        unmapped_claims = []
+        for cid in run_claim_ids:
+            ds = dataset_assignments.get(cid)
+            if ds:
+                needed_datasets.add(ds)
+            else:
+                unmapped_claims.append(cid)
+
+        if not needed_datasets and not unmapped_claims:
+            print("ERROR: Could not determine datasets for any claims in the run.")
+            sys.exit(1)
+
+        print(f"Loading ground truth for {len(needed_datasets)} dataset(s)...")
+        ground_truth = load_multi_dataset_ground_truth(needed_datasets)
+        datasets_used = sorted(needed_datasets)
+
+        if unmapped_claims:
+            print(f"  {len(unmapped_claims)} claim(s) not in datasets.json (will show as no_ground_truth)")
+
+    # ---------------------------------------------------------------
+    # Print header
+    # ---------------------------------------------------------------
+    print()
+    print("=" * 60)
+    print("Claims Assessment Evaluation")
+    print("=" * 60)
+    print(f"Claim Run:   {claim_run_id}")
+    print(f"Workspace:   {workspace_path}")
+
+    # Dataset summary line
+    if datasets_used and datasets_used != ["custom"]:
+        # Count how many run claims belong to each dataset
+        ds_counts = {}
+        for cid in run_claim_ids:
+            ds = dataset_assignments.get(cid, "unknown")
+            ds_counts[ds] = ds_counts.get(ds, 0) + 1
+        ds_parts = []
+        for ds_id in datasets_used:
+            label = dataset_labels.get(ds_id, ds_id)
+            count = ds_counts.get(ds_id, 0)
+            ds_parts.append(f"{label} ({count})")
+        print(f"Datasets:    {', '.join(ds_parts)}")
+    elif datasets_used == ["custom"]:
+        print(f"Ground Truth: {args.ground_truth}")
+
+    gt_count = sum(1 for cid in run_claim_ids if cid in ground_truth)
+    no_gt_count = len(run_claim_ids) - gt_count
+    print(f"Claims:      {len(run_claim_ids)} total, {gt_count} with GT, {no_gt_count} without GT")
+    print()
+
+    # ---------------------------------------------------------------
+    # Run evaluation
+    # ---------------------------------------------------------------
+    print("Running evaluation...")
+    results = run_evaluation(
+        claim_ids=run_claim_ids,
+        ground_truth=ground_truth,
+        dataset_assignments=dataset_assignments,
+        workspace_path=workspace_path,
+        target_run_id=claim_run_id,
+    )
+
+    # Calculate summaries
     summary = calculate_summary(results)
+    per_dataset = calculate_per_dataset_summary(results)
 
-    # Print summary to console
+    # ---------------------------------------------------------------
+    # Console output
+    # ---------------------------------------------------------------
     print()
-    print("=" * 60)
-    print("RESULTS SUMMARY")
-    print("=" * 60)
-    print(f"Total Claims:        {summary['total_claims']}")
-    print(f"Processed:           {summary['processed_claims']}")
-    print(f"Not Processed:       {summary['not_processed']}")
-    print()
+    if len(per_dataset) > 1:
+        print_per_dataset_report(per_dataset, dataset_labels)
+
+    print(f"AGGREGATE ({summary['total_claims']} claims with GT)")
+    print("-" * 60)
     print(f"Decision Accuracy:   {summary['decision_accuracy']:.1%} ({summary['decision_correct']}/{summary['processed_claims']})")
     print()
     print(f"Approved Claims:     {summary['gt_approved_correct']}/{summary['gt_approved_total']} correct")
@@ -515,25 +812,41 @@ def main():
     print(f"  False Approve Rate: {summary['false_approve_rate']:.1%}")
     print()
 
+    if summary.get("amount_accuracy_5pct") is not None:
+        print(f"Amount Accuracy:     {summary['amount_accuracy_5pct']:.1%} (within +/-5%)")
+        print()
+
     if summary.get("error_categories"):
         print("Error Categories:")
         for cat, count in sorted(summary["error_categories"].items(), key=lambda x: -x[1]):
             print(f"  {cat}: {count}")
 
+    if summary.get("no_ground_truth", 0) > 0:
+        no_gt_claims = [r["claim_id"] for r in results if r["error_category"] == "no_ground_truth"]
+        print()
+        print(f"Claims without GT ({len(no_gt_claims)}): {', '.join(no_gt_claims[:10])}")
+        if len(no_gt_claims) > 10:
+            print(f"  ... and {len(no_gt_claims) - 10} more")
+
     print()
 
+    # ---------------------------------------------------------------
     # Save results
-    output_dir = save_results(results, summary)
+    # ---------------------------------------------------------------
+    output_dir = save_results(results, summary, workspace_path)
 
-    # Update metrics history for tracking
-    update_metrics_history(output_dir, summary, ground_truth_path=GROUND_TRUTH_PATH)
+    update_metrics_history(
+        output_dir=output_dir,
+        summary=summary,
+        workspace_path=workspace_path,
+        claim_run_id=claim_run_id,
+        datasets_evaluated=datasets_used,
+        per_dataset=per_dataset,
+    )
 
     print()
     print(f"Results saved to: {output_dir}")
     print("=" * 60)
-    print()
-    print("Remember to update EVAL_LOG.md with your findings!")
-    print(f"  {WORKSPACE_PATH / 'eval' / 'EVAL_LOG.md'}")
 
 
 if __name__ == "__main__":

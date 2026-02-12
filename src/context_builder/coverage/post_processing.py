@@ -431,14 +431,12 @@ def validate_llm_coverage_decision(
     """Validate and potentially override LLM coverage decision.
 
     Simplified safety net for LLM-first mode.  The LLM now receives the
-    full policy matrix and per-item hints, so synonym-based overrides are
-    no longer needed.  Two checks remain:
+    full policy matrix and per-item hints, so synonym-based overrides and
+    category checks are no longer needed.  One check remains:
 
     1. **Exclusion check** -- force NOT_COVERED when the item is in the
        excluded components list (unless it is labor or an ancillary part
        supporting a covered repair).
-    2. **Category check** -- if the LLM said COVERED but assigned a
-       category that is not in the policy, flag for review.
 
     Args:
         item: Line item coverage result from LLM
@@ -494,43 +492,10 @@ def validate_llm_coverage_decision(
             )
             return item
 
-    # Check 2: Category coverage -- if LLM said COVERED but the category
-    # is not in the policy at all, flag for review.
-    if item.coverage_status == CoverageStatus.COVERED:
-        category = item.coverage_category
-        covered_categories = list(covered_components.keys())
-
-        category_is_covered = True
-        if is_system_covered:
-            category_is_covered = is_system_covered(category, covered_categories)
-
-        if not category_is_covered:
-            item.coverage_status = CoverageStatus.REVIEW_NEEDED
-            item.exclusion_reason = "category_not_covered"
-            item.match_confidence = 0.45
-            item.match_reasoning += (
-                f" [REVIEW: category '{category}' is not covered by policy]"
-            )
-            val_tb.add("llm_validation", TraceAction.OVERRIDDEN,
-                       f"Category '{category}' is not covered by policy",
-                       verdict=CoverageStatus.REVIEW_NEEDED,
-                       confidence=0.45,
-                       detail={"check": "category_not_covered", "category": category},
-                       decision_source=DecisionSource.VALIDATION)
-            logger.info(
-                f"LLM validation override: '{item.description}' changed from "
-                f"COVERED to REVIEW_NEEDED (category '{category}' not covered)"
-            )
-        else:
-            val_tb.add("llm_validation", TraceAction.VALIDATED,
-                       "LLM coverage decision confirmed",
-                       verdict=item.coverage_status,
-                       decision_source=DecisionSource.VALIDATION)
-    else:
-        val_tb.add("llm_validation", TraceAction.VALIDATED,
-                   "No override needed",
-                   verdict=item.coverage_status,
-                   decision_source=DecisionSource.VALIDATION)
+    val_tb.add("llm_validation", TraceAction.VALIDATED,
+               "LLM coverage decision confirmed",
+               verdict=item.coverage_status,
+               decision_source=DecisionSource.VALIDATION)
 
     item.decision_trace = val_tb.build()
     return item

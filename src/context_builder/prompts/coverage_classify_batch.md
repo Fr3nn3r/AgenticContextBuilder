@@ -36,12 +36,17 @@ item as covered or not covered under the policy.
 {% endfor %}
 {% endif %}
 
+{% if repair_description %}
+**Repair description (from claim documents):** {{ repair_description }}
+{% endif %}
+
 **Rules:**
 1. Parts matching a covered component are COVERED
 2. Consumables (oil, filters, fluids, gaskets) are NOT COVERED
 3. Environmental/disposal fees are NOT COVERED
 4. Labor is NOT COVERED unless it is for installing a covered part
-5. Use the hints provided per item as advisory context
+5. Use the keyword/part-number hints provided per item. When a hint maps an item to a category that is NOT COVERED, classify the item as NOT COVERED under that category
+6. **Use repair context to disambiguate.** When a part name is ambiguous (e.g., "Ventil" could mean engine valve or HVAC valve), look at the OTHER items in the claim to determine the repair context. If all other items relate to an AdBlue repair, a "Ventil Klemmschelle" is an AdBlue valve clamp, NOT an engine valve. If the repair description mentions a heating system, "Heizungsventil" is an HVAC component, NOT an engine valve
 
 Respond ONLY with valid JSON:
 ```json

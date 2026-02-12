@@ -220,6 +220,12 @@ class PrimaryRepairResult(BaseModel):
     to decide coverage verdict. Determined via a two-tier approach:
     1. LLM: focused LLM call that sees all items and picks the primary
     2. Deterministic fallback: highest-value covered parts item
+
+    The LLM also identifies the **root cause** — the component whose
+    failure triggered the workshop visit.  When root cause differs from
+    the primary repair (consequential damage), coverage depends on the
+    root cause: if the root cause is not covered, all consequential
+    damage is denied regardless of individual item coverage.
     """
 
     component: Optional[str] = Field(None, description="Component type (e.g., 'timing_chain')")
@@ -232,6 +238,16 @@ class PrimaryRepairResult(BaseModel):
     )
     source_item_index: Optional[int] = Field(
         None, description="Index of the source line item (for deterministic method)"
+    )
+    # Root cause fields (populated by LLM tier only)
+    root_cause_component: Optional[str] = Field(
+        None, description="Root cause component (e.g., 'high_pressure_pump')"
+    )
+    root_cause_category: Optional[str] = Field(
+        None, description="Root cause category (e.g., 'fuel_system')"
+    )
+    root_cause_item_index: Optional[int] = Field(
+        None, description="Index of the root cause line item"
     )
 
 

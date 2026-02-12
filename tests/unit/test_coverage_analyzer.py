@@ -795,8 +795,8 @@ class TestValidateLLMCoverageDecision:
         # Category "engine" is covered -> item stays COVERED regardless of component name
         assert result.coverage_status == CoverageStatus.COVERED
 
-    def test_item_in_uncovered_category_becomes_review_needed(self, analyzer, covered_components, excluded_components):
-        """LLM COVERED item in an uncovered category -> REVIEW_NEEDED."""
+    def test_item_in_uncovered_category_stays_covered(self, analyzer, covered_components, excluded_components):
+        """LLM COVERED item in an uncovered category stays COVERED (LLM is trusted)."""
         item = self._llm_item(
             coverage_category="body",
             matched_component="door_handle",
@@ -807,9 +807,8 @@ class TestValidateLLMCoverageDecision:
             is_system_covered=analyzer._is_system_covered,
             ancillary_keywords=analyzer.component_config.ancillary_keywords,
         )
-        # Category "body" is not in covered_components -> override to REVIEW_NEEDED
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-        assert "REVIEW" in result.match_reasoning
+        # Category check removed -- LLM is trusted; item stays COVERED
+        assert result.coverage_status == CoverageStatus.COVERED
 
     def test_excluded_labor_not_overridden(self, analyzer, covered_components, excluded_components):
         """Labor items should bypass excluded-component check (exclusion targets parts, not access labor)."""
@@ -2376,3 +2375,134 @@ class TestPrimaryRepairExclusionOverride:
         # No covered parts -> determination_method="none", is_covered stays None
         assert result.determination_method == "none"
         assert result.is_covered is None
+
+    def test_consequential_damage_root_cause_uncovered(
+        self, analyzer, covered_components,
+    ):
+        """When LLM identifies root cause in uncovered category, is_covered=False."""
+        analyzer.config.use_llm_primary_repair = True
+        mock_llm = MagicMock()
+        # LLM says: primary repair is injector (engine, covered),
+        # but root cause is Hochdruckpumpe (fuel_system, NOT covered)
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "injector",
+            "category": "engine",
+            "confidence": 0.90,
+            "reasoning": "Injector damaged by Hochdruckpumpe failure",
+            "root_cause_item_index": 1,
+            "root_cause_component": "high_pressure_pump",
+            "root_cause_category": "fuel_system",
+        }
+        analyzer.llm_matcher = mock_llm
+
+        items = [
+            make_line_item(
+                description="Injektor",
+                item_type="parts",
+                total_price=800.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="injector",
+            ),
+            make_line_item(
+                description="Hochdruckpumpe",
+                item_type="parts",
+                total_price=1200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="fuel_system",
+                matched_component="high_pressure_pump",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered_components,
+            claim_id="TEST-CONSEQUENTIAL",
+        )
+        # Primary repair is injector but root cause is uncovered -> is_covered=False
+        assert result.component == "injector"
+        assert result.is_covered is False
+        assert result.root_cause_component == "high_pressure_pump"
+        assert result.root_cause_category == "fuel_system"
+        assert result.determination_method == "llm"
+
+    def test_root_cause_same_as_primary_covered(
+        self, analyzer, covered_components,
+    ):
+        """When root cause = primary and category is covered, is_covered=True."""
+        analyzer.config.use_llm_primary_repair = True
+        mock_llm = MagicMock()
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "water_pump",
+            "category": "cooling_system",
+            "confidence": 0.95,
+            "reasoning": "Water pump failure, no consequential damage",
+            "root_cause_item_index": 0,
+            "root_cause_component": "water_pump",
+            "root_cause_category": "cooling_system",
+        }
+        analyzer.llm_matcher = mock_llm
+
+        items = [
+            make_line_item(
+                description="WASSERPUMPE",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="cooling_system",
+                matched_component="water_pump",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered_components,
+            claim_id="TEST-ROOTCAUSE-COVERED",
+        )
+        assert result.component == "water_pump"
+        assert result.is_covered is True
+        assert result.root_cause_component == "water_pump"
+        assert result.root_cause_category == "cooling_system"
+
+    def test_consequential_damage_alias_resolution(
+        self, analyzer, nsa_component_config,
+    ):
+        """Root cause category alias should match covered category (electrical_system -> electric)."""
+        analyzer.config.use_llm_primary_repair = True
+        analyzer.component_config = nsa_component_config
+
+        mock_llm = MagicMock()
+        # LLM returns root_cause_category "electrical_system",
+        # but policy uses "electric" (an alias per nsa_component_config)
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "onboard_diagnostic_module",
+            "category": "electrical_system",
+            "confidence": 0.85,
+            "reasoning": "OBD module is the primary repair",
+            "root_cause_item_index": 0,
+            "root_cause_component": "onboard_diagnostic_module",
+            "root_cause_category": "electrical_system",
+        }
+        analyzer.llm_matcher = mock_llm
+
+        items = [
+            make_line_item(
+                description="Steuergeraet Bordnetzdiagnose",
+                item_type="parts",
+                total_price=600.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="electric",
+                matched_component="onboard_diagnostic_module",
+            ),
+        ]
+        # Policy covers "electric" — alias of "electrical_system"
+        covered = {"electric": ["onboard_diagnostic_module"]}
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered,
+            claim_id="TEST-ALIAS-64166",
+        )
+        # Should NOT override to False — electric is an alias of electrical_system
+        assert result.is_covered is True
+        assert result.root_cause_category == "electrical_system"

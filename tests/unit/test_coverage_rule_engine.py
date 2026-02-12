@@ -47,7 +47,6 @@ class TestRuleEngineDefaults:
         assert len(engine.config.non_covered_labor_patterns) == 0
         assert len(engine.config.component_override_patterns) == 0
         assert len(engine.config.generic_description_patterns) == 0
-        assert len(engine.config.fastener_patterns) == 0
 
     def test_fee_items_not_covered(self):
         """Fee items are always not covered (even without customer config)."""
@@ -131,15 +130,15 @@ class TestRuleEngineDefaults:
         # No generic patterns → passes through
         assert result is None
 
-    def test_empty_engine_no_fastener_rule(self):
-        """Empty engine does not trigger fastener rule."""
+    def test_fastener_passes_through_to_llm(self):
+        """Fasteners pass through to LLM (no rule engine handling)."""
         engine = RuleEngine()
         result = engine.match(
             description="SCHRAUBE",
             item_type="parts",
             total_price=5.0,
         )
-        # No fastener patterns → passes through
+        # Fasteners are now handled by the LLM, not the rule engine
         assert result is None
 
 
@@ -153,7 +152,6 @@ class TestRuleEngineNSA:
         assert len(nsa_engine.config.non_covered_labor_patterns) > 0
         assert len(nsa_engine.config.component_override_patterns) > 0
         assert len(nsa_engine.config.generic_description_patterns) > 0
-        assert len(nsa_engine.config.fastener_patterns) > 0
 
     def test_fee_items_not_covered(self, nsa_engine):
         """Fee items are always not covered."""
@@ -301,8 +299,6 @@ class TestCustomConfig:
             non_covered_labor_patterns=[],
             component_override_patterns=[],
             generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=[],
         )
         engine = RuleEngine(config)
 
@@ -471,8 +467,8 @@ class TestRule6GenericDescriptions:
         assert result.coverage_status == CoverageStatus.COVERED
 
 
-class TestRule7FastenerPatterns:
-    """Tests for Rule 7: Standalone fastener items (NSA-specific)."""
+class TestFastenersPassThroughToLLM:
+    """Tests that fasteners/gaskets now pass through to LLM (removed from rule engine)."""
 
     @pytest.mark.parametrize(
         "description",
@@ -481,92 +477,25 @@ class TestRule7FastenerPatterns:
             "MUTTER",
             "SCHRAUBE",
             "BOULON",
-            "VIS",
-            "BEFESTIGUNGSSCHRAUBE",
-            "SELBSTSICHERNDE MUTTER",
-            "GOUPILLE",
-            "SICHERUNGSRING",
-            "SICHERUNGSMUTTER",
+            "DICHTUNG",
         ],
     )
-    def test_standalone_fasteners_review_needed(self, nsa_engine, description):
-        """Standalone fastener descriptions trigger REVIEW_NEEDED."""
+    def test_standalone_fasteners_pass_through(self, nsa_engine, description):
+        """Standalone fastener/gasket descriptions now pass through to LLM."""
         result = nsa_engine.match(
             description=description,
             item_type="parts",
             total_price=5.0,
         )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-        assert result.match_method == MatchMethod.RULE
-        assert result.match_confidence == 0.45
-        assert "fastener" in result.match_reasoning.lower()
-        assert result.not_covered_amount == 5.0
-
-    def test_fastener_case_insensitive(self, nsa_engine):
-        """Fastener pattern matches case-insensitively."""
-        result = nsa_engine.match(
-            description="schraube",
-            item_type="parts",
-            total_price=3.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-
-    def test_fastener_does_not_match_substring(self, nsa_engine):
-        """'VIS' should not match 'SERVISE' or 'VIS DE REGLAGE SOUPAPE'."""
-        # "VIS" as part of a larger word
-        result = nsa_engine.match(
-            description="SERVISE COMPLET",
-            item_type="parts",
-            total_price=100.0,
-        )
+        # These items should NOT be matched by rules anymore -- they pass to LLM
         assert result is None
 
-        # "VIS" as part of a compound description
-        result = nsa_engine.match(
-            description="VIS DE REGLAGE SOUPAPE",
-            item_type="parts",
-            total_price=15.0,
-        )
-        assert result is None
 
-    def test_fastener_compound_description_passes_through(self, nsa_engine):
-        """Compound descriptions containing fastener words should pass."""
-        result = nsa_engine.match(
-            description="SCHRAUBE OELWANNENDICHTUNG M8X20",
-            item_type="parts",
-            total_price=2.0,
-        )
-        # Not a standalone fastener - should pass through
-        assert result is None
+class TestSealGasketPassThroughToLLM:
+    """Tests that seal/gasket items now pass through to LLM (removed from rule engine)."""
 
-    def test_fastener_with_whitespace(self, nsa_engine):
-        """Fastener with surrounding whitespace still matches."""
-        result = nsa_engine.match(
-            description="  MUTTER  ",
-            item_type="parts",
-            total_price=1.50,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-
-    def test_zero_price_fastener_covered(self, nsa_engine):
-        """Zero-price fastener is covered (Rule 4 before Rule 7)."""
-        result = nsa_engine.match(
-            description="SCHRAUBE",
-            item_type="parts",
-            total_price=0.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.COVERED
-
-
-class TestRule7_5SealGasketStandalone:
-    """Tests for Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED."""
-
-    def test_standalone_dichtung_review_needed(self):
-        """Standalone DICHTUNG is flagged for review."""
+    def test_standalone_dichtung_passes_through(self):
+        """Standalone DICHTUNG now passes through to LLM."""
         config = RuleConfig(
             fee_item_types=["fee"],
             exclusion_patterns=[],
@@ -574,8 +503,6 @@ class TestRule7_5SealGasketStandalone:
             non_covered_labor_patterns=[],
             component_override_patterns=[],
             generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=["DICHTUNG", "DICHTRING", "O-?RING"],
         )
         engine = RuleEngine(config)
         result = engine.match(
@@ -583,14 +510,11 @@ class TestRule7_5SealGasketStandalone:
             item_type="parts",
             total_price=15.0,
         )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-        assert result.match_confidence == 0.45
-        assert result.match_method == MatchMethod.RULE
-        assert result.decision_trace[0].detail["rule"] == "standalone_seal_gasket"
+        # No longer caught by rule engine -- passes to LLM
+        assert result is None
 
-    def test_standalone_oring_review_needed(self):
-        """O-RING variant is caught by optional hyphen pattern."""
+    def test_oring_passes_through(self):
+        """O-RING now passes through to LLM."""
         config = RuleConfig(
             fee_item_types=["fee"],
             exclusion_patterns=[],
@@ -598,8 +522,6 @@ class TestRule7_5SealGasketStandalone:
             non_covered_labor_patterns=[],
             component_override_patterns=[],
             generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=["O-?RING"],
         )
         engine = RuleEngine(config)
         for desc in ["O-RING", "ORING"]:
@@ -608,81 +530,7 @@ class TestRule7_5SealGasketStandalone:
                 item_type="parts",
                 total_price=5.0,
             )
-            assert result is not None, f"Expected match for '{desc}'"
-            assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
-
-    def test_compound_zylinderkopfdichtung_not_caught(self):
-        """Compound term ZYLINDERKOPFDICHTUNG passes through (anchored pattern)."""
-        config = RuleConfig(
-            fee_item_types=["fee"],
-            exclusion_patterns=[],
-            consumable_patterns=[],
-            non_covered_labor_patterns=[],
-            component_override_patterns=[],
-            generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=["DICHTUNG", "DICHTRING"],
-        )
-        engine = RuleEngine(config)
-        result = engine.match(
-            description="ZYLINDERKOPFDICHTUNG",
-            item_type="parts",
-            total_price=120.0,
-        )
-        assert result is None  # Should NOT match — compound term
-
-    def test_zero_price_seal_covered_before_rule_7_5(self):
-        """Zero-price seal/gasket is covered by Rule 4 before Rule 7.5."""
-        config = RuleConfig(
-            fee_item_types=["fee"],
-            exclusion_patterns=[],
-            consumable_patterns=[],
-            non_covered_labor_patterns=[],
-            component_override_patterns=[],
-            generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=["DICHTUNG"],
-        )
-        engine = RuleEngine(config)
-        result = engine.match(
-            description="DICHTUNG",
-            item_type="parts",
-            total_price=0.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.COVERED
-
-    def test_seal_gasket_empty_patterns_no_match(self):
-        """No match when seal_gasket_standalone_patterns is empty."""
-        engine = RuleEngine()  # default empty config
-        result = engine.match(
-            description="DICHTUNG",
-            item_type="parts",
-            total_price=10.0,
-        )
-        assert result is None
-
-    def test_from_dict_loads_seal_gasket_patterns(self):
-        """RuleConfig.from_dict correctly loads seal_gasket_standalone_patterns."""
-        data = {
-            "seal_gasket_standalone_patterns": ["DICHTUNG", "O-?RING"],
-        }
-        config = RuleConfig.from_dict(data)
-        assert config.seal_gasket_standalone_patterns == ["DICHTUNG", "O-?RING"]
-
-    def test_nsa_config_seal_gasket(self, nsa_engine):
-        """NSA config includes seal/gasket patterns if configured."""
-        # This test verifies integration with real NSA config.
-        # If seal_gasket_standalone_patterns not yet in NSA config, skip.
-        if not nsa_engine.config.seal_gasket_standalone_patterns:
-            pytest.skip("NSA config has no seal_gasket_standalone_patterns yet")
-        result = nsa_engine.match(
-            description="DICHTUNG",
-            item_type="parts",
-            total_price=12.0,
-        )
-        assert result is not None
-        assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+            assert result is None, f"'{desc}' should pass through to LLM"
 
 
 class TestMatchesExclusionPattern:

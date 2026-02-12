@@ -1310,6 +1310,49 @@ class CoverageAnalyzer:
         # Cross-check: use OUR coverage_status, not the LLM's opinion
         is_covered = source_item.coverage_status == CoverageStatus.COVERED
 
+        # Parse root cause fields (may be same as primary)
+        root_cause_idx = result.get("root_cause_item_index")
+        root_cause_component = result.get("root_cause_component")
+        root_cause_category = result.get("root_cause_category")
+
+        # Consequential damage rule: if root cause is not covered,
+        # the entire claim is denied regardless of whether individual
+        # downstream items are covered.  Two checks:
+        #
+        # (a) LLM-reported root cause category is not in the policy's
+        #     covered categories list.
+        # (b) Our own per-item classification marked the root cause item
+        #     as NOT_COVERED (cross-reference with pipeline results).
+        #
+        # Either signal is sufficient to trigger denial.
+        covered_cats = self._extract_covered_categories(covered_components)
+        if root_cause_category and not self._is_system_covered(
+            root_cause_category, covered_cats
+        ):
+            logger.warning(
+                "Consequential damage: root cause '%s' (%s) is not covered "
+                "for claim %s -- overriding primary is_covered to False",
+                root_cause_component, root_cause_category, claim_id,
+            )
+            is_covered = False
+
+        if (
+            root_cause_idx is not None
+            and root_cause_idx != primary_idx
+            and 0 <= root_cause_idx < len(all_items)
+        ):
+            root_item = all_items[root_cause_idx]
+            if root_item.coverage_status == CoverageStatus.NOT_COVERED:
+                # Our pipeline classified the root cause item as not covered
+                root_cat = root_item.coverage_category or root_cause_category
+                logger.warning(
+                    "Consequential damage (cross-check): root cause item [%d] "
+                    "'%s' (%s) classified as not_covered by pipeline for "
+                    "claim %s -- overriding primary is_covered to False",
+                    root_cause_idx, root_item.description, root_cat, claim_id,
+                )
+                is_covered = False
+
         logger.info(
             "Primary repair (tier 0 LLM): '%s' (%s, %s, %.0f CHF, covered=%s) "
             "for claim %s",
@@ -1329,6 +1372,9 @@ class CoverageAnalyzer:
             confidence=result.get("confidence", 0.80),
             determination_method="llm",
             source_item_index=primary_idx,
+            root_cause_component=root_cause_component,
+            root_cause_category=root_cause_category,
+            root_cause_item_index=root_cause_idx,
         )
 
     def _determine_primary_repair(

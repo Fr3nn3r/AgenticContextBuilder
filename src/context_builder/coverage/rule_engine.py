@@ -10,8 +10,6 @@ Rules are applied in order:
 4. Zero-price items -> COVERED
 5. Non-covered labor patterns (labor only) -> NOT_COVERED
 6. Generic/empty descriptions -> NOT_COVERED
-7. Standalone fastener items -> REVIEW_NEEDED
-7.5. Standalone seal/gasket items -> REVIEW_NEEDED
 """
 
 import logging
@@ -54,15 +52,6 @@ class RuleConfig:
     # Rule 6: Generic/empty descriptions with no semantic content
     generic_description_patterns: List[str]
 
-    # Rule 7: Standalone fastener items (screws, nuts, bolts)
-    fastener_patterns: List[str]
-
-    # Rule 7.5: Standalone seal/gasket items (DICHTUNG, O-RING, etc.)
-    seal_gasket_standalone_patterns: List[str]
-
-    # Confidence assigned to REVIEW_NEEDED items (fasteners, seals).
-    review_needed_confidence: float = 0.45
-
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "RuleConfig":
         """Create config from dictionary."""
@@ -73,9 +62,6 @@ class RuleConfig:
             non_covered_labor_patterns=config.get("non_covered_labor_patterns", []),
             component_override_patterns=config.get("component_override_patterns", []),
             generic_description_patterns=config.get("generic_description_patterns", []),
-            fastener_patterns=config.get("fastener_patterns", []),
-            seal_gasket_standalone_patterns=config.get("seal_gasket_standalone_patterns", []),
-            review_needed_confidence=config.get("review_needed_confidence", 0.45),
         )
 
     @classmethod
@@ -88,9 +74,6 @@ class RuleConfig:
             non_covered_labor_patterns=[],
             component_override_patterns=[],
             generic_description_patterns=[],
-            fastener_patterns=[],
-            seal_gasket_standalone_patterns=[],
-            review_needed_confidence=0.45,
         )
 
 
@@ -132,24 +115,6 @@ class RuleEngine:
             )
         else:
             self._generic_description_pattern = None
-
-        # Build combined fastener pattern (anchored ^...$)
-        if self.config.fastener_patterns:
-            joined = "|".join(self.config.fastener_patterns)
-            self._fastener_pattern = re.compile(
-                f"^({joined})$", re.IGNORECASE
-            )
-        else:
-            self._fastener_pattern = None
-
-        # Build combined seal/gasket standalone pattern (anchored ^...$)
-        if self.config.seal_gasket_standalone_patterns:
-            joined = "|".join(self.config.seal_gasket_standalone_patterns)
-            self._seal_gasket_pattern = re.compile(
-                f"^({joined})$", re.IGNORECASE
-            )
-        else:
-            self._seal_gasket_pattern = None
 
     def match(
         self,
@@ -316,45 +281,6 @@ class RuleEngine:
                 trace=tb.build(),
             )
 
-        # Rule 7: Standalone fastener items -> REVIEW_NEEDED
-        if self._fastener_pattern and self._fastener_pattern.match(stripped):
-            tb.add("rule_engine", TraceAction.MATCHED,
-                   "Standalone fastener - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED,
-                   confidence=self.config.review_needed_confidence,
-                   detail={"rule": "standalone_fastener"},
-                   decision_source=DecisionSource.RULE)
-            return self._create_review_needed(
-                description=description,
-                item_type=item_type,
-                item_code=item_code,
-                total_price=total_price,
-                reasoning="Standalone fastener - requires context to determine coverage",
-                confidence=self.config.review_needed_confidence,
-                trace=tb.build(),
-            )
-
-        # Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED
-        # Compound terms like ZYLINDERKOPFDICHTUNG are NOT caught (anchored pattern).
-        # LLM labor linkage may promote gaskets supporting a covered repair;
-        # standalone gaskets stay REVIEW_NEEDED for human review.
-        if self._seal_gasket_pattern and self._seal_gasket_pattern.match(stripped):
-            tb.add("rule_engine", TraceAction.MATCHED,
-                   "Standalone seal/gasket - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED,
-                   confidence=self.config.review_needed_confidence,
-                   detail={"rule": "standalone_seal_gasket"},
-                   decision_source=DecisionSource.RULE)
-            return self._create_review_needed(
-                description=description,
-                item_type=item_type,
-                item_code=item_code,
-                total_price=total_price,
-                reasoning="Standalone seal/gasket - requires context to determine coverage",
-                confidence=self.config.review_needed_confidence,
-                trace=tb.build(),
-            )
-
         # No rule matched
         return None
 
@@ -381,33 +307,6 @@ class RuleEngine:
             match_confidence=1.0,
             match_reasoning=reasoning,
             exclusion_reason=exclusion_reason,
-            decision_trace=trace,
-            covered_amount=0.0,
-            not_covered_amount=total_price,
-        )
-
-    def _create_review_needed(
-        self,
-        description: str,
-        item_type: str,
-        item_code: Optional[str],
-        total_price: float,
-        reasoning: str,
-        confidence: float = 0.45,
-        trace: Optional[List] = None,
-    ) -> LineItemCoverage:
-        """Create a REVIEW_NEEDED result."""
-        return LineItemCoverage(
-            item_code=item_code,
-            description=description,
-            item_type=item_type,
-            total_price=total_price,
-            coverage_status=CoverageStatus.REVIEW_NEEDED,
-            coverage_category=None,
-            matched_component=None,
-            match_method=MatchMethod.RULE,
-            match_confidence=confidence,
-            match_reasoning=reasoning,
             decision_trace=trace,
             covered_amount=0.0,
             not_covered_amount=total_price,

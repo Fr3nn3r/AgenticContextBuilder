@@ -2,7 +2,7 @@
 
 Tests that classify_items batches items into multi-item LLM calls,
 enriches prompts with keyword/part-number hints, and applies
-post-processing (vague-description capping, asymmetric thresholds).
+a single low confidence threshold (0.40) for human review.
 """
 
 import json
@@ -242,6 +242,70 @@ class TestClassifyItemsWithHints:
         assert "MOTOR" in user_msg["content"]
         assert "Keyword hint" in user_msg["content"]
 
+    def test_keyword_hint_uncovered_category_flagged_in_prompt(self):
+        """Keyword hint for an uncovered category should include NOT COVERED note."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=15,
+        )
+        response = _make_batch_response([
+            _make_single_item_data(0, False, "fuel_system", "fuel_pump"),
+        ])
+        client = _make_client([response])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": "Hochdruckpumpe DMDC/RDC", "item_type": "parts",
+             "total_price": 1894.05},
+        ]
+        keyword_hints = [
+            {"keyword": "HOCHDRUCKPUMPE", "category": "fuel_system",
+             "component": "fuel_pump", "confidence": 0.85,
+             "has_consumable_indicator": False},
+        ]
+
+        # fuel_system is NOT in covered_components
+        matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor", "Kolben"]},
+            keyword_hints=keyword_hints,
+        )
+
+        call_args = client.chat_completions_create.call_args
+        messages = call_args[1]["messages"] if "messages" in call_args[1] else call_args[0][0]
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert "NOT COVERED" in user_msg["content"]
+        assert "fuel_system" in user_msg["content"]
+
+    def test_keyword_hint_covered_category_no_flag(self):
+        """Keyword hint for a covered category should NOT include the NOT COVERED note."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=15,
+        )
+        response = _make_batch_response([
+            _make_single_item_data(0, True),
+        ])
+        client = _make_client([response])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 500},
+        ]
+        keyword_hints = [
+            {"keyword": "MOTOR", "category": "engine", "component": "motor",
+             "confidence": 0.85, "has_consumable_indicator": False},
+        ]
+
+        matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor"]},
+            keyword_hints=keyword_hints,
+        )
+
+        call_args = client.chat_completions_create.call_args
+        messages = call_args[1]["messages"] if "messages" in call_args[1] else call_args[0][0]
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert "NOT COVERED" not in user_msg["content"]
+
     def test_part_number_hints_in_batch_prompt(self):
         """Part-number hints should appear in the batch prompt."""
         config = LLMMatcherConfig(
@@ -333,17 +397,16 @@ class TestClassifyItemsWithHints:
         assert client.chat_completions_create.call_count == 1
 
 
-class TestClassifyItemsVagueDescription:
-    """Tests for vague description confidence capping."""
+class TestClassifyItemsSingleThreshold:
+    """Tests for single confidence threshold (0.40)."""
 
-    def test_vague_description_confidence_capped(self):
-        """Vague descriptions should have confidence capped at 0.50."""
+    def test_low_confidence_triggers_review_needed(self):
+        """Confidence below 0.40 should trigger REVIEW_NEEDED regardless of is_covered."""
         config = LLMMatcherConfig(
             max_retries=1, classification_batch_size=15,
         )
-        # LLM returns high confidence for a vague description
         batch_data = [
-            _make_single_item_data(0, True, confidence=0.85),
+            _make_single_item_data(0, True, confidence=0.35),
         ]
         client = _make_client([_make_batch_response(batch_data)])
         matcher = LLMMatcher(config=config, audited_client=client)
@@ -357,17 +420,16 @@ class TestClassifyItemsVagueDescription:
         )
 
         assert len(results) == 1
-        # "PART" is in vague terms -> confidence capped to 0.50 -> below 0.60 threshold -> REVIEW_NEEDED
         assert results[0].coverage_status == CoverageStatus.REVIEW_NEEDED
-        assert results[0].match_confidence == 0.50
+        assert results[0].match_confidence == 0.35
 
-    def test_non_vague_description_not_capped(self):
-        """Normal descriptions should keep their LLM confidence."""
+    def test_confidence_above_threshold_covered(self):
+        """Confidence above 0.40 with is_covered=True should be COVERED."""
         config = LLMMatcherConfig(
             max_retries=1, classification_batch_size=15,
         )
         batch_data = [
-            _make_single_item_data(0, True, confidence=0.85),
+            _make_single_item_data(0, True, confidence=0.45),
         ]
         client = _make_client([_make_batch_response(batch_data)])
         matcher = LLMMatcher(config=config, audited_client=client)
@@ -382,7 +444,30 @@ class TestClassifyItemsVagueDescription:
 
         assert len(results) == 1
         assert results[0].coverage_status == CoverageStatus.COVERED
-        assert results[0].match_confidence == 0.85
+        assert results[0].match_confidence == 0.45
+
+    def test_confidence_above_threshold_not_covered(self):
+        """Confidence above 0.40 with is_covered=False should be NOT_COVERED."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=15,
+        )
+        batch_data = [
+            _make_single_item_data(0, False, confidence=0.70),
+        ]
+        client = _make_client([_make_batch_response(batch_data)])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": "UNKNOWN PART", "item_type": "parts", "total_price": 100},
+        ]
+        results = matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor"]},
+        )
+
+        assert len(results) == 1
+        assert results[0].coverage_status == CoverageStatus.NOT_COVERED
+        assert results[0].match_confidence == 0.70
 
 
 class TestClassifyItemsRepairContext:

@@ -18,7 +18,7 @@ You will be given:
 Output must be valid JSON and follow this schema:
 - document_type: one of the allowed types
 - language: primary language code (e.g., "en", "es", "fr")
-- confidence: number from 0.0 to 1.0 representing how confident you are in the document_type
+- confidence: 0.0-1.0
 - summary: 1-2 sentences describing what the document is
 - signals: array of 2-5 short strings explaining the strongest evidence for the chosen type (e.g., headings/keywords/layout cues)
 - key_hints: OPTIONAL object with at most 3 lightweight hints ONLY if clearly present (do not guess).

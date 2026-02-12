@@ -14,7 +14,6 @@ Extract these fields from the provided text snippets:
 For EACH field you extract:
 1. Provide the exact value found in the document
 2. Quote the EXACT source text that contains the value (text_quote)
-3. Rate your confidence (0.0 to 1.0)
 
 If a field is not found or unclear, set value to null.
 If the value appears to be a redacted placeholder (like [NAME_1], PERSON_1, etc.), still extract it but note is_placeholder: true.

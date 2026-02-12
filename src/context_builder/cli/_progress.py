@@ -114,10 +114,10 @@ class RichProgressReporter:
             self._console.print(f"  [{claim_id}] {stage}...")
             return
 
-        if not self._progress or self.mode == ProgressMode.QUIET:
+        if not self._progress or self.mode in (ProgressMode.QUIET, ProgressMode.PROGRESS):
             return
 
-        # Remove old stage/detail tasks
+        # Remove old stage/detail tasks (VERBOSE mode only)
         self._close_detail_task()
         self._close_stage_task()
 
@@ -133,7 +133,7 @@ class RichProgressReporter:
 
         self._close_detail_task()
 
-        if not self._progress or self.mode in (ProgressMode.LOGS, ProgressMode.QUIET):
+        if not self._progress or self.mode in (ProgressMode.LOGS, ProgressMode.QUIET, ProgressMode.PROGRESS):
             return
 
         self._detail_task = self._progress.add_task(f"  {desc}", total=total)

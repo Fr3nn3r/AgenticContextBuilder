@@ -6,7 +6,7 @@ rules or keywords. It uses an audited OpenAI call to determine coverage.
 Confidence levels:
 - High confidence match: 0.75-0.85
 - Medium confidence: 0.60-0.75
-- Low confidence (<0.60): Flagged for review
+- Low confidence (<0.40): Flagged for review
 """
 
 import json
@@ -16,9 +16,9 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from context_builder.coverage.schemas import (
     CoverageStatus,
@@ -40,10 +40,7 @@ class LLMMatcherConfig:
     model: str = "gpt-4o"
     temperature: float = 0.0
     max_tokens: int = 512
-    min_confidence_for_coverage: float = 0.60
-    review_needed_threshold: float = 0.60
-    # Lower threshold for "not covered" - we're more willing to deny than approve
-    review_needed_threshold_not_covered: float = 0.40
+    review_needed_threshold: float = 0.40
     # Max concurrent LLM calls in batch_match (1 = sequential)
     max_concurrent: int = 3
     # Retry config for transient failures (rate limits, 5xx)
@@ -61,33 +58,15 @@ class LLMMatcherConfig:
     # Number of items per LLM call in batch classification
     classification_batch_size: int = 15
 
-    # Descriptions too vague for confident coverage determination.
-    # Matched (uppercased) to trigger confidence capping.
-    vague_description_terms: Set[str] = field(default_factory=lambda: {
-        "PART", "PARTS", "PIECE", "PIECES", "PIÈCE", "PIÈCES",
-        "MISC", "MISCELLANEOUS", "DIVERS", "DIVERSE",
-        "OTHER", "OTHERS", "AUTRE", "AUTRES",
-        "ITEM", "ITEMS", "ARTICLE", "ARTICLES",
-        "ARRIVEE", "ARRIVAL", "LIVRAISON",
-        "WORK", "TRAVAIL", "SERVICE", "SERVICES",
-        "MATERIAL", "MATERIEL", "MATÉRIEL",
-        "ARBEIT", "ARBEIT:",
-    })
-
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "LLMMatcherConfig":
         """Create config from dictionary."""
-        raw_vague = config.get("vague_description_terms")
-        vague = {t.upper() for t in raw_vague} if raw_vague else None
-
-        kwargs: Dict[str, Any] = dict(
+        return cls(
             prompt_name=config.get("prompt_name", "coverage"),
             model=config.get("model", "gpt-4o"),
             temperature=config.get("temperature", 0.0),
             max_tokens=config.get("max_tokens", 512),
-            min_confidence_for_coverage=config.get("min_confidence_for_coverage", 0.60),
-            review_needed_threshold=config.get("review_needed_threshold", 0.60),
-            review_needed_threshold_not_covered=config.get("review_needed_threshold_not_covered", 0.40),
+            review_needed_threshold=config.get("review_needed_threshold", 0.40),
             max_concurrent=config.get("max_concurrent", 3),
             max_retries=config.get("max_retries", 3),
             retry_base_delay=config.get("retry_base_delay", 1.0),
@@ -98,9 +77,6 @@ class LLMMatcherConfig:
             batch_classify_prompt_name=config.get("batch_classify_prompt_name", "coverage_classify_batch"),
             classification_batch_size=config.get("classification_batch_size", 15),
         )
-        if vague is not None:
-            kwargs["vague_description_terms"] = vague
-        return cls(**kwargs)
 
 
 @dataclass
@@ -223,34 +199,6 @@ class LLMMatcher:
                 reasoning=f"Failed to parse LLM response: {content[:200]}",
             )
 
-    def _detect_vague_description(self, description: str) -> bool:
-        """Detect descriptions too vague for confident coverage determination.
-
-        Vague descriptions should trigger low confidence to ensure human review.
-        The set of vague terms is configurable via
-        ``LLMMatcherConfig.vague_description_terms``.
-
-        Args:
-            description: Item description to check
-
-        Returns:
-            True if description is vague, False otherwise
-        """
-        if not description:
-            return True
-
-        desc = description.strip().upper()
-
-        # Very short descriptions (1-4 chars) are inherently vague
-        # e.g., "VIS", "OIL" - but not "MOTOR", "PUMPE"
-        if len(desc) <= 4:
-            return True
-
-        if desc in self.config.vague_description_terms:
-            return True
-
-        return False
-
     def _match_single(
         self,
         description: str,
@@ -332,21 +280,11 @@ class LLMMatcher:
                 content = response.choices[0].message.content
                 result = self._parse_llm_response(content)
 
-                # Cap confidence for vague descriptions to ensure human review
                 confidence = result.confidence
                 reasoning = result.reasoning
-                vague_capped = False
-                if self._detect_vague_description(description) and confidence > 0.50:
-                    confidence = 0.50
-                    vague_capped = True
-                    reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
 
-                # Determine coverage status with asymmetric thresholds:
-                # - High bar (0.60) for approvals: be careful about paying out
-                # - Low bar (0.40) for denials: customer can appeal if wrong
-                if result.is_covered and confidence < self.config.review_needed_threshold:
-                    status = CoverageStatus.REVIEW_NEEDED
-                elif not result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
+                # Single low threshold: below 0.40 triggers human review
+                if confidence < self.config.review_needed_threshold:
                     status = CoverageStatus.REVIEW_NEEDED
                 elif result.is_covered:
                     status = CoverageStatus.COVERED
@@ -370,9 +308,6 @@ class LLMMatcher:
                 call_id_fn = getattr(client, "get_last_call_id", None)
                 if call_id_fn:
                     trace_detail["call_id"] = call_id_fn()
-                if vague_capped:
-                    trace_detail["vague_description_cap"] = True
-                    trace_detail["raw_confidence"] = result.confidence
                 if attempt > 0:
                     trace_detail["retries"] = attempt
 
@@ -723,15 +658,19 @@ class LLMMatcher:
 
             kw_hint = keyword_hints[i] if keyword_hints and i < len(keyword_hints) else None
             if kw_hint:
+                hint_cat = kw_hint.get("category", "")
                 kw_text = (
                     f"Keyword hint: '{kw_hint.get('keyword', '')}' maps to "
-                    f"category '{kw_hint.get('category', '')}'"
+                    f"category '{hint_cat}'"
                 )
                 if kw_hint.get("component"):
                     kw_text += f" (component: {kw_hint['component']})"
                 kw_text += f" [confidence: {kw_hint.get('confidence', 0):.2f}]"
                 if kw_hint.get("has_consumable_indicator"):
                     kw_text += " (consumable indicator present)"
+                # Flag when the hint category is not covered by the policy
+                if hint_cat and hint_cat not in covered_components:
+                    kw_text += f" -- NOTE: '{hint_cat}' is NOT COVERED by this policy"
                 hint_parts.append(kw_text)
 
             pn_hint = part_number_hints[i] if part_number_hints and i < len(part_number_hints) else None
@@ -789,6 +728,7 @@ class LLMMatcher:
                 covered_components=covered_components,
                 excluded_components=excluded_components,
                 covered_parts_in_claim=covered_parts_in_claim,
+                repair_description=repair_context_description,
             )
 
             client = self._get_client()
@@ -853,19 +793,10 @@ class LLMMatcher:
                     for j, (llm_result, item) in enumerate(zip(batch_results, batch_items)):
                         confidence = llm_result.confidence
                         reasoning = llm_result.reasoning
-                        vague_capped = False
-
-                        # Vague description confidence capping
                         description = item.get("description", "")
-                        if self._detect_vague_description(description) and confidence > 0.50:
-                            confidence = 0.50
-                            vague_capped = True
-                            reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
 
-                        # Asymmetric thresholds
-                        if llm_result.is_covered and confidence < self.config.review_needed_threshold:
-                            status = CoverageStatus.REVIEW_NEEDED
-                        elif not llm_result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
+                        # Single low threshold: below 0.40 triggers human review
+                        if confidence < self.config.review_needed_threshold:
                             status = CoverageStatus.REVIEW_NEEDED
                         elif llm_result.is_covered:
                             status = CoverageStatus.COVERED
@@ -887,9 +818,6 @@ class LLMMatcher:
                             trace_detail["completion_tokens"] = getattr(usage, "completion_tokens", None)
                         if call_id:
                             trace_detail["call_id"] = call_id
-                        if vague_capped:
-                            trace_detail["vague_description_cap"] = True
-                            trace_detail["raw_confidence"] = llm_result.confidence
                         if attempt > 0:
                             trace_detail["retries"] = attempt
 
@@ -1038,6 +966,7 @@ class LLMMatcher:
         covered_components: Dict[str, List[str]],
         excluded_components: Optional[Dict[str, List[str]]] = None,
         covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_description: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Build prompt messages for batch coverage classification.
 
@@ -1053,6 +982,8 @@ class LLMMatcher:
             covered_components: Policy's covered components by category.
             excluded_components: Excluded components by category.
             covered_parts_in_claim: Covered parts from prior rule stage.
+            repair_description: Global repair/damage description from claim
+                documents (error codes, fault descriptions, repair reason).
 
         Returns:
             List of message dicts for the OpenAI API.
@@ -1088,6 +1019,7 @@ class LLMMatcher:
             covered_parts_in_claim=covered_parts_in_claim or [],
             items_text=items_text,
             item_count=len(items),
+            repair_description=repair_description or "",
         )
         return prompt_data["messages"]
 
@@ -1754,12 +1686,26 @@ class LLMMatcher:
                 )
                 return None
 
+            # Parse root cause (defaults to primary if not provided)
+            root_cause_idx = data.get("root_cause_item_index")
+            if root_cause_idx is not None:
+                root_cause_idx = int(root_cause_idx)
+                if root_cause_idx < 0 or root_cause_idx >= len(all_items):
+                    logger.warning(
+                        "LLM returned out-of-range root_cause_item_index=%d, ignoring",
+                        root_cause_idx,
+                    )
+                    root_cause_idx = None
+
             return {
                 "primary_item_index": primary_index,
                 "component": data.get("component"),
                 "category": data.get("category"),
                 "confidence": float(data.get("confidence", 0.5)),
                 "reasoning": data.get("reasoning", "No reasoning provided"),
+                "root_cause_item_index": root_cause_idx,
+                "root_cause_component": data.get("root_cause_component"),
+                "root_cause_category": data.get("root_cause_category"),
             }
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
