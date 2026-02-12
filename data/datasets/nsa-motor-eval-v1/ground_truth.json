@@ -1,15 +1,17 @@
 {
   "metadata": {
     "total_claims": 50,
-    "approved_count": 24,
-    "denied_count": 25,
+    "approved_count": 22,
+    "denied_count": 27,
     "referred_count": 1,
     "source": "Claim_Decision_for_Claim_Number_*.pdf",
     "ground_truth_schema": "v2",
     "enriched_from": "provenance decision PDFs",
     "enriched_date": "2026-02-11",
     "change_log": [
-      "2026-02-11: claim 64297 changed from APPROVED to REFER_TO_HUMAN (no odometer reading in claim docs)"
+      "2026-02-11: claim 64297 changed from APPROVED to REFER_TO_HUMAN (no odometer reading in claim docs)",
+      "2026-02-12: claim 65047 changed from APPROVED to DENIED (goodwill gesture, system cannot account for discretionary payments)",
+      "2026-02-12: claim 65055 changed from APPROVED to DENIED (primary component timing belt/chain explicitly excluded by policy)"
     ]
   },
   "claims": [
@@ -523,7 +525,7 @@
     },
     {
       "claim_id": "65047",
-      "decision": "APPROVED",
+      "decision": "DENIED",
       "language": "fr",
       "date": "07/01/2026",
       "guarantee_number": "611840",
@@ -536,8 +538,8 @@
       "deductible": null,
       "total_approved_amount": 692.05,
       "currency": "CHF",
-      "coverage_notes": "5Q1953521KSIGI CONTACTEUR - sur la base de la bonne volonté. Geste commercial de 692,05 CHF.",
-      "denial_reason": null
+      "coverage_notes": "5Q1953521KSIGI CONTACTEUR - sur la base de la bonne volonte. Geste commercial de 692,05 CHF. Changed to DENIED in ground truth: goodwill gestures are outside automated coverage scope.",
+      "denial_reason": "Goodwill gesture (geste commercial) - not a coverage decision; system cannot account for discretionary payments"
     },
     {
       "claim_id": "65052",
@@ -573,7 +575,7 @@
     },
     {
       "claim_id": "65055",
-      "decision": "APPROVED",
+      "decision": "DENIED",
       "language": "fr",
       "date": "12/01/2026",
       "guarantee_number": "586453",
@@ -589,7 +591,7 @@
       "currency": "CHF",
       "reimbursement_rate_pct": 40,
       "coverage_notes": "Pas d'indemnisation pour le positions barrées non couvert. Les pièces et de la main-d'oeuvre sont couverts selon l'échelle suivante: Plus que 110 000 Km = 40%",
-      "denial_reason": null
+      "denial_reason": "Primary component (courroie/chaine de distribution) explicitly excluded by policy: Ensemble de distribution (y compris courroie et chaine). Human approved other items via partial approval - outside automated scope."
     },
     {
       "claim_id": "65056",

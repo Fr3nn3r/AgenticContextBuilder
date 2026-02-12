@@ -676,7 +676,7 @@ class TestDossierStructure:
         assert dossier.claim_id == "CLM-001"
         assert dossier.version == 1
         assert dossier.engine_id == "nsa_decision_v1"
-        assert dossier.engine_version == "1.3.0"
+        assert dossier.engine_version == "1.4.0"
         assert dossier.evaluation_timestamp
 
     def test_dossier_evaluates_all_enabled_clauses(self, engine):
@@ -824,6 +824,157 @@ class TestScreeningHelpers:
 
     def test_get_fact_value_none_facts(self, engine):
         assert engine._get_fact_value(None, "mileage") is None
+
+
+class TestAssessmentVerdictOverrides:
+    """Test decision engine honoring assessment hard fails and auto-rejects."""
+
+    def test_auto_reject_assessment_produces_deny(self, engine):
+        """assessment_method='auto_reject' in processing_result -> DENY."""
+        processing_result = {
+            "assessment_method": "auto_reject",
+            "recommendation": "REJECT",
+            "recommendation_rationale": "Mileage exceeds policy limit (250,000 km vs 200,000 km cap).",
+            "checks": [],
+        }
+        dossier = engine.evaluate(
+            claim_id="CLM-AUTOREJECT",
+            aggregated_facts={},
+            processing_result=processing_result,
+        )
+        assert dossier.claim_verdict.value == "DENY"
+        assert "Mileage exceeds" in dossier.verdict_reason
+
+    def test_hard_check_fail_with_reject_produces_deny(self, engine):
+        """REJECT recommendation + hard check failure(s) -> DENY."""
+        processing_result = {
+            "recommendation": "REJECT",
+            "recommendation_rationale": "Component not covered under policy.",
+            "checks": [
+                {
+                    "check_number": "5",
+                    "check_name": "component_coverage",
+                    "result": "FAIL",
+                    "reason": "EGR valve is not a covered component",
+                },
+                {
+                    "check_number": "4b",
+                    "check_name": "shop_proximity",
+                    "result": "FAIL",
+                    "reason": "Shop not in network",
+                },
+            ],
+        }
+        dossier = engine.evaluate(
+            claim_id="CLM-HARDFAIL",
+            aggregated_facts={},
+            processing_result=processing_result,
+        )
+        assert dossier.claim_verdict.value == "DENY"
+        assert "hard check failure" in dossier.verdict_reason
+        assert "component_coverage" in dossier.verdict_reason
+
+    def test_soft_check_only_still_approves(self, engine):
+        """REJECT + only soft check failures (4b) -> APPROVE (no regression)."""
+        processing_result = {
+            "recommendation": "REJECT",
+            "checks": [
+                {
+                    "check_number": "4b",
+                    "check_name": "shop_proximity",
+                    "result": "FAIL",
+                    "reason": "Shop not in network",
+                },
+            ],
+        }
+        dossier = engine.evaluate(
+            claim_id="CLM-SOFTONLY",
+            aggregated_facts={},
+            processing_result=processing_result,
+        )
+        assert dossier.claim_verdict.value == "APPROVE"
+        assert "soft check" in dossier.verdict_reason.lower()
+
+    def test_all_line_items_denied_produces_deny(self, engine):
+        """total_covered=0 with total_claimed>0 -> DENY.
+
+        Uses component_not_in_list exclusion (maps to 2.4.A.b, category
+        'limitation') so that clause-level hard deny (step 1) does not
+        fire before step 5.
+        """
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "EGR valve",
+                "item_type": "parts",
+                "total_price": 850.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 850.0,
+                "exclusion_reason": "component_not_in_list",
+            },
+            {
+                "description": "Labor EGR replacement",
+                "item_type": "labor",
+                "total_price": 300.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 300.0,
+                "exclusion_reason": "component_not_in_list",
+            },
+        ])
+        dossier = engine.evaluate(
+            claim_id="CLM-ALLDENIED",
+            aggregated_facts={},
+            coverage_analysis=coverage,
+        )
+        assert dossier.claim_verdict.value == "DENY"
+        assert "All line items denied" in dossier.verdict_reason
+        assert "1,150.00" in dossier.verdict_reason
+
+    def test_mixed_items_with_some_covered_still_approves(self, engine):
+        """Claim with at least one covered item should not trigger all-denied check."""
+        coverage = _make_coverage(line_items=[
+            {
+                "description": "Turbo replacement",
+                "item_type": "parts",
+                "item_code": "TRB-001",
+                "total_price": 2500.0,
+                "coverage_status": "covered",
+                "covered_amount": 2500.0,
+                "not_covered_amount": 0.0,
+            },
+            {
+                "description": "Admin fee",
+                "item_type": "fee",
+                "total_price": 50.0,
+                "coverage_status": "not_covered",
+                "covered_amount": 0.0,
+                "not_covered_amount": 50.0,
+                "exclusion_reason": "fee",
+            },
+        ])
+        dossier = engine.evaluate(
+            claim_id="CLM-MIXED",
+            aggregated_facts={},
+            coverage_analysis=coverage,
+        )
+        assert dossier.claim_verdict.value == "APPROVE"
+
+    def test_auto_reject_rationale_in_reason(self, engine):
+        """Auto-reject reason includes the rationale from processing_result."""
+        processing_result = {
+            "assessment_method": "auto_reject",
+            "recommendation": "REJECT",
+            "recommendation_rationale": "Policy expired before damage date.",
+            "checks": [],
+        }
+        dossier = engine.evaluate(
+            claim_id="CLM-AR2",
+            aggregated_facts={},
+            processing_result=processing_result,
+        )
+        assert dossier.claim_verdict.value == "DENY"
+        assert "Policy expired before damage date" in dossier.verdict_reason
 
 
 class TestCoverageExclusionMapping:

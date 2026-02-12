@@ -58,6 +58,10 @@ class LLMMatcherConfig:
     classify_prompt_name: str = "coverage_classify"
     # Prompt file for labor linkage classification (without .md)
     labor_linkage_prompt_name: str = "labor_linkage"
+    # Prompt file for batch coverage classification (without .md)
+    batch_classify_prompt_name: str = "coverage_classify_batch"
+    # Number of items per LLM call in batch classification
+    classification_batch_size: int = 15
 
     # Descriptions too vague for confident coverage determination.
     # Matched (uppercased) to trigger confidence capping.
@@ -94,6 +98,8 @@ class LLMMatcherConfig:
             primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
             classify_prompt_name=config.get("classify_prompt_name", "coverage_classify"),
             labor_linkage_prompt_name=config.get("labor_linkage_prompt_name", "labor_linkage"),
+            batch_classify_prompt_name=config.get("batch_classify_prompt_name", "coverage_classify_batch"),
+            classification_batch_size=config.get("classification_batch_size", 15),
         )
         if vague is not None:
             kwargs["vague_description_terms"] = vague
@@ -109,6 +115,9 @@ class LLMMatchResult:
     matched_component: Optional[str]
     confidence: float
     reasoning: str
+    component_identified: Optional[str] = None
+    vehicle_system: Optional[str] = None
+    closest_policy_match: Optional[str] = None
 
 
 class LLMMatcher:
@@ -259,6 +268,9 @@ Determine if this item is covered under the policy."""
                 matched_component=data.get("matched_component"),
                 confidence=float(data.get("confidence", 0.5)),
                 reasoning=data.get("reasoning", "No reasoning provided"),
+                component_identified=data.get("component_identified"),
+                vehicle_system=data.get("vehicle_system"),
+                closest_policy_match=data.get("closest_policy_match"),
             )
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning(f"Failed to parse LLM response: {e}")
@@ -730,9 +742,11 @@ Determine if this item is covered under the policy."""
     ) -> List[LineItemCoverage]:
         """Classify ALL items using the LLM with keyword/part-number hints.
 
-        Unlike ``batch_match()`` which is a fallback for unmatched items,
-        this method is designed as the primary classification stage.  Each
-        item's prompt is enriched with advisory hints from the keyword
+        Batches multiple items into a single LLM call (batch size
+        controlled by ``classification_batch_size``, default 15).
+        For 100 items this means ~7 calls instead of 100.
+
+        Each item's prompt is enriched with advisory hints from the keyword
         matcher and part-number lookup, giving the LLM more context
         without those matchers making coverage decisions.
 
@@ -746,7 +760,7 @@ Determine if this item is covered under the policy."""
             part_number_hints: Parallel list of part-number hint dicts
                 (or None per item) from ``PartNumberLookup.lookup_as_hint()``.
             claim_id: Claim ID for audit trail.
-            on_progress: Callback after each LLM call (increment=1).
+            on_progress: Callback after each batch LLM call (increment=batch size).
             covered_parts_in_claim: Covered parts from prior rule stage.
             repair_context_description: Global repair context description.
 
@@ -757,11 +771,8 @@ Determine if this item is covered under the policy."""
             return []
 
         excluded_components = excluded_components or {}
-        covered_categories = list(covered_components.keys())
 
-        # Enrich each item dict with hint context before passing to _match_single.
-        # We inject hints into the repair_context_description field which the
-        # prompt builder already embeds in the user message.
+        # Enrich each item dict with hint context.
         enriched_items: List[Dict[str, Any]] = []
         for i, item in enumerate(items):
             enriched = dict(item)  # shallow copy
@@ -811,23 +822,453 @@ Determine if this item is covered under the policy."""
 
             enriched_items.append(enriched)
 
-        # Use the classify-specific prompt template for LLM-first mode.
-        # Temporarily swap prompt_name so _build_prompt_messages picks up
-        # the new template, then restore the original after the batch call.
-        original_prompt_name = self.config.prompt_name
-        self.config.prompt_name = self.config.classify_prompt_name
+        # Chunk into batches
+        batch_size = max(1, self.config.classification_batch_size)
+        batches: List[List[Dict[str, Any]]] = []
+        batch_offsets: List[int] = []  # global offset of each batch
+        for start in range(0, len(enriched_items), batch_size):
+            batches.append(enriched_items[start : start + batch_size])
+            batch_offsets.append(start)
+
+        logger.info(
+            "classify_items: %d items -> %d batches (size %d) for claim %s",
+            len(items), len(batches), batch_size, claim_id,
+        )
+
+        # Process batches (parallel when >1 batch and max_concurrent > 1)
+        all_results: List[Optional[LineItemCoverage]] = [None] * len(items)
+
+        def _process_batch(
+            batch_items: List[Dict[str, Any]],
+            global_offset: int,
+        ) -> List[LineItemCoverage]:
+            """Process a single batch: build prompt, call LLM, parse, post-process."""
+            messages = self._build_batch_classify_prompt(
+                items=batch_items,
+                covered_components=covered_components,
+                excluded_components=excluded_components,
+                covered_parts_in_claim=covered_parts_in_claim,
+            )
+
+            client = self._get_client()
+            client.set_context(
+                claim_id=claim_id,
+                call_purpose="coverage_batch_classification",
+            )
+
+            # Retry loop
+            last_error = None
+            max_attempts = max(1, self.config.max_retries)
+
+            for attempt in range(max_attempts):
+                try:
+                    if attempt > 0:
+                        last_call_id = getattr(client, "get_last_call_id", lambda: None)()
+                        if last_call_id and hasattr(client, "mark_retry"):
+                            client.mark_retry(last_call_id)
+
+                    response = client.chat_completions_create(
+                        model=self.config.model,
+                        messages=messages,
+                        temperature=self.config.temperature,
+                        max_tokens=2048,
+                        response_format={"type": "json_object"},
+                    )
+                    self._llm_calls += 1
+
+                    content = response.choices[0].message.content
+                    batch_results = self._parse_batch_classify_response(
+                        content, batch_items,
+                    )
+
+                    # Extract token usage
+                    usage = getattr(response, "usage", None)
+                    call_id_fn = getattr(client, "get_last_call_id", None)
+                    call_id = call_id_fn() if call_id_fn else None
+
+                    # Convert LLMMatchResults to LineItemCoverage with post-processing
+                    coverages: List[LineItemCoverage] = []
+                    for j, (llm_result, item) in enumerate(zip(batch_results, batch_items)):
+                        confidence = llm_result.confidence
+                        reasoning = llm_result.reasoning
+                        vague_capped = False
+
+                        # Vague description confidence capping
+                        description = item.get("description", "")
+                        if self._detect_vague_description(description) and confidence > 0.50:
+                            confidence = 0.50
+                            vague_capped = True
+                            reasoning = f"{reasoning} [Confidence capped: description too vague for confident determination]"
+
+                        # Asymmetric thresholds
+                        if llm_result.is_covered and confidence < self.config.review_needed_threshold:
+                            status = CoverageStatus.REVIEW_NEEDED
+                        elif not llm_result.is_covered and confidence < self.config.review_needed_threshold_not_covered:
+                            status = CoverageStatus.REVIEW_NEEDED
+                        elif llm_result.is_covered:
+                            status = CoverageStatus.COVERED
+                        else:
+                            status = CoverageStatus.NOT_COVERED
+
+                        if attempt > 0:
+                            reasoning += f" [Succeeded on attempt {attempt + 1}]"
+
+                        # Build trace
+                        tb = TraceBuilder()
+                        trace_detail: Dict[str, Any] = {
+                            "model": self.config.model,
+                            "batch_index": j,
+                            "batch_size": len(batch_items),
+                        }
+                        if usage:
+                            trace_detail["prompt_tokens"] = getattr(usage, "prompt_tokens", None)
+                            trace_detail["completion_tokens"] = getattr(usage, "completion_tokens", None)
+                        if call_id:
+                            trace_detail["call_id"] = call_id
+                        if vague_capped:
+                            trace_detail["vague_description_cap"] = True
+                            trace_detail["raw_confidence"] = llm_result.confidence
+                        if attempt > 0:
+                            trace_detail["retries"] = attempt
+
+                        tb.add("llm", TraceAction.MATCHED, reasoning,
+                               verdict=status, confidence=confidence,
+                               detail=trace_detail,
+                               decision_source=DecisionSource.LLM)
+
+                        total_price = item.get("total_price") or 0.0
+                        coverages.append(LineItemCoverage(
+                            item_code=item.get("item_code"),
+                            description=description,
+                            item_type=item.get("item_type", ""),
+                            total_price=total_price,
+                            coverage_status=status,
+                            coverage_category=llm_result.category,
+                            matched_component=llm_result.matched_component,
+                            match_method=MatchMethod.LLM,
+                            match_confidence=confidence,
+                            match_reasoning=reasoning,
+                            decision_trace=tb.build(),
+                            covered_amount=total_price if status == CoverageStatus.COVERED else 0.0,
+                            not_covered_amount=0.0 if status == CoverageStatus.COVERED else total_price,
+                        ))
+
+                    return coverages
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_attempts - 1:
+                        base_delay = min(
+                            self.config.retry_base_delay * (2 ** attempt),
+                            self.config.retry_max_delay,
+                        )
+                        delay = random.uniform(0, base_delay)
+                        logger.warning(
+                            "Batch classify LLM call failed (attempt %d/%d, "
+                            "%d items): %s. Retrying in %.1fs...",
+                            attempt + 1, max_attempts, len(batch_items), e, delay,
+                        )
+                        time.sleep(delay)
+                    else:
+                        logger.error(
+                            "Batch classify failed after %d attempts (%d items): %s",
+                            max_attempts, len(batch_items), e,
+                        )
+
+            # All retries exhausted -- return REVIEW_NEEDED for all items
+            self._llm_calls += 1
+            fail_coverages: List[LineItemCoverage] = []
+            for item in batch_items:
+                fail_tb = TraceBuilder()
+                fail_tb.add("llm", TraceAction.SKIPPED,
+                            f"Batch LLM call failed after {max_attempts} attempts: {str(last_error)}",
+                            verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
+                            detail={"reason": "llm_batch_error", "retries": max_attempts,
+                                    "model": self.config.model},
+                            decision_source=DecisionSource.LLM)
+                total_price = item.get("total_price") or 0.0
+                fail_coverages.append(LineItemCoverage(
+                    item_code=item.get("item_code"),
+                    description=item.get("description", ""),
+                    item_type=item.get("item_type", ""),
+                    total_price=total_price,
+                    coverage_status=CoverageStatus.REVIEW_NEEDED,
+                    coverage_category=None,
+                    matched_component=None,
+                    match_method=MatchMethod.LLM,
+                    match_confidence=0.0,
+                    match_reasoning=f"Batch LLM call failed after {max_attempts} attempts: {str(last_error)}",
+                    decision_trace=fail_tb.build(),
+                    covered_amount=0.0,
+                    not_covered_amount=total_price,
+                ))
+            return fail_coverages
+
+        # Execute batches
+        if len(batches) <= 1 or self.config.max_concurrent <= 1:
+            # Sequential execution
+            for batch_idx, (batch_items, offset) in enumerate(zip(batches, batch_offsets)):
+                batch_coverages = _process_batch(batch_items, offset)
+                for j, cov in enumerate(batch_coverages):
+                    all_results[offset + j] = cov
+                if on_progress:
+                    on_progress(len(batch_items))
+        else:
+            # Parallel execution
+            call_count_lock = threading.Lock()
+            progress_lock = threading.Lock()
+
+            def _run_batch(batch_idx: int) -> Tuple[int, List[LineItemCoverage]]:
+                result = _process_batch(batches[batch_idx], batch_offsets[batch_idx])
+                if on_progress:
+                    with progress_lock:
+                        on_progress(len(batches[batch_idx]))
+                return batch_idx, result
+
+            max_workers = min(self.config.max_concurrent, len(batches))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(_run_batch, bi): bi
+                    for bi in range(len(batches))
+                }
+                for future in as_completed(futures):
+                    bi = futures[future]
+                    try:
+                        _, batch_coverages = future.result()
+                        offset = batch_offsets[bi]
+                        for j, cov in enumerate(batch_coverages):
+                            all_results[offset + j] = cov
+                    except Exception as e:
+                        logger.error("Unexpected error in parallel batch %d: %s", bi, e)
+                        offset = batch_offsets[bi]
+                        for j, item in enumerate(batches[bi]):
+                            fail_tb = TraceBuilder()
+                            fail_tb.add("llm", TraceAction.SKIPPED,
+                                        f"Parallel batch failed: {str(e)}",
+                                        verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
+                                        decision_source=DecisionSource.LLM)
+                            total_price = item.get("total_price") or 0.0
+                            all_results[offset + j] = LineItemCoverage(
+                                item_code=item.get("item_code"),
+                                description=item.get("description", ""),
+                                item_type=item.get("item_type", ""),
+                                total_price=total_price,
+                                coverage_status=CoverageStatus.REVIEW_NEEDED,
+                                coverage_category=None,
+                                matched_component=None,
+                                match_method=MatchMethod.LLM,
+                                match_confidence=0.0,
+                                match_reasoning=f"Parallel batch failed: {str(e)}",
+                                decision_trace=fail_tb.build(),
+                                covered_amount=0.0,
+                                not_covered_amount=total_price,
+                            )
+
+        logger.info(
+            "classify_items complete: %d items in %d batches, %d LLM calls",
+            len(items), len(batches), self._llm_calls,
+        )
+        return all_results
+
+    def _build_batch_classify_prompt(
+        self,
+        items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        """Build prompt messages for batch coverage classification.
+
+        Sends multiple items in a single LLM call. The system message
+        contains the full policy matrix (sent once per batch), and the
+        user message contains a numbered list of items with per-item hints.
+
+        Tries workspace prompt file first, then inline fallback.
+
+        Args:
+            items: List of enriched item dicts (description, item_type,
+                   item_code, total_price, repair_context_description).
+            covered_components: Policy's covered components by category.
+            excluded_components: Excluded components by category.
+            covered_parts_in_claim: Covered parts from prior rule stage.
+
+        Returns:
+            List of message dicts for the OpenAI API.
+        """
+        excluded_components = excluded_components or {}
+        covered_categories = list(covered_components.keys())
+
+        # Format items as a numbered list
+        item_lines = []
+        for i, item in enumerate(items):
+            desc = item.get("description", "")
+            itype = item.get("item_type", "unknown")
+            price = item.get("total_price", 0)
+            code = item.get("item_code") or "N/A"
+            ctx = item.get("repair_context_description") or ""
+
+            line = (
+                f"  [{i}] description=\"{desc}\" | type={itype} | "
+                f"code={code} | price={price:.2f} CHF"
+            )
+            if ctx:
+                line += f"\n       hints: {ctx}"
+            item_lines.append(line)
+        items_text = "\n".join(item_lines)
+
         try:
-            return self.batch_match(
-                items=enriched_items,
+            from context_builder.utils.prompt_loader import load_prompt
+
+            prompt_data = load_prompt(
+                self.config.batch_classify_prompt_name,
                 covered_categories=covered_categories,
                 covered_components=covered_components,
                 excluded_components=excluded_components,
-                claim_id=claim_id,
-                on_progress=on_progress,
-                covered_parts_in_claim=covered_parts_in_claim,
+                covered_parts_in_claim=covered_parts_in_claim or [],
+                items_text=items_text,
+                item_count=len(items),
             )
-        finally:
-            self.config.prompt_name = original_prompt_name
+            return prompt_data["messages"]
+        except FileNotFoundError:
+            logger.debug(
+                "Prompt file '%s' not found, using inline batch classify prompt",
+                self.config.batch_classify_prompt_name,
+            )
+
+        # Inline fallback
+        components_text = ""
+        for category, parts in covered_components.items():
+            if parts:
+                parts_list = ", ".join(parts[:15])
+                if len(parts) > 15:
+                    parts_list += f", ... ({len(parts)} total)"
+                components_text += f"- {category}: {parts_list}\n"
+
+        excluded_text = ""
+        if excluded_components:
+            for category, parts in excluded_components.items():
+                if parts:
+                    excluded_text += f"- {category}: {', '.join(parts)}\n"
+
+        covered_parts_text = ""
+        if covered_parts_in_claim:
+            for part in covered_parts_in_claim:
+                comp_str = f" ({part['matched_component']})" if part.get("matched_component") else ""
+                covered_parts_text += f"- Part #{part.get('item_code', 'N/A')}: {part.get('description', '')}{comp_str}\n"
+
+        system_prompt = (
+            "You are an automotive insurance coverage analyst.\n"
+            "Your task is to determine if EACH repair line item is covered "
+            "under the policy.\n\n"
+            "**Covered Categories:** {categories}\n\n"
+            "**Covered Components by Category:**\n{components}\n"
+            "{excluded_block}"
+            "{covered_parts_block}"
+            "**Rules:**\n"
+            "1. Parts/labor that relate to covered components are COVERED\n"
+            "2. Consumables (oil, filters, fluids) are NOT COVERED\n"
+            "3. Environmental/disposal fees are NOT COVERED\n"
+            "4. Rental car fees are NOT COVERED\n"
+            "5. Diagnostic labor for covered components IS COVERED\n"
+            "6. Small fasteners accompanying a covered repair ARE COVERED\n\n"
+            "Respond ONLY with valid JSON in this format:\n"
+            '{{"items": [{{"index": 0, "is_covered": true, "category": "engine", '
+            '"matched_component": "Motor", "confidence": 0.85, '
+            '"reasoning": "brief explanation"}}, ...]}}\n\n'
+            "Return one entry per item. Use the index from the item list."
+        ).format(
+            categories=", ".join(covered_categories),
+            components=components_text or "No specific components listed\n",
+            excluded_block=(
+                f"\n**EXCLUDED (NOT covered):**\n{excluded_text}\n"
+                if excluded_text else ""
+            ),
+            covered_parts_block=(
+                f"\n**Covered parts already identified in this repair:**\n"
+                f"{covered_parts_text}\n"
+                if covered_parts_text else ""
+            ),
+        )
+
+        user_prompt = (
+            f"Analyze these {len(items)} repair line items for coverage.\n"
+            f"For each item, determine if it is covered under the policy.\n"
+            f"Per-item hints (if any) are advisory -- make your own determination.\n\n"
+            f"Items:\n{items_text}\n\n"
+            f"Return JSON with an entry for each item."
+        )
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_batch_classify_response(
+        self,
+        content: str,
+        items: List[Dict[str, Any]],
+    ) -> List[LLMMatchResult]:
+        """Parse the LLM response for batch coverage classification.
+
+        Args:
+            content: Raw JSON response from LLM.
+            items: Original items (for index reference / fallback).
+
+        Returns:
+            List of LLMMatchResult in same order as input items.
+            Missing indices get REVIEW_NEEDED defaults.
+        """
+        try:
+            # Handle markdown code blocks
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            data = json.loads(content.strip())
+            llm_results = data.get("items", [])
+
+            # Index results by their index field
+            by_index: Dict[int, Dict[str, Any]] = {}
+            for r in llm_results:
+                idx = r.get("index")
+                if idx is not None:
+                    by_index[int(idx)] = r
+
+            results: List[LLMMatchResult] = []
+            for i in range(len(items)):
+                if i in by_index:
+                    r = by_index[i]
+                    results.append(LLMMatchResult(
+                        is_covered=bool(r.get("is_covered", False)),
+                        category=r.get("category"),
+                        matched_component=r.get("matched_component"),
+                        confidence=float(r.get("confidence", 0.5)),
+                        reasoning=r.get("reasoning", "No reasoning provided"),
+                    ))
+                else:
+                    results.append(LLMMatchResult(
+                        is_covered=False,
+                        category=None,
+                        matched_component=None,
+                        confidence=0.0,
+                        reasoning="Missing from LLM batch response (conservative default)",
+                    ))
+
+            return results
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Failed to parse batch classify response: %s", e)
+            return [
+                LLMMatchResult(
+                    is_covered=False,
+                    category=None,
+                    matched_component=None,
+                    confidence=0.0,
+                    reasoning=f"Failed to parse batch LLM response: {str(e)[:200]}",
+                )
+                for _ in items
+            ]
 
     # ------------------------------------------------------------------
     # LLM labor linkage (links labor items to parts)

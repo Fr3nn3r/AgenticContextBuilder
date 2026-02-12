@@ -165,8 +165,10 @@ class AnalyzerConfig:
     # Whether to use LLM fallback for unmatched items
     use_llm_fallback: bool = True
 
-    # Maximum items to process with LLM (cost control)
-    llm_max_items: int = 35
+    # Items per LLM call in batch classification (default 15).
+    # All items are classified -- no hard cap.  The batching is handled
+    # inside classify_items(); this value is forwarded to LLMMatcherConfig.
+    llm_classification_batch_size: int = 15
 
     # Max concurrent LLM calls (1 = sequential, >1 = parallel)
     llm_max_concurrent: int = 3
@@ -194,7 +196,10 @@ class AnalyzerConfig:
         kwargs: Dict[str, Any] = dict(
             keyword_min_confidence=config.get("keyword_min_confidence", 0.80),
             use_llm_fallback=config.get("use_llm_fallback", True),
-            llm_max_items=config.get("llm_max_items", 35),
+            llm_classification_batch_size=config.get(
+                "llm_classification_batch_size",
+                config.get("llm_max_items", 15),  # backwards-compat with old key
+            ),
             llm_max_concurrent=config.get("llm_max_concurrent", 3),
             config_version=config.get("config_version", "1.0"),
             default_coverage_percent=config.get("default_coverage_percent"),
@@ -315,6 +320,8 @@ class CoverageAnalyzer:
         keyword_config = KeywordConfig.from_dict(keyword_data)
 
         llm_config = LLMMatcherConfig.from_dict(config_data.get("llm", {}))
+        # Forward batch size from analyzer config to LLM config
+        llm_config.classification_batch_size = analyzer_config.llm_classification_batch_size
 
         # Load component config from sibling *_component_config.yaml
         comp_config = ComponentConfig.default()
@@ -1545,100 +1552,63 @@ class CoverageAnalyzer:
         part_matched = []  # No part-number-level decisions in LLM-first mode
 
         if remaining and self.config.use_llm_fallback:
-            # Limit LLM calls
-            items_for_llm = remaining[: self.config.llm_max_items]
-            hints_for_llm = keyword_hints[: self.config.llm_max_items]
-            pn_hints_for_llm = part_number_hints[: self.config.llm_max_items]
-            skipped = remaining[self.config.llm_max_items :]
-
-            if len(remaining) > self.config.llm_max_items:
-                logger.warning(
-                    f"LLM item limit exceeded: {len(remaining)} items need LLM processing "
-                    f"but limit is {self.config.llm_max_items}. "
-                    f"{len(skipped)} items will be skipped and marked as review_needed."
+            if self.llm_matcher is None:
+                self.llm_matcher = LLMMatcher(
+                    config=LLMMatcherConfig(
+                        max_concurrent=self.config.llm_max_concurrent,
+                        classification_batch_size=self.config.llm_classification_batch_size,
+                    ),
                 )
 
-            if items_for_llm:
-                if self.llm_matcher is None:
-                    self.llm_matcher = LLMMatcher(
-                        config=LLMMatcherConfig(max_concurrent=self.config.llm_max_concurrent),
+            if on_llm_start:
+                on_llm_start(len(remaining))
+
+            # Collect covered parts from rule stage for LLM context
+            covered_parts_in_claim = []
+            for item in rule_matched:
+                if (
+                    item.coverage_status == CoverageStatus.COVERED
+                    and item.item_type in ("parts", "part", "piece")
+                ):
+                    covered_parts_in_claim.append({
+                        "item_code": item.item_code or "",
+                        "description": item.description,
+                        "matched_component": item.matched_component or "",
+                    })
+
+            # Enrich items with repair context description
+            labor_context_desc = repair_context.source_description
+            for item in remaining:
+                if not item.get("repair_context_description"):
+                    item["repair_context_description"] = (
+                        item.get("repair_description")
+                        or labor_context_desc
+                        or None
                     )
 
-                if on_llm_start:
-                    on_llm_start(len(items_for_llm))
+            llm_matched = self.llm_matcher.classify_items(
+                items=remaining,
+                covered_components=covered_components,
+                excluded_components=excluded_components,
+                keyword_hints=keyword_hints,
+                part_number_hints=part_number_hints,
+                claim_id=claim_id,
+                on_progress=on_llm_progress,
+                covered_parts_in_claim=covered_parts_in_claim,
+                repair_context_description=labor_context_desc,
+            )
 
-                # Collect covered parts from rule stage for LLM context
-                covered_parts_in_claim = []
-                for item in rule_matched:
-                    if (
-                        item.coverage_status == CoverageStatus.COVERED
-                        and item.item_type in ("parts", "part", "piece")
-                    ):
-                        covered_parts_in_claim.append({
-                            "item_code": item.item_code or "",
-                            "description": item.description,
-                            "matched_component": item.matched_component or "",
-                        })
-
-                # Enrich items with repair context description
-                labor_context_desc = repair_context.source_description
-                for item in items_for_llm:
-                    if not item.get("repair_context_description"):
-                        item["repair_context_description"] = (
-                            item.get("repair_description")
-                            or labor_context_desc
-                            or None
-                        )
-
-                llm_matched = self.llm_matcher.classify_items(
-                    items=items_for_llm,
-                    covered_components=covered_components,
-                    excluded_components=excluded_components,
-                    keyword_hints=hints_for_llm,
-                    part_number_hints=pn_hints_for_llm,
-                    claim_id=claim_id,
-                    on_progress=on_llm_progress,
-                    covered_parts_in_claim=covered_parts_in_claim,
-                    repair_context_description=labor_context_desc,
+            # Validate LLM decisions against explicit policy lists
+            llm_matched = [
+                validate_llm_coverage_decision(
+                    item, covered_components, excluded_components,
+                    repair_context=repair_context,
+                    is_in_excluded_list=self._is_in_excluded_list,
+                    is_system_covered=self._is_system_covered,
+                    ancillary_keywords=self.component_config.ancillary_keywords,
                 )
-
-                # Validate LLM decisions against explicit policy lists
-                llm_matched = [
-                    validate_llm_coverage_decision(
-                        item, covered_components, excluded_components,
-                        repair_context=repair_context,
-                        is_in_excluded_list=self._is_in_excluded_list,
-                        is_system_covered=self._is_system_covered,
-                        ancillary_keywords=self.component_config.ancillary_keywords,
-                    )
-                    for item in llm_matched
-                ]
-
-            # Mark skipped items as review needed
-            for item in skipped:
-                skip_tb = TraceBuilder()
-                skip_tb.add("llm", TraceAction.SKIPPED,
-                            "Skipped due to LLM item limit",
-                            verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.0,
-                            detail={"reason": "llm_item_limit", "limit": self.config.llm_max_items},
-                            decision_source=DecisionSource.LLM)
-                llm_matched.append(
-                    LineItemCoverage(
-                        item_code=item.get("item_code"),
-                        description=item.get("description", ""),
-                        item_type=item.get("item_type", ""),
-                        total_price=item.get("total_price") or 0.0,
-                        coverage_status=CoverageStatus.REVIEW_NEEDED,
-                        coverage_category=None,
-                        matched_component=None,
-                        match_method=MatchMethod.LLM,
-                        match_confidence=0.0,
-                        match_reasoning="Skipped due to LLM item limit",
-                        decision_trace=skip_tb.build(),
-                        covered_amount=0.0,
-                        not_covered_amount=item.get("total_price") or 0.0,
-                    )
-                )
+                for item in llm_matched
+            ]
         elif remaining:
             # LLM disabled, mark all remaining as review needed
             for item in remaining:

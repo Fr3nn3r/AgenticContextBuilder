@@ -310,6 +310,20 @@ class AssessmentProcessor:
             {"role": "user", "content": user_prompt},
         ]
 
+        # Signal LLM call start for progress reporting
+        if context.on_llm_start:
+            try:
+                context.on_llm_start(1)
+            except Exception:
+                pass
+
+        # Build retry callback to update stage description on retries
+        def _on_retry(attempt: int, total: int) -> None:
+            if context.on_stage_update:
+                context.on_stage_update(
+                    f"assessment (retry {attempt}/{total})", "running"
+                )
+
         # Call LLM with retries
         result = self._call_with_retry(
             messages=messages,
@@ -317,7 +331,15 @@ class AssessmentProcessor:
             temperature=config.temperature,
             max_tokens=config.max_tokens,
             on_token_update=on_token_update,
+            on_retry=_on_retry,
         )
+
+        # Signal LLM call complete for progress reporting
+        if context.on_llm_progress:
+            try:
+                context.on_llm_progress(1)
+            except Exception:
+                pass
 
         # Override LLM payout with deterministic screening payout
         if screening and screening.get("payout"):
@@ -607,6 +629,7 @@ Provide your assessment as JSON matching the response schema."""
         max_tokens: int,
         on_token_update: Optional[Callable[[int, int], None]] = None,
         retries: int = 3,
+        on_retry: Optional[Callable[[int, int], None]] = None,
     ) -> Dict[str, Any]:
         """Call OpenAI API with retry logic and structured output validation.
 
@@ -617,6 +640,7 @@ Provide your assessment as JSON matching the response schema."""
             max_tokens: Max tokens for response.
             on_token_update: Optional callback for token updates.
             retries: Number of retry attempts.
+            on_retry: Optional callback when retrying (attempt, total_retries).
 
         Returns:
             Validated JSON response as dict.
@@ -632,6 +656,11 @@ Provide your assessment as JSON matching the response schema."""
         for attempt in range(retries):
             try:
                 logger.debug(f"Assessment API call attempt {attempt + 1}/{retries}")
+                if attempt > 0 and on_retry:
+                    try:
+                        on_retry(attempt + 1, retries)
+                    except Exception:
+                        pass
 
                 # Build response format (try strict schema first, fall back to json_object)
                 if use_strict_schema:

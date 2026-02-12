@@ -1,0 +1,712 @@
+{
+  "61LR185233": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Jeu Mont.",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "61LR084639": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Bague de garniture",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "61LR073816": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Joint métal couvercle arr. arbre à cammes",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "61LR095556": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "61LR183648": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Bouchon",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "61LR085942": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64288"
+    ]
+  },
+  "39225572": {
+    "system": "mechanical_transmission",
+    "component": "unknown",
+    "component_description": "DICHTRING F FLANSCHWELLE ERSETZT",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64358"
+    ]
+  },
+  "N 909 902 02": {
+    "system": "mechanical_transmission",
+    "component": "unknown",
+    "component_description": "ZYL SCHRAUBE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64358"
+    ]
+  },
+  "39901753": {
+    "system": "axle_drive",
+    "component": "unknown",
+    "component_description": "OEL F ACHSANTRIEB ABG+AUFG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64358"
+    ]
+  },
+  "07148835169": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "vis à bille convexe 12x1,25x45 ZNS3",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64380"
+    ]
+  },
+  "00K05150734AE": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DISPOSITIF DE COM-",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64386"
+    ]
+  },
+  "LR009014": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Tube",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64535"
+    ]
+  },
+  "PYC101900": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Agraffe",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64535"
+    ]
+  },
+  "LR002990": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Agraffe",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64535"
+    ]
+  },
+  "A000 910 39 10": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "REGLAGE EN HAUTEUR",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64659"
+    ]
+  },
+  "A005 990 50 50": {
+    "system": "fasteners",
+    "component": "unknown",
+    "component_description": "ECROU TETE HEXAG.A BRIDE",
+    "_needs_review": true,
+    "_llm_verdict": "review_needed",
+    "_seen_in_claims": [
+      "64659"
+    ]
+  },
+  "A140 991 00 55": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "GOUPILLE DE SECURITE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64659"
+    ]
+  },
+  "N000000 007576": {
+    "system": "fasteners",
+    "component": "unknown",
+    "component_description": "VIS TETE BOMBEE SIX PANS",
+    "_needs_review": true,
+    "_llm_verdict": "review_needed",
+    "_seen_in_claims": [
+      "64659"
+    ]
+  },
+  "9804617380": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "ZYLINDERKOPFDICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9802853980": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "DICHTUNG WASSERGEHÄUSEDECKEL",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9803918580": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG F LUFTVERTEILER",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9801728380": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "DICHTUNG VAKUUMPUMPE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9853111280": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "(MUL) SCHRAUBE CZX RDL",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9802595980": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "DICHTUNG ÖLABSCHEIDER",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9813722580": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "(MUL) SELBSTSICHERNDE MUTTER",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9851860680": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "BEF-SCHRAUBE AUSGLEICHSWELLE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9810177780": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "SCHRAUBE H RCN",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9817665180": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "SCHRAUBE KURBELW-RIEMENSCHEIBE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "00001920TN": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "RINGDICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9809818880": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "DICHTUNG F MOTORÖLPUMPE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "9809639980": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "FLANSCHDICHTUNG KÜHLUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "0000203708": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "SCHRAUBE F SCHWUNGSCHEIBE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "64792"
+    ]
+  },
+  "K04884550AB": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64818"
+    ]
+  },
+  "K04884551AA": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64818"
+    ]
+  },
+  "A000 826 03 00": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG LEUCHTENGEHAEUSE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "64951"
+    ]
+  },
+  "A276 150 91 20": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "MOTORLEITUNGSSATZ",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65002"
+    ]
+  },
+  "PAB121809A": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "PLOMBE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65021"
+    ]
+  },
+  "N 90799102": {
+    "system": "electrical_system",
+    "component": "unknown",
+    "component_description": "VIS TETE CYL",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "65047"
+    ]
+  },
+  "234840": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Durite injection pompe HP / distributeur",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65055"
+    ]
+  },
+  "215670": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Courroie principale",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65055"
+    ]
+  },
+  "0CK301131B": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "0CK927523": {
+    "system": "automatic_transmission",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "0CK325443": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "0CK321371A": {
+    "system": "automatic_transmission",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "0CK325445": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "0CK325444": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "DICHTUNG",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "WHT006151": {
+    "system": "fasteners",
+    "component": "unknown",
+    "component_description": "BUNDMUTTER",
+    "_needs_review": true,
+    "_llm_verdict": "review_needed",
+    "_seen_in_claims": [
+      "65056"
+    ]
+  },
+  "11425B3A1A5": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Satz Dichtungen DMDC/RDC",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65113"
+    ]
+  },
+  "11618571001": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Profildichtung Lager",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65113"
+    ]
+  },
+  "13538582140": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "Kraftstoffleitung Motorraum RDC",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65113"
+    ]
+  },
+  "11428575898": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "support filtre a huile",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65160"
+    ]
+  },
+  "51757402947": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Protection de compartiment moteur",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65160"
+    ]
+  },
+  "40485550": {
+    "system": "axle_drive",
+    "component": "unknown",
+    "component_description": "SOUFLLET JOINT HOMOC. EXTG .: REMPLACE",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65211"
+    ]
+  },
+  "7E0 407 297": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "CIRCLIPS",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65211"
+    ]
+  },
+  "01M 323 255": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "ANNEAU JOINT",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65211"
+    ]
+  },
+  "N 909 911 02": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "VIS TETE CYL",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65211"
+    ]
+  },
+  "G 052528A3": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Graisse Hautes Temperatures",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65211"
+    ]
+  },
+  "MA177 072 00 00": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "TS HALTEFEDER",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65258"
+    ]
+  },
+  "MA000 016 05 69/64": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "ZYLINDERKOPFSCHRAUBE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "65258"
+    ]
+  },
+  "MA000 159 05 00": {
+    "system": "engine",
+    "component": "unknown",
+    "component_description": "ZUENDKERZE",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "65258"
+    ]
+  },
+  "WHT005538": {
+    "system": "axle_drive",
+    "component": "unknown",
+    "component_description": "BUNDMUTTER",
+    "_needs_review": true,
+    "_llm_verdict": "covered",
+    "_seen_in_claims": [
+      "65280"
+    ]
+  },
+  "04L131120": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "03L131547D": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "04L131521AR": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Tuyau liaison",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "04L131521BH": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Tuyau liaison",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "03L131547P": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "04L131547S": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "N91046101": {
+    "system": "exhaust_system",
+    "component": "unknown",
+    "component_description": "Vis, système d'échappement",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "WHT008226": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "Joint",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "N10644901": {
+    "system": "hardware",
+    "component": "unknown",
+    "component_description": "Vis a tête cylindrique",
+    "_needs_review": true,
+    "_llm_verdict": "review_needed",
+    "_seen_in_claims": [
+      "65306"
+    ]
+  },
+  "5WA 713 033 CD": {
+    "system": "unknown",
+    "component": "unknown",
+    "component_description": "COMMANDE DES VI",
+    "_needs_review": true,
+    "_llm_verdict": "not_covered",
+    "_seen_in_claims": [
+      "65307"
+    ]
+  }
+}

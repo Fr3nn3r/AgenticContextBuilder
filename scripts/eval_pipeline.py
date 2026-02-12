@@ -118,7 +118,7 @@ def normalize_decision(decision: str) -> str:
     decision = decision.upper().strip()
     if decision in ["APPROVED", "APPROVE"]:
         return "APPROVED"
-    elif decision in ["DENIED", "REJECT", "REJECTED"]:
+    elif decision in ["DENIED", "DENY", "REJECT", "REJECTED"]:
         return "DENIED"
     elif decision in ["REFER_TO_HUMAN", "REFER", "INCONCLUSIVE"]:
         return "REFER_TO_HUMAN"
