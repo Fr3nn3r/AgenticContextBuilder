@@ -583,12 +583,13 @@ class TestLineItemClauses:
 class TestVerdictDetermination:
     """Test claim-level verdict logic."""
 
-    def test_all_pass_no_data_gives_approve(self, engine):
-        """When everything passes, verdict is APPROVE (assumptions are treated as facts)."""
+    def test_all_pass_no_coverage_gives_refer(self, engine):
+        """When coverage analysis is missing, verdict is REFER (cannot approve without payout)."""
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
-        # No failed clauses, assumptions treated as accepted facts → APPROVE
+        # No failed clauses, but no coverage data → REFER
         assert len(dossier.failed_clauses) == 0
-        assert dossier.claim_verdict.value == "APPROVE"
+        assert dossier.claim_verdict.value == "REFER"
+        assert "coverage analysis unavailable" in dossier.verdict_reason.lower()
         assert len(dossier.unresolved_assumptions) == 0
 
     def test_tier1_fail_gives_deny(self, engine):
@@ -598,12 +599,12 @@ class TestVerdictDetermination:
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={}, screening_result=screening)
         assert dossier.claim_verdict.value == "DENY"
 
-    def test_unconfirmed_assumptions_still_approves(self, engine):
-        """Tier 3 with unconfirmed assumption → APPROVE (assumptions are accepted facts)."""
+    def test_unconfirmed_assumptions_still_refer_without_coverage(self, engine):
+        """Tier 3 with unconfirmed assumptions but no coverage → REFER."""
         dossier = engine.evaluate(claim_id="CLM-001", aggregated_facts={})
         # Default tier 3 assumptions are non-rejecting (True) → PASS
-        # Assumptions are treated as facts, no REFER
-        assert dossier.claim_verdict.value == "APPROVE"
+        # But no coverage data → REFER (cannot approve without payout)
+        assert dossier.claim_verdict.value == "REFER"
         assert len(dossier.unresolved_assumptions) == 0
 
 

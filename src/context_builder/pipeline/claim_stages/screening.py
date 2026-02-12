@@ -614,6 +614,12 @@ class ScreeningStage:
                 f"{screening_result.checks_inconclusive} inconclusive, "
                 f"auto_reject={screening_result.auto_reject}"
             )
+            if screening_result.coverage_error:
+                logger.error(
+                    "Coverage analysis failed for %s: %s",
+                    context.claim_id,
+                    screening_result.coverage_error,
+                )
 
             context.notify_stage_update(self.name, "complete")
 

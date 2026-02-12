@@ -150,6 +150,10 @@ class ScreeningResult(BaseModel):
         default=None,
         description="Relative path to coverage_analysis.json",
     )
+    coverage_error: Optional[str] = Field(
+        default=None,
+        description="Error message if coverage analysis failed",
+    )
     payout: Optional[ScreeningPayoutCalculation] = Field(
         default=None, description="Payout calculation (None if not computable)"
     )
