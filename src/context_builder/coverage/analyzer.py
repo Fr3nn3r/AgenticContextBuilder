@@ -1357,51 +1357,68 @@ class CoverageAnalyzer:
         Returns:
             PrimaryRepairResult describing the primary component
         """
+        primary_result: Optional[PrimaryRepairResult] = None
+
         # Tier 1: LLM-based determination
         if self.config.use_llm_primary_repair and self.llm_matcher:
-            llm_primary = self._llm_determine_primary(
+            primary_result = self._llm_determine_primary(
                 all_items, covered_components, claim_id,
                 repair_description=repair_description,
             )
-            if llm_primary is not None:
-                return llm_primary
 
         # Tier 2: Deterministic fallback -- highest-value covered part
-        best_covered_part: Optional[LineItemCoverage] = None
-        best_covered_part_idx: Optional[int] = None
-        for idx, item in enumerate(all_items):
-            if (
-                item.coverage_status == CoverageStatus.COVERED
-                and item.item_type in ("parts", "part", "piece")
-            ):
-                if best_covered_part is None or (item.total_price or 0) > (best_covered_part.total_price or 0):
-                    best_covered_part = item
-                    best_covered_part_idx = idx
+        if primary_result is None:
+            best_covered_part: Optional[LineItemCoverage] = None
+            best_covered_part_idx: Optional[int] = None
+            for idx, item in enumerate(all_items):
+                if (
+                    item.coverage_status == CoverageStatus.COVERED
+                    and item.item_type in ("parts", "part", "piece")
+                ):
+                    if best_covered_part is None or (item.total_price or 0) > (best_covered_part.total_price or 0):
+                        best_covered_part = item
+                        best_covered_part_idx = idx
 
-        if best_covered_part is not None:
-            logger.info(
-                "Primary repair (deterministic fallback): '%s' (%s, %.0f CHF) for claim %s",
-                best_covered_part.description,
-                best_covered_part.coverage_category,
-                best_covered_part.total_price,
-                claim_id,
-            )
-            return PrimaryRepairResult(
-                component=best_covered_part.matched_component,
-                category=best_covered_part.coverage_category,
-                description=best_covered_part.description,
-                is_covered=True,
-                confidence=best_covered_part.match_confidence or 0.90,
-                determination_method="deterministic",
-                source_item_index=best_covered_part_idx,
-            )
+            if best_covered_part is not None:
+                logger.info(
+                    "Primary repair (deterministic fallback): '%s' (%s, %.0f CHF) for claim %s",
+                    best_covered_part.description,
+                    best_covered_part.coverage_category,
+                    best_covered_part.total_price,
+                    claim_id,
+                )
+                primary_result = PrimaryRepairResult(
+                    component=best_covered_part.matched_component,
+                    category=best_covered_part.coverage_category,
+                    description=best_covered_part.description,
+                    is_covered=True,
+                    confidence=best_covered_part.match_confidence or 0.90,
+                    determination_method="deterministic",
+                    source_item_index=best_covered_part_idx,
+                )
 
         # Fallback: could not determine primary repair
-        logger.info(
-            "Primary repair: could not determine for claim %s -- will REFER",
-            claim_id,
-        )
-        return PrimaryRepairResult(determination_method="none")
+        if primary_result is None:
+            logger.info(
+                "Primary repair: could not determine for claim %s -- will REFER",
+                claim_id,
+            )
+            return PrimaryRepairResult(determination_method="none")
+
+        # Post-check: override coverage if primary repair matches an exclusion pattern
+        if primary_result.is_covered:
+            matched = self.rule_engine.matches_exclusion_pattern(primary_result.component)
+            if matched is None:
+                matched = self.rule_engine.matches_exclusion_pattern(primary_result.description)
+            if matched is not None:
+                logger.warning(
+                    "Primary repair exclusion override for claim %s: component='%s' "
+                    "matches exclusion pattern '%s' -- setting is_covered=False",
+                    claim_id, primary_result.component, matched,
+                )
+                primary_result = primary_result.model_copy(update={"is_covered": False})
+
+        return primary_result
 
     def _is_in_excluded_list(
         self,
@@ -1654,7 +1671,7 @@ class CoverageAnalyzer:
         )
 
         # 3. Orphan labor demotion (safety net)
-        all_items = demote_orphan_labor(all_items)
+        all_items = demote_orphan_labor(all_items, primary_repair=primary_repair)
 
         # 4. Nominal-price labor flagging (audit rule)
         all_items = flag_nominal_price_labor(

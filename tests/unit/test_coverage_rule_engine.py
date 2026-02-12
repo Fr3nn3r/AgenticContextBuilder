@@ -683,3 +683,35 @@ class TestRule7_5SealGasketStandalone:
         )
         assert result is not None
         assert result.coverage_status == CoverageStatus.REVIEW_NEEDED
+
+
+class TestMatchesExclusionPattern:
+    """Tests for RuleEngine.matches_exclusion_pattern()."""
+
+    def test_matches_adblue_in_component_name(self, nsa_engine):
+        """ADBLUE in component name triggers exclusion match."""
+        result = nsa_engine.matches_exclusion_pattern("Adblue_injection_valve")
+        assert result is not None
+        assert "ADBLUE" in result.upper() or "adblue" in result.lower()
+
+    def test_no_match_normal_component(self, nsa_engine):
+        """Normal covered component returns None."""
+        result = nsa_engine.matches_exclusion_pattern("water_pump")
+        assert result is None
+
+    def test_none_input_returns_none(self, nsa_engine):
+        """None input returns None."""
+        result = nsa_engine.matches_exclusion_pattern(None)
+        assert result is None
+
+    def test_empty_string_returns_none(self, nsa_engine):
+        """Empty string returns None."""
+        result = nsa_engine.matches_exclusion_pattern("")
+        assert result is None
+
+    def test_case_insensitive(self, nsa_engine):
+        """Exclusion patterns are case-insensitive."""
+        lower = nsa_engine.matches_exclusion_pattern("adblue_valve")
+        upper = nsa_engine.matches_exclusion_pattern("ADBLUE_VALVE")
+        assert lower is not None
+        assert upper is not None

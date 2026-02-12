@@ -34,7 +34,7 @@ GROUND_TRUTH_PATH = Path("data/datasets/nsa-motor-eval-v1/ground_truth.json")
 OUTPUT_DIR = Path("data/datasets/nsa-coverage-classify-v1")
 OUTPUT_FILE = OUTPUT_DIR / "ground_truth_draft.json"
 
-# Selected claims: 5 APPROVED + 5 DENIED, mix of FR/DE, range of item counts
+# Selected claims: 9 APPROVED + 5 DENIED, mix of FR/DE, range of item counts
 SELECTED_CLAIMS = [
     # APPROVED
     "64166",  # fr, 7 items
@@ -42,6 +42,10 @@ SELECTED_CLAIMS = [
     "64354",  # de, 12 items
     "64659",  # fr, 26 items
     "65055",  # fr, 23 items
+    "64288",  # fr, ~35 items - timing chain, Land Rover
+    "64792",  # de, ~60 items - piston replacement, Peugeot
+    "65027",  # de, ~11 items - coolant pump, Alpina B3
+    "64836",  # de, ~11 items - door lock + I-Drive, Rolls Royce Phantom
     # DENIED
     "64951",  # de, 17 items
     "64980",  # fr, 13 items

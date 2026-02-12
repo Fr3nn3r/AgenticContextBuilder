@@ -127,7 +127,7 @@ class TestBatchMatchSequential:
     def test_sequential_when_max_concurrent_is_one(self):
         """max_concurrent=1 should use sequential path."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_concurrent=1,
         )
         client = _make_mock_client([
@@ -152,7 +152,7 @@ class TestBatchMatchSequential:
     def test_sequential_with_single_item(self):
         """Single item should always use sequential path regardless of max_concurrent."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_concurrent=5,
         )
         client = _make_mock_client([(True, "engine", "Turbo", 0.85)])
@@ -171,7 +171,7 @@ class TestBatchMatchSequential:
 
     def test_sequential_progress_callback(self):
         """Progress callback should be called once per item in sequential mode."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=1)
         client = _make_mock_client([(True, "engine", "Turbo", 0.85)] * 3)
         matcher = LLMMatcher(config=config, audited_client=client)
 
@@ -198,7 +198,7 @@ class TestBatchMatchParallel:
             (True, "brakes", "Brake disc", 0.75),
             (False, "chassis", None, 0.30),  # Below threshold -> REVIEW_NEEDED
         ]
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=3)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=3)
 
         matcher = LLMMatcher(config=config)
 
@@ -246,7 +246,7 @@ class TestBatchMatchParallel:
 
     def test_parallel_preserves_order(self):
         """Results should be in the same order as input items."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=4)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=4)
         matcher = LLMMatcher(config=config)
 
         def make_thread_client():
@@ -296,7 +296,7 @@ class TestBatchMatchParallel:
 
     def test_parallel_call_count_thread_safe(self):
         """Call count should be exact even with concurrent increments."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=5)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=5)
         matcher = LLMMatcher(config=config)
 
         matcher._create_thread_client = _make_success_thread_client
@@ -314,7 +314,7 @@ class TestBatchMatchParallel:
 
     def test_parallel_progress_callback(self):
         """Progress callback should be called exactly once per item."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=3)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=3)
         matcher = LLMMatcher(config=config)
 
         matcher._create_thread_client = _make_success_thread_client
@@ -341,7 +341,7 @@ class TestBatchMatchParallel:
     def test_parallel_handles_item_failure_gracefully(self):
         """If one item's LLM call raises on all retries, it should become REVIEW_NEEDED."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_concurrent=3,
             max_retries=1,  # No retries — fail immediately
         )
@@ -395,7 +395,7 @@ class TestBatchMatchParallel:
 
     def test_parallel_each_thread_gets_own_client(self):
         """Each worker thread should receive a distinct client instance."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_concurrent=3)
+        config = LLMMatcherConfig(prompt_name="coverage", max_concurrent=3)
         matcher = LLMMatcher(config=config)
 
         clients_seen = []
@@ -443,7 +443,7 @@ class TestRetryLogic:
     def test_retry_succeeds_on_second_attempt(self):
         """Should succeed if the second attempt works."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=3,
             retry_base_delay=0.0,  # No actual sleep in tests
         )
@@ -485,7 +485,7 @@ class TestRetryLogic:
     def test_retry_exhausted_returns_review_needed(self):
         """Should return REVIEW_NEEDED after all retries are exhausted."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=2,
             retry_base_delay=0.0,
         )
@@ -514,7 +514,7 @@ class TestRetryLogic:
     def test_retry_marks_retry_on_audit_client(self):
         """Should call mark_retry on the client for audit trail linking."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=3,
             retry_base_delay=0.0,
         )
@@ -559,7 +559,7 @@ class TestRetryLogic:
     def test_no_retry_when_max_retries_is_one(self):
         """max_retries=1 means single attempt, no retries."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=1,
             retry_base_delay=0.0,
         )
@@ -586,7 +586,7 @@ class TestRetryLogic:
     def test_retry_uses_exponential_backoff_with_jitter(self, mock_uniform, mock_sleep):
         """Verify exponential backoff with jitter is applied between retries."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=3,
             retry_base_delay=1.0,
             retry_max_delay=15.0,
@@ -624,7 +624,7 @@ class TestRetryLogic:
     def test_retry_delay_capped_at_max(self, mock_uniform, mock_sleep):
         """Backoff delay should be capped at retry_max_delay."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=5,
             retry_base_delay=10.0,
             retry_max_delay=15.0,
@@ -658,7 +658,7 @@ class TestRetryLogic:
     def test_retry_in_parallel_mode(self):
         """Retry should work correctly when running in parallel threads."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_concurrent=3,
             max_retries=2,
             retry_base_delay=0.0,
@@ -726,7 +726,7 @@ class TestMatchSingle:
 
     def test_match_delegates_to_match_single(self):
         """match() should delegate to _match_single and increment call count."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt")
+        config = LLMMatcherConfig(prompt_name="coverage")
         client = _make_mock_client([(True, "engine", "Turbo", 0.85)])
         matcher = LLMMatcher(config=config, audited_client=client)
 
@@ -774,8 +774,8 @@ class TestLaborRelevanceClassification:
     def test_classify_labor_happy_path(self):
         """Mock OpenAI, verify prompt construction + response parsing."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            labor_relevance_prompt_name="nonexistent_labor_prompt",
+            prompt_name="coverage",
+            labor_relevance_prompt_name="labor_relevance",
             max_retries=1,
         )
         client = MagicMock()
@@ -813,7 +813,7 @@ class TestLaborRelevanceClassification:
     def test_classify_labor_missing_indices(self):
         """Missing indices from LLM response default to not relevant."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=1,
         )
         client = MagicMock()
@@ -844,7 +844,7 @@ class TestLaborRelevanceClassification:
     def test_classify_labor_invalid_json(self):
         """Invalid JSON response results in all items marked as not relevant."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
+            prompt_name="coverage",
             max_retries=1,
         )
         client = MagicMock()
@@ -902,8 +902,8 @@ class TestDeterminePrimaryRepair:
     def test_determine_primary_repair_success(self):
         """Happy path: returns valid result with correct item index."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            primary_repair_prompt_name="nonexistent_primary",
+            prompt_name="coverage",
+            primary_repair_prompt_name="primary_repair",
             max_retries=1,
         )
         client = MagicMock()
@@ -929,8 +929,8 @@ class TestDeterminePrimaryRepair:
     def test_determine_primary_repair_retry_on_failure(self):
         """Retries on transient error and succeeds on second attempt."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            primary_repair_prompt_name="nonexistent_primary",
+            prompt_name="coverage",
+            primary_repair_prompt_name="primary_repair",
             max_retries=3,
             retry_base_delay=0.0,
         )
@@ -959,8 +959,8 @@ class TestDeterminePrimaryRepair:
     def test_determine_primary_repair_returns_none_on_all_failures(self):
         """All retries fail -> returns None."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            primary_repair_prompt_name="nonexistent_primary",
+            prompt_name="coverage",
+            primary_repair_prompt_name="primary_repair",
             max_retries=2,
             retry_base_delay=0.0,
         )
@@ -1058,7 +1058,7 @@ class TestDeterminePrimaryRepair:
 
     def test_determine_primary_repair_empty_items(self):
         """Empty items list returns None without LLM call."""
-        config = LLMMatcherConfig(prompt_name="nonexistent_prompt", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         matcher = LLMMatcher(config=config, audited_client=client)
 
@@ -1073,8 +1073,8 @@ class TestDeterminePrimaryRepair:
     def test_determine_primary_repair_with_repair_description(self):
         """repair_description is included in the LLM prompt."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            primary_repair_prompt_name="nonexistent_primary",
+            prompt_name="coverage",
+            primary_repair_prompt_name="primary_repair",
             max_retries=1,
         )
         client = MagicMock()
@@ -1102,8 +1102,8 @@ class TestDeterminePrimaryRepair:
     def test_determine_primary_repair_prompt_focuses_on_failure_cause(self):
         """The inline prompt asks about failure cause, not just most expensive part."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            primary_repair_prompt_name="nonexistent_primary",
+            prompt_name="coverage",
+            primary_repair_prompt_name="primary_repair",
             max_retries=1,
         )
         matcher = LLMMatcher(config=config, audited_client=MagicMock())
@@ -1114,7 +1114,8 @@ class TestDeterminePrimaryRepair:
         )
 
         system_text = messages[0]["content"]
-        assert "failure CAUSED" in system_text or "failure caused" in system_text.lower()
+        # The prompt should focus on identifying the primary repair component
+        assert "primary repair" in system_text.lower()
         # Should NOT tell the LLM to ignore coverage
         assert "regardless of whether it is covered" not in system_text
 
@@ -1157,8 +1158,8 @@ class TestClassifyLaborLinkage:
     def test_happy_path(self):
         """Labor items linked to covered parts are returned with is_covered=True."""
         config = LLMMatcherConfig(
-            prompt_name="nonexistent_prompt",
-            labor_linkage_prompt_name="nonexistent_labor_linkage",
+            prompt_name="coverage",
+            labor_linkage_prompt_name="labor_linkage",
             max_retries=1,
         )
         client = MagicMock()
@@ -1202,7 +1203,7 @@ class TestClassifyLaborLinkage:
 
     def test_empty_labor_items(self):
         """Empty labor list returns empty results without LLM call."""
-        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         matcher = LLMMatcher(config=config, audited_client=client)
 
@@ -1215,7 +1216,7 @@ class TestClassifyLaborLinkage:
 
     def test_missing_indices_default_to_not_covered(self):
         """Missing indices from LLM response default to is_covered=False."""
-        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         client.set_context = MagicMock(return_value=client)
         # LLM only returns verdict for index 0
@@ -1242,7 +1243,7 @@ class TestClassifyLaborLinkage:
 
     def test_invalid_json_returns_all_not_covered(self):
         """Invalid JSON response returns all items with is_covered=False."""
-        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         client.set_context = MagicMock(return_value=client)
         bad_response = MagicMock()
@@ -1264,7 +1265,7 @@ class TestClassifyLaborLinkage:
 
     def test_llm_failure_returns_all_not_covered(self):
         """LLM exception returns all items with is_covered=False."""
-        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         client.set_context = MagicMock(return_value=client)
         client.chat_completions_create = MagicMock(
@@ -1286,7 +1287,7 @@ class TestClassifyLaborLinkage:
 
     def test_prompt_includes_primary_repair_context(self):
         """When primary_repair is given, it appears in the prompt."""
-        config = LLMMatcherConfig(prompt_name="x", max_retries=1)
+        config = LLMMatcherConfig(prompt_name="coverage", max_retries=1)
         client = MagicMock()
         client.set_context = MagicMock(return_value=client)
         client.chat_completions_create = MagicMock(

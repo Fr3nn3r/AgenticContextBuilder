@@ -533,7 +533,7 @@ class TestBatchClassifyPromptBuilder:
         assert "engine" in system_msg
         assert "Motor" in system_msg
         # System should list excluded components
-        assert "EXCLUDED" in system_msg
+        assert "Excluded" in system_msg or "excluded" in system_msg.lower()
 
         # User message should contain numbered items
         assert "[0]" in user_msg
@@ -628,3 +628,97 @@ class TestBatchClassifyResponseParser:
         assert results[0].is_covered is True
         assert results[1].is_covered is False
         assert results[1].confidence == 0.0
+
+
+class TestBatchTruncationSplitting:
+    """Tests for automatic batch splitting when LLM response is truncated."""
+
+    def _make_truncated_response(self):
+        """Build a mock LLM response with finish_reason='length' (truncated)."""
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].finish_reason = "length"
+        response.choices[0].message.content = '{"items": [{"index": 0'  # truncated
+        response.usage = MagicMock(prompt_tokens=500, completion_tokens=2048)
+        return response
+
+    def test_truncated_batch_splits_into_halves(self):
+        """When finish_reason='length', batch should split and retry halves."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=15, max_concurrent=1,
+        )
+        # First call: truncated (4 items). Then two sub-batches succeed.
+        truncated = self._make_truncated_response()
+        left_resp = _make_batch_response([
+            _make_single_item_data(0, True),
+            _make_single_item_data(1, False, confidence=0.7),
+        ])
+        right_resp = _make_batch_response([
+            _make_single_item_data(0, True, "brakes", "brake_disc"),
+            _make_single_item_data(1, True, "brakes", "brake_pad"),
+        ])
+        client = _make_client([truncated, left_resp, right_resp])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": "MOTOR", "item_type": "parts", "total_price": 500},
+            {"description": "OIL FILTER", "item_type": "parts", "total_price": 50},
+            {"description": "BRAKE DISC", "item_type": "parts", "total_price": 300},
+            {"description": "BRAKE PAD", "item_type": "parts", "total_price": 100},
+        ]
+        results = matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor"], "brakes": ["Brake disc"]},
+            claim_id="TEST-TRUNC",
+        )
+
+        assert len(results) == 4
+        # 3 LLM calls: 1 truncated + 2 sub-batches
+        assert client.chat_completions_create.call_count == 3
+        # Results should come from the sub-batches, not the truncated response
+        assert results[0].coverage_status == CoverageStatus.COVERED
+        assert results[1].coverage_status == CoverageStatus.NOT_COVERED
+
+    def test_single_item_truncation_does_not_split(self):
+        """Single-item batch can't be split further; falls through to parse."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=1, max_concurrent=1,
+        )
+        truncated = self._make_truncated_response()
+        client = _make_client([truncated])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": "MOTOR", "item_type": "parts", "total_price": 500},
+        ]
+        results = matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor"]},
+        )
+
+        # Can't split a 1-item batch, so it falls through to parse failure
+        assert len(results) == 1
+        assert results[0].coverage_status == CoverageStatus.REVIEW_NEEDED
+        assert results[0].match_confidence == 0.0
+
+    def test_max_tokens_scales_with_batch_size(self):
+        """max_tokens should scale proportionally with number of items."""
+        config = LLMMatcherConfig(
+            max_retries=1, classification_batch_size=15, max_concurrent=1,
+        )
+        batch_data = [_make_single_item_data(i, True) for i in range(15)]
+        client = _make_client([_make_batch_response(batch_data)])
+        matcher = LLMMatcher(config=config, audited_client=client)
+
+        items = [
+            {"description": f"PART_{i}", "item_type": "parts", "total_price": 100}
+            for i in range(15)
+        ]
+        matcher.classify_items(
+            items=items,
+            covered_components={"engine": ["Motor"]},
+        )
+
+        call_kwargs = client.chat_completions_create.call_args[1]
+        # 15 items * 200 = 3000 > 2048 minimum
+        assert call_kwargs["max_tokens"] == 3000

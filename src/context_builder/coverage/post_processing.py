@@ -276,6 +276,7 @@ def apply_labor_linkage(
 
 def demote_orphan_labor(
     items: List[LineItemCoverage],
+    primary_repair: Optional[PrimaryRepairResult] = None,
 ) -> List[LineItemCoverage]:
     """Demote labor items to NOT_COVERED when no parts are covered.
 
@@ -284,8 +285,15 @@ def demote_orphan_labor(
     excluded by a rule), any covered labor has no anchor and should
     be demoted.
 
+    Exception: when the primary repair component is covered by policy
+    (``primary_repair.is_covered``), labor is anchored to that repair
+    even if no explicit parts line item exists on the invoice.  This
+    handles labor-only invoices where the garage bills labor without
+    listing the replaced part separately.
+
     Args:
         items: List of analyzed line items (after all promotion stages).
+        primary_repair: Primary repair determination result (optional).
 
     Returns:
         Updated list with orphaned labor items demoted.
@@ -296,6 +304,15 @@ def demote_orphan_labor(
         for item in items
     )
     if has_covered_parts:
+        return items
+
+    # Primary repair is covered — labor has a policy-level anchor even
+    # without an explicit parts line item on the invoice.
+    if primary_repair and primary_repair.is_covered:
+        logger.info(
+            "Skipping orphan labor demotion: primary repair '%s' is covered",
+            primary_repair.component,
+        )
         return items
 
     for item in items:

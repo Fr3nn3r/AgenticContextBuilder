@@ -75,17 +75,25 @@ def run_classification_for_claim(
     matcher: LLMMatcher,
     claim: Dict[str, Any],
     include_covered_parts: bool = True,
-) -> Tuple[List[LLMMatchResult], List[Dict[str, str]], float]:
+    batch_size: int = 15,
+) -> Tuple[List[LLMMatchResult], List[Dict[str, str]], float, int]:
     """Run batch classification for a single claim.
+
+    Uses the same batch size as production: items are chunked into
+    batches of ``batch_size`` and each batch gets its own LLM call.
 
     Args:
         matcher: The LLMMatcher instance.
         claim: Claim dict from the ground truth.
         include_covered_parts: Whether to include covered_parts_in_claim context.
+        batch_size: Items per LLM call (matches production default).
 
     Returns:
-        Tuple of (predicted results, prompt messages, elapsed_seconds).
+        Tuple of (predicted results, first batch prompt messages,
+                  elapsed_seconds, llm_call_count).
     """
+    from context_builder.services.llm_audit import create_audited_client
+
     policy = claim["policy_context"]
     covered_components = policy.get("covered_components", {})
     excluded_components = policy.get("excluded_components", {})
@@ -102,16 +110,15 @@ def run_classification_for_claim(
             "repair_context_description": li.get("hints") or None,
         })
 
-    # Build prompt (always, for inspection/logging)
-    messages = matcher._build_batch_classify_prompt(
-        items=items,
-        covered_components=covered_components,
-        excluded_components=excluded_components,
-        covered_parts_in_claim=covered_parts,
-    )
+    # Chunk items into batches (same as production classify_items)
+    batches: List[List[Dict[str, Any]]] = []
+    for start_idx in range(0, len(items), batch_size):
+        batches.append(items[start_idx : start_idx + batch_size])
 
-    # Call LLM
-    from context_builder.services.llm_audit import create_audited_client
+    all_results: List[LLMMatchResult] = []
+    first_messages = None
+    total_elapsed = 0.0
+    llm_calls = 0
 
     client = create_audited_client()
     client.set_context(
@@ -119,20 +126,43 @@ def run_classification_for_claim(
         call_purpose="coverage_classify_eval",
     )
 
-    start = time.time()
-    response = client.chat_completions_create(
-        model=matcher.config.model,
-        messages=messages,
-        temperature=matcher.config.temperature,
-        max_tokens=2048,
-        response_format={"type": "json_object"},
-    )
-    elapsed = time.time() - start
+    for batch_idx, batch_items in enumerate(batches):
+        messages = matcher._build_batch_classify_prompt(
+            items=batch_items,
+            covered_components=covered_components,
+            excluded_components=excluded_components,
+            covered_parts_in_claim=covered_parts,
+        )
+        if first_messages is None:
+            first_messages = messages
 
-    content = response.choices[0].message.content
-    results = matcher._parse_batch_classify_response(content, items)
+        # Retry with backoff on timeout
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                start = time.time()
+                response = client.chat_completions_create(
+                    model=matcher.config.model,
+                    messages=messages,
+                    temperature=matcher.config.temperature,
+                    max_tokens=2048,
+                    response_format={"type": "json_object"},
+                    timeout=120,
+                )
+                total_elapsed += time.time() - start
+                llm_calls += 1
+                break
+            except Exception as e:
+                if attempt < max_retries - 1 and "timeout" in str(e).lower():
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
 
-    return results, messages, elapsed
+        content = response.choices[0].message.content
+        batch_results = matcher._parse_batch_classify_response(content, batch_items)
+        all_results.extend(batch_results)
+
+    return all_results, first_messages or [], total_elapsed, llm_calls
 
 
 def build_prompt_for_claim(
@@ -500,18 +530,24 @@ def save_results(
     claim_results: List[Dict[str, Any]],
     gt_path: Path,
     include_covered_parts: bool,
+    prompt_source: str = "",
+    batch_size: int = 15,
 ) -> Path:
     """Save evaluation results to disk."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = EVAL_RESULTS_DIR / f"eval_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    config = LLMMatcherConfig()
     # Summary
     summary = {
         "eval_timestamp": datetime.now().isoformat(),
         "ground_truth_file": str(gt_path),
         "include_covered_parts": include_covered_parts,
-        "model": LLMMatcherConfig().model,
+        "model": config.model,
+        "temperature": config.temperature,
+        "prompt_source": prompt_source,
+        "batch_size": batch_size,
         **metrics,
     }
     # Remove errors from summary (they go in details)
@@ -563,6 +599,14 @@ def main():
         "--gt-file", type=Path, default=None,
         help="Custom ground truth file path"
     )
+    parser.add_argument(
+        "--prompt-name", type=str, default=None,
+        help="Override batch_classify_prompt_name (e.g. nsa_coverage_classify_batch)"
+    )
+    parser.add_argument(
+        "--approved-only", action="store_true",
+        help="Only evaluate APPROVED claims (exclude DENIED)"
+    )
     args = parser.parse_args()
 
     # Resolve GT path: explicit > reviewed > draft
@@ -597,11 +641,38 @@ def main():
             console.print(f"[red]Claim {args.claim} not found in ground truth[/red]")
             sys.exit(1)
 
+    # Filter to approved-only if requested
+    if args.approved_only:
+        denied = [c["claim_id"] for c in claims if c.get("gt_decision") != "APPROVED"]
+        claims = [c for c in claims if c.get("gt_decision") == "APPROVED"]
+        if denied:
+            console.print(f"  Excluding {len(denied)} denied claims: {', '.join(denied)}")
+
     console.print(f"Evaluating {len(claims)} claims, {sum(len(c['line_items']) for c in claims)} items")
     console.print()
 
     # Create matcher (reuses production prompt-building logic)
-    matcher = LLMMatcher(config=LLMMatcherConfig())
+    config = LLMMatcherConfig()
+    if args.prompt_name:
+        config.batch_classify_prompt_name = args.prompt_name
+    matcher = LLMMatcher(config=config)
+    batch_size = config.classification_batch_size
+
+    # Identify prompt source
+    prompt_name = config.batch_classify_prompt_name
+    try:
+        from context_builder.utils.prompt_loader import load_prompt
+        load_prompt(prompt_name, covered_categories=[], covered_components={},
+                    excluded_components={}, covered_parts_in_claim=[],
+                    items_text="", item_count=0)
+        prompt_source = f"workspace file ({prompt_name}.md)"
+    except (FileNotFoundError, Exception):
+        prompt_source = f"inline fallback ({prompt_name})"
+
+    console.print(f"  Prompt: {prompt_source}")
+    console.print(f"  Model: {config.model}, temperature: {config.temperature}")
+    console.print(f"  Batch size: {batch_size} items/call (same as production)")
+    console.print()
 
     if args.dry_run:
         # Show prompts only
@@ -630,8 +701,8 @@ def main():
         console.print(f"Evaluating {claim_id} ({len(claim['line_items'])} items)...", end=" ")
 
         try:
-            predictions, messages, elapsed = run_classification_for_claim(
-                matcher, claim, include_covered_parts
+            predictions, messages, elapsed, llm_calls = run_classification_for_claim(
+                matcher, claim, include_covered_parts, batch_size=batch_size
             )
         except Exception as e:
             console.print(f"[red]FAILED: {e}[/red]")
@@ -653,7 +724,7 @@ def main():
 
         n_correct = sum(1 for c in comparisons if c["coverage_match"])
         acc = n_correct / len(comparisons) if comparisons else 0
-        console.print(f"[green]{n_correct}/{len(comparisons)}[/green] ({acc:.0%}) in {elapsed:.1f}s")
+        console.print(f"[green]{n_correct}/{len(comparisons)}[/green] ({acc:.0%}) in {elapsed:.1f}s ({llm_calls} calls)")
 
         all_comparisons.extend(comparisons)
         claim_results.append({
@@ -670,7 +741,10 @@ def main():
     print_summary(metrics, claim_results)
 
     # Save results
-    output_dir = save_results(metrics, claim_results, gt_path, include_covered_parts)
+    output_dir = save_results(
+        metrics, claim_results, gt_path, include_covered_parts,
+        prompt_source=prompt_source, batch_size=batch_size,
+    )
     console.print(f"[green]Results saved to: {output_dir}[/green]")
 
 

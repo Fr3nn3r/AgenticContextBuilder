@@ -827,15 +827,13 @@ class TestValidateLLMCoverageDecision:
         assert result.coverage_status == CoverageStatus.COVERED
         assert "OVERRIDE" not in result.match_reasoning
 
-
 class TestLLMMatcherPromptBuilding:
     """Tests for LLM matcher _build_prompt_messages with repair context."""
 
     @pytest.fixture
     def matcher(self):
         from context_builder.coverage.llm_matcher import LLMMatcher, LLMMatcherConfig
-        # Use inline prompt (no file) for testing
-        return LLMMatcher(config=LLMMatcherConfig(prompt_name="nonexistent_prompt"))
+        return LLMMatcher(config=LLMMatcherConfig(prompt_name="coverage"))
 
     def test_build_prompt_without_repair_context(self, matcher):
         """Prompt messages should be built without repair context."""
@@ -857,10 +855,20 @@ class TestLLMMatcherPromptBuilding:
             covered_components={"electrical_system": ["I-Drive"]},
             repair_context_description="I-Drive Schalter klemmt Teilweise /ersetzen",
         )
-        # The inline fallback doesn't use repair_context_description,
-        # but the template-based prompt does. Verify messages are returned.
         assert len(messages) == 2
         assert "MULTIFUNKTIONSEINHEIT" in messages[1]["content"]
+
+    def test_missing_prompt_raises_error(self):
+        """Missing prompt file should raise FileNotFoundError, not silently fall back."""
+        from context_builder.coverage.llm_matcher import LLMMatcher, LLMMatcherConfig
+        matcher = LLMMatcher(config=LLMMatcherConfig(prompt_name="nonexistent_prompt"))
+        with pytest.raises(FileNotFoundError):
+            matcher._build_prompt_messages(
+                description="VENTIL",
+                item_type="parts",
+                covered_categories=["engine"],
+                covered_components={"engine": ["Ventil"]},
+            )
 
 
 class TestDeferToLLM:
@@ -1696,6 +1704,60 @@ class TestDemoteLaborWithoutCoveredParts:
         assert labor.coverage_status == CoverageStatus.COVERED
         assert labor.covered_amount == 300.0
 
+    def test_labor_not_demoted_when_primary_repair_is_covered(self, analyzer):
+        """Labor should NOT be demoted when primary repair is covered (labor-only invoice)."""
+        items = [
+            make_line_item(
+                description="Cleaning materials", item_type="parts",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                covered_amount=0.0, not_covered_amount=25.0,
+            ),
+            make_line_item(
+                description="Oil cooler replacement", item_type="labor",
+                match_method=MatchMethod.LLM, total_price=660.0,
+                covered_amount=660.0, not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="oil_cooler",
+            category="engine",
+            description="Oil cooler replacement",
+            is_covered=True,
+            confidence=0.9,
+            determination_method="llm",
+        )
+        result = demote_orphan_labor(items, primary_repair=primary)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 660.0
+
+    def test_labor_still_demoted_when_primary_repair_not_covered(self, analyzer):
+        """Labor should still be demoted when primary repair is NOT covered."""
+        items = [
+            make_line_item(
+                description="Seal", item_type="parts",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                covered_amount=0.0, not_covered_amount=50.0,
+            ),
+            make_line_item(
+                description="Headlight replacement", item_type="labor",
+                match_method=MatchMethod.LLM, total_price=200.0,
+                covered_amount=200.0, not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="headlight",
+            category="lighting",
+            description="Headlight replacement",
+            is_covered=False,
+            confidence=0.95,
+            determination_method="llm",
+        )
+        result = demote_orphan_labor(items, primary_repair=primary)
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        assert labor.exclusion_reason == "demoted_no_anchor"
+
 
 class TestApplyLaborFollowsPartsLLM:
     """Tests for apply_labor_linkage with LLM labor linkage (Strategy 2)."""
@@ -2204,3 +2266,113 @@ class TestNominalPriceLaborFlag:
         assert step.verdict == CoverageStatus.REVIEW_NEEDED
         assert step.confidence == 0.30
         assert "nominal price" in step.reasoning.lower()
+
+
+class TestPrimaryRepairExclusionOverride:
+    """Tests for primary repair exclusion override in _determine_primary_repair."""
+
+    @pytest.fixture
+    def analyzer(self, nsa_rule_config, nsa_keyword_config, nsa_component_config):
+        """Create analyzer with LLM primary repair disabled (deterministic only)."""
+        kw_matcher = KeywordMatcher(nsa_keyword_config)
+        config = AnalyzerConfig(
+            use_llm_fallback=True,
+            use_llm_primary_repair=False,
+        )
+        analyzer = CoverageAnalyzer(
+            config=config,
+            rule_engine=RuleEngine(nsa_rule_config),
+            keyword_matcher=kw_matcher,
+            component_config=nsa_component_config,
+        )
+        return analyzer
+
+    @pytest.fixture
+    def covered_components(self):
+        return {
+            "engine": ["Motor", "Kolben"],
+            "cooling_system": ["water_pump"],
+        }
+
+    def test_llm_adblue_component_overridden_to_not_covered(
+        self, analyzer, nsa_rule_config, nsa_keyword_config, nsa_component_config,
+        covered_components,
+    ):
+        """LLM returns Adblue component -> exclusion override sets is_covered=False."""
+        # Enable LLM primary repair for this test
+        analyzer.config.use_llm_primary_repair = True
+        # Mock the LLM matcher to return an Adblue component as covered
+        mock_llm = MagicMock()
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "Adblue_injection_valve",
+            "category": "engine",
+            "is_covered": True,
+            "confidence": 0.90,
+            "reasoning": "Adblue injection valve replacement",
+        }
+        analyzer.llm_matcher = mock_llm
+
+        items = [
+            make_line_item(
+                description="Ventil Klemmschelle",
+                item_type="parts",
+                total_price=350.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="Adblue_injection_valve",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered_components,
+            claim_id="TEST-ADBLUE",
+        )
+        assert result.component == "Adblue_injection_valve"
+        assert result.is_covered is False
+
+    def test_normal_component_not_overridden(
+        self, analyzer, covered_components,
+    ):
+        """Deterministic primary with water_pump stays is_covered=True."""
+        items = [
+            make_line_item(
+                description="WASSERPUMPE",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="cooling_system",
+                matched_component="water_pump",
+            ),
+        ]
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered_components,
+            claim_id="TEST-NORMAL",
+        )
+        assert result.component == "water_pump"
+        assert result.is_covered is True
+
+    def test_already_not_covered_skips_check(
+        self, analyzer, covered_components,
+    ):
+        """When already not covered, exclusion check is a no-op."""
+        # No covered parts -> deterministic fallback returns "none"
+        items = [
+            make_line_item(
+                description="ADBLUE SENSOR",
+                item_type="parts",
+                total_price=200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None,
+                matched_component=None,
+            ),
+        ]
+        result = analyzer._determine_primary_repair(
+            all_items=items,
+            covered_components=covered_components,
+            claim_id="TEST-NOCOV",
+        )
+        # No covered parts -> determination_method="none", is_covered stays None
+        assert result.determination_method == "none"
+        assert result.is_covered is None

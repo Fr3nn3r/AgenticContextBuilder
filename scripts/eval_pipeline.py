@@ -148,7 +148,9 @@ def categorize_error(gt: dict, pred: dict, decision_match: bool) -> str:
 
     # Decision wrong - categorize by what failed
     gt_decision = normalize_decision(gt.get("decision", ""))
-    pred_decision = normalize_decision(pred.get("decision", ""))
+    # Use dossier verdict (authoritative) if available, fall back to recommendation
+    pred_decision_raw = pred.get("_dossier_verdict") or pred.get("recommendation", "")
+    pred_decision = normalize_decision(pred_decision_raw)
 
     # Handle REFER_TO_HUMAN
     if pred_decision == "REFER_TO_HUMAN":

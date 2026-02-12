@@ -438,6 +438,18 @@ class RuleEngine:
                 )
         return None
 
+    def matches_exclusion_pattern(self, text: str) -> Optional[str]:
+        """Check if text matches any exclusion pattern.
+
+        Returns the matched pattern string, or None.
+        """
+        if not text:
+            return None
+        for pattern in self._exclusion_patterns:
+            if pattern.search(text):
+                return pattern.pattern
+        return None
+
     def batch_match(
         self,
         items: List[Dict[str, Any]],

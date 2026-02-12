@@ -54,8 +54,6 @@ class LLMMatcherConfig:
     labor_relevance_prompt_name: str = "labor_relevance"
     # Prompt file for primary repair identification (without .md)
     primary_repair_prompt_name: str = "primary_repair"
-    # Prompt file for coverage classification (LLM-first mode, without .md)
-    classify_prompt_name: str = "coverage_classify"
     # Prompt file for labor linkage classification (without .md)
     labor_linkage_prompt_name: str = "labor_linkage"
     # Prompt file for batch coverage classification (without .md)
@@ -96,7 +94,6 @@ class LLMMatcherConfig:
             retry_max_delay=config.get("retry_max_delay", 15.0),
             labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
             primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
-            classify_prompt_name=config.get("classify_prompt_name", "coverage_classify"),
             labor_linkage_prompt_name=config.get("labor_linkage_prompt_name", "labor_linkage"),
             batch_classify_prompt_name=config.get("batch_classify_prompt_name", "coverage_classify_batch"),
             classification_batch_size=config.get("classification_batch_size", 15),
@@ -174,75 +171,19 @@ class LLMMatcher:
         Returns:
             List of message dictionaries for OpenAI API
         """
-        # Try to load from prompt file
-        try:
-            from context_builder.utils.prompt_loader import load_prompt
+        from context_builder.utils.prompt_loader import load_prompt
 
-            prompt_data = load_prompt(
-                self.config.prompt_name,
-                description=description,
-                item_type=item_type,
-                covered_categories=covered_categories,
-                covered_components=covered_components,
-                excluded_components=excluded_components or {},
-                covered_parts_in_claim=covered_parts_in_claim or [],
-                repair_context_description=repair_context_description or "",
-            )
-            return prompt_data["messages"]
-        except FileNotFoundError:
-            logger.debug(
-                f"Prompt file '{self.config.prompt_name}' not found, using inline prompt"
-            )
-
-        # Fallback to inline prompt
-        # Format covered components for prompt
-        components_text = ""
-        for category, parts in covered_components.items():
-            if parts:
-                parts_list = ", ".join(parts[:10])  # Limit to 10 parts per category
-                if len(parts) > 10:
-                    parts_list += f", ... ({len(parts)} total)"
-                components_text += f"- {category}: {parts_list}\n"
-
-        system_prompt = """You are an automotive insurance coverage analyst.
-Your task is to determine if a repair line item is covered under the policy.
-
-Policy Coverage Information:
-Covered Categories: {categories}
-
-Covered Components by Category:
-{components}
-
-Rules:
-1. Parts/labor that relate to covered components are COVERED
-2. Consumables (oil, filters, fluids) are NOT COVERED
-3. Environmental/disposal fees are NOT COVERED
-4. Rental car fees are NOT COVERED
-5. Diagnostic labor for covered components IS COVERED
-
-Respond in JSON format:
-{{
-  "is_covered": true/false,
-  "category": "matched category name or null",
-  "matched_component": "specific component from list or null",
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}}""".format(
-            categories=", ".join(covered_categories),
-            components=components_text or "No specific components listed",
+        prompt_data = load_prompt(
+            self.config.prompt_name,
+            description=description,
+            item_type=item_type,
+            covered_categories=covered_categories,
+            covered_components=covered_components,
+            excluded_components=excluded_components or {},
+            covered_parts_in_claim=covered_parts_in_claim or [],
+            repair_context_description=repair_context_description or "",
         )
-
-        user_prompt = f"""Analyze this repair line item:
-
-Description: {description}
-Item Type: {item_type}
-
-Determine if this item is covered under the policy."""
-
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        return prompt_data["messages"]
 
     def _parse_llm_response(self, content: str) -> LLMMatchResult:
         """Parse the LLM response JSON.
@@ -867,14 +808,35 @@ Determine if this item is covered under the policy."""
                         if last_call_id and hasattr(client, "mark_retry"):
                             client.mark_retry(last_call_id)
 
+                    # Scale max_tokens with batch size (~200 tokens per item)
+                    max_tokens_for_batch = max(2048, len(batch_items) * 200)
+
                     response = client.chat_completions_create(
                         model=self.config.model,
                         messages=messages,
                         temperature=self.config.temperature,
-                        max_tokens=2048,
+                        max_tokens=max_tokens_for_batch,
                         response_format={"type": "json_object"},
                     )
                     self._llm_calls += 1
+
+                    # Detect token-limit truncation and split batch
+                    finish_reason = getattr(
+                        response.choices[0], "finish_reason", None
+                    )
+                    if finish_reason == "length" and len(batch_items) > 1:
+                        mid = len(batch_items) // 2
+                        logger.warning(
+                            "Batch response truncated at %d max_tokens for "
+                            "%d items. Splitting into sub-batches of %d and %d.",
+                            max_tokens_for_batch, len(batch_items),
+                            mid, len(batch_items) - mid,
+                        )
+                        left = _process_batch(batch_items[:mid], global_offset)
+                        right = _process_batch(
+                            batch_items[mid:], global_offset + mid
+                        )
+                        return left + right
 
                     content = response.choices[0].message.content
                     batch_results = self._parse_batch_classify_response(
@@ -1116,92 +1078,18 @@ Determine if this item is covered under the policy."""
             item_lines.append(line)
         items_text = "\n".join(item_lines)
 
-        try:
-            from context_builder.utils.prompt_loader import load_prompt
+        from context_builder.utils.prompt_loader import load_prompt
 
-            prompt_data = load_prompt(
-                self.config.batch_classify_prompt_name,
-                covered_categories=covered_categories,
-                covered_components=covered_components,
-                excluded_components=excluded_components,
-                covered_parts_in_claim=covered_parts_in_claim or [],
-                items_text=items_text,
-                item_count=len(items),
-            )
-            return prompt_data["messages"]
-        except FileNotFoundError:
-            logger.debug(
-                "Prompt file '%s' not found, using inline batch classify prompt",
-                self.config.batch_classify_prompt_name,
-            )
-
-        # Inline fallback
-        components_text = ""
-        for category, parts in covered_components.items():
-            if parts:
-                parts_list = ", ".join(parts[:15])
-                if len(parts) > 15:
-                    parts_list += f", ... ({len(parts)} total)"
-                components_text += f"- {category}: {parts_list}\n"
-
-        excluded_text = ""
-        if excluded_components:
-            for category, parts in excluded_components.items():
-                if parts:
-                    excluded_text += f"- {category}: {', '.join(parts)}\n"
-
-        covered_parts_text = ""
-        if covered_parts_in_claim:
-            for part in covered_parts_in_claim:
-                comp_str = f" ({part['matched_component']})" if part.get("matched_component") else ""
-                covered_parts_text += f"- Part #{part.get('item_code', 'N/A')}: {part.get('description', '')}{comp_str}\n"
-
-        system_prompt = (
-            "You are an automotive insurance coverage analyst.\n"
-            "Your task is to determine if EACH repair line item is covered "
-            "under the policy.\n\n"
-            "**Covered Categories:** {categories}\n\n"
-            "**Covered Components by Category:**\n{components}\n"
-            "{excluded_block}"
-            "{covered_parts_block}"
-            "**Rules:**\n"
-            "1. Parts/labor that relate to covered components are COVERED\n"
-            "2. Consumables (oil, filters, fluids) are NOT COVERED\n"
-            "3. Environmental/disposal fees are NOT COVERED\n"
-            "4. Rental car fees are NOT COVERED\n"
-            "5. Diagnostic labor for covered components IS COVERED\n"
-            "6. Small fasteners accompanying a covered repair ARE COVERED\n\n"
-            "Respond ONLY with valid JSON in this format:\n"
-            '{{"items": [{{"index": 0, "is_covered": true, "category": "engine", '
-            '"matched_component": "Motor", "confidence": 0.85, '
-            '"reasoning": "brief explanation"}}, ...]}}\n\n'
-            "Return one entry per item. Use the index from the item list."
-        ).format(
-            categories=", ".join(covered_categories),
-            components=components_text or "No specific components listed\n",
-            excluded_block=(
-                f"\n**EXCLUDED (NOT covered):**\n{excluded_text}\n"
-                if excluded_text else ""
-            ),
-            covered_parts_block=(
-                f"\n**Covered parts already identified in this repair:**\n"
-                f"{covered_parts_text}\n"
-                if covered_parts_text else ""
-            ),
+        prompt_data = load_prompt(
+            self.config.batch_classify_prompt_name,
+            covered_categories=covered_categories,
+            covered_components=covered_components,
+            excluded_components=excluded_components,
+            covered_parts_in_claim=covered_parts_in_claim or [],
+            items_text=items_text,
+            item_count=len(items),
         )
-
-        user_prompt = (
-            f"Analyze these {len(items)} repair line items for coverage.\n"
-            f"For each item, determine if it is covered under the policy.\n"
-            f"Per-item hints (if any) are advisory -- make your own determination.\n\n"
-            f"Items:\n{items_text}\n\n"
-            f"Return JSON with an entry for each item."
-        )
-
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        return prompt_data["messages"]
 
     def _parse_batch_classify_response(
         self,
@@ -1245,6 +1133,9 @@ Determine if this item is covered under the policy."""
                         matched_component=r.get("matched_component"),
                         confidence=float(r.get("confidence", 0.5)),
                         reasoning=r.get("reasoning", "No reasoning provided"),
+                        component_identified=r.get("component_identified"),
+                        vehicle_system=r.get("vehicle_system"),
+                        closest_policy_match=r.get("closest_policy_match"),
                     ))
                 else:
                     results.append(LLMMatchResult(
@@ -1414,59 +1305,15 @@ Determine if this item is covered under the policy."""
                 f"covered={primary_repair.get('is_covered', False)})\n"
             )
 
-        try:
-            from context_builder.utils.prompt_loader import load_prompt
+        from context_builder.utils.prompt_loader import load_prompt
 
-            prompt_data = load_prompt(
-                self.config.labor_linkage_prompt_name,
-                parts_text=parts_text,
-                labor_text=labor_text,
-                primary_repair_text=primary_text,
-            )
-            return prompt_data["messages"]
-        except FileNotFoundError:
-            logger.debug(
-                "Prompt file '%s' not found, using inline labor linkage prompt",
-                self.config.labor_linkage_prompt_name,
-            )
-
-        # Inline fallback
-        system_prompt = (
-            "You are an automotive repair labor analyst for a warranty "
-            "insurance company.\n\n"
-            "Given the parts and labor from a repair invoice, determine "
-            "which labor items are mechanically necessary for which parts.\n\n"
-            "LABOR IS COVERED when:\n"
-            "- It is for installing, removing, or replacing a COVERED part\n"
-            "- It is access labor (removing components to reach the covered "
-            "part)\n"
-            "- It is fluid draining/refilling required by the disassembly\n"
-            "- It is the repair work itself on a covered component\n\n"
-            "LABOR IS NOT COVERED when:\n"
-            "- It is standalone diagnostic/investigative labor with no "
-            "covered part\n"
-            "- It is for an unrelated system (not mechanically connected)\n"
-            "- It is cleaning, environmental fees, or rental car\n"
-            "- It is battery charging or unrelated calibration\n\n"
-            "For each labor item, return whether it should be covered and "
-            "which part (by index) it is linked to.\n\n"
-            "Respond ONLY with valid JSON:\n"
-            '{"labor_items": [{"index": <int>, "is_covered": <bool>, '
-            '"linked_part_index": <int or null>, '
-            '"confidence": <float 0-1>, "reasoning": "<brief>"}]}'
+        prompt_data = load_prompt(
+            self.config.labor_linkage_prompt_name,
+            parts_text=parts_text,
+            labor_text=labor_text,
+            primary_repair_text=primary_text,
         )
-        user_prompt = (
-            f"Parts in this invoice:\n{parts_text}\n\n"
-            f"Labor items to evaluate:\n{labor_text}\n"
-            f"{primary_text}\n"
-            "For each labor item, determine if it is mechanically necessary "
-            "for a covered part. Link it to the most relevant part by index. "
-            "Return JSON."
-        )
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        return prompt_data["messages"]
 
     def _parse_labor_linkage_response(
         self,
@@ -1660,53 +1507,16 @@ Determine if this item is covered under the policy."""
             parts_lines.append(f"  - [{code_str}] {part.get('description', '')}{comp_str}")
         parts_text = "\n".join(parts_lines) if parts_lines else "  (none)"
 
-        try:
-            from context_builder.utils.prompt_loader import load_prompt
+        from context_builder.utils.prompt_loader import load_prompt
 
-            prompt_data = load_prompt(
-                self.config.labor_relevance_prompt_name,
-                primary_component=primary_component,
-                primary_category=primary_category,
-                covered_parts_text=parts_text,
-                labor_items_text=labor_text,
-            )
-            return prompt_data["messages"]
-        except FileNotFoundError:
-            logger.debug(
-                "Prompt file '%s' not found, using inline labor relevance prompt",
-                self.config.labor_relevance_prompt_name,
-            )
-
-        # Inline fallback
-        system_prompt = (
-            "You are an automotive repair labor analyst.\n"
-            "Given the primary repair being performed, determine which labor "
-            "items are mechanically necessary to complete that specific repair.\n\n"
-            "NECESSARY labor (is_relevant = true):\n"
-            "- Removing/reinstalling components to access the repair area\n"
-            "- Draining/refilling fluids required by the disassembly\n"
-            "- The repair labor itself (removal/installation of the covered part)\n\n"
-            "NOT NECESSARY labor (is_relevant = false):\n"
-            "- Diagnostic/investigative labor\n"
-            "- Battery charging\n"
-            "- Calibration/programming of unrelated systems\n"
-            "- Cleaning or conservation\n"
-            "- Environmental/disposal fees\n\n"
-            "Respond ONLY with valid JSON:\n"
-            '{"labor_items": [{"index": <int>, "is_relevant": <bool>, '
-            '"confidence": <float 0-1>, "reasoning": "<brief>"}]}'
+        prompt_data = load_prompt(
+            self.config.labor_relevance_prompt_name,
+            primary_component=primary_component,
+            primary_category=primary_category,
+            covered_parts_text=parts_text,
+            labor_items_text=labor_text,
         )
-        user_prompt = (
-            f"Primary repair: {primary_component} ({primary_category})\n\n"
-            f"Covered parts in this claim:\n{parts_text}\n\n"
-            f"Uncovered labor items to evaluate:\n{labor_text}\n\n"
-            "For each labor item, determine if it is mechanically necessary "
-            "for the primary repair. Return JSON."
-        )
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        return prompt_data["messages"]
 
     def _parse_labor_relevance_response(
         self,
@@ -1897,66 +1707,15 @@ Determine if this item is covered under the policy."""
         # Format repair description context
         repair_context_text = repair_description or ""
 
-        try:
-            from context_builder.utils.prompt_loader import load_prompt
+        from context_builder.utils.prompt_loader import load_prompt
 
-            prompt_data = load_prompt(
-                self.config.primary_repair_prompt_name,
-                line_items=items_text,
-                covered_components=comp_text,
-                repair_description=repair_context_text,
-            )
-            return prompt_data["messages"]
-        except FileNotFoundError:
-            logger.debug(
-                "Prompt file '%s' not found, using inline primary repair prompt",
-                self.config.primary_repair_prompt_name,
-            )
-
-        # Inline fallback
-        repair_context_block = ""
-        if repair_description:
-            repair_context_block = (
-                f"\n\nDiagnostic / damage context from claim documents:\n"
-                f"{repair_description}\n"
-            )
-
-        system_prompt = (
-            "You are an automotive repair analyst for a warranty insurance "
-            "company. Given a repair invoice, identify the PRIMARY component "
-            "whose failure CAUSED the repair visit.\n\n"
-            "RULES:\n"
-            "1. Use the diagnostic error codes and damage description (if "
-            "provided) as the strongest signal for what actually failed.\n"
-            "2. Look at labor descriptions to understand the repair narrative "
-            "(e.g. 'Mechatronik' labor = electronic/control unit work).\n"
-            "3. The most expensive part is NOT necessarily the primary -- "
-            "a part can be expensive yet only replaced opportunistically "
-            "while the transmission/engine is open.\n"
-            "4. Do NOT pick consumables, fasteners, gaskets, or fluids.\n"
-            "5. A part costing less than 5% of the total invoice is almost "
-            "certainly ancillary. Only select it as primary if the labor "
-            "descriptions explicitly name that component as the repair subject.\n"
-            "6. If diagnostic codes point to a specific component (e.g. "
-            "parking brake solenoid, control unit), that component is the "
-            "primary -- even if another part costs more.\n\n"
-            "Respond ONLY with valid JSON:\n"
-            '{"primary_item_index": <int>, "component": "<english_type>", '
-            '"category": "<coverage_category>", "confidence": <float 0-1>, '
-            '"reasoning": "<brief>"}'
+        prompt_data = load_prompt(
+            self.config.primary_repair_prompt_name,
+            line_items=items_text,
+            covered_components=comp_text,
+            repair_description=repair_context_text,
         )
-        user_prompt = (
-            f"Line items:\n{items_text}\n\n"
-            f"Policy covered components:\n{comp_text}\n"
-            f"{repair_context_block}\n"
-            "Which line item represents the PRIMARY repair component -- "
-            "the component whose failure caused the repair visit? "
-            "Return the item index."
-        )
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        return prompt_data["messages"]
 
     def _parse_primary_repair_response(
         self,
