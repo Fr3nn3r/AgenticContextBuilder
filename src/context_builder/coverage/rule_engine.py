@@ -60,6 +60,9 @@ class RuleConfig:
     # Rule 7.5: Standalone seal/gasket items (DICHTUNG, O-RING, etc.)
     seal_gasket_standalone_patterns: List[str]
 
+    # Confidence assigned to REVIEW_NEEDED items (fasteners, seals).
+    review_needed_confidence: float = 0.45
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "RuleConfig":
         """Create config from dictionary."""
@@ -72,6 +75,7 @@ class RuleConfig:
             generic_description_patterns=config.get("generic_description_patterns", []),
             fastener_patterns=config.get("fastener_patterns", []),
             seal_gasket_standalone_patterns=config.get("seal_gasket_standalone_patterns", []),
+            review_needed_confidence=config.get("review_needed_confidence", 0.45),
         )
 
     @classmethod
@@ -86,6 +90,7 @@ class RuleConfig:
             generic_description_patterns=[],
             fastener_patterns=[],
             seal_gasket_standalone_patterns=[],
+            review_needed_confidence=0.45,
         )
 
 
@@ -315,7 +320,8 @@ class RuleEngine:
         if self._fastener_pattern and self._fastener_pattern.match(stripped):
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Standalone fastener - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
+                   verdict=CoverageStatus.REVIEW_NEEDED,
+                   confidence=self.config.review_needed_confidence,
                    detail={"rule": "standalone_fastener"},
                    decision_source=DecisionSource.RULE)
             return self._create_review_needed(
@@ -324,6 +330,7 @@ class RuleEngine:
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone fastener - requires context to determine coverage",
+                confidence=self.config.review_needed_confidence,
                 trace=tb.build(),
             )
 
@@ -334,7 +341,8 @@ class RuleEngine:
         if self._seal_gasket_pattern and self._seal_gasket_pattern.match(stripped):
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Standalone seal/gasket - requires context to determine coverage",
-                   verdict=CoverageStatus.REVIEW_NEEDED, confidence=0.45,
+                   verdict=CoverageStatus.REVIEW_NEEDED,
+                   confidence=self.config.review_needed_confidence,
                    detail={"rule": "standalone_seal_gasket"},
                    decision_source=DecisionSource.RULE)
             return self._create_review_needed(
@@ -343,6 +351,7 @@ class RuleEngine:
                 item_code=item_code,
                 total_price=total_price,
                 reasoning="Standalone seal/gasket - requires context to determine coverage",
+                confidence=self.config.review_needed_confidence,
                 trace=tb.build(),
             )
 

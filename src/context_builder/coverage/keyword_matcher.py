@@ -47,6 +47,14 @@ class KeywordConfig:
     labor_coverage_categories: List[str] = field(default_factory=list)
     consumable_indicators: List[str] = field(default_factory=list)
 
+    # Multiplier applied to confidence when a consumable indicator is
+    # found alongside a component keyword (e.g. gasket + engine).
+    consumable_confidence_penalty: float = 0.7
+
+    # Additive boost applied to confidence when a context hint matches
+    # in addition to the primary keyword.
+    context_confidence_boost: float = 0.05
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "KeywordConfig":
         """Create config from dictionary (loaded from YAML)."""
@@ -66,6 +74,8 @@ class KeywordConfig:
             min_confidence_threshold=config.get("min_confidence_threshold", 0.70),
             labor_coverage_categories=config.get("labor_coverage_categories", []),
             consumable_indicators=config.get("consumable_indicators", []),
+            consumable_confidence_penalty=config.get("consumable_confidence_penalty", 0.7),
+            context_confidence_boost=config.get("context_confidence_boost", 0.05),
         )
 
 
@@ -143,7 +153,7 @@ class KeywordMatcher:
                 # Boost confidence if context hints match
                 for hint in mapping.context_hints:
                     if hint.upper() in description_upper:
-                        confidence = min(0.95, confidence + 0.05)
+                        confidence = min(0.95, confidence + self.config.context_confidence_boost)
                         break
 
                 matches.append((keyword, mapping, confidence))
@@ -161,7 +171,7 @@ class KeywordMatcher:
         # the component or is a consumable FOR the component.
         for indicator in self.config.consumable_indicators:
             if indicator.upper() in description_upper:
-                confidence *= 0.7
+                confidence *= self.config.consumable_confidence_penalty
                 logger.debug(
                     f"Consumable indicator '{indicator}' found in '{description}', "
                     f"reduced confidence to {confidence:.2f}"
