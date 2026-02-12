@@ -54,6 +54,8 @@ class LLMMatcherConfig:
     labor_relevance_prompt_name: str = "labor_relevance"
     # Prompt file for primary repair identification (without .md)
     primary_repair_prompt_name: str = "primary_repair"
+    # Prompt file for coverage classification (LLM-first mode, without .md)
+    classify_prompt_name: str = "coverage_classify"
 
     # Descriptions too vague for confident coverage determination.
     # Matched (uppercased) to trigger confidence capping.
@@ -88,6 +90,7 @@ class LLMMatcherConfig:
             retry_max_delay=config.get("retry_max_delay", 15.0),
             labor_relevance_prompt_name=config.get("labor_relevance_prompt_name", "labor_relevance"),
             primary_repair_prompt_name=config.get("primary_repair_prompt_name", "primary_repair"),
+            classify_prompt_name=config.get("classify_prompt_name", "coverage_classify"),
         )
         if vague is not None:
             kwargs["vague_description_terms"] = vague
@@ -705,6 +708,116 @@ Determine if this item is covered under the policy."""
 
         logger.info(f"LLM matcher processed {len(items)} items in parallel with {self._llm_calls} LLM calls")
         return results
+
+    # ------------------------------------------------------------------
+    # LLM-first coverage classification (classify_items)
+    # ------------------------------------------------------------------
+
+    def classify_items(
+        self,
+        items: List[Dict[str, Any]],
+        covered_components: Dict[str, List[str]],
+        excluded_components: Optional[Dict[str, List[str]]] = None,
+        keyword_hints: Optional[List[Optional[Dict[str, Any]]]] = None,
+        part_number_hints: Optional[List[Optional[Dict[str, Any]]]] = None,
+        claim_id: Optional[str] = None,
+        on_progress: Optional[Callable[[int], None]] = None,
+        covered_parts_in_claim: Optional[List[Dict[str, str]]] = None,
+        repair_context_description: Optional[str] = None,
+    ) -> List[LineItemCoverage]:
+        """Classify ALL items using the LLM with keyword/part-number hints.
+
+        Unlike ``batch_match()`` which is a fallback for unmatched items,
+        this method is designed as the primary classification stage.  Each
+        item's prompt is enriched with advisory hints from the keyword
+        matcher and part-number lookup, giving the LLM more context
+        without those matchers making coverage decisions.
+
+        Args:
+            items: Line item dicts (description, item_type, item_code,
+                   total_price, repair_context_description).
+            covered_components: Policy's covered components by category.
+            excluded_components: Excluded components by category.
+            keyword_hints: Parallel list of keyword hint dicts (or None
+                per item) from ``KeywordMatcher.generate_hints()``.
+            part_number_hints: Parallel list of part-number hint dicts
+                (or None per item) from ``PartNumberLookup.lookup_as_hint()``.
+            claim_id: Claim ID for audit trail.
+            on_progress: Callback after each LLM call (increment=1).
+            covered_parts_in_claim: Covered parts from prior rule stage.
+            repair_context_description: Global repair context description.
+
+        Returns:
+            List of LineItemCoverage in same order as *items*.
+        """
+        if not items:
+            return []
+
+        excluded_components = excluded_components or {}
+        covered_categories = list(covered_components.keys())
+
+        # Enrich each item dict with hint context before passing to _match_single.
+        # We inject hints into the repair_context_description field which the
+        # prompt builder already embeds in the user message.
+        enriched_items: List[Dict[str, Any]] = []
+        for i, item in enumerate(items):
+            enriched = dict(item)  # shallow copy
+
+            # Build hint text to inject into the item's context
+            hint_parts: List[str] = []
+
+            kw_hint = keyword_hints[i] if keyword_hints and i < len(keyword_hints) else None
+            if kw_hint:
+                kw_text = (
+                    f"Keyword hint: '{kw_hint.get('keyword', '')}' maps to "
+                    f"category '{kw_hint.get('category', '')}'"
+                )
+                if kw_hint.get("component"):
+                    kw_text += f" (component: {kw_hint['component']})"
+                kw_text += f" [confidence: {kw_hint.get('confidence', 0):.2f}]"
+                if kw_hint.get("has_consumable_indicator"):
+                    kw_text += " (consumable indicator present)"
+                hint_parts.append(kw_text)
+
+            pn_hint = part_number_hints[i] if part_number_hints and i < len(part_number_hints) else None
+            if pn_hint:
+                pn_text = (
+                    f"Part lookup: '{pn_hint.get('part_number', '')}' identified as "
+                    f"'{pn_hint.get('component', '')}' in category "
+                    f"'{pn_hint.get('system', '')}'"
+                )
+                if pn_hint.get("covered") is not None:
+                    pn_text += f" (covered={pn_hint['covered']})"
+                hint_parts.append(pn_text)
+
+            # Merge hints with existing repair context
+            existing_ctx = (
+                enriched.get("repair_context_description")
+                or repair_context_description
+                or ""
+            )
+            if hint_parts:
+                hint_block = " | ".join(hint_parts)
+                enriched["repair_context_description"] = (
+                    f"{hint_block}. {existing_ctx}".strip()
+                    if existing_ctx
+                    else hint_block
+                )
+            elif existing_ctx:
+                enriched["repair_context_description"] = existing_ctx
+
+            enriched_items.append(enriched)
+
+        # Delegate to existing batch_match which handles parallelism and retries
+        return self.batch_match(
+            items=enriched_items,
+            covered_categories=covered_categories,
+            covered_components=covered_components,
+            excluded_components=excluded_components,
+            claim_id=claim_id,
+            on_progress=on_progress,
+            covered_parts_in_claim=covered_parts_in_claim,
+        )
 
     # ------------------------------------------------------------------
     # Labor relevance classification (batch LLM call for Mode 2)
