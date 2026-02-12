@@ -336,8 +336,8 @@ class RuleEngine:
 
         # Rule 7.5: Standalone seal/gasket items -> REVIEW_NEEDED
         # Compound terms like ZYLINDERKOPFDICHTUNG are NOT caught (anchored pattern).
-        # Post-processing (_promote_ancillary_parts) promotes gaskets supporting
-        # a covered repair; standalone gaskets stay REVIEW_NEEDED for human review.
+        # LLM labor linkage may promote gaskets supporting a covered repair;
+        # standalone gaskets stay REVIEW_NEEDED for human review.
         if self._seal_gasket_pattern and self._seal_gasket_pattern.match(stripped):
             tb.add("rule_engine", TraceAction.MATCHED,
                    "Standalone seal/gasket - requires context to determine coverage",
