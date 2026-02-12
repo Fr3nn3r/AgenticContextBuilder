@@ -25,7 +25,7 @@ from context_builder.coverage.schemas import (
 )
 from context_builder.coverage.trace import TraceBuilder
 
-from coverage_test_helpers import make_line_item, make_primary_repair
+from coverage_test_helpers import make_line_item
 
 _WORKSPACE_COVERAGE_DIR = (
     Path(__file__).resolve().parents[2]
