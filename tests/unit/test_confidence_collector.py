@@ -542,4 +542,137 @@ def test_collect_all_mixed(collector):
     assert len(signals) == 12
 
 
+# ── 14. collect_coverage_concordance for DENY ────────────────────────
+
+
+def test_collect_coverage_concordance_deny_all_not_covered(collector):
+    """DENY with all items not_covered produces concordance = 1.0."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered"},
+            {"total_price": 300.0, "coverage_status": "not_covered"},
+        ],
+    }
+
+    signals = collector.collect_coverage_concordance(analysis, verdict="DENY")
+    assert len(signals) == 1
+
+    s = signals[0]
+    assert s.signal_name == "coverage.verdict_concordance"
+    assert s.normalized_value == pytest.approx(1.0)
+    assert s.source_stage == "coverage"
+
+
+def test_collect_coverage_concordance_deny_mixed(collector):
+    """DENY with mixed coverage produces concordance based on not_covered amount."""
+    analysis = {
+        "line_items": [
+            {"total_price": 600.0, "coverage_status": "not_covered"},
+            {"total_price": 400.0, "coverage_status": "covered"},
+        ],
+    }
+
+    signals = collector.collect_coverage_concordance(analysis, verdict="DENY")
+    assert len(signals) == 1
+
+    # 600 / (600 + 400) = 0.6
+    assert signals[0].normalized_value == pytest.approx(0.6)
+
+
+def test_collect_coverage_concordance_deny_all_covered(collector):
+    """DENY where everything is covered produces concordance = 0.0."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "covered"},
+        ],
+    }
+
+    signals = collector.collect_coverage_concordance(analysis, verdict="DENY")
+    assert len(signals) == 1
+    assert signals[0].normalized_value == pytest.approx(0.0)
+
+
+# ── 15. collect_coverage_concordance NOT emitted for APPROVE ─────────
+
+
+def test_collect_coverage_concordance_approve_empty(collector):
+    """APPROVE verdict produces no concordance signal."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered"},
+        ],
+    }
+
+    signals = collector.collect_coverage_concordance(analysis, verdict="APPROVE")
+    assert signals == []
+
+
+def test_collect_coverage_concordance_no_verdict_empty(collector):
+    """No verdict produces no concordance signal."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered"},
+        ],
+    }
+
+    signals = collector.collect_coverage_concordance(analysis, verdict="")
+    assert signals == []
+
+
+def test_collect_coverage_concordance_none_analysis(collector):
+    """None coverage analysis returns empty even for DENY."""
+    signals = collector.collect_coverage_concordance(None, verdict="DENY")
+    assert signals == []
+
+
+# ── 16. collect_all with verdict passes through to concordance ───────
+
+
+def test_collect_all_deny_includes_concordance(collector):
+    """collect_all with verdict=DENY includes the concordance signal."""
+    coverage_analysis = {
+        "line_items": [
+            {
+                "total_price": 100.0,
+                "coverage_status": "not_covered",
+                "match_confidence": 0.9,
+                "match_method": "rule",
+            },
+        ],
+        "primary_repair": {"confidence": 0.8},
+    }
+
+    signals = collector.collect_all(
+        coverage_analysis=coverage_analysis,
+        verdict="DENY",
+    )
+
+    by_name = {s.signal_name: s for s in signals}
+    assert "coverage.verdict_concordance" in by_name
+    assert by_name["coverage.verdict_concordance"].normalized_value == pytest.approx(1.0)
+
+
+def test_collect_all_approve_no_concordance(collector):
+    """collect_all with verdict=APPROVE does NOT include concordance."""
+    coverage_analysis = {
+        "line_items": [
+            {
+                "total_price": 100.0,
+                "coverage_status": "not_covered",
+                "match_confidence": 0.9,
+                "match_method": "rule",
+            },
+        ],
+        "primary_repair": {"confidence": 0.8},
+    }
+
+    signals = collector.collect_all(
+        coverage_analysis=coverage_analysis,
+        verdict="APPROVE",
+    )
+
+    by_name = {s.signal_name: s for s in signals}
+    assert "coverage.verdict_concordance" not in by_name
+
+
 

@@ -462,6 +462,69 @@ class ConfidenceCollector:
 
         return signals
 
+    # ── Coverage verdict concordance ─────────────────────────────────
+
+    def collect_coverage_concordance(
+        self,
+        coverage_analysis: Optional[Dict[str, Any]],
+        verdict: str = "",
+    ) -> List[SignalSnapshot]:
+        """Compute coverage verdict concordance (DENY only).
+
+        For DENY verdicts, measures how much of the claimed amount
+        (by value) is NOT covered -- i.e. how strongly the coverage
+        analysis supports the denial.  High concordance means the
+        coverage outcome aligns well with the denial decision.
+
+        Only emitted for DENY verdicts; returns empty for other verdicts.
+
+        Args:
+            coverage_analysis: CoverageAnalysisResult as dict.
+            verdict: Claim verdict (APPROVE, DENY, REFER).
+
+        Returns:
+            0 or 1 SignalSnapshot objects.
+        """
+        signals: List[SignalSnapshot] = []
+        if not coverage_analysis or verdict.upper() != "DENY":
+            return signals
+
+        try:
+            line_items = coverage_analysis.get("line_items") or []
+            if not line_items:
+                return signals
+
+            total_amount = 0.0
+            concordant_amount = 0.0
+
+            for item in line_items:
+                price = float(item.get("total_price", 0) or 0)
+                if price <= 0:
+                    continue
+                status = (item.get("coverage_status") or "").lower()
+                total_amount += price
+                if status == "not_covered":
+                    concordant_amount += price
+
+            if total_amount <= 0:
+                return signals
+
+            concordance = concordant_amount / total_amount
+            signals.append(SignalSnapshot(
+                signal_name="coverage.verdict_concordance",
+                raw_value=concordance,
+                normalized_value=_clamp01(concordance),
+                source_stage="coverage",
+                description=(
+                    "Amount-weighted fraction of NOT_COVERED items "
+                    "(higher = stronger denial support)"
+                ),
+            ))
+        except Exception:
+            logger.warning("Error collecting coverage concordance", exc_info=True)
+
+        return signals
+
     # ── Decision signals ─────────────────────────────────────────────
 
     def collect_decision(
@@ -536,8 +599,13 @@ class ConfidenceCollector:
         screening_result: Optional[Dict[str, Any]] = None,
         processing_result: Optional[Dict[str, Any]] = None,
         decision_result: Optional[Dict[str, Any]] = None,
+        verdict: str = "",
     ) -> List[SignalSnapshot]:
         """Collect all signals from all available stages.
+
+        Args:
+            verdict: Claim verdict (APPROVE, DENY, REFER).  Controls
+                whether the coverage concordance signal is emitted.
 
         Returns:
             Flat list of all collected SignalSnapshot objects.
@@ -546,6 +614,7 @@ class ConfidenceCollector:
         all_signals.extend(self.collect_extraction(extraction_results or []))
         all_signals.extend(self.collect_reconciliation(reconciliation_report))
         all_signals.extend(self.collect_coverage(coverage_analysis))
+        all_signals.extend(self.collect_coverage_concordance(coverage_analysis, verdict))
         all_signals.extend(self.collect_screening(screening_result))
         all_signals.extend(self.collect_assessment(processing_result))
         all_signals.extend(self.collect_decision(decision_result))
