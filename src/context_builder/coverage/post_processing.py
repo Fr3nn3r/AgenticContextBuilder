@@ -277,6 +277,7 @@ def apply_labor_linkage(
 def demote_orphan_labor(
     items: List[LineItemCoverage],
     primary_repair: Optional[PrimaryRepairResult] = None,
+    repair_context: Any = None,
 ) -> List[LineItemCoverage]:
     """Demote labor items to NOT_COVERED when no parts are covered.
 
@@ -285,15 +286,17 @@ def demote_orphan_labor(
     excluded by a rule), any covered labor has no anchor and should
     be demoted.
 
-    Exception: when the primary repair component is covered by policy
-    (``primary_repair.is_covered``), labor is anchored to that repair
-    even if no explicit parts line item exists on the invoice.  This
-    handles labor-only invoices where the garage bills labor without
-    listing the replaced part separately.
+    Exception: when the primary repair or repair context component is
+    covered by policy, labor is anchored to that repair even if no
+    explicit parts line item exists on the invoice.  This handles
+    labor-only invoices where the garage bills labor without listing
+    the replaced part separately, and cases where the primary repair
+    part is REVIEW_NEEDED but the repair context confirms coverage.
 
     Args:
         items: List of analyzed line items (after all promotion stages).
         primary_repair: Primary repair determination result (optional).
+        repair_context: Repair context from labor descriptions (optional).
 
     Returns:
         Updated list with orphaned labor items demoted.
@@ -312,6 +315,16 @@ def demote_orphan_labor(
         logger.info(
             "Skipping orphan labor demotion: primary repair '%s' is covered",
             primary_repair.component,
+        )
+        return items
+
+    # Repair context is covered — labor describes work on a covered
+    # component even when the parts line item is REVIEW_NEEDED.
+    if repair_context and repair_context.is_covered:
+        ctx_name = getattr(repair_context, "primary_component", None) or getattr(repair_context, "component", None)
+        logger.info(
+            "Skipping orphan labor demotion: repair context '%s' is covered",
+            ctx_name,
         )
         return items
 

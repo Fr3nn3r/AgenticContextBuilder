@@ -1757,6 +1757,48 @@ class TestDemoteLaborWithoutCoveredParts:
         assert labor.coverage_status == CoverageStatus.NOT_COVERED
         assert labor.exclusion_reason == "demoted_no_anchor"
 
+    def test_labor_not_demoted_when_repair_context_is_covered(self, analyzer):
+        """Labor should NOT be demoted when repair_context is covered.
+
+        This handles the case where primary_repair.is_covered is False
+        (e.g. part is REVIEW_NEEDED) but repair_context correctly
+        identifies the component as covered from the labor description.
+        """
+        items = [
+            make_line_item(
+                description="Oil filter housing", item_type="parts",
+                coverage_status=CoverageStatus.REVIEW_NEEDED,
+                covered_amount=0.0, not_covered_amount=458.0,
+            ),
+            make_line_item(
+                description="Oil cooler replacement labor", item_type="labor",
+                match_method=MatchMethod.LLM, total_price=660.0,
+                covered_amount=660.0, not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="oil_cooler",
+            category="engine",
+            description="Oil filter housing",
+            is_covered=False,
+            confidence=0.95,
+            determination_method="llm",
+        )
+        ctx = PrimaryRepairResult(
+            component="oil_cooler",
+            category="engine",
+            description="Oil cooler replacement labor",
+            is_covered=True,
+            confidence=0.0,
+            determination_method="repair_context",
+        )
+        result = demote_orphan_labor(
+            items, primary_repair=primary, repair_context=ctx,
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 660.0
+
 
 class TestApplyLaborFollowsPartsLLM:
     """Tests for apply_labor_linkage with LLM labor linkage (Strategy 2)."""

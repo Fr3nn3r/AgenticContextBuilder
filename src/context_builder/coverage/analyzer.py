@@ -108,6 +108,7 @@ class ComponentConfig:
     gasket_seal_indicators: set
     ancillary_keywords: set
     additional_policy_parts: Dict[str, List[str]]
+    always_excluded_components: Dict[str, List[str]]
 
     @classmethod
     def default(cls) -> "ComponentConfig":
@@ -121,6 +122,7 @@ class ComponentConfig:
             gasket_seal_indicators=set(),
             ancillary_keywords=set(),
             additional_policy_parts={},
+            always_excluded_components={},
         )
 
     @classmethod
@@ -152,6 +154,7 @@ class ComponentConfig:
                 data.get("ancillary_keywords", [])
             ),
             additional_policy_parts=data.get("additional_policy_parts", {}),
+            always_excluded_components=data.get("always_excluded_components", {}),
         )
 
 
@@ -1310,6 +1313,35 @@ class CoverageAnalyzer:
         # Cross-check: use OUR coverage_status, not the LLM's opinion
         is_covered = source_item.coverage_status == CoverageStatus.COVERED
 
+        # Policy-level fallback: when the per-item classification is
+        # uncertain (REVIEW_NEEDED) but the LLM-identified component
+        # category IS covered by the policy, trust the policy.  This
+        # handles cases where the line item description is ambiguous
+        # (e.g., "Gehäuse, Ölfilter") but the primary repair component
+        # ("oil_cooler") is clearly covered under the engine category.
+        # Exclusion pattern checks below will still catch excluded
+        # components.
+        #
+        # NOTE: only applies to REVIEW_NEEDED — when the per-item LLM
+        # confidently classified an item as NOT_COVERED, it likely has
+        # good reason (wear item, excluded component, etc.).
+        if (
+            not is_covered
+            and source_item.coverage_status == CoverageStatus.REVIEW_NEEDED
+        ):
+            llm_category = result.get("category", "")
+            if llm_category:
+                covered_cats = self._extract_covered_categories(covered_components)
+                if self._is_system_covered(llm_category, covered_cats):
+                    logger.info(
+                        "Primary repair coverage override: category '%s' is "
+                        "covered by policy despite source item status '%s' "
+                        "for claim %s",
+                        llm_category, source_item.coverage_status.value,
+                        claim_id,
+                    )
+                    is_covered = True
+
         # Parse root cause fields (may be same as primary)
         root_cause_idx = result.get("root_cause_item_index")
         root_cause_component = result.get("root_cause_component")
@@ -1484,6 +1516,7 @@ class CoverageAnalyzer:
             return False
 
         description_lower = item.description.lower()
+        matched_comp_lower = (item.matched_component or "").lower()
 
         for category, excluded_parts in excluded_components.items():
             for part in excluded_parts:
@@ -1493,6 +1526,17 @@ class CoverageAnalyzer:
                     logger.debug(
                         f"Item '{item.description}' matches excluded part '{part}' "
                         f"in category '{category}'"
+                    )
+                    return True
+                # Check for substring match in LLM-assigned matched_component
+                if matched_comp_lower and (
+                    part_lower in matched_comp_lower
+                    or matched_comp_lower in part_lower
+                ):
+                    logger.debug(
+                        f"Item '{item.description}' (matched_component="
+                        f"'{item.matched_component}') matches excluded part "
+                        f"'{part}' in category '{category}'"
                     )
                     return True
 
@@ -1539,6 +1583,17 @@ class CoverageAnalyzer:
         covered_components = covered_components or {}
         excluded_components = excluded_components or {}
 
+        # Merge always-excluded components from customer config
+        if self.component_config and self.component_config.always_excluded_components:
+            for cat, parts in self.component_config.always_excluded_components.items():
+                cat_lower = cat.lower()
+                if cat_lower in excluded_components:
+                    existing = set(excluded_components[cat_lower])
+                    existing.update(parts)
+                    excluded_components[cat_lower] = list(existing)
+                else:
+                    excluded_components[cat_lower] = list(parts)
+
         # Determine coverage percentage from scale (with per-tier age adjustment)
         mileage_percent, effective_percent = self._determine_coverage_percent(
             vehicle_km,
@@ -1557,6 +1612,18 @@ class CoverageAnalyzer:
             )
             mileage_percent = self.config.default_coverage_percent
             effective_percent = self.config.default_coverage_percent
+
+        # Merge additional_policy_parts into covered_components so the LLM
+        # sees the extended parts list (e.g., "Différentiel" under four_wd).
+        if self.component_config and self.component_config.additional_policy_parts:
+            for cat, extra_parts in self.component_config.additional_policy_parts.items():
+                cat_lower = cat.lower()
+                if cat_lower in covered_components:
+                    existing = list(covered_components[cat_lower])
+                    for p in extra_parts:
+                        if p not in existing:
+                            existing.append(p)
+                    covered_components[cat_lower] = existing
 
         # Extract covered categories
         covered_categories = self._extract_covered_categories(covered_components)
@@ -1717,7 +1784,10 @@ class CoverageAnalyzer:
         )
 
         # 3. Orphan labor demotion (safety net)
-        all_items = demote_orphan_labor(all_items, primary_repair=primary_repair)
+        all_items = demote_orphan_labor(
+            all_items, primary_repair=primary_repair,
+            repair_context=repair_context,
+        )
 
         # 4. Nominal-price labor flagging (audit rule)
         all_items = flag_nominal_price_labor(
