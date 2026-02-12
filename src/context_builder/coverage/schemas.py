@@ -194,8 +194,17 @@ class CoverageMetadata(BaseModel):
     part_numbers_applied: int = Field(
         0, description="Count of items matched by part number lookup"
     )
-    keywords_applied: int = Field(0, description="Count of items matched by keywords")
+    keywords_applied: int = Field(
+        0,
+        description="Count of items matched by keywords (0 in LLM-first mode)",
+    )
     llm_calls: int = Field(0, description="Count of LLM calls made")
+    keyword_hints_generated: int = Field(
+        0, description="Count of keyword hints generated for LLM enrichment"
+    )
+    part_number_hints_generated: int = Field(
+        0, description="Count of part-number hints generated for LLM enrichment"
+    )
     processing_time_ms: Optional[float] = Field(
         None, description="Processing time in milliseconds"
     )
