@@ -1,8 +1,10 @@
 """Confidence scorer for the Composite Confidence Index.
 
 Takes a list of ``SignalSnapshot`` objects and computes a weighted
-composite score with five components.  If a component has zero signals
-its weight is redistributed proportionally to the remaining components.
+composite score with five components.  If a non-required component has
+zero signals its weight is redistributed proportionally to the remaining
+components.  Required components (see ``REQUIRED_COMPONENTS``) always
+participate at score 0.0 so that missing data penalises confidence.
 
 Verdict-aware scoring
 ---------------------
@@ -63,6 +65,12 @@ DENY_POLARITY_FLIPS = frozenset({
 })
 
 # ── Signal-to-component mapping ─────────────────────────────────────
+
+# Components that always participate in the weighted average, even when
+# they have no signals.  Missing data in these components should reduce
+# confidence (score=0.0 at full weight) rather than inflate the remaining
+# components through weight redistribution.
+REQUIRED_COMPONENTS: frozenset = frozenset({"coverage_reliability"})
 
 COMPONENT_SIGNALS: Dict[str, List[str]] = {
     "document_quality": [
@@ -191,6 +199,10 @@ class ConfidenceScorer:
                     stages_available.add(s.source_stage)
             else:
                 score = 0.0
+                # Required components stay active at score=0.0 so missing
+                # data penalises confidence instead of inflating it.
+                if comp_name in REQUIRED_COMPONENTS:
+                    active_weights[comp_name] = weights.get(comp_name, 0.0)
                 # Track which stages are missing
                 for sn in sig_names:
                     stage = sn.split(".")[0]

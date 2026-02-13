@@ -1263,6 +1263,7 @@ class CoverageAnalyzer:
         covered_components: Dict[str, List[str]],
         claim_id: str = "",
         repair_description: Optional[str] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> Optional[PrimaryRepairResult]:
         """Use LLM to identify the primary repair component.
 
@@ -1299,6 +1300,7 @@ class CoverageAnalyzer:
                 covered_components=covered_components,
                 claim_id=claim_id,
                 repair_description=repair_description,
+                excluded_components=excluded_components,
             )
         except Exception as e:
             logger.warning(
@@ -1312,6 +1314,41 @@ class CoverageAnalyzer:
 
         primary_idx = result["primary_item_index"]
         source_item = all_items[primary_idx]
+
+        # Guard: primary repair must be a parts item, not labor/fee.
+        # Labor describes work being done; the primary repair is the
+        # component being replaced. If the LLM picked a labor item,
+        # redirect to the highest-value parts item.
+        if source_item.item_type in LABOR_TYPES or source_item.item_type == "fee":
+            best_parts = None
+            best_parts_idx = None
+            for idx, item in enumerate(all_items):
+                if item.item_type in ("parts", "part", "piece"):
+                    if best_parts is None or (item.total_price or 0) > (best_parts.total_price or 0):
+                        best_parts = item
+                        best_parts_idx = idx
+            if best_parts is not None:
+                logger.info(
+                    "Primary repair redirect: LLM picked %s item [%d] '%s', "
+                    "redirecting to highest-value parts item [%d] '%s' (%.0f CHF) "
+                    "for claim %s",
+                    source_item.item_type, primary_idx, source_item.description,
+                    best_parts_idx, best_parts.description,
+                    best_parts.total_price or 0, claim_id,
+                )
+                primary_idx = best_parts_idx
+                source_item = best_parts
+                # Override LLM's component/category with the actual parts item
+                result["component"] = source_item.matched_component
+                result["category"] = source_item.coverage_category
+            else:
+                logger.warning(
+                    "Primary repair: LLM picked %s item [%d] '%s' but no parts "
+                    "items found for redirect in claim %s -- falling back",
+                    source_item.item_type, primary_idx, source_item.description,
+                    claim_id,
+                )
+                return None  # Fall through to Tier 2 deterministic
 
         # Cross-check: use OUR coverage_status, not the LLM's opinion
         is_covered = source_item.coverage_status == CoverageStatus.COVERED
@@ -1388,6 +1425,30 @@ class CoverageAnalyzer:
                 )
                 is_covered = False
 
+        # (c) Check if root cause is an explicitly excluded sub-component.
+        #     This catches cases like "timing_chain" being the root cause
+        #     inside a covered "engine" category -- the category is covered
+        #     but the specific sub-component is excluded.
+        if is_covered and root_cause_component and excluded_components:
+            root_comp_lower = root_cause_component.lower().replace("_", " ")
+            for cat, excl_parts in excluded_components.items():
+                for excl_part in excl_parts:
+                    excl_lower = excl_part.lower()
+                    if (
+                        root_comp_lower in excl_lower
+                        or excl_lower in root_comp_lower
+                    ):
+                        logger.warning(
+                            "Consequential damage: root cause '%s' matches "
+                            "excluded component '%s' (%s) for claim %s "
+                            "-- overriding is_covered=False",
+                            root_cause_component, excl_part, cat, claim_id,
+                        )
+                        is_covered = False
+                        break
+                if not is_covered:
+                    break
+
         logger.info(
             "Primary repair (tier 0 LLM): '%s' (%s, %s, %.0f CHF, covered=%s) "
             "for claim %s",
@@ -1419,6 +1480,7 @@ class CoverageAnalyzer:
         repair_context: Optional["RepairContext"] = None,
         claim_id: str = "",
         repair_description: Optional[str] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> PrimaryRepairResult:
         """Determine the primary repair component (LLM-first, 2-tier).
 
@@ -1445,6 +1507,7 @@ class CoverageAnalyzer:
             primary_result = self._llm_determine_primary(
                 all_items, covered_components, claim_id,
                 repair_description=repair_description,
+                excluded_components=excluded_components,
             )
 
         # Tier 2: Deterministic fallback -- highest-value covered part
@@ -1893,6 +1956,7 @@ class CoverageAnalyzer:
         primary_repair = self._determine_primary_repair(
             all_items, covered_components, repair_context, claim_id,
             repair_description=repair_description,
+            excluded_components=excluded_components,
         )
 
         # 2. LLM labor linkage (part-number matching + LLM for rest)

@@ -422,6 +422,10 @@ class DashboardService:
             # Set decision from dossier verdict (authoritative source)
             decision = wb_verdict
 
+            # Zero payout when claim is denied — a denied claim has no payout
+            if decision == "DENY":
+                payout = 0.0
+
             # Derive result code using authoritative decision
             if assessment:
                 result_code = self._derive_result_code(assessment, decision=decision)
@@ -552,6 +556,16 @@ class DashboardService:
                     screening_payout = screen_data.get("payout")
                 except (json.JSONDecodeError, IOError):
                     pass
+
+            # Decision dossier — zero payout when claim is denied
+            dossier_path = self._find_latest_dossier(run_dir)
+            if dossier_path:
+                dossier_data = self._load_json(dossier_path)
+                if dossier_data:
+                    verdict = (dossier_data.get("claim_verdict") or "").upper()
+                    if verdict == "DENY" and isinstance(payout_calculation, dict):
+                        payout_calculation = dict(payout_calculation)
+                        payout_calculation["final_payout"] = 0.0
 
         # Compute parts/labor from coverage_items (works on existing data)
         sys_parts_gross = 0.0

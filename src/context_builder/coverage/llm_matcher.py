@@ -1526,6 +1526,7 @@ class LLMMatcher:
         covered_components: Dict[str, List[str]],
         claim_id: Optional[str] = None,
         repair_description: Optional[str] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Identify the primary repair component using LLM.
 
@@ -1549,6 +1550,7 @@ class LLMMatcher:
 
         messages = self._build_primary_repair_prompt(
             all_items, covered_components, repair_description,
+            excluded_components=excluded_components,
         )
 
         client = self._get_client()
@@ -1609,6 +1611,7 @@ class LLMMatcher:
         all_items: List[Dict[str, Any]],
         covered_components: Dict[str, List[str]],
         repair_description: Optional[str] = None,
+        excluded_components: Optional[Dict[str, List[str]]] = None,
     ) -> List[Dict[str, str]]:
         """Build prompt messages for primary repair identification.
 
@@ -1642,6 +1645,13 @@ class LLMMatcher:
                 comp_lines.append(f"  - {category}: {parts_list}")
         comp_text = "\n".join(comp_lines) if comp_lines else "  (none)"
 
+        # Format excluded components
+        excl_lines = []
+        for category, parts in (excluded_components or {}).items():
+            if parts:
+                excl_lines.append(f"  - {category}: {', '.join(parts)}")
+        excl_text = "\n".join(excl_lines) if excl_lines else "  (none)"
+
         # Format repair description context
         repair_context_text = repair_description or ""
 
@@ -1651,6 +1661,7 @@ class LLMMatcher:
             self.config.primary_repair_prompt_name,
             line_items=items_text,
             covered_components=comp_text,
+            excluded_components=excl_text,
             repair_description=repair_context_text,
         )
         return prompt_data["messages"]

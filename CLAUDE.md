@@ -225,6 +225,11 @@ Use these prefixes to indicate the type of change:
 
 ## Customer Configuration (CRITICAL)
 
+> **ACTIVE PROJECT: NSA**
+> All current development work is for the NSA customer. When modifying prompts, extraction specs, keyword mappings, thresholds, or any domain-specific configuration, **always update the customer config** (`workspaces/nsa/config/`), **never the core product** (`src/context_builder/`).
+>
+> **Common mistake:** Developers have updated core product prompts in `src/` instead of the customer prompts in `workspaces/nsa/config/prompts/`. If you are about to edit a prompt, extractor, or spec file under `src/`, **STOP and ask** -- it almost certainly belongs in the customer config instead.
+
 Customer-specific extractors, prompts, and specs are stored in **separate git repos** (not in the main codebase).
 
 > **WARNING**: Files in `workspaces/nsa/config/` are **GITIGNORED** in this repo.

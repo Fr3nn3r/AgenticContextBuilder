@@ -50,6 +50,13 @@ are "consequential damage." In warranty claims, coverage depends on the ROOT
 CAUSE component, not the individual downstream parts. If the root cause is
 not covered, all consequential damage is also denied.
 
+**CRITICAL: primary_item_index and root_cause_item_index must point to PARTS items (type=parts), never labor or fee items.**
+Labor lines describe work being done and should be used as *evidence* to identify
+which PART is the primary repair, but the index must reference a parts line.
+Example: labor "ARBRE DE PONT: DEPOSE ET REPOSE" (axle shaft remove/reinstall)
+with parts "Gaine Etancheite" (sealing sleeve) -> primary = the sealing sleeve
+parts line (the thing being replaced), not the axle shaft labor (access work).
+
 Respond ONLY with valid JSON:
 ```json
 {

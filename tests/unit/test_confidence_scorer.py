@@ -177,9 +177,10 @@ class TestCustomWeights:
 
 
 class TestSingleComponentActive:
-    """Test 6: Only extraction signals -> that component gets weight 1.0."""
+    """Test 6: Only extraction signals -> coverage_reliability still active
+    (required component) at score 0.0, dragging composite down."""
 
-    def test_single_component_gets_full_weight(self):
+    def test_single_component_with_required_coverage(self):
         # Only document_quality signals (source_stage = extraction)
         signals = [
             _make_signal(name, 0.9)
@@ -189,11 +190,18 @@ class TestSingleComponentActive:
         scorer = ConfidenceScorer()
         summary = scorer.compute(signals)
 
-        # document_quality should have effective weight of 1.0
-        assert summary.weights_used["document_quality"] == pytest.approx(1.0, abs=0.01)
+        # coverage_reliability is a required component — active at score 0.0
+        # Active weights: doc_quality=0.15, coverage_reliability=0.30
+        # doc_quality effective weight = 0.15 / 0.45 = 0.333
+        assert summary.weights_used["document_quality"] == pytest.approx(
+            0.15 / 0.45, abs=0.01
+        )
+        assert summary.weights_used["coverage_reliability"] == pytest.approx(
+            0.30 / 0.45, abs=0.01
+        )
 
-        # Composite should equal the single component score
-        assert summary.composite_score == pytest.approx(0.9, abs=0.01)
+        # Composite = 0.9 * 0.333 + 0.0 * 0.667 ≈ 0.30
+        assert summary.composite_score == pytest.approx(0.30, abs=0.02)
 
 
 class TestScoreToBandBoundaries:
@@ -301,8 +309,8 @@ class TestComponentCountFlag:
 
         component_flag = [f for f in summary.flags if "components active" in f]
         assert len(component_flag) == 1
-        # 2 of 5 components have signals
-        assert "2/5" in component_flag[0]
+        # 2 components have signals + coverage_reliability is required = 3 active
+        assert "3/5" in component_flag[0]
 
 
 class TestSignalNames:
@@ -582,3 +590,71 @@ class TestMultiplierChain:
             if c.component == "coverage_reliability"
         )
         assert cr.score == pytest.approx(0.8, abs=0.01)
+
+
+class TestRequiredComponents:
+    """Test 17: Required components stay active even with no signals."""
+
+    def test_missing_coverage_penalises_not_inflates(self):
+        """When coverage_reliability has no signals, CCI should be lower
+        than when coverage data is present and scoring well."""
+        # All signals except coverage
+        signals_no_coverage = []
+        for comp, sig_names in COMPONENT_SIGNALS.items():
+            if comp == "coverage_reliability":
+                continue
+            for name in sig_names:
+                signals_no_coverage.append(_make_signal(name, 0.85))
+
+        # Same but WITH coverage signals
+        signals_with_coverage = list(signals_no_coverage)
+        for name in COMPONENT_SIGNALS["coverage_reliability"]:
+            signals_with_coverage.append(_make_signal(name, 0.85))
+
+        scorer = ConfidenceScorer()
+        no_cov = scorer.compute(signals_no_coverage)
+        with_cov = scorer.compute(signals_with_coverage)
+
+        # Missing coverage should score LOWER, not higher
+        assert no_cov.composite_score < with_cov.composite_score
+
+    def test_coverage_reliability_stays_active_at_zero(self):
+        """coverage_reliability is active with score 0.0 when it has no signals."""
+        # Only document_quality and consistency signals
+        signals = []
+        for name in COMPONENT_SIGNALS["document_quality"]:
+            signals.append(_make_signal(name, 0.9))
+        for name in COMPONENT_SIGNALS["consistency"]:
+            signals.append(_make_signal(name, 0.9))
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        # coverage_reliability should have non-zero effective weight
+        assert summary.weights_used["coverage_reliability"] > 0.0
+
+        # Its score should be 0.0
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        assert cr.score == pytest.approx(0.0)
+
+    def test_non_required_components_still_redistribute(self):
+        """Non-required components (e.g. document_quality) still redistribute
+        their weight when they have no signals."""
+        # All signals except document_quality
+        signals = []
+        for comp, sig_names in COMPONENT_SIGNALS.items():
+            if comp == "document_quality":
+                continue
+            for name in sig_names:
+                signals.append(_make_signal(name, 0.9))
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        # document_quality should have effective weight 0 (redistributed)
+        assert summary.weights_used["document_quality"] == pytest.approx(0.0)
+        # Composite should be high (0.9 across all active components)
+        assert summary.composite_score == pytest.approx(0.9, abs=0.02)

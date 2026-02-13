@@ -288,11 +288,11 @@ def test_collect_coverage_full(collector):
     assert s.normalized_value == pytest.approx(0.25)
     assert s.source_stage == "coverage"
 
-    # zero_coverage_penalty: 1 covered item -> 1.0
+    # zero_coverage_penalty: 1/2 = 50% coverage rate, 0.50/0.30 = 1.67 -> 1.0
     s = by_name["coverage.zero_coverage_penalty"]
     assert s.normalized_value == pytest.approx(1.0)
 
-    # payout_materiality: 1000/1500 = 0.667, scaled = 1.0 (above 10%)
+    # payout_materiality: 1000/1500 = 0.667, 0.667/0.20 = 3.33 -> 1.0
     s = by_name["coverage.payout_materiality"]
     assert s.normalized_value == pytest.approx(1.0)
 
@@ -900,7 +900,7 @@ def test_policy_confirmation_rate_backward_compat(collector):
 
 
 def test_zero_coverage_penalty_with_covered_items(collector):
-    """Items covered -> penalty = 1.0 (no penalty)."""
+    """1 of 2 items covered -> coverage_rate=0.5, penalty = min(1.0, 0.5/0.30) = 1.0."""
     analysis = {
         "line_items": [
             {"total_price": 500.0, "coverage_status": "covered",
@@ -915,7 +915,34 @@ def test_zero_coverage_penalty_with_covered_items(collector):
     by_name = {s.signal_name: s for s in signals}
 
     assert "coverage.zero_coverage_penalty" in by_name
+    # 1/2 = 50% coverage rate, 0.50/0.30 = 1.67, clamped to 1.0
     assert by_name["coverage.zero_coverage_penalty"].normalized_value == pytest.approx(1.0)
+
+
+def test_zero_coverage_penalty_low_coverage_rate(collector):
+    """2 of 10 items covered -> coverage_rate=0.2, penalty = 0.2/0.30 = 0.667."""
+    items = [
+        {"total_price": 100.0, "coverage_status": "covered",
+         "match_method": "rule", "item_type": "parts"}
+        for _ in range(2)
+    ] + [
+        {"total_price": 100.0, "coverage_status": "not_covered",
+         "match_method": "rule", "item_type": "parts"}
+        for _ in range(8)
+    ]
+    analysis = {
+        "line_items": items,
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.zero_coverage_penalty" in by_name
+    # 2/10 = 20% coverage rate, 0.20/0.30 = 0.667
+    assert by_name["coverage.zero_coverage_penalty"].normalized_value == pytest.approx(
+        0.667, abs=0.01
+    )
 
 
 def test_zero_coverage_penalty_none_covered(collector):
@@ -941,7 +968,7 @@ def test_zero_coverage_penalty_none_covered(collector):
 
 
 def test_payout_materiality_high_coverage(collector):
-    """High coverage ratio (>10%) -> materiality = 1.0."""
+    """High coverage ratio (>20%) -> materiality = 1.0."""
     analysis = {
         "line_items": [
             {"total_price": 500.0, "coverage_status": "covered",
@@ -955,12 +982,12 @@ def test_payout_materiality_high_coverage(collector):
     by_name = {s.signal_name: s for s in signals}
 
     assert "coverage.payout_materiality" in by_name
-    # 500/1000 = 50%, 0.50/0.10 = 5.0, clamped to 1.0
+    # 500/1000 = 50%, 0.50/0.20 = 2.5, clamped to 1.0
     assert by_name["coverage.payout_materiality"].normalized_value == pytest.approx(1.0)
 
 
 def test_payout_materiality_trivial_coverage(collector):
-    """Trivial coverage ratio (1.3%) -> materiality = 0.13."""
+    """Trivial coverage ratio (1.3%) -> materiality = 0.066."""
     analysis = {
         "line_items": [
             {"total_price": 157.0, "coverage_status": "covered",
@@ -976,9 +1003,31 @@ def test_payout_materiality_trivial_coverage(collector):
     by_name = {s.signal_name: s for s in signals}
 
     assert "coverage.payout_materiality" in by_name
-    # 157/11900 = 0.0132, 0.0132/0.10 = 0.132
+    # 157/11900 = 0.0132, 0.0132/0.20 = 0.066
     s = by_name["coverage.payout_materiality"]
-    assert s.normalized_value == pytest.approx(0.132, abs=0.01)
+    assert s.normalized_value == pytest.approx(0.066, abs=0.01)
+
+
+def test_payout_materiality_mid_range_coverage(collector):
+    """Mid-range coverage ratio (14%) -> materiality = 0.70."""
+    analysis = {
+        "line_items": [
+            {"total_price": 345.0, "coverage_status": "covered",
+             "match_method": "rule", "item_type": "parts"},
+            {"total_price": 2128.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+        "summary": {"total_claimed": 2473.0, "total_covered_before_excess": 345.0},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.payout_materiality" in by_name
+    # 345/2473 = 0.1395, 0.1395/0.20 = 0.698
+    s = by_name["coverage.payout_materiality"]
+    assert s.normalized_value == pytest.approx(0.698, abs=0.01)
 
 
 def test_payout_materiality_no_covered_items(collector):

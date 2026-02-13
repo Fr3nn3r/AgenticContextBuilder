@@ -362,20 +362,28 @@ class ConfidenceCollector:
                 ))
 
             # zero_coverage_penalty: multiplier on coverage_reliability.
-            # When no items are covered despite having line items, this
-            # zeros out the coverage_reliability component entirely.
+            # Graded by coverage rate: 0.0 when nothing covered, ramps
+            # to 1.0 at 30% item coverage rate.  Claims with very few
+            # covered items get a proportional penalty.
             covered_count = sum(
                 1 for item in line_items
                 if (item.get("coverage_status") or "").lower() == "covered"
             )
             if total_items > 0:
-                penalty = 1.0 if covered_count > 0 else 0.0
+                if covered_count == 0:
+                    penalty = 0.0
+                else:
+                    coverage_rate = covered_count / total_items
+                    penalty = min(1.0, coverage_rate / 0.30)
                 signals.append(SignalSnapshot(
                     signal_name="coverage.zero_coverage_penalty",
                     raw_value=float(covered_count),
-                    normalized_value=penalty,
+                    normalized_value=round(penalty, 4),
                     source_stage="coverage",
-                    description="0.0 when no items covered (multiplier on coverage_reliability)",
+                    description=(
+                        f"Coverage rate penalty: {covered_count}/{total_items} "
+                        f"items covered (multiplier on coverage_reliability)"
+                    ),
                 ))
 
             # payout_materiality: multiplier on coverage_reliability.
@@ -388,8 +396,8 @@ class ConfidenceCollector:
             )
             if total_claimed > 0 and covered_count > 0:
                 ratio = total_covered / total_claimed
-                # Below 10% coverage ratio gets progressively penalised
-                materiality = min(1.0, ratio / 0.10)
+                # Below 20% coverage ratio gets progressively penalised
+                materiality = min(1.0, ratio / 0.20)
                 signals.append(SignalSnapshot(
                     signal_name="coverage.payout_materiality",
                     raw_value=round(ratio, 4),

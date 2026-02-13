@@ -2751,6 +2751,108 @@ class TestPrimaryRepairExclusionOverride:
         assert result.is_covered is True
         assert result.root_cause_category == "electrical_system"
 
+    def test_llm_primary_repair_redirects_labor_to_parts(
+        self, nsa_component_config,
+    ):
+        """LLM picks a labor item -> redirect to highest-value parts item."""
+        mock_llm = MagicMock()
+        # LLM picks index 0 (labor line), but the actual part is index 2
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "axle_shaft",
+            "category": "drivetrain",
+            "confidence": 0.85,
+            "reasoning": "Axle shaft removal",
+            "root_cause_item_index": 0,
+            "root_cause_component": "axle_shaft",
+            "root_cause_category": "drivetrain",
+        }
+
+        analyzer = CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_primary_repair=True),
+            llm_matcher=mock_llm,
+            component_config=nsa_component_config,
+        )
+
+        items = [
+            make_line_item(
+                description="ARBRE DE PONT: DEPOSE ET REPOSE",
+                item_type="labor",
+                total_price=350.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="drivetrain",
+                matched_component="axle_shaft",
+            ),
+            make_line_item(
+                description="Ecrou", item_type="parts",
+                total_price=32.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="drivetrain",
+                matched_component="nut",
+            ),
+            make_line_item(
+                description="Gaine Etancheite", item_type="parts",
+                total_price=108.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="drivetrain",
+                matched_component="sealing_sleeve",
+                covered_amount=0.0, not_covered_amount=108.0,
+            ),
+        ]
+
+        covered = {"drivetrain": ["axle_shaft", "nut"]}
+        result = analyzer._determine_primary_repair(items, covered, None, "65211")
+
+        # Should redirect to the highest-value parts item (Gaine Etancheite)
+        assert result.source_item_index == 2
+        assert result.description == "Gaine Etancheite"
+        assert result.component == "sealing_sleeve"
+        assert result.is_covered is False
+        assert result.determination_method == "llm"
+
+    def test_llm_primary_repair_no_parts_falls_back(
+        self, nsa_component_config,
+    ):
+        """LLM picks a labor item but no parts items exist -> fallback to Tier 2."""
+        mock_llm = MagicMock()
+        mock_llm.determine_primary_repair.return_value = {
+            "primary_item_index": 0,
+            "component": "axle_shaft",
+            "category": "drivetrain",
+            "confidence": 0.85,
+            "reasoning": "Axle shaft removal",
+        }
+
+        analyzer = CoverageAnalyzer(
+            config=AnalyzerConfig(use_llm_primary_repair=True),
+            llm_matcher=mock_llm,
+            component_config=nsa_component_config,
+        )
+
+        items = [
+            make_line_item(
+                description="ARBRE DE PONT: DEPOSE ET REPOSE",
+                item_type="labor",
+                total_price=350.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="drivetrain",
+                matched_component="axle_shaft",
+            ),
+            make_line_item(
+                description="Diagnostic fee",
+                item_type="fee",
+                total_price=100.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+            ),
+        ]
+
+        covered = {"drivetrain": ["axle_shaft"]}
+        result = analyzer._determine_primary_repair(items, covered, None, "TEST-NO-PARTS")
+
+        # LLM picked labor, no parts available -> falls back to deterministic
+        # but Tier 2 also finds no parts, so result is "none"
+        assert result.determination_method in ("deterministic", "none")
+
 
 # ── demote_labor_for_excluded_parts ──────────────────────────────────
 
