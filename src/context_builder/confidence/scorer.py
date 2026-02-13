@@ -67,7 +67,7 @@ DENY_POLARITY_FLIPS = frozenset({
 COMPONENT_SIGNALS: Dict[str, List[str]] = {
     "document_quality": [
         "extraction.avg_field_confidence",
-        "extraction.avg_doc_type_confidence",
+        # extraction.avg_doc_type_confidence removed: LLM self-reported, near-zero discriminative power
         "extraction.quality_gate_pass_rate",
         "extraction.provenance_match_rate",
         "extraction.verified_evidence_rate",
@@ -82,10 +82,10 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
         "reconciliation.gate_status_score",
     ],
     "coverage_reliability": [
-        "coverage.avg_match_confidence",
+        "coverage.structural_match_quality",
         # coverage.review_needed_rate removed: zero variance across all eval claims
         "coverage.method_diversity",
-        "coverage.primary_repair_confidence",
+        "coverage.primary_repair_method_reliability",
         "coverage.verdict_concordance",
     ],
     "decision_clarity": [

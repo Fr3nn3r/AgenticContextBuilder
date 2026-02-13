@@ -22,9 +22,11 @@ Primary entry point::
 from typing import Any, Dict, List, Optional
 
 from context_builder.confidence.collector import ConfidenceCollector
+from context_builder.confidence.routing import ClaimRouter, load_thresholds
 from context_builder.confidence.scorer import ConfidenceScorer
 from context_builder.confidence.stage import ConfidenceStage
 from context_builder.schemas.confidence import ConfidenceSummary
+from context_builder.schemas.routing import RoutingDecision, RoutingTier
 
 
 def compute_confidence(
@@ -142,8 +144,12 @@ def _enrich_data_completeness_detail(
 
 
 __all__ = [
+    "ClaimRouter",
     "ConfidenceCollector",
     "ConfidenceScorer",
     "ConfidenceStage",
+    "RoutingDecision",
+    "RoutingTier",
     "compute_confidence",
+    "load_thresholds",
 ]

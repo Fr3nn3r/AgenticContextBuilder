@@ -26,13 +26,13 @@ class ConfidenceCollector:
     def collect_extraction(
         self, extraction_results: List[Dict[str, Any]]
     ) -> List[SignalSnapshot]:
-        """Collect 5 signals from loaded extraction JSON files.
+        """Collect 4 signals from loaded extraction JSON files.
 
         Args:
             extraction_results: List of extraction result dicts, one per doc.
 
         Returns:
-            Up to 5 SignalSnapshot objects.
+            Up to 4 SignalSnapshot objects.
         """
         signals: List[SignalSnapshot] = []
         if not extraction_results:
@@ -54,22 +54,6 @@ class ConfidenceCollector:
                     normalized_value=_clamp01(avg),
                     source_stage="extraction",
                     description="Mean field-level confidence across all docs",
-                ))
-
-            # avg_doc_type_confidence
-            doc_confs: List[float] = []
-            for doc in extraction_results:
-                dtc = doc.get("doc_type_confidence")
-                if dtc is not None:
-                    doc_confs.append(float(dtc))
-            if doc_confs:
-                avg_dt = sum(doc_confs) / len(doc_confs)
-                signals.append(SignalSnapshot(
-                    signal_name="extraction.avg_doc_type_confidence",
-                    raw_value=avg_dt,
-                    normalized_value=_clamp01(avg_dt),
-                    source_stage="extraction",
-                    description="Mean doc-type classification confidence",
                 ))
 
             # quality_gate_pass_rate
@@ -234,24 +218,34 @@ class ConfidenceCollector:
         try:
             line_items = coverage_analysis.get("line_items") or []
 
-            # avg_match_confidence (weighted by total_price)
+            # structural_match_quality (weighted by total_price)
+            # Maps match_method to reliability score instead of using
+            # LLM self-reported confidence.
+            method_reliability = {
+                "rule": 1.0,
+                "part_number": 0.95,
+                "keyword": 0.80,
+                "llm": 0.60,
+                "manual": 1.0,
+            }
             weighted_sum = 0.0
             weight_total = 0.0
             for item in line_items:
-                mc = item.get("match_confidence")
+                mm = item.get("match_method")
                 tp = item.get("total_price")
-                if mc is not None and tp is not None:
+                if mm is not None and tp is not None:
+                    score = method_reliability.get(mm, 0.60)
                     w = max(float(tp), 0.0)
-                    weighted_sum += float(mc) * w
+                    weighted_sum += score * w
                     weight_total += w
             if weight_total > 0:
-                avg_mc = weighted_sum / weight_total
+                avg_mq = weighted_sum / weight_total
                 signals.append(SignalSnapshot(
-                    signal_name="coverage.avg_match_confidence",
-                    raw_value=avg_mc,
-                    normalized_value=_clamp01(avg_mc),
+                    signal_name="coverage.structural_match_quality",
+                    raw_value=avg_mq,
+                    normalized_value=_clamp01(avg_mq),
                     source_stage="coverage",
-                    description="Amount-weighted mean match confidence",
+                    description="Amount-weighted match quality from method type (rule=1.0, keyword=0.80, llm=0.60)",
                 ))
 
             # review_needed_rate (inverted)
@@ -286,25 +280,35 @@ class ConfidenceCollector:
                     description="Distinct match methods / 5",
                 ))
 
-            # primary_repair_confidence
+            # primary_repair_method_reliability
+            # Maps determination_method to reliability score instead of
+            # using LLM self-reported confidence.
+            repair_method_reliability = {
+                "part_number": 1.0,
+                "keyword": 0.85,
+                "deterministic": 0.75,
+                "llm": 0.60,
+                "none": 0.0,
+            }
             primary = coverage_analysis.get("primary_repair") or {}
-            prc = primary.get("confidence")
-            if prc is not None:
+            det_method = primary.get("determination_method")
+            if det_method is not None:
+                score = repair_method_reliability.get(det_method, 0.60)
                 signals.append(SignalSnapshot(
-                    signal_name="coverage.primary_repair_confidence",
-                    raw_value=float(prc),
-                    normalized_value=_clamp01(float(prc)),
+                    signal_name="coverage.primary_repair_method_reliability",
+                    raw_value=score,
+                    normalized_value=_clamp01(score),
                     source_stage="coverage",
-                    description="Primary repair classification confidence",
+                    description=f"Primary repair reliability from method ({det_method})",
                 ))
             elif line_items:
                 # If no primary_repair but coverage data exists, emit 0
                 signals.append(SignalSnapshot(
-                    signal_name="coverage.primary_repair_confidence",
+                    signal_name="coverage.primary_repair_method_reliability",
                     raw_value=0.0,
                     normalized_value=0.0,
                     source_stage="coverage",
-                    description="Primary repair classification confidence (not available)",
+                    description="Primary repair method reliability (not available)",
                 ))
 
             # line_item_complexity (decay curve: penalty for high item counts)

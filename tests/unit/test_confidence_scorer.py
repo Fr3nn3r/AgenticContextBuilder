@@ -301,7 +301,26 @@ class TestComponentCountFlag:
 
         component_flag = [f for f in summary.flags if "components active" in f]
         assert len(component_flag) == 1
+        # 2 of 5 components have signals
         assert "2/5" in component_flag[0]
+
+
+class TestSignalNames:
+    """Verify signal names match the structural replacements."""
+
+    def test_document_quality_has_4_signals(self):
+        """document_quality has 4 signals (avg_doc_type_confidence removed)."""
+        assert len(COMPONENT_SIGNALS["document_quality"]) == 4
+        assert "extraction.avg_doc_type_confidence" not in COMPONENT_SIGNALS["document_quality"]
+
+    def test_coverage_reliability_uses_structural_signals(self):
+        """coverage_reliability uses structural_match_quality and primary_repair_method_reliability."""
+        cr_signals = COMPONENT_SIGNALS["coverage_reliability"]
+        assert "coverage.structural_match_quality" in cr_signals
+        assert "coverage.primary_repair_method_reliability" in cr_signals
+        # Old signal names should NOT be present
+        assert "coverage.avg_match_confidence" not in cr_signals
+        assert "coverage.primary_repair_confidence" not in cr_signals
 
 
 class TestSignalsUsedPerComponent:

@@ -35,7 +35,7 @@ def collector():
 
 
 def test_collect_extraction_full(collector):
-    """Full extraction data produces all 5 signals."""
+    """Full extraction data produces all 4 signals (avg_doc_type_confidence removed)."""
     extraction_results = [
         {
             "doc_type_confidence": 0.95,
@@ -69,17 +69,15 @@ def test_collect_extraction_full(collector):
     signals = collector.collect_extraction(extraction_results)
     by_name = {s.signal_name: s for s in signals}
 
-    assert len(signals) == 5
+    assert len(signals) == 4
 
     # avg_field_confidence: mean of 0.9, 0.8, 0.7 = 0.8
     s = by_name["extraction.avg_field_confidence"]
     assert s.normalized_value == pytest.approx(0.8, abs=1e-6)
     assert s.source_stage == "extraction"
 
-    # avg_doc_type_confidence: mean of 0.95, 0.85 = 0.9
-    s = by_name["extraction.avg_doc_type_confidence"]
-    assert s.normalized_value == pytest.approx(0.9, abs=1e-6)
-    assert s.source_stage == "extraction"
+    # avg_doc_type_confidence is removed (LLM self-reported)
+    assert "extraction.avg_doc_type_confidence" not in by_name
 
     # quality_gate_pass_rate: 2 pass / 2 total = 1.0
     s = by_name["extraction.quality_gate_pass_rate"]
@@ -229,7 +227,7 @@ def test_collect_reconciliation_missing_gate(collector):
 
 
 def test_collect_coverage_full(collector):
-    """Full coverage analysis produces all 4 signals."""
+    """Full coverage analysis produces all 4 signals (using structural replacements)."""
     analysis = {
         "line_items": [
             {
@@ -246,7 +244,7 @@ def test_collect_coverage_full(collector):
             },
         ],
         "primary_repair": {
-            "confidence": 0.85,
+            "determination_method": "keyword",
         },
     }
 
@@ -256,9 +254,10 @@ def test_collect_coverage_full(collector):
     # 4 base signals + 1 complexity signal = 5
     assert len(signals) == 5
 
-    # avg_match_confidence: weighted = (0.9*1000 + 0.6*500) / (1000+500) = 1200/1500 = 0.8
-    s = by_name["coverage.avg_match_confidence"]
-    assert s.normalized_value == pytest.approx(0.8, abs=1e-6)
+    # structural_match_quality: weighted by method type
+    # keyword=0.80*1000 + llm=0.60*500 = 800+300=1100 / 1500 = 0.7333
+    s = by_name["coverage.structural_match_quality"]
+    assert s.normalized_value == pytest.approx(1100 / 1500, abs=1e-4)
     assert s.source_stage == "coverage"
 
     # review_needed_rate: 1 review / 2 total = 0.5, inv = 0.5
@@ -273,8 +272,8 @@ def test_collect_coverage_full(collector):
     assert s.normalized_value == pytest.approx(0.4)
     assert s.source_stage == "coverage"
 
-    # primary_repair_confidence: 0.85
-    s = by_name["coverage.primary_repair_confidence"]
+    # primary_repair_method_reliability: keyword -> 0.85
+    s = by_name["coverage.primary_repair_method_reliability"]
     assert s.normalized_value == pytest.approx(0.85, abs=1e-6)
     assert s.source_stage == "coverage"
 
@@ -283,6 +282,50 @@ def test_collect_coverage_full(collector):
     assert s.raw_value == pytest.approx(2.0)
     assert s.normalized_value == pytest.approx(1.0)
     assert s.source_stage == "coverage"
+
+
+def test_collect_coverage_structural_match_quality_methods(collector):
+    """structural_match_quality maps each method to its reliability score."""
+    analysis = {
+        "line_items": [
+            {"total_price": 100.0, "match_method": "rule"},
+            {"total_price": 100.0, "match_method": "part_number"},
+            {"total_price": 100.0, "match_method": "keyword"},
+            {"total_price": 100.0, "match_method": "llm"},
+            {"total_price": 100.0, "match_method": "manual"},
+        ],
+        "primary_repair": {"determination_method": "part_number"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    # (1.0 + 0.95 + 0.80 + 0.60 + 1.0) * 100 / 500 = 4.35/5 = 0.87
+    s = by_name["coverage.structural_match_quality"]
+    expected = (1.0 + 0.95 + 0.80 + 0.60 + 1.0) / 5.0
+    assert s.normalized_value == pytest.approx(expected, abs=1e-4)
+
+
+def test_collect_coverage_primary_repair_method_reliability_mappings(collector):
+    """primary_repair_method_reliability maps each determination_method correctly."""
+    expected_scores = {
+        "part_number": 1.0,
+        "keyword": 0.85,
+        "deterministic": 0.75,
+        "llm": 0.60,
+        "none": 0.0,
+    }
+    for method, expected in expected_scores.items():
+        analysis = {
+            "line_items": [{"match_method": "rule", "total_price": 100}],
+            "primary_repair": {"determination_method": method},
+        }
+        signals = collector.collect_coverage(analysis)
+        by_name = {s.signal_name: s for s in signals}
+        s = by_name["coverage.primary_repair_method_reliability"]
+        assert s.normalized_value == pytest.approx(expected, abs=1e-6), (
+            f"Method {method}: expected {expected}, got {s.normalized_value}"
+        )
 
 
 # ── 7b. line_item_complexity decay curve ──────────────────────────────
@@ -308,7 +351,7 @@ def test_collect_coverage_line_item_complexity_decay(collector, n_items, expecte
     ]
     analysis = {
         "line_items": line_items,
-        "primary_repair": {"confidence": 0.8},
+        "primary_repair": {"determination_method": "keyword"},
     }
 
     signals = collector.collect_coverage(analysis)
@@ -526,9 +569,9 @@ def test_collect_all_mixed(collector):
     assert "assessment" not in stages_present
     assert "decision" not in stages_present
 
-    # Extraction: 5 signals (all fields present for 1 doc with 1 field)
+    # Extraction: 4 signals (avg_doc_type_confidence removed)
     extraction_signals = [s for s in signals if s.source_stage == "extraction"]
-    assert len(extraction_signals) == 5
+    assert len(extraction_signals) == 4
 
     # Reconciliation: 4 signals
     reconciliation_signals = [s for s in signals if s.source_stage == "reconciliation"]
@@ -538,8 +581,8 @@ def test_collect_all_mixed(collector):
     screening_signals = [s for s in signals if s.source_stage == "screening"]
     assert len(screening_signals) == 3
 
-    # Total: 5 + 4 + 3 = 12
-    assert len(signals) == 12
+    # Total: 4 + 4 + 3 = 11
+    assert len(signals) == 11
 
 
 # ── 14. collect_coverage_concordance for DENY ────────────────────────
@@ -639,7 +682,7 @@ def test_collect_all_deny_includes_concordance(collector):
                 "match_method": "rule",
             },
         ],
-        "primary_repair": {"confidence": 0.8},
+        "primary_repair": {"determination_method": "keyword"},
     }
 
     signals = collector.collect_all(
@@ -663,7 +706,7 @@ def test_collect_all_approve_no_concordance(collector):
                 "match_method": "rule",
             },
         ],
-        "primary_repair": {"confidence": 0.8},
+        "primary_repair": {"determination_method": "keyword"},
     }
 
     signals = collector.collect_all(

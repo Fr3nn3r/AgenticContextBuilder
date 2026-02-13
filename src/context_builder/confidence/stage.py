@@ -216,6 +216,77 @@ class ConfidenceStage:
         except Exception:
             logger.warning(f"Failed to patch dossier {dossier_path}", exc_info=True)
 
+    def _evaluate_routing(
+        self,
+        *,
+        claim_id: str,
+        claim_run_id: str,
+        verdict: str,
+        reconciliation_report: Optional[Dict[str, Any]],
+        coverage_analysis: Optional[Dict[str, Any]],
+        processing_result: Optional[Dict[str, Any]],
+        confidence_summary: Optional[Dict[str, Any]],
+        workspace_path: Optional[Path] = None,
+    ) -> Optional["RoutingDecision"]:
+        """Run routing evaluation. Returns None on error."""
+        try:
+            from context_builder.confidence.routing import ClaimRouter, load_thresholds
+
+            thresholds = load_thresholds(workspace_path)
+            router = ClaimRouter(thresholds=thresholds)
+            return router.evaluate(
+                claim_id=claim_id,
+                claim_run_id=claim_run_id,
+                verdict=verdict,
+                reconciliation_report=reconciliation_report,
+                coverage_analysis=coverage_analysis,
+                processing_result=processing_result,
+                confidence_summary=confidence_summary,
+            )
+        except Exception:
+            logger.warning("Routing evaluation failed", exc_info=True)
+            return None
+
+    def _patch_dossier_routing(
+        self, dossier_path: Path, routing_decision: "RoutingDecision"
+    ) -> None:
+        """Patch dossier with routing info and override verdict if RED."""
+        try:
+            with open(dossier_path, "r", encoding="utf-8") as f:
+                dossier = json.load(f)
+
+            routing_data = {
+                "routing_tier": routing_decision.routing_tier.value,
+                "triggers_fired": [
+                    {"trigger_id": t.trigger_id, "name": t.name, "explanation": t.explanation}
+                    for t in routing_decision.triggers_fired
+                ],
+                "tier_reason": routing_decision.tier_reason,
+                "original_verdict": routing_decision.original_verdict,
+            }
+            dossier["routing"] = routing_data
+
+            # Override verdict to REFER if RED + originally APPROVE
+            if routing_decision.routed_verdict:
+                dossier["claim_verdict"] = routing_decision.routed_verdict
+                trigger_names = ", ".join(
+                    t.name for t in routing_decision.triggers_fired
+                    if t.severity.value == "RED"
+                )
+                dossier["verdict_reason"] = (
+                    f"Routed to REFER by structural triggers: {trigger_names}. "
+                    f"Original verdict: {routing_decision.original_verdict}"
+                )
+                logger.info(
+                    f"Verdict overridden to REFER for {routing_decision.claim_id} "
+                    f"(was {routing_decision.original_verdict})"
+                )
+
+            with open(dossier_path, "w", encoding="utf-8") as f:
+                json.dump(dossier, f, indent=2, ensure_ascii=False)
+        except Exception:
+            logger.warning(f"Failed to patch dossier routing {dossier_path}", exc_info=True)
+
     def run(self, context: ClaimContext) -> ClaimContext:
         """Execute confidence computation and return updated context.
 
@@ -298,6 +369,47 @@ class ConfidenceStage:
                 dossier_path = self._find_latest_dossier(claim_folder, context.run_id)
                 if dossier_path:
                     self._patch_dossier(dossier_path, ci.model_dump(mode="json"))
+
+            # ── Routing evaluation ────────────────────────────────
+            verdict = ""
+            if context.decision_result:
+                verdict = (context.decision_result.get("claim_verdict") or "")
+
+            routing_decision = self._evaluate_routing(
+                claim_id=context.claim_id,
+                claim_run_id=context.run_id,
+                verdict=verdict,
+                reconciliation_report=reconciliation_report,
+                coverage_analysis=coverage_analysis,
+                processing_result=context.processing_result,
+                confidence_summary=summary.model_dump(mode="json") if summary else None,
+                workspace_path=context.workspace_path,
+            )
+
+            if routing_decision and claim_folder:
+                try:
+                    storage = ClaimRunStorage(claim_folder)
+                    storage.write_to_claim_run(
+                        context.run_id,
+                        "routing_decision.json",
+                        routing_decision.model_dump(mode="json"),
+                    )
+                    logger.info(
+                        f"Routing for {context.claim_id}: "
+                        f"tier={routing_decision.routing_tier.value}, "
+                        f"triggers_fired={len(routing_decision.triggers_fired)}"
+                    )
+                except Exception:
+                    logger.warning("Failed to write routing_decision.json", exc_info=True)
+
+                # Patch dossier with routing info
+                dossier_path_for_routing = self._find_latest_dossier(
+                    claim_folder, context.run_id
+                )
+                if dossier_path_for_routing:
+                    self._patch_dossier_routing(
+                        dossier_path_for_routing, routing_decision
+                    )
 
             logger.info(
                 f"Confidence complete for {context.claim_id}: "

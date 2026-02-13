@@ -20,7 +20,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import sys
 
 # Add src to path for imports
@@ -141,6 +141,18 @@ def _find_latest_dossier(run_folder: Path) -> Optional[dict]:
         return None
 
 
+def _load_routing_decision(run_folder: Path) -> Optional[dict]:
+    """Load routing_decision.json from a run folder."""
+    path = run_folder / "routing_decision.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
 def find_latest_assessment(
     claim_id: str,
     workspace_path: Path,
@@ -150,6 +162,7 @@ def find_latest_assessment(
 
     Also loads the decision dossier (if available) and stores the
     authoritative verdict under ``_dossier_verdict`` for eval comparison.
+    Loads routing decision data if available.
     """
     claim_runs_path = workspace_path / "claims" / claim_id / "claim_runs"
 
@@ -166,6 +179,9 @@ def find_latest_assessment(
             dossier = _find_latest_dossier(run_folder)
             if dossier:
                 assessment["_dossier_verdict"] = dossier.get("claim_verdict")
+            routing = _load_routing_decision(run_folder)
+            if routing:
+                assessment["_routing"] = routing
             return assessment
         return None
 
@@ -181,6 +197,9 @@ def find_latest_assessment(
             dossier = _find_latest_dossier(run_folder)
             if dossier:
                 assessment["_dossier_verdict"] = dossier.get("claim_verdict")
+            routing = _load_routing_decision(run_folder)
+            if routing:
+                assessment["_routing"] = routing
             return assessment
 
     return None
@@ -264,6 +283,22 @@ def categorize_error(gt: dict, pred: dict, decision_match: bool) -> str:
 # Core evaluation
 # ---------------------------------------------------------------------------
 
+def _extract_routing_fields(assessment: Optional[dict]) -> dict:
+    """Extract routing fields from assessment (if routing data exists)."""
+    if not assessment:
+        return {"routing_tier": None, "triggers_fired": None, "structural_cci": None}
+    routing = assessment.get("_routing")
+    if not routing:
+        return {"routing_tier": None, "triggers_fired": None, "structural_cci": None}
+    fired = routing.get("triggers_fired") or []
+    trigger_names = ", ".join(t.get("name", "") for t in fired) if fired else "-"
+    return {
+        "routing_tier": routing.get("routing_tier"),
+        "triggers_fired": trigger_names,
+        "structural_cci": routing.get("structural_cci"),
+    }
+
+
 def run_evaluation(
     claim_ids: List[str],
     ground_truth: Dict[str, dict],
@@ -307,6 +342,7 @@ def run_evaluation(
                 "run_id": assessment.get("_run_id") if assessment else None,
                 "decision_rationale": assessment.get("recommendation_rationale") if assessment else None,
             }
+            row.update(_extract_routing_fields(assessment))
             results.append(row)
             continue
 
@@ -339,6 +375,9 @@ def run_evaluation(
                 "error_category": "not_processed",
                 "run_id": None,
                 "decision_rationale": None,
+                "routing_tier": None,
+                "triggers_fired": None,
+                "structural_cci": None,
             })
         else:
             gt_decision_norm = normalize_decision(gt.get("decision", ""))
@@ -378,6 +417,7 @@ def run_evaluation(
                 "run_id": assessment.get("_run_id"),
                 "decision_rationale": assessment.get("recommendation_rationale"),
             })
+            row.update(_extract_routing_fields(assessment))
 
         results.append(row)
 
@@ -439,6 +479,43 @@ def calculate_summary(results: List[dict]) -> dict:
     }
 
 
+def calculate_routing_summary(results: List[dict]) -> Optional[Dict[str, Any]]:
+    """Calculate per-routing-tier accuracy breakdown.
+
+    Returns None if no routing data is available.
+    """
+    # Only consider claims with GT
+    with_gt = [r for r in results if r.get("error_category") != "no_ground_truth"]
+    routed = [r for r in with_gt if r.get("routing_tier") is not None]
+
+    if not routed:
+        return None
+
+    tiers = {"GREEN": [], "YELLOW": [], "RED": []}
+    for r in routed:
+        tier = r.get("routing_tier", "").upper()
+        if tier in tiers:
+            tiers[tier].append(r)
+
+    summary = {}
+    total_routed = len(routed)
+    for tier_name, tier_results in tiers.items():
+        n = len(tier_results)
+        processed = [r for r in tier_results if r.get("pred_decision") != "NOT_PROCESSED"]
+        correct = sum(1 for r in processed if r.get("decision_match"))
+        accuracy = correct / len(processed) if processed else None
+        summary[tier_name] = {
+            "count": n,
+            "pct": round(n / total_routed * 100, 1) if total_routed else 0,
+            "processed": len(processed),
+            "correct": correct,
+            "wrong": len(processed) - correct,
+            "accuracy": round(accuracy, 3) if accuracy is not None else None,
+        }
+
+    return summary
+
+
 def calculate_per_dataset_summary(results: List[dict]) -> Dict[str, dict]:
     """Group results by dataset_id and calculate summary per dataset."""
     by_dataset: Dict[str, List[dict]] = {}
@@ -471,6 +548,7 @@ def save_results(results: List[dict], summary: dict, workspace_path: Path) -> Pa
         "claim_id",
         "dataset_id",
         "gt_decision", "pred_decision", "decision_match",
+        "routing_tier", "triggers_fired", "structural_cci",
         "gt_amount", "pred_amount", "amount_diff", "amount_diff_pct",
         "gt_deductible", "pred_deductible", "deductible_match",
         "error_category", "failed_checks",
@@ -535,6 +613,14 @@ def save_results(results: List[dict], summary: dict, workspace_path: Path) -> Pa
         json.dump(summary, f, indent=2)
     print(f"Saved: {summary_json_path}")
 
+    # Save routing summary if available
+    routing_summary = calculate_routing_summary(results)
+    if routing_summary:
+        routing_json_path = output_dir / "routing_summary.json"
+        with open(routing_json_path, "w", encoding="utf-8") as f:
+            json.dump(routing_summary, f, indent=2)
+        print(f"Saved: {routing_json_path}")
+
     return output_dir
 
 
@@ -545,6 +631,7 @@ def update_metrics_history(
     claim_run_id: str = "",
     datasets_evaluated: List[str] = None,
     per_dataset: Dict[str, dict] = None,
+    routing_summary: Optional[Dict[str, Any]] = None,
     description: str = "",
 ):
     """Append this run to metrics_history.json for tracking over time."""
@@ -604,6 +691,7 @@ def update_metrics_history(
             "false_approve_rate": round(summary["false_approve_rate"], 3)
         },
         "per_dataset": per_dataset_metrics,
+        "routing": routing_summary or {},
         "top_errors": top_errors,
         "notes": ""
     }
@@ -793,6 +881,7 @@ def main():
     # Calculate summaries
     summary = calculate_summary(results)
     per_dataset = calculate_per_dataset_summary(results)
+    routing_summary = calculate_routing_summary(results)
 
     # ---------------------------------------------------------------
     # Console output
@@ -811,6 +900,21 @@ def main():
     print(f"Denied Claims:       {summary['gt_denied_correct']}/{summary['gt_denied_total']} correct")
     print(f"  False Approve Rate: {summary['false_approve_rate']:.1%}")
     print()
+
+    # Routing tier breakdown
+    if routing_summary:
+        print("ROUTING TIER BREAKDOWN")
+        print("-" * 60)
+        for tier_name in ["GREEN", "YELLOW", "RED"]:
+            ts = routing_summary.get(tier_name, {})
+            count = ts.get("count", 0)
+            pct = ts.get("pct", 0)
+            acc = ts.get("accuracy")
+            correct = ts.get("correct", 0)
+            processed = ts.get("processed", 0)
+            acc_str = f"{acc:.1%}" if acc is not None else "N/A"
+            print(f"  {tier_name:6s}: {count:3d} claims ({pct:5.1f}%)  Accuracy: {acc_str} ({correct}/{processed})")
+        print()
 
     if summary.get("amount_accuracy_5pct") is not None:
         print(f"Amount Accuracy:     {summary['amount_accuracy_5pct']:.1%} (within +/-5%)")
@@ -842,6 +946,7 @@ def main():
         claim_run_id=claim_run_id,
         datasets_evaluated=datasets_used,
         per_dataset=per_dataset,
+        routing_summary=routing_summary,
     )
 
     print()

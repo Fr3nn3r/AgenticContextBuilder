@@ -265,3 +265,7 @@ class DecisionDossier(BaseModel):
         default=None,
         description="Composite Confidence Index computed after decision stage",
     )
+    routing: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Routing decision: tier, triggers fired, original verdict",
+    )
