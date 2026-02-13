@@ -1692,12 +1692,12 @@ class LLMMatcher:
 
             primary_index = data.get("primary_item_index")
             if primary_index is None:
-                logger.warning("LLM primary repair response missing primary_item_index")
+                logger.info("LLM primary repair response missing primary_item_index")
                 return None
 
             primary_index = int(primary_index)
             if primary_index < 0 or primary_index >= len(all_items):
-                logger.warning(
+                logger.info(
                     "LLM returned out-of-range primary_item_index=%d (valid: 0-%d)",
                     primary_index, len(all_items) - 1,
                 )
@@ -1723,6 +1723,7 @@ class LLMMatcher:
                 "root_cause_item_index": root_cause_idx,
                 "root_cause_component": data.get("root_cause_component"),
                 "root_cause_category": data.get("root_cause_category"),
+                "root_cause_is_excluded": bool(data.get("root_cause_is_excluded", False)),
             }
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:

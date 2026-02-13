@@ -1386,6 +1386,7 @@ class CoverageAnalyzer:
         root_cause_idx = result.get("root_cause_item_index")
         root_cause_component = result.get("root_cause_component")
         root_cause_category = result.get("root_cause_category")
+        root_cause_is_excluded = result.get("root_cause_is_excluded", False)
 
         # Consequential damage rule: if root cause is not covered,
         # the entire claim is denied regardless of whether individual
@@ -1401,7 +1402,7 @@ class CoverageAnalyzer:
         if root_cause_category and not self._is_system_covered(
             root_cause_category, covered_cats
         ):
-            logger.warning(
+            logger.info(
                 "Consequential damage: root cause '%s' (%s) is not covered "
                 "for claim %s -- overriding primary is_covered to False",
                 root_cause_component, root_cause_category, claim_id,
@@ -1417,7 +1418,7 @@ class CoverageAnalyzer:
             if root_item.coverage_status == CoverageStatus.NOT_COVERED:
                 # Our pipeline classified the root cause item as not covered
                 root_cat = root_item.coverage_category or root_cause_category
-                logger.warning(
+                logger.info(
                     "Consequential damage (cross-check): root cause item [%d] "
                     "'%s' (%s) classified as not_covered by pipeline for "
                     "claim %s -- overriding primary is_covered to False",
@@ -1438,7 +1439,7 @@ class CoverageAnalyzer:
                         root_comp_lower in excl_lower
                         or excl_lower in root_comp_lower
                     ):
-                        logger.warning(
+                        logger.info(
                             "Consequential damage: root cause '%s' matches "
                             "excluded component '%s' (%s) for claim %s "
                             "-- overriding is_covered=False",
@@ -1448,6 +1449,18 @@ class CoverageAnalyzer:
                         break
                 if not is_covered:
                     break
+
+        # (d) LLM explicitly flagged root cause as matching an excluded
+        #     component.  This handles cross-language matching (e.g., LLM
+        #     returns "timing_chain" in English while the excluded list has
+        #     the German "Zahnriemen- und Kettenantrieb").
+        if is_covered and root_cause_is_excluded and root_cause_component:
+            logger.info(
+                "Consequential damage: LLM flagged root cause '%s' as excluded "
+                "component for claim %s -- overriding is_covered=False",
+                root_cause_component, claim_id,
+            )
+            is_covered = False
 
         logger.info(
             "Primary repair (tier 0 LLM): '%s' (%s, %s, %.0f CHF, covered=%s) "

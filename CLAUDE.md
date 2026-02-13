@@ -102,6 +102,30 @@ python -m context_builder.cli workspace list                   # List workspaces
 python -m context_builder.cli export                           # Export to Excel
 ```
 
+## CLI Pitfalls — STOP and CHECK before running
+
+**NEVER guess CLI flags, file paths, or data structures. Verify first.**
+
+### Pipeline flag constraints
+- `--claim-ids` REQUIRES `--from-workspace` — it filters workspace claims, not input folder claims
+- To run pipeline on specific claims from workspace: `python -m context_builder.cli pipeline --from-workspace --claim-ids 65211`
+- To run pipeline on an input folder: `python -m context_builder.cli pipeline <input_folder>` (no `--claim-ids`)
+
+### CLI eval vs /eval skill
+- `python -m context_builder.cli eval` only accepts `--run-id` — it has NO `--investigate` flag
+- To investigate a claim, use the `/eval` **skill**: `/eval investigate <claim_id>`
+- Never invent CLI flags — run `--help` first if unsure
+
+### Dataset paths and data structures
+- **Actual dataset folder**: `data/datasets/nsa-motor-eval-v1/` (NOT `nsa-motor-eval/`)
+- **ground_truth.json structure**: `{"metadata": {...}, "claims": [{"claim_id": ..., "decision": ..., ...}, ...]}`
+  - It's a dict with a `"claims"` key containing a list of dicts — NOT a bare list
+  - Access: `data["claims"]`, then filter by `claim_id`
+- **Before loading any data file**: Use `Read` tool or check structure with a quick Python snippet — never assume the schema
+
+### General rule
+If you haven't used a CLI command recently, run `--help` first. If you haven't read a data file before, check its structure before writing code against it. **Guessing causes cascading errors.**
+
 ## Custom Skills
 Available slash commands for common workflows:
 - `/eval [run|investigate|compare|deep|tag]` — Pipeline evaluation
