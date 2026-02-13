@@ -1,7 +1,7 @@
 # Holdout Evaluation Report — NSA Motor v2
 
 **Date:** 2026-02-03
-**Dataset:** nsa-motor-eval-v2 (30 claims, 15 approved / 15 denied)
+**Dataset:** nsa-motor-holdout (30 claims, 15 approved / 15 denied)
 **Run ID:** `clm_20260203_104511_52f826`
 **Workspace:** nsa-holdout
 

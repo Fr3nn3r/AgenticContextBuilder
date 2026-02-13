@@ -37,7 +37,7 @@ datasets:
     notes: "Primary 50-claim evaluation set. GT corrections: 64980 policy validity not detectable; 64297 APPROVED->REFER_TO_HUMAN (no odometer reading)."
     legacy_path: "../09-Claims-Motor-NSA-2/"
 
-  nsa-motor-eval-v2:
+  nsa-motor-holdout:
     name: "NSA Motor Guarantee — Blind Test Set"
     purpose: evaluation
     customer: NSA
@@ -46,9 +46,9 @@ datasets:
     claim_count: 30
     class_balance: {approved: 15, denied: 15}
     ground_truth_schema: v1
-    path: nsa-motor-eval-v2/
-    ground_truth: nsa-motor-eval-v2/ground_truth.json
-    provenance: nsa-motor-eval-v2/provenance/
+    path: nsa-motor-holdout/
+    ground_truth: nsa-motor-holdout/ground_truth.json
+    provenance: nsa-motor-holdout/provenance/
     created: "2026-02-02"
     curator: "fbrun"
     frozen: false

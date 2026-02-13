@@ -111,6 +111,12 @@ class LineItemCoverage(BaseModel):
         None, description="Step-by-step trace of coverage decision pipeline"
     )
 
+    # Policy list validation (post-LLM annotation)
+    policy_list_confirmed: Optional[bool] = Field(
+        None,
+        description="Whether matched_component is confirmed in policy parts list. True=confirmed, False=not in list, None=uncertain/not applicable",
+    )
+
     # Coverage amounts (calculated based on status and coverage_percent)
     covered_amount: float = Field(
         0.0, description="Amount covered by policy (before excess)"
@@ -248,6 +254,10 @@ class PrimaryRepairResult(BaseModel):
     )
     root_cause_item_index: Optional[int] = Field(
         None, description="Index of the root cause line item"
+    )
+    policy_list_confirmed: Optional[bool] = Field(
+        None,
+        description="Whether primary repair component is confirmed in policy parts list",
     )
 
 

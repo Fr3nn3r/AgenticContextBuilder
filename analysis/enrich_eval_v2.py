@@ -20,7 +20,7 @@ from pathlib import Path
 
 import fitz  # pymupdf
 
-DATA_ROOT = Path(__file__).parent.parent / "data" / "datasets" / "nsa-motor-eval-v2"
+DATA_ROOT = Path(__file__).parent.parent / "data" / "datasets" / "nsa-motor-holdout"
 PROVENANCE_DIR = DATA_ROOT / "provenance"
 GT_PATH = DATA_ROOT / "ground_truth.json"
 

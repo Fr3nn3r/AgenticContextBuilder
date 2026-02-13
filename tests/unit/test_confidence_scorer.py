@@ -314,13 +314,20 @@ class TestSignalNames:
         assert "extraction.avg_doc_type_confidence" not in COMPONENT_SIGNALS["document_quality"]
 
     def test_coverage_reliability_uses_structural_signals(self):
-        """coverage_reliability uses structural_match_quality and primary_repair_method_reliability."""
+        """coverage_reliability uses structural_match_quality, primary_repair_method_reliability, parts_coverage_check."""
         cr_signals = COMPONENT_SIGNALS["coverage_reliability"]
         assert "coverage.structural_match_quality" in cr_signals
         assert "coverage.primary_repair_method_reliability" in cr_signals
+        assert "coverage.policy_confirmation_rate" in cr_signals
+        assert "coverage.parts_coverage_check" in cr_signals
         # Old signal names should NOT be present
         assert "coverage.avg_match_confidence" not in cr_signals
         assert "coverage.primary_repair_confidence" not in cr_signals
+
+    def test_decision_clarity_has_assumption_density(self):
+        """decision_clarity includes assumption_density signal."""
+        dc_signals = COMPONENT_SIGNALS["decision_clarity"]
+        assert "decision.assumption_density" in dc_signals
 
 
 class TestSignalsUsedPerComponent:
@@ -419,20 +426,20 @@ class TestDenyWeightSelection:
     """Test 14: DENY verdict selects DENY_WEIGHTS."""
 
     def test_deny_uses_deny_weights(self):
-        """DENY verdict gives decision_clarity higher weight (0.25 vs 0.15)."""
+        """DENY verdict gives decision_clarity higher weight (0.30 vs 0.20)."""
         signals = _make_all_signals(0.8)
         scorer = ConfidenceScorer()
 
         summary = scorer.compute(signals, verdict="DENY")
 
-        # decision_clarity should have weight 0.25 in DENY_WEIGHTS
+        # decision_clarity should have weight 0.30 in DENY_WEIGHTS
         dc = next(
             c for c in summary.component_scores
             if c.component == "decision_clarity"
         )
         assert dc.weight == pytest.approx(DENY_WEIGHTS["decision_clarity"])
 
-        # coverage_reliability should have weight 0.30 in DENY_WEIGHTS
+        # coverage_reliability should have weight 0.25 in DENY_WEIGHTS
         cr = next(
             c for c in summary.component_scores
             if c.component == "coverage_reliability"
@@ -503,3 +510,75 @@ class TestDenyVsApproveComposite:
 
         # DENY should score higher because polarity flips + weight shift
         assert deny.composite_score > approve.composite_score
+
+
+class TestMultiplierChain:
+    """Test 16: Multiplier signals scale coverage_reliability down."""
+
+    def test_zero_coverage_penalty_zeros_component(self):
+        """zero_coverage_penalty = 0.0 zeros out coverage_reliability."""
+        signals = _make_all_signals(0.8)
+        # Add the multiplier signal with value 0.0
+        signals.append(_make_signal("coverage.zero_coverage_penalty", 0.0))
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        # Component score should be 0.0 (multiplied by 0.0)
+        assert cr.score == pytest.approx(0.0, abs=0.001)
+
+        # Composite should be significantly lower than 0.8
+        # (coverage_reliability weight 0.30 contribution gone)
+        assert summary.composite_score < 0.65
+
+    def test_payout_materiality_scales_component(self):
+        """payout_materiality = 0.13 drastically reduces coverage_reliability."""
+        signals = _make_all_signals(0.8)
+        signals.append(_make_signal("coverage.payout_materiality", 0.13))
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        # 0.8 * 0.13 = 0.104
+        assert cr.score < 0.15
+
+    def test_multipliers_chain_together(self):
+        """Multiple multipliers compound: 0.8 * 0.5 * 0.5 = 0.2."""
+        signals = _make_all_signals(0.8)
+        signals.append(_make_signal("coverage.line_item_complexity", 0.5))
+        signals.append(_make_signal("coverage.zero_coverage_penalty", 0.5))
+        # No payout_materiality signal (not emitted)
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        # 0.8 * 0.5 * 0.5 = 0.2
+        assert cr.score == pytest.approx(0.2, abs=0.01)
+
+    def test_all_multipliers_one_no_effect(self):
+        """Multipliers at 1.0 don't change the score."""
+        signals = _make_all_signals(0.8)
+        signals.append(_make_signal("coverage.line_item_complexity", 1.0))
+        signals.append(_make_signal("coverage.zero_coverage_penalty", 1.0))
+        signals.append(_make_signal("coverage.payout_materiality", 1.0))
+
+        scorer = ConfidenceScorer()
+        summary = scorer.compute(signals)
+
+        cr = next(
+            c for c in summary.component_scores
+            if c.component == "coverage_reliability"
+        )
+        assert cr.score == pytest.approx(0.8, abs=0.01)

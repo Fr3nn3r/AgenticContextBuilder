@@ -28,7 +28,7 @@ def load_gt(path):
 
 gt_seed = load_gt(DATA_ROOT / "nsa-motor-seed-v1/ground_truth.json")
 gt_eval1 = load_gt(DATA_ROOT / "nsa-motor-eval-v1/ground_truth.json")
-gt_eval2 = load_gt(DATA_ROOT / "nsa-motor-eval-v2/ground_truth.json")
+gt_eval2 = load_gt(DATA_ROOT / "nsa-motor-holdout/ground_truth.json")
 
 BRAND_MAP = {
     "alfa romeo": "Alfa Romeo", "audi": "Audi", "bentley": "Bentley",

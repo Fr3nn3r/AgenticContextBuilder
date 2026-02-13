@@ -39,20 +39,20 @@ logger = logging.getLogger(__name__)
 # ── Default weights (used for APPROVE / REFER / unknown) ────────────
 
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "document_quality": 0.20,
+    "document_quality": 0.15,
     "data_completeness": 0.15,
-    "consistency": 0.15,
-    "coverage_reliability": 0.35,
-    "decision_clarity": 0.15,
+    "consistency": 0.20,
+    "coverage_reliability": 0.30,
+    "decision_clarity": 0.20,
 }
 
 # For DENY: shift weight to decision_clarity (strength of denial evidence)
 DENY_WEIGHTS: Dict[str, float] = {
-    "document_quality": 0.15,
+    "document_quality": 0.10,
     "data_completeness": 0.15,
-    "consistency": 0.15,
-    "coverage_reliability": 0.30,
-    "decision_clarity": 0.25,
+    "consistency": 0.20,
+    "coverage_reliability": 0.25,
+    "decision_clarity": 0.30,
 }
 
 # Signals whose polarity is inverted for DENY verdicts.
@@ -87,6 +87,8 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
         "coverage.method_diversity",
         "coverage.primary_repair_method_reliability",
         "coverage.verdict_concordance",
+        "coverage.policy_confirmation_rate",
+        "coverage.parts_coverage_check",
     ],
     "decision_clarity": [
         "screening.pass_rate",
@@ -95,6 +97,7 @@ COMPONENT_SIGNALS: Dict[str, List[str]] = {
         # decision.tier1_ratio removed: zero variance across all eval claims
         # decision.assumption_reliance removed: zero variance across all eval claims
         "assessment.fraud_indicator_penalty",
+        "decision.assumption_density",
     ],
 }
 
@@ -202,15 +205,25 @@ class ConfidenceScorer:
                 notes="" if matched else "no signals available",
             ))
 
-        # Apply line_item_complexity as a multiplier on coverage_reliability
-        # (not averaged — it scales the component score directly)
-        _complexity = signal_map.get("coverage.line_item_complexity")
-        if _complexity is not None:
-            for cs in component_scores:
-                if cs.component == "coverage_reliability":
-                    cs.score = round(cs.score * _complexity.normalized_value, 4)
-                    cs.signals_used.append(_complexity)
-                    break
+        # Apply multiplier chain on coverage_reliability.
+        # These signals scale the component score directly (not averaged).
+        # When any multiplier is 0.0, coverage_reliability drops to 0.0,
+        # pulling the composite down by the component's weight (~0.25-0.30).
+        _multiplier_names = [
+            "coverage.line_item_complexity",
+            "coverage.zero_coverage_penalty",
+            "coverage.payout_materiality",
+        ]
+        for _mul_name in _multiplier_names:
+            _mul = signal_map.get(_mul_name)
+            if _mul is not None:
+                for cs in component_scores:
+                    if cs.component == "coverage_reliability":
+                        cs.score = round(
+                            cs.score * _mul.normalized_value, 4
+                        )
+                        cs.signals_used.append(_mul)
+                        break
 
         # Redistribute weights (only active components participate)
         total_active_weight = sum(active_weights.values())

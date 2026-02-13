@@ -227,7 +227,7 @@ def test_collect_reconciliation_missing_gate(collector):
 
 
 def test_collect_coverage_full(collector):
-    """Full coverage analysis produces all 4 signals (using structural replacements)."""
+    """Full coverage analysis produces base signals plus new CCI signals."""
     analysis = {
         "line_items": [
             {
@@ -235,24 +235,29 @@ def test_collect_coverage_full(collector):
                 "total_price": 1000.0,
                 "review_needed": False,
                 "match_method": "keyword",
+                "coverage_status": "covered",
+                "item_type": "parts",
             },
             {
                 "match_confidence": 0.6,
                 "total_price": 500.0,
                 "review_needed": True,
                 "match_method": "llm",
+                "coverage_status": "not_covered",
+                "item_type": "labor",
             },
         ],
         "primary_repair": {
             "determination_method": "keyword",
         },
+        "summary": {
+            "total_claimed": 1500.0,
+            "total_covered_before_excess": 1000.0,
+        },
     }
 
     signals = collector.collect_coverage(analysis)
     by_name = {s.signal_name: s for s in signals}
-
-    # 4 base signals + 1 complexity signal = 5
-    assert len(signals) == 5
 
     # structural_match_quality: weighted by method type
     # keyword=0.80*1000 + llm=0.60*500 = 800+300=1100 / 1500 = 0.7333
@@ -277,11 +282,23 @@ def test_collect_coverage_full(collector):
     assert s.normalized_value == pytest.approx(0.85, abs=1e-6)
     assert s.source_stage == "coverage"
 
-    # line_item_complexity: 2 items <= 10 -> score 1.0
+    # line_item_complexity: 2 items <= 3 -> score 0.25
     s = by_name["coverage.line_item_complexity"]
     assert s.raw_value == pytest.approx(2.0)
-    assert s.normalized_value == pytest.approx(1.0)
+    assert s.normalized_value == pytest.approx(0.25)
     assert s.source_stage == "coverage"
+
+    # zero_coverage_penalty: 1 covered item -> 1.0
+    s = by_name["coverage.zero_coverage_penalty"]
+    assert s.normalized_value == pytest.approx(1.0)
+
+    # payout_materiality: 1000/1500 = 0.667, scaled = 1.0 (above 10%)
+    s = by_name["coverage.payout_materiality"]
+    assert s.normalized_value == pytest.approx(1.0)
+
+    # parts_coverage_check: 1 covered parts item -> 1.0
+    s = by_name["coverage.parts_coverage_check"]
+    assert s.normalized_value == pytest.approx(1.0)
 
 
 def test_collect_coverage_structural_match_quality_methods(collector):
@@ -332,14 +349,16 @@ def test_collect_coverage_primary_repair_method_reliability_mappings(collector):
 
 
 @pytest.mark.parametrize("n_items,expected_score", [
-    (5, 1.0),     # no-penalty zone (n <= 10)
-    (15, 0.75),   # mid-decay: 1.0 - 0.05 * (15-10) = 0.75
-    (20, 0.50),   # boundary: 1.0 - 0.05 * (20-10) = 0.50
-    (30, 0.15),   # steep zone floor: 0.5 - 0.035 * (30-20) = 0.15
-    (60, 0.15),   # floor holds for n > 30
+    (1, 0.25),    # very few items: floor
+    (3, 0.25),    # boundary: still floor
+    (4, 0.3571),  # ramp start: 0.25 + 0.75 * (4-3)/7
+    (7, 0.6786),  # mid-ramp: 0.25 + 0.75 * (7-3)/7
+    (10, 1.0),    # ramp end: 0.25 + 0.75 * (10-3)/7 = 1.0
+    (15, 1.0),    # above 10: stays at 1.0
+    (30, 1.0),    # well above 10: still 1.0
 ])
-def test_collect_coverage_line_item_complexity_decay(collector, n_items, expected_score):
-    """Line item complexity signal follows piecewise-linear decay curve."""
+def test_collect_coverage_line_item_complexity_ramp(collector, n_items, expected_score):
+    """Line item complexity signal ramps up: more items = higher confidence."""
     line_items = [
         {
             "match_confidence": 0.9,
@@ -718,4 +737,373 @@ def test_collect_all_approve_no_concordance(collector):
     assert "coverage.verdict_concordance" not in by_name
 
 
+# ── 17. policy_confirmation_rate signal ───────────────────────────────
+
+
+def test_policy_confirmation_rate_all_true(collector):
+    """All covered items with policy_list_confirmed=True produces rate=1.0."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 500.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": True,
+                "match_method": "llm",
+            },
+            {
+                "total_price": 300.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": True,
+                "match_method": "rule",
+            },
+            {
+                "total_price": 200.0,
+                "coverage_status": "not_covered",
+                "match_method": "rule",
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.policy_confirmation_rate" in by_name
+    s = by_name["coverage.policy_confirmation_rate"]
+    assert s.normalized_value == pytest.approx(1.0)
+    assert s.source_stage == "coverage"
+
+
+def test_policy_confirmation_rate_all_false(collector):
+    """All covered items with policy_list_confirmed=False produces rate=0.0."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 400.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": False,
+                "match_method": "llm",
+            },
+            {
+                "total_price": 600.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": False,
+                "match_method": "llm",
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.policy_confirmation_rate" in by_name
+    assert by_name["coverage.policy_confirmation_rate"].normalized_value == pytest.approx(0.0)
+
+
+def test_policy_confirmation_rate_all_none(collector):
+    """All covered items with policy_list_confirmed=None produces rate=0.5."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 1000.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": None,
+                "match_method": "llm",
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.policy_confirmation_rate" in by_name
+    assert by_name["coverage.policy_confirmation_rate"].normalized_value == pytest.approx(0.5)
+
+
+def test_policy_confirmation_rate_mixed(collector):
+    """Mixed policy_list_confirmed values produces weighted average."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 600.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": True,
+                "match_method": "rule",
+            },
+            {
+                "total_price": 200.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": False,
+                "match_method": "llm",
+            },
+            {
+                "total_price": 200.0,
+                "coverage_status": "covered",
+                "policy_list_confirmed": None,
+                "match_method": "llm",
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    # (1.0*600 + 0.0*200 + 0.5*200) / 1000 = 700/1000 = 0.7
+    assert "coverage.policy_confirmation_rate" in by_name
+    assert by_name["coverage.policy_confirmation_rate"].normalized_value == pytest.approx(0.7)
+
+
+def test_policy_confirmation_rate_no_covered_items(collector):
+    """No covered items means no policy_confirmation_rate signal."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 500.0,
+                "coverage_status": "not_covered",
+                "match_method": "rule",
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.policy_confirmation_rate" not in by_name
+
+
+def test_policy_confirmation_rate_backward_compat(collector):
+    """Items without policy_list_confirmed field default to None (score 0.5)."""
+    analysis = {
+        "line_items": [
+            {
+                "total_price": 1000.0,
+                "coverage_status": "covered",
+                "match_method": "llm",
+                # no policy_list_confirmed key
+            },
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.policy_confirmation_rate" in by_name
+    assert by_name["coverage.policy_confirmation_rate"].normalized_value == pytest.approx(0.5)
+
+
+# ── 18. zero_coverage_penalty signal ─────────────────────────────────
+
+
+def test_zero_coverage_penalty_with_covered_items(collector):
+    """Items covered -> penalty = 1.0 (no penalty)."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "covered",
+             "match_method": "rule", "item_type": "parts"},
+            {"total_price": 300.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.zero_coverage_penalty" in by_name
+    assert by_name["coverage.zero_coverage_penalty"].normalized_value == pytest.approx(1.0)
+
+
+def test_zero_coverage_penalty_none_covered(collector):
+    """No items covered -> penalty = 0.0 (zeros out coverage_reliability)."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+            {"total_price": 300.0, "coverage_status": "not_covered",
+             "match_method": "llm", "item_type": "labor"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.zero_coverage_penalty" in by_name
+    assert by_name["coverage.zero_coverage_penalty"].normalized_value == pytest.approx(0.0)
+
+
+# ── 19. payout_materiality signal ────────────────────────────────────
+
+
+def test_payout_materiality_high_coverage(collector):
+    """High coverage ratio (>10%) -> materiality = 1.0."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+        "summary": {"total_claimed": 1000.0, "total_covered_before_excess": 500.0},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.payout_materiality" in by_name
+    # 500/1000 = 50%, 0.50/0.10 = 5.0, clamped to 1.0
+    assert by_name["coverage.payout_materiality"].normalized_value == pytest.approx(1.0)
+
+
+def test_payout_materiality_trivial_coverage(collector):
+    """Trivial coverage ratio (1.3%) -> materiality = 0.13."""
+    analysis = {
+        "line_items": [
+            {"total_price": 157.0, "coverage_status": "covered",
+             "match_method": "llm", "item_type": "parts"},
+            {"total_price": 11743.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "llm"},
+        "summary": {"total_claimed": 11900.0, "total_covered_before_excess": 157.0},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.payout_materiality" in by_name
+    # 157/11900 = 0.0132, 0.0132/0.10 = 0.132
+    s = by_name["coverage.payout_materiality"]
+    assert s.normalized_value == pytest.approx(0.132, abs=0.01)
+
+
+def test_payout_materiality_no_covered_items(collector):
+    """No covered items -> no materiality signal emitted."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+        "summary": {"total_claimed": 500.0, "total_covered_before_excess": 0.0},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.payout_materiality" not in by_name
+
+
+# ── 20. parts_coverage_check signal ──────────────────────────────────
+
+
+def test_parts_coverage_check_with_parts(collector):
+    """Covered parts exist -> check = 1.0."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.parts_coverage_check" in by_name
+    assert by_name["coverage.parts_coverage_check"].normalized_value == pytest.approx(1.0)
+
+
+def test_parts_coverage_check_labor_only(collector):
+    """Only labor covered, no parts -> check = 0.3."""
+    analysis = {
+        "line_items": [
+            {"total_price": 300.0, "coverage_status": "covered",
+             "match_method": "llm", "item_type": "labor"},
+            {"total_price": 500.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "llm"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.parts_coverage_check" in by_name
+    assert by_name["coverage.parts_coverage_check"].normalized_value == pytest.approx(0.3)
+
+
+def test_parts_coverage_check_nothing_covered(collector):
+    """No covered items at all -> no parts_coverage_check signal."""
+    analysis = {
+        "line_items": [
+            {"total_price": 500.0, "coverage_status": "not_covered",
+             "match_method": "rule", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_coverage(analysis)
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "coverage.parts_coverage_check" not in by_name
+
+
+# ── 21. assumption_density cross-stage signal ────────────────────────
+
+
+def test_assumption_density_in_collect_all(collector):
+    """assumption_density computed when both decision and coverage data present."""
+    coverage_analysis = {
+        "line_items": [
+            {"total_price": 100.0, "match_method": "rule",
+             "coverage_status": "covered", "item_type": "parts"},
+            {"total_price": 100.0, "match_method": "llm",
+             "coverage_status": "covered", "item_type": "labor"},
+            {"total_price": 100.0, "match_method": "rule",
+             "coverage_status": "not_covered", "item_type": "parts"},
+            {"total_price": 100.0, "match_method": "llm",
+             "coverage_status": "not_covered", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+        "summary": {"total_claimed": 400.0, "total_covered_before_excess": 200.0},
+    }
+    decision_result = {
+        "clause_evaluations": [{"evaluability_tier": 1}],
+        "assumptions_used": [{"id": "a1"}, {"id": "a2"}],
+        "unresolved_assumptions": [],
+    }
+
+    signals = collector.collect_all(
+        coverage_analysis=coverage_analysis,
+        decision_result=decision_result,
+    )
+    by_name = {s.signal_name: s for s in signals}
+
+    # density = 2 assumptions / 4 items = 0.5, inv = 0.5
+    assert "decision.assumption_density" in by_name
+    assert by_name["decision.assumption_density"].normalized_value == pytest.approx(0.5)
+
+
+def test_assumption_density_missing_decision(collector):
+    """No decision_result -> no assumption_density signal."""
+    coverage_analysis = {
+        "line_items": [
+            {"total_price": 100.0, "match_method": "rule",
+             "coverage_status": "covered", "item_type": "parts"},
+        ],
+        "primary_repair": {"determination_method": "rule"},
+    }
+
+    signals = collector.collect_all(
+        coverage_analysis=coverage_analysis,
+        decision_result=None,
+    )
+    by_name = {s.signal_name: s for s in signals}
+
+    assert "decision.assumption_density" not in by_name
 

@@ -36,6 +36,7 @@ from context_builder.coverage.schemas import (
     TraceStep,
 )
 from context_builder.coverage.post_processing import (
+    LABOR_TYPES,
     apply_labor_linkage,
     build_excluded_parts_index,
     demote_labor_for_excluded_parts,
@@ -1498,6 +1499,18 @@ class CoverageAnalyzer:
                 )
                 primary_result = primary_result.model_copy(update={"is_covered": False})
 
+        # Policy list confirmation for primary repair
+        if primary_result.is_covered and primary_result.component:
+            plc_result, _plc_reason = self._is_component_in_policy_list(
+                primary_result.component,
+                primary_result.category,
+                covered_components,
+                primary_result.description or "",
+            )
+            primary_result = primary_result.model_copy(
+                update={"policy_list_confirmed": plc_result}
+            )
+
         return primary_result
 
     def _is_in_excluded_list(
@@ -1816,7 +1829,36 @@ class CoverageAnalyzer:
                 )
                 for item in llm_matched
             ]
-        elif llm_remaining:
+
+            # Post-LLM policy list confirmation (annotation only, no verdict change)
+            for item in llm_matched:
+                if item.item_type in LABOR_TYPES:
+                    continue
+                if item.coverage_status != CoverageStatus.COVERED:
+                    continue
+                plc_result, plc_reason = self._is_component_in_policy_list(
+                    item.matched_component,
+                    item.coverage_category,
+                    covered_components,
+                    item.description,
+                )
+                item.policy_list_confirmed = plc_result
+                if item.decision_trace is not None:
+                    item.decision_trace.append(TraceStep(
+                        stage="policy_list_check",
+                        action=TraceAction.VALIDATED,
+                        verdict=item.coverage_status,
+                        reasoning=plc_reason,
+                        detail={"policy_list_confirmed": plc_result},
+                        decision_source=DecisionSource.VALIDATION,
+                    ))
+
+        # Stamp rule/part_number covered parts as policy_list_confirmed=True
+        for item in rule_matched + part_matched:
+            if item.coverage_status == CoverageStatus.COVERED:
+                item.policy_list_confirmed = True
+
+        if not self.config.use_llm_fallback and llm_remaining:
             # LLM disabled, mark all remaining as review needed
             for item in llm_remaining:
                 dis_tb = TraceBuilder()

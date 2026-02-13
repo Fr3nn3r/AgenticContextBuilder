@@ -99,7 +99,7 @@ class TestAssessmentService:
 
         assert result is not None
         assert result["claim_id"] == "12345"
-        assert result["recommendation"] == "APPROVE"
+        assert result["decision"] == "APPROVE"
         # confidence_score is converted from decimal (0.95) to percentage (95)
         assert result["confidence_score"] == 95.0
 
@@ -192,7 +192,7 @@ class TestAssessmentService:
         entry = result[0]
 
         assert entry["timestamp"] == "2026-01-24T22:14:20.485908"
-        assert entry["recommendation"] == "APPROVE"
+        assert entry["decision"] == "APPROVE"
         # confidence_score is converted from decimal (0.95) to percentage (95)
         assert entry["confidence_score"] == 95.0
         assert entry["payout"] == 4500.0
@@ -226,7 +226,7 @@ class TestAssessmentService:
         result = service.get_assessment("67890")
 
         assert result["payout"] == 0
-        assert result["recommendation"] == "REJECT"
+        assert result["decision"] == "REJECT"
         # confidence_score 0.8 -> 80%
         assert result["confidence_score"] == 80.0
 
@@ -410,7 +410,7 @@ class TestAssessmentService:
 
         result = service.get_assessment("rationale1")
 
-        assert result["recommendation_rationale"] == "Policy expired before incident date"
+        assert result["decision_rationale"] == "Policy expired before incident date"
 
     def test_recommendation_rationale_null_when_missing(self, service, temp_claims_dir):
         """Test that missing recommendation_rationale returns None."""
@@ -599,7 +599,7 @@ class TestAssessmentServiceVersioning:
         loaded = service.get_assessment_by_id("CLM-005", assessment_id)
 
         assert loaded is not None
-        assert loaded["recommendation"] == "APPROVE"
+        assert loaded["decision"] == "APPROVE"
         # Should be transformed (confidence as percentage)
         assert loaded["confidence_score"] == 85.0
 
@@ -634,9 +634,9 @@ class TestAssessmentServiceVersioning:
 
         assert len(history) == 2
         # Newest first
-        assert history[0]["recommendation"] == "APPROVE"
+        assert history[0]["decision"] == "APPROVE"
         assert history[0]["is_current"] is True
-        assert history[1]["recommendation"] == "REFER_TO_HUMAN"
+        assert history[1]["decision"] == "REFER_TO_HUMAN"
         assert history[1]["is_current"] is False
 
 
@@ -707,10 +707,10 @@ class TestAssessmentServiceClaimRuns:
 
         assert len(history) == 2
         # Newest first
-        assert history[0]["recommendation"] == "REJECT"
+        assert history[0]["decision"] == "REJECT"
         assert history[0]["run_id"] == "run_20260128_110000"
         assert history[0]["is_current"] is True
-        assert history[1]["recommendation"] == "APPROVE"
+        assert history[1]["decision"] == "APPROVE"
         assert history[1]["run_id"] == "run_20260128_100000"
         assert history[1]["is_current"] is False
 
@@ -768,7 +768,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment_by_id("CLM-102", "run_abc123")
 
         assert result is not None
-        assert result["recommendation"] == "APPROVE"
+        assert result["decision"] == "APPROVE"
         assert result["confidence_score"] == 95.0  # Converted to percentage
         assert result["payout"] == 1500
 
@@ -823,7 +823,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment("CLM-104")
 
         # Should return the newer one (based on timestamp)
-        assert result["recommendation"] == "APPROVE"
+        assert result["decision"] == "APPROVE"
         assert result["payout"] == 2000
 
     def test_get_assessment_history_fallback_to_legacy(
@@ -868,7 +868,7 @@ class TestAssessmentServiceClaimRuns:
         history = service.get_assessment_history("CLM-105")
 
         assert len(history) == 1
-        assert history[0]["recommendation"] == "APPROVE"
+        assert history[0]["decision"] == "APPROVE"
         assert history[0]["run_id"] == "2026-01-26T10-00-00_v1.0.0"
 
     def test_get_assessment_by_id_fallback_to_legacy(
@@ -911,7 +911,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment_by_id("CLM-106", "legacy_id_123")
 
         assert result is not None
-        assert result["recommendation"] == "REJECT"
+        assert result["decision"] == "REJECT"
 
     def test_get_assessment_fallback_to_context_assessment_json(
         self, service, temp_claims_dir
@@ -938,7 +938,7 @@ class TestAssessmentServiceClaimRuns:
         result = service.get_assessment("CLM-107")
 
         assert result is not None
-        assert result["recommendation"] == "REFER_TO_HUMAN"
+        assert result["decision"] == "REFER_TO_HUMAN"
 
     def test_get_assessment_history_handles_invalid_json(
         self, service, temp_claims_dir
@@ -1052,7 +1052,7 @@ class TestAssessmentServiceClaimRuns:
         history = service.get_assessment_history(claim_id)
 
         assert len(history) == 1
-        assert history[0]["recommendation"] == "APPROVE"
+        assert history[0]["decision"] == "APPROVE"
         assert history[0]["run_id"] == "run_new"
 
 

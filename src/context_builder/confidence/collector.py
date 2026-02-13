@@ -311,22 +311,115 @@ class ConfidenceCollector:
                     description="Primary repair method reliability (not available)",
                 ))
 
-            # line_item_complexity (decay curve: penalty for high item counts)
+            # policy_confirmation_rate (price-weighted)
+            # Measures what fraction of covered value is confirmed in policy list.
+            # True=1.0, None=0.5 (uncertain), False=0.0
+            confirmed_weighted_sum = 0.0
+            covered_total_price = 0.0
+            for item in line_items:
+                status = (item.get("coverage_status") or "").lower()
+                if status != "covered":
+                    continue
+                tp = float(item.get("total_price", 0) or 0)
+                if tp <= 0:
+                    continue
+                plc = item.get("policy_list_confirmed")
+                if plc is True:
+                    score = 1.0
+                elif plc is False:
+                    score = 0.0
+                else:
+                    score = 0.5  # None / uncertain
+                confirmed_weighted_sum += score * tp
+                covered_total_price += tp
+            if covered_total_price > 0:
+                pcr = confirmed_weighted_sum / covered_total_price
+                signals.append(SignalSnapshot(
+                    signal_name="coverage.policy_confirmation_rate",
+                    raw_value=pcr,
+                    normalized_value=_clamp01(pcr),
+                    source_stage="coverage",
+                    description="Price-weighted policy list confirmation rate for covered items",
+                ))
+
+            # line_item_complexity (ramp curve: more items = more cross-validation)
             # Applied as a multiplier on coverage_reliability, not averaged.
+            # Few items means a single misclassification has outsized impact.
             n = len(line_items)
             if n > 0:
-                if n <= 10:
-                    complexity_score = 1.0
-                elif n <= 20:
-                    complexity_score = 1.0 - 0.05 * (n - 10)
+                if n <= 3:
+                    complexity_score = 0.25
+                elif n <= 10:
+                    complexity_score = 0.25 + 0.75 * (n - 3) / 7
                 else:
-                    complexity_score = max(0.15, 0.5 - 0.035 * (n - 20))
+                    complexity_score = 1.0
                 signals.append(SignalSnapshot(
                     signal_name="coverage.line_item_complexity",
                     raw_value=float(n),
                     normalized_value=round(complexity_score, 4),
                     source_stage="coverage",
-                    description="Payout confidence decay by line item count",
+                    description="Line item confidence: more items = better cross-validation",
+                ))
+
+            # zero_coverage_penalty: multiplier on coverage_reliability.
+            # When no items are covered despite having line items, this
+            # zeros out the coverage_reliability component entirely.
+            covered_count = sum(
+                1 for item in line_items
+                if (item.get("coverage_status") or "").lower() == "covered"
+            )
+            if total_items > 0:
+                penalty = 1.0 if covered_count > 0 else 0.0
+                signals.append(SignalSnapshot(
+                    signal_name="coverage.zero_coverage_penalty",
+                    raw_value=float(covered_count),
+                    normalized_value=penalty,
+                    source_stage="coverage",
+                    description="0.0 when no items covered (multiplier on coverage_reliability)",
+                ))
+
+            # payout_materiality: multiplier on coverage_reliability.
+            # Catches trivial approvals where only a negligible fraction
+            # of the claim is covered (e.g. CHF 157 on CHF 11,900).
+            summary = coverage_analysis.get("summary") or {}
+            total_claimed = float(summary.get("total_claimed", 0) or 0)
+            total_covered = float(
+                summary.get("total_covered_before_excess", 0) or 0
+            )
+            if total_claimed > 0 and covered_count > 0:
+                ratio = total_covered / total_claimed
+                # Below 10% coverage ratio gets progressively penalised
+                materiality = min(1.0, ratio / 0.10)
+                signals.append(SignalSnapshot(
+                    signal_name="coverage.payout_materiality",
+                    raw_value=round(ratio, 4),
+                    normalized_value=round(materiality, 4),
+                    source_stage="coverage",
+                    description=(
+                        f"Coverage materiality: {ratio:.1%} of claimed "
+                        f"amount covered"
+                    ),
+                ))
+
+            # parts_coverage_check: averaged into coverage_reliability.
+            # When items are covered but none of them are parts, the
+            # payout is likely wrong (labor-only with no parts anchor).
+            if covered_count > 0:
+                covered_parts = sum(
+                    1 for item in line_items
+                    if (item.get("coverage_status") or "").lower() == "covered"
+                    and (item.get("item_type") or "").lower() == "parts"
+                )
+                parts_check = 1.0 if covered_parts > 0 else 0.3
+                signals.append(SignalSnapshot(
+                    signal_name="coverage.parts_coverage_check",
+                    raw_value=float(covered_parts),
+                    normalized_value=parts_check,
+                    source_stage="coverage",
+                    description=(
+                        "1.0 if covered parts exist, 0.3 if only "
+                        "labor/fees covered"
+                    ),
                 ))
 
         except Exception:
@@ -622,6 +715,35 @@ class ConfidenceCollector:
         all_signals.extend(self.collect_screening(screening_result))
         all_signals.extend(self.collect_assessment(processing_result))
         all_signals.extend(self.collect_decision(decision_result))
+
+        # Cross-stage: assumption_density
+        # Strongest undiscovered predictor of payout error (r = +0.48).
+        # More assumptions per line item = less reliable payout.
+        try:
+            if decision_result and coverage_analysis:
+                assumptions = decision_result.get("assumptions_used") or []
+                cov_items = (coverage_analysis.get("line_items") or [])
+                n_items = len(cov_items)
+                n_assumptions = len(assumptions)
+                if n_items > 0:
+                    density = n_assumptions / n_items
+                    inv = _clamp01(1.0 - density)
+                    all_signals.append(SignalSnapshot(
+                        signal_name="decision.assumption_density",
+                        raw_value=round(density, 4),
+                        normalized_value=round(inv, 4),
+                        source_stage="decision",
+                        description=(
+                            f"1 - (assumptions/items): "
+                            f"{n_assumptions}/{n_items}"
+                        ),
+                    ))
+        except Exception:
+            logger.warning(
+                "Error collecting assumption_density signal",
+                exc_info=True,
+            )
+
         return all_signals
 
 

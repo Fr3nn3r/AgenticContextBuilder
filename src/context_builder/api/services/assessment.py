@@ -335,14 +335,14 @@ class AssessmentStorageService:
 
         return {
             "claim_id": data.get("claim_id", ""),
-            "recommendation": data.get("recommendation", "REFER_TO_HUMAN"),
+            "decision": data.get("recommendation", "REFER_TO_HUMAN"),
             "confidence_score": confidence_score,
             "checks": [self._transform_check(c) for c in data.get("checks", [])],
             "assumptions": [self._transform_assumption(a) for a in data.get("assumptions", [])],
             "payout": payout,
             "currency": currency,
             "payout_breakdown": self._transform_payout(data),
-            "recommendation_rationale": data.get("recommendation_rationale"),
+            "decision_rationale": data.get("recommendation_rationale"),
             "fraud_indicators": [
                 self._transform_fraud_indicator(f) for f in data.get("fraud_indicators", [])
             ],
@@ -549,7 +549,7 @@ class AssessmentStorageService:
                     history.append({
                         "run_id": run_dir.name,
                         "timestamp": data.get("assessment_timestamp"),
-                        "recommendation": data.get("recommendation"),
+                        "decision": data.get("recommendation"),
                         "confidence_score": confidence,
                         "payout": payout,
                         "prompt_version": data.get("prompt_version"),
@@ -599,7 +599,7 @@ class AssessmentStorageService:
                 history.append({
                     "run_id": entry.get("id"),
                     "timestamp": entry.get("timestamp"),
-                    "recommendation": entry.get("recommendation"),
+                    "decision": entry.get("recommendation"),
                     "confidence_score": confidence,
                     "payout": assessment.get("payout") if assessment else None,
                     "prompt_version": entry.get("prompt_version"),
@@ -625,7 +625,7 @@ class AssessmentStorageService:
             {
                 "run_id": None,
                 "timestamp": assessment.get("assessed_at"),
-                "recommendation": assessment.get("recommendation"),
+                "decision": assessment.get("decision"),
                 "confidence_score": assessment.get("confidence_score"),
                 "payout": assessment.get("payout"),
                 "prompt_version": None,

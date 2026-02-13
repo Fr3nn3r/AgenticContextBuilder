@@ -158,7 +158,7 @@ r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
 doc.add_paragraph()
 add_kv_table(doc, [
     ("Date", "3 February 2026"),
-    ("Dataset", "nsa-motor-eval-v2 (30 claims: 15 approved, 15 denied)"),
+    ("Dataset", "nsa-motor-holdout (30 claims: 15 approved, 15 denied)"),
     ("Status", "Holdout evaluation \u2014 blind test on unseen claims"),
 ], col_widths=[5, 12])
 
