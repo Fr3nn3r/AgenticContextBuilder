@@ -1390,24 +1390,20 @@ class CoverageAnalyzer:
 
         # Consequential damage rule: if root cause is not covered,
         # the entire claim is denied regardless of whether individual
-        # downstream items are covered.  Two checks:
+        # downstream items are covered.  Checks:
         #
-        # (a) LLM-reported root cause category is not in the policy's
-        #     covered categories list.
         # (b) Our own per-item classification marked the root cause item
         #     as NOT_COVERED (cross-reference with pipeline results).
+        # (c) Root cause component matches an explicitly excluded
+        #     sub-component in the policy.
+        # (d) LLM explicitly flagged root_cause_is_excluded.
         #
-        # Either signal is sufficient to trigger denial.
+        # NOTE: We intentionally do NOT use the LLM-reported
+        # root_cause_category for denial.  The LLM can hallucinate
+        # categories (e.g., "comfort_options" for an engine oil
+        # separator), and the covered_cats check is redundant with
+        # the more reliable checks (b), (c), and (d) below.
         covered_cats = self._extract_covered_categories(covered_components)
-        if root_cause_category and not self._is_system_covered(
-            root_cause_category, covered_cats
-        ):
-            logger.info(
-                "Consequential damage: root cause '%s' (%s) is not covered "
-                "for claim %s -- overriding primary is_covered to False",
-                root_cause_component, root_cause_category, claim_id,
-            )
-            is_covered = False
 
         if (
             root_cause_idx is not None

@@ -68,6 +68,23 @@ def load_dataset_assignments(workspace_path: Path) -> Tuple[Dict[str, str], Dict
         return {}, {}
 
 
+def load_eval_exclusions(workspace_path: Path) -> Dict[str, dict]:
+    """Load eval exclusions from workspace config.
+
+    Returns dict keyed by claim_id. Each entry has 'reason', 'detail', 'added'.
+    If file is missing or malformed, returns {}.
+    """
+    path = workspace_path / "config" / "eval_exclusions.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("exclusions", {})
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
 def load_multi_dataset_ground_truth(dataset_ids: Set[str]) -> Dict[str, dict]:
     """Load ground truth from multiple datasets and merge into a single dict.
 
@@ -305,17 +322,20 @@ def run_evaluation(
     dataset_assignments: Dict[str, str],
     workspace_path: Path,
     target_run_id: Optional[str] = None,
+    exclusions: Optional[Dict[str, dict]] = None,
 ) -> List[dict]:
     """Run evaluation by iterating run claims, looking up GT for each.
 
     Claims without GT are recorded with error_category='no_ground_truth'
-    and excluded from accuracy metrics downstream.
+    and excluded from accuracy metrics downstream. Claims in *exclusions*
+    are evaluated normally but excluded from accuracy metrics.
     """
     results = []
 
     for claim_id in claim_ids:
         gt = ground_truth.get(claim_id)
         dataset_id = dataset_assignments.get(claim_id, "unknown")
+        excl = exclusions.get(claim_id) if exclusions else None
         assessment = find_latest_assessment(
             claim_id, workspace_path, target_run_id=target_run_id,
         )
@@ -343,6 +363,9 @@ def run_evaluation(
                 "decision_rationale": assessment.get("recommendation_rationale") if assessment else None,
             }
             row.update(_extract_routing_fields(assessment))
+            row["excluded"] = excl is not None
+            row["exclusion_reason"] = excl.get("reason") if excl else None
+            row["exclusion_detail"] = excl.get("detail") if excl else None
             results.append(row)
             continue
 
@@ -419,6 +442,9 @@ def run_evaluation(
             })
             row.update(_extract_routing_fields(assessment))
 
+        row["excluded"] = excl is not None
+        row["exclusion_reason"] = excl.get("reason") if excl else None
+        row["exclusion_detail"] = excl.get("detail") if excl else None
         results.append(row)
 
     return results
@@ -429,19 +455,30 @@ def run_evaluation(
 # ---------------------------------------------------------------------------
 
 def calculate_summary(results: List[dict]) -> dict:
-    """Calculate summary metrics. Excludes no_ground_truth claims from accuracy."""
+    """Calculate summary metrics.
+
+    Excludes no_ground_truth and manually excluded claims from primary accuracy.
+    Also computes raw metrics (including excluded) for transparency.
+    """
     # Separate claims with GT from those without
     with_gt = [r for r in results if r["error_category"] != "no_ground_truth"]
     no_gt_count = len(results) - len(with_gt)
 
-    total = len(with_gt)
-    processed = sum(1 for r in with_gt if r["pred_decision"] != "NOT_PROCESSED")
+    # Separate excluded claims (evaluated but excluded from accuracy)
+    excluded = [r for r in with_gt if r.get("excluded")]
+    excluded_count = len(excluded)
 
-    decision_correct = sum(1 for r in with_gt if r["decision_match"])
+    # Active set: has GT and not excluded (primary evaluation set)
+    active = [r for r in with_gt if not r.get("excluded")]
+
+    total = len(active)
+    processed = sum(1 for r in active if r["pred_decision"] != "NOT_PROCESSED")
+
+    decision_correct = sum(1 for r in active if r["decision_match"])
 
     # Split by ground truth decision
-    gt_approved = [r for r in with_gt if normalize_decision(r["gt_decision"] or "") == "APPROVED"]
-    gt_denied = [r for r in with_gt if normalize_decision(r["gt_decision"] or "") == "DENIED"]
+    gt_approved = [r for r in active if normalize_decision(r["gt_decision"] or "") == "APPROVED"]
+    gt_denied = [r for r in active if normalize_decision(r["gt_decision"] or "") == "DENIED"]
 
     approved_correct = sum(1 for r in gt_approved if r["decision_match"])
     denied_correct = sum(1 for r in gt_denied if r["decision_match"])
@@ -450,17 +487,22 @@ def calculate_summary(results: List[dict]) -> dict:
     approved_with_amounts = [r for r in gt_approved if r["decision_match"] and r["amount_diff_pct"] is not None]
     amount_within_5pct = sum(1 for r in approved_with_amounts if abs(r["amount_diff_pct"]) <= 5)
 
-    # Error category distribution
+    # Error category distribution (active claims only)
     error_categories = {}
-    for r in with_gt:
+    for r in active:
         cat = r["error_category"]
         if cat != "-":
             error_categories[cat] = error_categories.get(cat, 0) + 1
+
+    # Raw metrics (including excluded claims, for comparison)
+    raw_processed = sum(1 for r in with_gt if r["pred_decision"] != "NOT_PROCESSED")
+    raw_correct = sum(1 for r in with_gt if r["decision_match"])
 
     return {
         "total_claims": total,
         "total_in_run": len(results),
         "no_ground_truth": no_gt_count,
+        "excluded_count": excluded_count,
         "processed_claims": processed,
         "not_processed": total - processed,
         "decision_accuracy": decision_correct / processed if processed > 0 else 0,
@@ -476,6 +518,11 @@ def calculate_summary(results: List[dict]) -> dict:
         "false_approve_rate": (len(gt_denied) - denied_correct) / len(gt_denied) if gt_denied else 0,
         "amount_accuracy_5pct": amount_within_5pct / len(approved_with_amounts) if approved_with_amounts else None,
         "error_categories": error_categories,
+        # Raw metrics (before exclusions, for transparency)
+        "raw_total": len(with_gt),
+        "raw_processed": raw_processed,
+        "raw_correct": raw_correct,
+        "raw_accuracy": raw_correct / raw_processed if raw_processed > 0 else 0,
     }
 
 
@@ -486,7 +533,8 @@ def calculate_routing_summary(results: List[dict]) -> Optional[Dict[str, Any]]:
     """
     # Only consider claims with GT
     with_gt = [r for r in results if r.get("error_category") != "no_ground_truth"]
-    routed = [r for r in with_gt if r.get("routing_tier") is not None]
+    active = [r for r in with_gt if not r.get("excluded")]
+    routed = [r for r in active if r.get("routing_tier") is not None]
 
     if not routed:
         return None
@@ -547,6 +595,7 @@ def save_results(results: List[dict], summary: dict, workspace_path: Path) -> Pa
     column_order = [
         "claim_id",
         "dataset_id",
+        "excluded", "exclusion_reason", "exclusion_detail",
         "gt_decision", "pred_decision", "decision_match",
         "routing_tier", "triggers_fired", "structural_cci",
         "gt_amount", "pred_amount", "amount_diff", "amount_diff_pct",
@@ -574,13 +623,15 @@ def save_results(results: List[dict], summary: dict, workspace_path: Path) -> Pa
     # Save summary
     summary_data = [
         ["Metric", "Value"],
-        ["Total Claims (with GT)", summary["total_claims"]],
+        ["Active Claims (with GT, not excluded)", summary["total_claims"]],
         ["Claims in Run", summary["total_in_run"]],
         ["Without Ground Truth", summary["no_ground_truth"]],
+        ["Excluded Claims", summary["excluded_count"]],
         ["Processed Claims", summary["processed_claims"]],
         ["Not Processed", summary["not_processed"]],
         ["", ""],
         ["Decision Accuracy", f"{summary['decision_accuracy']:.1%}"],
+        ["Raw Accuracy (incl. excluded)", f"{summary['raw_accuracy']:.1%}" if summary.get("raw_total") else "N/A"],
         ["Decision Correct", summary["decision_correct"]],
         ["Decision Wrong", summary["decision_wrong"]],
         ["", ""],
@@ -632,6 +683,7 @@ def update_metrics_history(
     datasets_evaluated: List[str] = None,
     per_dataset: Dict[str, dict] = None,
     routing_summary: Optional[Dict[str, Any]] = None,
+    excluded_claims: Optional[List[str]] = None,
     description: str = "",
 ):
     """Append this run to metrics_history.json for tracking over time."""
@@ -692,6 +744,9 @@ def update_metrics_history(
         },
         "per_dataset": per_dataset_metrics,
         "routing": routing_summary or {},
+        "excluded_count": summary.get("excluded_count", 0),
+        "excluded_claims": excluded_claims or [],
+        "raw_accuracy": round(summary.get("raw_accuracy", 0), 3),
         "top_errors": top_errors,
         "notes": ""
     }
@@ -724,7 +779,9 @@ def print_per_dataset_report(per_dataset: Dict[str, dict], labels: Dict[str, str
         processed = ds_summary["processed_claims"]
         correct = ds_summary["decision_correct"]
         acc = ds_summary["decision_accuracy"]
-        print(f"{label} -- {ds_id} ({n} claims):")
+        excl = ds_summary.get("excluded_count", 0)
+        excl_note = f", {excl} excluded" if excl else ""
+        print(f"{label} -- {ds_id} ({n} active claims{excl_note}):")
         print(f"  Decision Accuracy: {acc:.1%} ({correct}/{processed})")
         if ds_summary["gt_approved_total"] > 0:
             print(f"  False Reject Rate: {ds_summary['false_reject_rate']:.1%}")
@@ -861,9 +918,14 @@ def main():
     elif datasets_used == ["custom"]:
         print(f"Ground Truth: {args.ground_truth}")
 
+    # Load eval exclusions
+    exclusions = load_eval_exclusions(workspace_path)
+    excl_in_run = sum(1 for cid in run_claim_ids if cid in exclusions)
+
     gt_count = sum(1 for cid in run_claim_ids if cid in ground_truth)
     no_gt_count = len(run_claim_ids) - gt_count
-    print(f"Claims:      {len(run_claim_ids)} total, {gt_count} with GT, {no_gt_count} without GT")
+    excl_str = f", {excl_in_run} excluded" if excl_in_run else ""
+    print(f"Claims:      {len(run_claim_ids)} total, {gt_count} with GT, {no_gt_count} without GT{excl_str}")
     print()
 
     # ---------------------------------------------------------------
@@ -876,6 +938,7 @@ def main():
         dataset_assignments=dataset_assignments,
         workspace_path=workspace_path,
         target_run_id=claim_run_id,
+        exclusions=exclusions,
     )
 
     # Calculate summaries
@@ -890,9 +953,12 @@ def main():
     if len(per_dataset) > 1:
         print_per_dataset_report(per_dataset, dataset_labels)
 
-    print(f"AGGREGATE ({summary['total_claims']} claims with GT)")
+    excl_note = f", {summary['excluded_count']} excluded" if summary.get('excluded_count') else ""
+    print(f"AGGREGATE ({summary['total_claims']} active claims{excl_note})")
     print("-" * 60)
     print(f"Decision Accuracy:   {summary['decision_accuracy']:.1%} ({summary['decision_correct']}/{summary['processed_claims']})")
+    if summary.get("excluded_count"):
+        print(f"  (raw incl. excluded: {summary['raw_accuracy']:.1%}, {summary['raw_correct']}/{summary['raw_processed']})")
     print()
     print(f"Approved Claims:     {summary['gt_approved_correct']}/{summary['gt_approved_total']} correct")
     print(f"  False Reject Rate: {summary['false_reject_rate']:.1%}")
@@ -932,6 +998,13 @@ def main():
         if len(no_gt_claims) > 10:
             print(f"  ... and {len(no_gt_claims) - 10} more")
 
+    if summary.get("excluded_count", 0) > 0:
+        excl_claims = [r for r in results if r.get("excluded")]
+        print()
+        print(f"Excluded claims ({len(excl_claims)}):")
+        for r in excl_claims:
+            print(f"  {r['claim_id']}: {r.get('exclusion_detail', r.get('exclusion_reason', ''))}")
+
     print()
 
     # ---------------------------------------------------------------
@@ -939,6 +1012,7 @@ def main():
     # ---------------------------------------------------------------
     output_dir = save_results(results, summary, workspace_path)
 
+    excluded_claim_ids = [r["claim_id"] for r in results if r.get("excluded")]
     update_metrics_history(
         output_dir=output_dir,
         summary=summary,
@@ -947,6 +1021,7 @@ def main():
         datasets_evaluated=datasets_used,
         per_dataset=per_dataset,
         routing_summary=routing_summary,
+        excluded_claims=excluded_claim_ids,
     )
 
     print()
