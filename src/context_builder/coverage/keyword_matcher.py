@@ -271,8 +271,12 @@ class KeywordMatcher:
             True if the category is covered
         """
         # Normalize category names for comparison
+        if not category:
+            return False
         category_lower = category.lower().replace("_", " ")
         for covered in covered_categories:
+            if not covered:
+                continue
             covered_lower = covered.lower().replace("_", " ")
             if category_lower == covered_lower:
                 return True
@@ -352,8 +356,8 @@ class KeywordMatcher:
         hints: List[Optional[Dict[str, Any]]] = []
         for item in items:
             hint = self.generate_hint(
-                description=item.get("description", ""),
-                item_type=item.get("item_type", ""),
+                description=item.get("description") or "",
+                item_type=item.get("item_type") or "",
             )
             hints.append(hint)
         matched_count = sum(1 for h in hints if h is not None)
@@ -391,8 +395,8 @@ class KeywordMatcher:
 
         for item in items:
             result = self.match(
-                description=item.get("description", ""),
-                item_type=item.get("item_type", ""),
+                description=item.get("description") or "",
+                item_type=item.get("item_type") or "",
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
                 covered_categories=covered_categories,

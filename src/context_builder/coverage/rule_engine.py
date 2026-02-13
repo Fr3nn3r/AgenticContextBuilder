@@ -371,8 +371,8 @@ class RuleEngine:
 
         for item in items:
             result = self.match(
-                description=item.get("description", ""),
-                item_type=item.get("item_type", ""),
+                description=item.get("description") or "",
+                item_type=item.get("item_type") or "",
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
                 skip_consumable_check=skip_consumable_check,

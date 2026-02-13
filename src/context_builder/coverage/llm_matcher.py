@@ -492,8 +492,8 @@ class LLMMatcher:
 
         for item in items:
             result = self._match_single(
-                description=item.get("description", ""),
-                item_type=item.get("item_type", ""),
+                description=item.get("description") or "",
+                item_type=item.get("item_type") or "",
                 client=client,
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
@@ -534,8 +534,8 @@ class LLMMatcher:
         def match_one(index: int, item: Dict[str, Any]) -> Tuple[int, LineItemCoverage]:
             thread_client = self._create_thread_client()
             result = self._match_single(
-                description=item.get("description", ""),
-                item_type=item.get("item_type", ""),
+                description=item.get("description") or "",
+                item_type=item.get("item_type") or "",
                 client=thread_client,
                 item_code=item.get("item_code"),
                 total_price=item.get("total_price") or 0.0,
@@ -582,8 +582,8 @@ class LLMMatcher:
                     logger.error(f"Unexpected error in parallel LLM match for item {idx}: {e}")
                     results[idx] = LineItemCoverage(
                         item_code=item.get("item_code"),
-                        description=item.get("description", ""),
-                        item_type=item.get("item_type", ""),
+                        description=item.get("description") or "",
+                        item_type=item.get("item_type") or "",
                         total_price=item.get("total_price") or 0.0,
                         coverage_status=CoverageStatus.REVIEW_NEEDED,
                         coverage_category=None,
@@ -793,7 +793,7 @@ class LLMMatcher:
                     for j, (llm_result, item) in enumerate(zip(batch_results, batch_items)):
                         confidence = llm_result.confidence
                         reasoning = llm_result.reasoning
-                        description = item.get("description", "")
+                        description = item.get("description") or ""
 
                         # Single low threshold: below 0.40 triggers human review
                         if confidence < self.config.review_needed_threshold:
@@ -830,7 +830,7 @@ class LLMMatcher:
                         coverages.append(LineItemCoverage(
                             item_code=item.get("item_code"),
                             description=description,
-                            item_type=item.get("item_type", ""),
+                            item_type=item.get("item_type") or "",
                             total_price=total_price,
                             coverage_status=status,
                             coverage_category=llm_result.category,
@@ -879,8 +879,8 @@ class LLMMatcher:
                 total_price = item.get("total_price") or 0.0
                 fail_coverages.append(LineItemCoverage(
                     item_code=item.get("item_code"),
-                    description=item.get("description", ""),
-                    item_type=item.get("item_type", ""),
+                    description=item.get("description") or "",
+                    item_type=item.get("item_type") or "",
                     total_price=total_price,
                     coverage_status=CoverageStatus.REVIEW_NEEDED,
                     coverage_category=None,
@@ -940,8 +940,8 @@ class LLMMatcher:
                             total_price = item.get("total_price") or 0.0
                             all_results[offset + j] = LineItemCoverage(
                                 item_code=item.get("item_code"),
-                                description=item.get("description", ""),
-                                item_type=item.get("item_type", ""),
+                                description=item.get("description") or "",
+                                item_type=item.get("item_type") or "",
                                 total_price=total_price,
                                 coverage_status=CoverageStatus.REVIEW_NEEDED,
                                 coverage_category=None,
@@ -994,7 +994,7 @@ class LLMMatcher:
         # Format items as a numbered list
         item_lines = []
         for i, item in enumerate(items):
-            desc = item.get("description", "")
+            desc = item.get("description") or ""
             itype = item.get("item_type", "unknown")
             price = item.get("total_price", 0)
             code = item.get("item_code") or "N/A"

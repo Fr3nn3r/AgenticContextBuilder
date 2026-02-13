@@ -426,7 +426,7 @@ class CoverageAnalyzer:
         Returns:
             List of category names with non-empty parts lists
         """
-        return [cat for cat, parts in covered_components.items() if parts]
+        return [cat for cat, parts in covered_components.items() if cat and parts]
 
     def _extract_repair_context(
         self,
@@ -453,7 +453,7 @@ class CoverageAnalyzer:
 
         # Scan labor items for repair keywords
         for item in line_items:
-            item_type = item.get("item_type", "").lower()
+            item_type = (item.get("item_type") or "").lower()
             if item_type not in ("labor", "labour", "arbeit", "main d'oeuvre"):
                 continue
 
@@ -552,6 +552,8 @@ class CoverageAnalyzer:
         """
         if not excluded_components:
             return False
+        if not category:
+            return False
 
         # Collect excluded parts for this category (and its aliases)
         category_lower = category.lower()
@@ -563,6 +565,8 @@ class CoverageAnalyzer:
         excluded_parts: List[str] = []
         for search_name in search_names:
             for cat, parts in excluded_components.items():
+                if not cat:
+                    continue
                 cat_lower = cat.lower()
                 if (
                     search_name == cat_lower
@@ -627,6 +631,8 @@ class CoverageAnalyzer:
             return False
         system_lower = system.lower()
         for cat in covered_categories:
+            if not cat:
+                continue
             cat_lower = cat.lower()
             if (
                 system_lower == cat_lower
@@ -639,6 +645,8 @@ class CoverageAnalyzer:
         aliases = self.component_config.category_aliases.get(system_lower, [])
         for alias in aliases:
             for cat in covered_categories:
+                if not cat:
+                    continue
                 cat_lower = cat.lower()
                 if (
                     alias == cat_lower
@@ -671,6 +679,8 @@ class CoverageAnalyzer:
         """
         primary_lower = (primary_system or "").lower()
         for category, parts_list in covered_components.items():
+            if not category:
+                continue
             if category.lower() == primary_lower:
                 continue
             if not parts_list:
@@ -744,6 +754,8 @@ class CoverageAnalyzer:
 
         for search_name in search_names:
             for cat, parts in covered_components.items():
+                if not cat:
+                    continue
                 cat_lower = cat.lower()
                 if (
                     search_name == cat_lower
@@ -1140,7 +1152,7 @@ class CoverageAnalyzer:
                 LineItemCoverage(
                     item_code=item_code,
                     description=item.get("description", ""),
-                    item_type=item.get("item_type", ""),
+                    item_type=item.get("item_type") or "",
                     total_price=item.get("total_price") or 0.0,
                     coverage_status=status,
                     coverage_category=result.system,
@@ -1805,7 +1817,7 @@ class CoverageAnalyzer:
                 bypassed_item = LineItemCoverage(
                     item_code=item.get("item_code"),
                     description=item.get("description", ""),
-                    item_type=item.get("item_type", ""),
+                    item_type=item.get("item_type") or "",
                     total_price=item.get("total_price") or 0.0,
                     coverage_status=CoverageStatus.NOT_COVERED,
                     coverage_category=hint_cat,
@@ -1943,7 +1955,7 @@ class CoverageAnalyzer:
                     LineItemCoverage(
                         item_code=item.get("item_code"),
                         description=item.get("description", ""),
-                        item_type=item.get("item_type", ""),
+                        item_type=item.get("item_type") or "",
                         total_price=item.get("total_price") or 0.0,
                         coverage_status=CoverageStatus.REVIEW_NEEDED,
                         coverage_category=None,

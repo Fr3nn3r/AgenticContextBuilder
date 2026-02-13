@@ -13,6 +13,7 @@ Usage:
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -59,11 +60,19 @@ def _find_project_root() -> Path:
 def get_active_workspace_path() -> Optional[Path]:
     """Get the path to the currently active workspace.
 
-    Reads from .contextbuilder/workspaces.json to find the active workspace.
+    Checks WORKSPACE_PATH env var first (used in Docker/Azure deployments),
+    then falls back to reading from .contextbuilder/workspaces.json.
 
     Returns:
         Path to active workspace directory, or None if not found/configured.
     """
+    # Check env var first (Docker/Azure/Render deployments)
+    env_workspace = os.getenv("WORKSPACE_PATH") or os.getenv("RENDER_WORKSPACE_PATH")
+    if env_workspace:
+        env_path = Path(env_workspace)
+        if env_path.exists():
+            return env_path
+
     project_root = _find_project_root()
     registry_path = project_root / ".contextbuilder" / "workspaces.json"
 
