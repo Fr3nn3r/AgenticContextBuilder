@@ -379,6 +379,7 @@ class DashboardService:
             cci_band = None
             wb_screening_payout = None
             has_dossier = False
+            routing_tier = None
 
             if claim_run_id:
                 run_dir = claim_dir / "claim_runs" / claim_run_id
@@ -405,7 +406,12 @@ class DashboardService:
                             cci_score = cci.get("composite_score")
                             cci_band = cci.get("band")
 
-                # 3. Screening payout (only for non-DENY)
+                # 3. Routing decision
+                routing_data = self._load_json(run_dir / "routing_decision.json")
+                if routing_data:
+                    routing_tier = routing_data.get("routing_tier")
+
+                # 4. Screening payout (only for non-DENY)
                 if wb_verdict != "DENY" and payout is None:
                     screen_data = self._load_json(run_dir / "screening.json")
                     if screen_data:
@@ -467,6 +473,7 @@ class DashboardService:
                 "cci_band": cci_band,
                 "screening_payout": wb_screening_payout,
                 "has_dossier": has_dossier,
+                "routing_tier": routing_tier,
                 "gt_decision": gt_decision,
                 "gt_payout": gt_payout,
                 "gt_denial_reason": gt_denial_reason,

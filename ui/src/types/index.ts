@@ -1384,6 +1384,7 @@ export interface DashboardClaim {
   cci_band: string | null;
   screening_payout: number | null;
   has_dossier: boolean;
+  routing_tier: string | null;
   // Ground truth
   gt_decision: string | null;
   gt_payout: number | null;

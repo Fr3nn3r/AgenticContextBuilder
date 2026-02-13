@@ -38,6 +38,7 @@ from context_builder.coverage.schemas import (
 from context_builder.coverage.post_processing import (
     apply_labor_linkage,
     build_excluded_parts_index,
+    demote_labor_for_excluded_parts,
     demote_orphan_labor,
     flag_nominal_price_labor,
     validate_llm_coverage_decision,
@@ -1288,6 +1289,7 @@ class CoverageAnalyzer:
                 "total_price": item.total_price or 0.0,
                 "coverage_status": item.coverage_status.value if item.coverage_status else "UNKNOWN",
                 "coverage_category": item.coverage_category,
+                "matched_component": item.matched_component,
             })
 
         try:
@@ -1676,12 +1678,87 @@ class CoverageAnalyzer:
             f"Part-number hints generated: {pn_hints_count}/{len(remaining)}"
         )
 
-        # Stage 3: LLM-first classification (all remaining items)
+        # Stage 2b: Keyword bypass -- items with a high-confidence keyword
+        # hint mapping to a category NOT in the policy are deterministically
+        # NOT_COVERED.  No LLM call can change a categorical impossibility.
+        keyword_bypassed: List[LineItemCoverage] = []
+        llm_remaining: List[Dict[str, Any]] = []
+        llm_keyword_hints: List[Optional[Dict[str, Any]]] = []
+        llm_part_number_hints: List[Optional[Dict[str, Any]]] = []
+        covered_cats = list(covered_components.keys())
+
+        for i, item in enumerate(remaining):
+            kw_hint = keyword_hints[i] if keyword_hints and i < len(keyword_hints) else None
+            pn_hint = part_number_hints[i] if part_number_hints and i < len(part_number_hints) else None
+
+            if (
+                kw_hint
+                and kw_hint.get("confidence", 0) >= self.config.keyword_min_confidence
+                and kw_hint.get("category")
+                and not self._is_system_covered(kw_hint["category"], covered_cats)
+            ):
+                hint_cat = kw_hint["category"]
+                hint_kw = kw_hint.get("keyword", "")
+                hint_conf = kw_hint["confidence"]
+                tb = TraceBuilder()
+                tb.add(
+                    "keyword_bypass",
+                    TraceAction.MATCHED,
+                    f"Keyword '{hint_kw}' maps to '{hint_cat}' "
+                    f"(confidence {hint_conf:.2f}) which is not a covered "
+                    f"category in this policy. LLM bypassed.",
+                    verdict=CoverageStatus.NOT_COVERED,
+                    confidence=hint_conf,
+                    detail={
+                        "keyword": hint_kw,
+                        "hint_category": hint_cat,
+                        "covered_categories": covered_cats,
+                        "bypass_reason": "category_not_in_policy",
+                    },
+                    decision_source=DecisionSource.KEYWORD,
+                )
+                bypassed_item = LineItemCoverage(
+                    item_code=item.get("item_code"),
+                    description=item.get("description", ""),
+                    item_type=item.get("item_type", ""),
+                    total_price=item.get("total_price") or 0.0,
+                    coverage_status=CoverageStatus.NOT_COVERED,
+                    coverage_category=hint_cat,
+                    matched_component=None,
+                    match_method=MatchMethod.KEYWORD,
+                    match_confidence=hint_conf,
+                    match_reasoning=(
+                        f"Keyword '{hint_kw}' -> category '{hint_cat}' "
+                        f"is not covered by this policy"
+                    ),
+                    exclusion_reason="category_not_in_policy",
+                    decision_trace=tb.build(),
+                )
+                keyword_bypassed.append(bypassed_item)
+                logger.info(
+                    "Keyword bypass: '%s' -> '%s' (conf %.2f) "
+                    "not in covered categories %s",
+                    item.get("description", ""), hint_cat,
+                    hint_conf, covered_cats,
+                )
+            else:
+                llm_remaining.append(item)
+                llm_keyword_hints.append(kw_hint)
+                llm_part_number_hints.append(pn_hint)
+
+        if keyword_bypassed:
+            logger.info(
+                "Keyword bypass: %d item(s) skipped LLM "
+                "(category not in policy)",
+                len(keyword_bypassed),
+            )
+
+        # Stage 3: LLM-first classification (items not bypassed)
         llm_matched = []
-        keyword_matched = []  # No keyword-level decisions in LLM-first mode
+        keyword_matched = keyword_bypassed  # Deterministic keyword decisions
         part_matched = []  # No part-number-level decisions in LLM-first mode
 
-        if remaining and self.config.use_llm_fallback:
+        if llm_remaining and self.config.use_llm_fallback:
             if self.llm_matcher is None:
                 self.llm_matcher = LLMMatcher(
                     config=LLMMatcherConfig(
@@ -1691,7 +1768,7 @@ class CoverageAnalyzer:
                 )
 
             if on_llm_start:
-                on_llm_start(len(remaining))
+                on_llm_start(len(llm_remaining))
 
             # Collect covered parts from rule stage for LLM context
             covered_parts_in_claim = []
@@ -1708,7 +1785,7 @@ class CoverageAnalyzer:
 
             # Enrich items with repair context description
             labor_context_desc = repair_context.source_description
-            for item in remaining:
+            for item in llm_remaining:
                 if not item.get("repair_context_description"):
                     item["repair_context_description"] = (
                         item.get("repair_description")
@@ -1717,11 +1794,11 @@ class CoverageAnalyzer:
                     )
 
             llm_matched = self.llm_matcher.classify_items(
-                items=remaining,
+                items=llm_remaining,
                 covered_components=covered_components,
                 excluded_components=excluded_components,
-                keyword_hints=keyword_hints,
-                part_number_hints=part_number_hints,
+                keyword_hints=llm_keyword_hints,
+                part_number_hints=llm_part_number_hints,
                 claim_id=claim_id,
                 on_progress=on_llm_progress,
                 covered_parts_in_claim=covered_parts_in_claim,
@@ -1739,9 +1816,9 @@ class CoverageAnalyzer:
                 )
                 for item in llm_matched
             ]
-        elif remaining:
+        elif llm_remaining:
             # LLM disabled, mark all remaining as review needed
-            for item in remaining:
+            for item in llm_remaining:
                 dis_tb = TraceBuilder()
                 dis_tb.add("llm", TraceAction.SKIPPED,
                             "LLM classification disabled",
@@ -1781,6 +1858,12 @@ class CoverageAnalyzer:
             all_items, llm_matcher=self.llm_matcher,
             repair_context=repair_context,
             primary_repair=primary_repair, claim_id=claim_id,
+        )
+
+        # 2b. Demote labor linked to excluded parts
+        all_items = demote_labor_for_excluded_parts(
+            all_items, excluded_components=excluded_components,
+            primary_repair=primary_repair,
         )
 
         # 3. Orphan labor demotion (safety net)

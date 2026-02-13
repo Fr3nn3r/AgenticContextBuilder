@@ -1,8 +1,8 @@
 {
   "metadata": {
     "total_claims": 50,
-    "approved_count": 22,
-    "denied_count": 27,
+    "approved_count": 23,
+    "denied_count": 26,
     "referred_count": 1,
     "source": "Claim_Decision_for_Claim_Number_*.pdf",
     "ground_truth_schema": "v2",
@@ -11,6 +11,7 @@
     "change_log": [
       "2026-02-11: claim 64297 changed from APPROVED to REFER_TO_HUMAN (no odometer reading in claim docs)",
       "2026-02-12: claim 65047 changed from APPROVED to DENIED (goodwill gesture, system cannot account for discretionary payments)",
+      "2026-02-13: claim 65047 changed from DENIED back to APPROVED (goodwill gesture accepted as valid approval; service compliance check not in scope)",
       "2026-02-12: claim 65055 changed from APPROVED to DENIED (primary component timing belt/chain explicitly excluded by policy)"
     ]
   },
@@ -525,7 +526,7 @@
     },
     {
       "claim_id": "65047",
-      "decision": "DENIED",
+      "decision": "APPROVED",
       "language": "fr",
       "date": "07/01/2026",
       "guarantee_number": "611840",
@@ -538,8 +539,8 @@
       "deductible": null,
       "total_approved_amount": 692.05,
       "currency": "CHF",
-      "coverage_notes": "5Q1953521KSIGI CONTACTEUR - sur la base de la bonne volonte. Geste commercial de 692,05 CHF. Changed to DENIED in ground truth: goodwill gestures are outside automated coverage scope.",
-      "denial_reason": "Goodwill gesture (geste commercial) - not a coverage decision; system cannot account for discretionary payments"
+      "coverage_notes": "5Q1953521KSIGI CONTACTEUR - sur la base de la bonne volonte. Geste commercial de 692,05 CHF.",
+      "denial_reason": null
     },
     {
       "claim_id": "65052",

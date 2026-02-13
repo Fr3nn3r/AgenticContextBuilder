@@ -17,6 +17,7 @@ from context_builder.coverage.keyword_matcher import KeywordConfig, KeywordMatch
 from context_builder.coverage.llm_matcher import LLMMatcherConfig
 from context_builder.coverage.post_processing import (
     apply_labor_linkage,
+    demote_labor_for_excluded_parts,
     demote_orphan_labor,
     flag_nominal_price_labor,
     validate_llm_coverage_decision,
@@ -282,6 +283,99 @@ class TestCoverageAnalyzer:
         for item in result.line_items:
             assert item.coverage_status == CoverageStatus.COVERED
             assert item.match_method == MatchMethod.LLM
+
+    def test_keyword_bypass_non_covered_category(self, analyzer, covered_components):
+        """Test that high-confidence keyword hints mapping to a category NOT in
+        the policy bypass the LLM entirely and are classified as NOT_COVERED.
+
+        Reproduces the Hochdruckpumpe false-approve bug (claim 65113):
+        keyword maps to fuel_system with 0.85 confidence, but fuel_system is
+        not a covered category. The LLM should never see this item.
+        """
+        items = [
+            # HOCHDRUCKPUMPE -> fuel_system (0.85), not in covered_components
+            {"description": "HOCHDRUCKPUMPE DMDC/RDC", "item_type": "parts",
+             "total_price": 1894.05, "item_code": "13518511626"},
+            # MOTOR BLOCK -> engine, IS in covered_components (should go to LLM)
+            {"description": "MOTOR BLOCK", "item_type": "parts",
+             "total_price": 500.0},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST-BYPASS",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        assert len(result.line_items) == 2
+
+        # Find the Hochdruckpumpe item
+        hdp = [i for i in result.line_items if "HOCHDRUCKPUMPE" in i.description][0]
+        assert hdp.coverage_status == CoverageStatus.NOT_COVERED
+        assert hdp.match_method == MatchMethod.KEYWORD  # bypassed LLM
+        assert hdp.coverage_category == "fuel_system"
+        assert hdp.exclusion_reason == "category_not_in_policy"
+        assert hdp.match_confidence == 0.85
+
+        # Verify decision trace records the bypass
+        assert hdp.decision_trace is not None
+        bypass_step = [s for s in hdp.decision_trace if s.stage == "keyword_bypass"]
+        assert len(bypass_step) == 1
+        assert bypass_step[0].action == TraceAction.MATCHED
+        assert "not a covered category" in bypass_step[0].reasoning
+
+        # Motor block should still go through LLM
+        motor = [i for i in result.line_items if "MOTOR" in i.description][0]
+        assert motor.match_method == MatchMethod.LLM
+        assert motor.coverage_status == CoverageStatus.COVERED
+
+    def test_keyword_bypass_does_not_fire_for_covered_category(
+        self, analyzer, covered_components
+    ):
+        """Keyword hints mapping to a covered category should NOT be bypassed."""
+        items = [
+            # MOTOR -> engine (covered category) -- must go to LLM
+            {"description": "MOTOR BLOCK", "item_type": "parts", "total_price": 500.0},
+        ]
+
+        result = analyzer.analyze(
+            claim_id="TEST-NO-BYPASS",
+            line_items=items,
+            covered_components=covered_components,
+        )
+
+        motor = result.line_items[0]
+        assert motor.match_method == MatchMethod.LLM  # went through LLM
+        assert motor.coverage_status == CoverageStatus.COVERED
+
+    def test_keyword_bypass_respects_category_aliases(self, analyzer):
+        """Keyword hint 'axle_drive' should NOT bypass when 'four_wd' is covered (alias).
+
+        Reproduces claim 64659 false-deny: DIFFERENTIEL ARRIERE maps via keyword
+        to 'axle_drive', but the policy covers 'four_wd' which is a known alias.
+        The keyword bypass must resolve aliases before deciding to skip the LLM.
+        """
+        items = [
+            {"description": "DIFFERENTIEL ARRIERE", "item_type": "parts",
+             "total_price": 4655.0, "item_code": "A176 350 31 00"},
+        ]
+        covered = {"four_wd": ["Differential", "Reducteur de pont"]}
+
+        result = analyzer.analyze(
+            claim_id="TEST-ALIAS",
+            line_items=items,
+            covered_components=covered,
+        )
+
+        diff = result.line_items[0]
+        # Should NOT be keyword-bypassed -- alias means category IS covered
+        assert not (
+            diff.match_method == MatchMethod.KEYWORD
+            and diff.exclusion_reason == "category_not_in_policy"
+        ), (
+            f"Keyword bypass wrongly fired: match_method={diff.match_method}, "
+            f"exclusion_reason={diff.exclusion_reason}"
+        )
 
     def test_unmatched_items_not_covered(self, analyzer, covered_components):
         """Test that items without keyword hints are NOT_COVERED by fake LLM."""
@@ -1960,6 +2054,114 @@ class TestApplyLaborFollowsPartsLLM:
         assert "part number" in labor.match_reasoning.lower()
 
 
+class TestApplyLaborLinkageLinkedPartGuard:
+    """Labor linkage must not promote labor linked to non-COVERED parts."""
+
+    def test_labor_not_promoted_when_linked_part_is_review_needed(self):
+        """LLM says labor is necessary for a review_needed part -> skip promotion."""
+        from unittest.mock import MagicMock
+
+        items = [
+            make_line_item(
+                item_code="40485550",
+                description="CV boot (consumable)",
+                item_type="parts",
+                coverage_status=CoverageStatus.REVIEW_NEEDED,
+                coverage_category="axle_drive",
+                matched_component=None,
+                total_price=57.0,
+                covered_amount=0.0,
+                not_covered_amount=57.0,
+            ),
+            make_line_item(
+                description="ECROU",
+                item_type="parts",
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="axle_drive",
+                matched_component="ancillary hardware",
+                total_price=3.0,
+                covered_amount=3.0,
+                not_covered_amount=0.0,
+            ),
+            make_line_item(
+                item_code=None,
+                description="ARBRE DE PONT: DEPOSE ET REPOSE",
+                item_type="labor",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None,
+                matched_component=None,
+                match_method=MatchMethod.LLM,
+                total_price=209.0,
+                covered_amount=0.0,
+                not_covered_amount=209.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_linkage.return_value = [
+            {
+                "index": 2,
+                "is_covered": True,
+                "linked_part_index": 0,
+                "confidence": 0.9,
+                "reasoning": "Axle shaft R&I needed for CV boot replacement",
+            },
+        ]
+        result = apply_labor_linkage(
+            items, llm_matcher=mock_matcher,
+            primary_repair=None, claim_id="TEST-65211",
+        )
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        last_trace = labor.decision_trace[-1]
+        detail = last_trace.detail if hasattr(last_trace, "detail") else {}
+        assert detail.get("linked_part_status") == "review_needed"
+
+    def test_labor_promoted_when_linked_part_is_covered(self):
+        """LLM says labor is necessary for a COVERED part -> promote."""
+        from unittest.mock import MagicMock
+
+        items = [
+            make_line_item(
+                description="Timing chain",
+                item_type="parts",
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                total_price=500.0,
+                covered_amount=500.0,
+            ),
+            make_line_item(
+                item_code=None,
+                description="Labor R&I timing chain",
+                item_type="labor",
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category=None,
+                matched_component=None,
+                match_method=MatchMethod.LLM,
+                total_price=300.0,
+                covered_amount=0.0,
+                not_covered_amount=300.0,
+            ),
+        ]
+        mock_matcher = MagicMock()
+        mock_matcher.classify_labor_linkage.return_value = [
+            {
+                "index": 1,
+                "is_covered": True,
+                "linked_part_index": 0,
+                "confidence": 0.9,
+                "reasoning": "R&I for timing chain",
+            },
+        ]
+        result = apply_labor_linkage(
+            items, llm_matcher=mock_matcher,
+            primary_repair=None, claim_id="TEST-OK",
+        )
+        labor = result[1]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 300.0
+
+
 class TestNormalizeCoverageScale:
     """Tests for _normalize_coverage_scale helper."""
 
@@ -2548,3 +2750,360 @@ class TestPrimaryRepairExclusionOverride:
         # Should NOT override to False — electric is an alias of electrical_system
         assert result.is_covered is True
         assert result.root_cause_category == "electrical_system"
+
+
+# ── demote_labor_for_excluded_parts ──────────────────────────────────
+
+
+class TestDemoteLaborForExcludedParts:
+    """Tests for demote_labor_for_excluded_parts post-processing step."""
+
+    def test_labor_demoted_when_only_part_is_excluded(self):
+        """1 excluded part + 1 covered labor -> labor demoted."""
+        items = [
+            make_line_item(
+                description="Couvre culasse (valve cover)",
+                item_type="parts",
+                total_price=200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="engine",
+                matched_component="valve_cover",
+                exclusion_reason="component_excluded",
+                covered_amount=0.0,
+                not_covered_amount=200.0,
+            ),
+            make_line_item(
+                description="Cylinder head gasket",
+                item_type="parts",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="cylinder_head",
+            ),
+            make_line_item(
+                description="Main d'oeuvre valve cover",
+                item_type="labor",
+                total_price=150.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="valve_cover",
+                covered_amount=150.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_labor_for_excluded_parts(items)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.NOT_COVERED
+        assert labor.exclusion_reason == "labor_for_excluded_part"
+        assert labor.covered_amount == 0.0
+
+    def test_labor_kept_when_covered_part_exists(self):
+        """Mixed invoice: 1 covered part + 1 excluded part + labor for covered -> labor kept."""
+        items = [
+            make_line_item(
+                description="Excluded valve cover",
+                item_type="parts",
+                total_price=200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="cooling_system",
+                matched_component="valve_cover",
+                exclusion_reason="component_excluded",
+                covered_amount=0.0,
+                not_covered_amount=200.0,
+            ),
+            make_line_item(
+                description="Timing chain",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            make_line_item(
+                description="Labor for timing chain",
+                item_type="labor",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                covered_amount=300.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_labor_for_excluded_parts(items)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.COVERED
+        assert labor.covered_amount == 300.0
+
+    def test_labor_kept_when_primary_repair_is_covered(self):
+        """primary_repair.is_covered=True -> labor kept even if parts excluded."""
+        items = [
+            make_line_item(
+                description="Excluded part",
+                item_type="parts",
+                total_price=200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="engine",
+                matched_component="valve_cover",
+                exclusion_reason="component_excluded",
+                covered_amount=0.0,
+                not_covered_amount=200.0,
+            ),
+            make_line_item(
+                description="Covered part",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            make_line_item(
+                description="Labor",
+                item_type="labor",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="valve_cover",
+                covered_amount=300.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="timing_chain",
+            category="engine",
+            is_covered=True,
+            confidence=0.9,
+            determination_method="deterministic",
+        )
+        result = demote_labor_for_excluded_parts(items, primary_repair=primary)
+        labor = result[2]
+        assert labor.coverage_status == CoverageStatus.COVERED
+
+    def test_selective_demotion_mixed_labor(self):
+        """Multiple labor items: only the one matching excluded component is demoted."""
+        items = [
+            make_line_item(
+                description="Valve cover (excluded)",
+                item_type="parts",
+                total_price=200.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="cooling_system",
+                matched_component="valve_cover",
+                exclusion_reason="component_excluded",
+                covered_amount=0.0,
+                not_covered_amount=200.0,
+            ),
+            make_line_item(
+                description="Timing chain (covered)",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            # Labor for excluded part -> should be demoted
+            make_line_item(
+                description="Labor valve cover",
+                item_type="labor",
+                total_price=150.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="cooling_system",
+                matched_component="valve_cover",
+                covered_amount=150.0,
+                not_covered_amount=0.0,
+            ),
+            # Labor for covered part -> should be kept
+            make_line_item(
+                description="Labor timing chain",
+                item_type="labor",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                covered_amount=300.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_labor_for_excluded_parts(items)
+        # Labor for valve cover -> demoted
+        assert result[2].coverage_status == CoverageStatus.NOT_COVERED
+        assert result[2].exclusion_reason == "labor_for_excluded_part"
+        # Labor for timing chain -> kept
+        assert result[3].coverage_status == CoverageStatus.COVERED
+
+    def test_no_excluded_parts_no_demotion(self):
+        """All parts covered -> labor untouched."""
+        items = [
+            make_line_item(
+                description="Covered part",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            make_line_item(
+                description="Labor",
+                item_type="labor",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                covered_amount=300.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_labor_for_excluded_parts(items)
+        assert result[1].coverage_status == CoverageStatus.COVERED
+        assert result[1].covered_amount == 300.0
+
+
+# ── demote_orphan_labor: ancillary-hardware-only guard ───────────────
+
+
+class TestDemoteOrphanLaborAncillaryOnly:
+    """Ancillary hardware alone should not anchor labor."""
+
+    def test_labor_demoted_when_only_ancillary_hardware_covered(self):
+        """Only nuts/bolts covered (no real parts) -> labor demoted."""
+        items = [
+            make_line_item(
+                description="CV boot (consumable)",
+                item_type="parts",
+                total_price=57.0,
+                coverage_status=CoverageStatus.REVIEW_NEEDED,
+                coverage_category="axle_drive",
+                matched_component=None,
+                covered_amount=0.0,
+                not_covered_amount=57.0,
+            ),
+            make_line_item(
+                description="ECROU",
+                item_type="parts",
+                total_price=3.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="axle_drive",
+                matched_component="ancillary hardware",
+            ),
+            make_line_item(
+                description="Labor",
+                item_type="labor",
+                total_price=200.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="axle_drive",
+                matched_component=None,
+                covered_amount=200.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_orphan_labor(items)
+        assert result[2].coverage_status == CoverageStatus.NOT_COVERED
+        assert result[2].exclusion_reason == "demoted_no_anchor"
+
+    def test_labor_kept_when_real_covered_part_exists(self):
+        """Real covered part + ancillary hardware -> labor kept."""
+        items = [
+            make_line_item(
+                description="Timing chain",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            make_line_item(
+                description="ECROU",
+                item_type="parts",
+                total_price=3.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="ancillary hardware",
+            ),
+            make_line_item(
+                description="Labor",
+                item_type="labor",
+                total_price=200.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                covered_amount=200.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        result = demote_orphan_labor(items)
+        assert result[2].coverage_status == CoverageStatus.COVERED
+
+    def test_labor_demoted_when_primary_repair_covered_but_all_parts_not(self):
+        """primary_repair.is_covered=True but all non-ancillary parts NOT_COVERED -> demote."""
+        items = [
+            make_line_item(
+                description="CV boot (consumable)",
+                item_type="parts",
+                total_price=57.0,
+                coverage_status=CoverageStatus.NOT_COVERED,
+                coverage_category="axle_drive",
+                matched_component=None,
+                covered_amount=0.0,
+                not_covered_amount=57.0,
+            ),
+            make_line_item(
+                description="ECROU",
+                item_type="parts",
+                total_price=3.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="axle_drive",
+                matched_component="ancillary hardware",
+            ),
+            make_line_item(
+                description="Drive shaft labor",
+                item_type="labor",
+                total_price=209.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="axle_drive",
+                matched_component="drive_shaft",
+                covered_amount=209.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="drive_shaft",
+            category="axle_drive",
+            is_covered=True,
+            confidence=0.9,
+            determination_method="llm",
+        )
+        result = demote_orphan_labor(items, primary_repair=primary)
+        assert result[2].coverage_status == CoverageStatus.NOT_COVERED
+        assert result[2].exclusion_reason == "demoted_no_anchor"
+
+    def test_labor_kept_when_primary_repair_covered_and_real_part_covered(self):
+        """primary_repair.is_covered=True with a real covered part -> labor kept."""
+        items = [
+            make_line_item(
+                description="Timing chain",
+                item_type="parts",
+                total_price=500.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+            ),
+            make_line_item(
+                description="Labor",
+                item_type="labor",
+                total_price=300.0,
+                coverage_status=CoverageStatus.COVERED,
+                coverage_category="engine",
+                matched_component="timing_chain",
+                covered_amount=300.0,
+                not_covered_amount=0.0,
+            ),
+        ]
+        primary = PrimaryRepairResult(
+            component="timing_chain",
+            category="engine",
+            is_covered=True,
+            confidence=0.9,
+            determination_method="deterministic",
+        )
+        result = demote_orphan_labor(items, primary_repair=primary)
+        assert result[1].coverage_status == CoverageStatus.COVERED

@@ -263,18 +263,23 @@ class ConfidenceStage:
                 ],
                 "tier_reason": routing_decision.tier_reason,
                 "original_verdict": routing_decision.original_verdict,
+                "structural_cci": routing_decision.structural_cci,
+                "cci_threshold_green": routing_decision.cci_threshold_green,
+                "cci_threshold_yellow": routing_decision.cci_threshold_yellow,
             }
             dossier["routing"] = routing_data
 
             # Override verdict to REFER if RED + originally APPROVE
             if routing_decision.routed_verdict:
                 dossier["claim_verdict"] = routing_decision.routed_verdict
-                trigger_names = ", ".join(
-                    t.name for t in routing_decision.triggers_fired
-                    if t.severity.value == "RED"
+                cci_str = (
+                    f"CCI {routing_decision.structural_cci:.3f}"
+                    if routing_decision.structural_cci is not None
+                    else "CCI not available"
                 )
                 dossier["verdict_reason"] = (
-                    f"Routed to REFER by structural triggers: {trigger_names}. "
+                    f"Routed to REFER: {cci_str}. "
+                    f"{routing_decision.tier_reason}. "
                     f"Original verdict: {routing_decision.original_verdict}"
                 )
                 logger.info(

@@ -206,6 +206,7 @@ class DashboardClaim(BaseModel):
     cci_band: Optional[str] = None
     screening_payout: Optional[float] = None
     has_dossier: bool = False
+    routing_tier: Optional[str] = None
 
     # Ground truth
     gt_decision: Optional[str] = None

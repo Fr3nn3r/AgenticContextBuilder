@@ -4,16 +4,16 @@ Provides:
 - RichProgressReporter: For assess command (claims-level tracking with stages).
 - RichClaimProgress: For pipeline command (per-document per-stage tracking).
 
-Both use Rich Progress + Live for clean output that doesn't corrupt logs.
+Both use the shared stderr Console from _console.py so that Rich Progress bars
+and RichHandler log messages coordinate through a single Console instance.
 """
 
 import logging
-import sys
+import os
 import threading
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from rich.console import Console
 from rich.progress import (
     Progress,
     BarColumn,
@@ -24,6 +24,12 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+
+
+def _shared_console():
+    """Return the shared stderr console (lazy import to avoid circular deps)."""
+    from context_builder.cli._console import console
+    return console
 
 
 class ProgressMode(Enum):
@@ -44,25 +50,23 @@ class RichProgressReporter:
     def __init__(self, mode: ProgressMode = ProgressMode.PROGRESS, parallel: int = 1):
         self.mode = mode
         self.parallel = parallel
-        self._console = Console(stderr=True)
+        self._console = _shared_console()
         self._progress: Optional[Progress] = None
         self._claims_task = None
         self._stage_task = None
         self._detail_task = None
         self._current_claim: Optional[str] = None
         self._lock = threading.Lock()
+        self._saved_root_level: Optional[int] = None
 
         self._configure_logging()
 
     def _configure_logging(self) -> None:
-        """Configure logging level based on mode."""
-        loggers = [
-            logging.getLogger("context_builder"),
-            logging.getLogger("workspace_screener"),
-            # Dynamically-loaded workspace engines use this module name
-            logging.getLogger("workspace_decision_engine"),
-        ]
+        """Configure logging level based on mode.
 
+        Suppresses at the root logger level so that ALL loggers are affected,
+        including those using class-name loggers (e.g. OpenAIClassifier).
+        """
         level_map = {
             ProgressMode.PROGRESS: logging.WARNING,
             ProgressMode.QUIET: logging.ERROR,
@@ -70,8 +74,9 @@ class RichProgressReporter:
             ProgressMode.LOGS: logging.INFO,
         }
         level = level_map.get(self.mode, logging.INFO)
-        for lg in loggers:
-            lg.setLevel(level)
+        root = logging.getLogger()
+        self._saved_root_level = root.level
+        root.setLevel(level)
 
     def write(self, msg: str) -> None:
         """Write a message without breaking progress bars."""
@@ -215,6 +220,9 @@ class RichProgressReporter:
         if self._progress:
             self._progress.stop()
             self._progress = None
+        if self._saved_root_level is not None:
+            logging.getLogger().setLevel(self._saved_root_level)
+            self._saved_root_level = None
 
     def _close_detail_task(self) -> None:
         if self._progress and self._detail_task is not None:
@@ -261,34 +269,33 @@ class RichClaimProgress:
         self.total_steps = doc_count * self.stage_count
         self.quiet = quiet
         self.verbose = verbose
-        self._console = Console(stderr=True)
+        self._console = _shared_console()
         self._progress: Optional[Progress] = None
         self._task = None
         self.current_filename: Optional[str] = None
+        self._saved_root_level: Optional[int] = None
         self._configure_logging()
 
     def _configure_logging(self) -> None:
-        """Suppress INFO logs during progress display."""
+        """Suppress INFO logs during progress display.
+
+        Sets the root logger level so ALL loggers are suppressed, including
+        class-name loggers like OpenAIClassifier and DocumentIngester.
+        """
         if self.verbose:
             return
+        root = logging.getLogger()
+        self._saved_root_level = root.level
         level = logging.ERROR if self.quiet else logging.WARNING
-        for name in (
-            "context_builder",
-            "workspace_screener",
-            "workspace_decision_engine",
-        ):
-            logging.getLogger(name).setLevel(level)
+        root.setLevel(level)
 
     def _restore_logging(self) -> None:
-        """Restore logger levels after progress display ends."""
+        """Restore root logger level after progress display ends."""
         if self.verbose:
             return
-        for name in (
-            "context_builder",
-            "workspace_screener",
-            "workspace_decision_engine",
-        ):
-            logging.getLogger(name).setLevel(logging.INFO)
+        if self._saved_root_level is not None:
+            logging.getLogger().setLevel(self._saved_root_level)
+            self._saved_root_level = None
 
     def start(self) -> None:
         """Print claim header and initialize progress bar."""
@@ -305,13 +312,24 @@ class RichClaimProgress:
         self._progress.start()
         self._task = self._progress.add_task("starting...", total=self.total_steps)
 
+    @staticmethod
+    def _truncate_filename(filename: str, max_len: int = 30) -> str:
+        """Truncate filename preserving extension."""
+        if len(filename) <= max_len:
+            return filename
+        name, ext = os.path.splitext(filename)
+        if ext:
+            available = max_len - len(ext) - 3
+            if available > 0:
+                return name[:available] + "..." + ext
+        return filename[:max_len - 3] + "..."
+
     def start_document(self, filename: str, doc_id: str) -> None:
         """Called when starting to process a new document."""
         self.current_filename = filename
-        if len(filename) > 35:
-            filename = filename[:32] + "..."
+        short = self._truncate_filename(filename, 35)
         if self._progress and self._task is not None:
-            self._progress.update(self._task, description=filename)
+            self._progress.update(self._task, description=short)
 
     def on_phase_start(self, phase: str) -> None:
         """Called when a phase starts."""
@@ -320,10 +338,8 @@ class RichClaimProgress:
             return
 
         if self._progress and self._task is not None and self.current_filename:
-            filename = self.current_filename
-            if len(filename) > 30:
-                filename = filename[:27] + "..."
-            self._progress.update(self._task, description=f"{filename}: {phase}")
+            short = self._truncate_filename(self.current_filename, 28)
+            self._progress.update(self._task, description=f"{short}: {phase}")
 
     def on_phase_end(self, phase: str, status: str = "success") -> None:
         """Called when a phase ends — advance the progress bar."""

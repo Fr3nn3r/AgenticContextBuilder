@@ -1375,7 +1375,6 @@ function ClaimDetail({
 
 type SortKey =
   | "claim_id"
-  | "policy"
   | "decision"
   | "rationale"
   | "confidence"
@@ -1388,7 +1387,6 @@ type SortKey =
 type SortDir = "asc" | "desc";
 
 interface EffectiveValues {
-  policy: string | null;
   decision: string | null;
   rationale: string | null;
   confidence: number | null;
@@ -1468,6 +1466,8 @@ export function ClaimsWorkbenchPage() {
   // Filters
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>("all");
+  const [datasetFilter, setDatasetFilter] = useState<string>("all");
+  const [tierFilter, setTierFilter] = useState<string>("all");
 
   // Document slide panel
   const [selectedEvidence, setSelectedEvidence] =
@@ -1512,7 +1512,6 @@ export function ClaimsWorkbenchPage() {
       const confidence = rawConf != null ? (rawConf <= 1 ? Math.round(rawConf * 100) : rawConf) : null;
 
       return {
-        policy: claim.policy_number ?? null,
         decision: claim.verdict ?? claim.decision?.toUpperCase() ?? null,
         rationale: claim.verdict_reason ?? claim.result_code ?? null,
         confidence,
@@ -1535,7 +1534,6 @@ export function ClaimsWorkbenchPage() {
         const s = search.toLowerCase();
         const matches =
           c.claim_id.toLowerCase().includes(s) ||
-          (eff.policy?.toLowerCase().includes(s) ?? false) ||
           (eff.vehicle?.toLowerCase().includes(s) ?? false);
         if (!matches) return false;
       }
@@ -1543,9 +1541,17 @@ export function ClaimsWorkbenchPage() {
         const d = eff.decision?.toUpperCase();
         if (!d || d !== verdictFilter) return false;
       }
+      if (datasetFilter !== "all") {
+        const ds = c.dataset_id ?? c.dataset_label ?? null;
+        if (!ds || ds !== datasetFilter) return false;
+      }
+      if (tierFilter !== "all") {
+        const tier = c.routing_tier ?? null;
+        if (!tier || tier !== tierFilter) return false;
+      }
       return true;
     });
-  }, [claims, search, verdictFilter, getEffective]);
+  }, [claims, search, verdictFilter, datasetFilter, tierFilter, getEffective]);
 
   // Sort claims
   const sorted = useMemo(() => {
@@ -1559,10 +1565,6 @@ export function ClaimsWorkbenchPage() {
         case "claim_id":
           va = Number(a.claim_id) || a.claim_id;
           vb = Number(b.claim_id) || b.claim_id;
-          break;
-        case "policy":
-          va = ea.policy || "";
-          vb = eb.policy || "";
           break;
         case "decision":
           va = ea.decision || "";
@@ -1655,11 +1657,22 @@ export function ClaimsWorkbenchPage() {
     return Array.from(set).sort();
   }, [claims]);
 
+  // Unique datasets for filter dropdown
+  const availableDatasets = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const claim of claims) {
+      const id = claim.dataset_id ?? claim.dataset_label;
+      const label = claim.dataset_label ?? claim.dataset_id;
+      if (id && label) map.set(id, label);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [claims]);
+
   if (loading && claims.length === 0 && !error) {
     return <PageLoadingSkeleton message="Loading claims..." />;
   }
 
-  const TOTAL_COLS = 11; // chevron + 10 data columns
+  const TOTAL_COLS = 10; // chevron + 9 data columns
 
   return (
     <div className="h-full flex flex-col">
@@ -1670,7 +1683,7 @@ export function ClaimsWorkbenchPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search claim, policy, vehicle..."
+              placeholder="Search claim, vehicle..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-72 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -1687,6 +1700,28 @@ export function ClaimsWorkbenchPage() {
                 {v.charAt(0) + v.slice(1).toLowerCase()}
               </option>
             ))}
+          </select>
+          <select
+            value={datasetFilter}
+            onChange={(e) => setDatasetFilter(e.target.value)}
+            className="text-sm border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          >
+            <option value="all">All datasets</option>
+            {availableDatasets.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={tierFilter}
+            onChange={(e) => setTierFilter(e.target.value)}
+            className="text-sm border border-border rounded-md px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          >
+            <option value="all">All tiers</option>
+            <option value="GREEN">Green</option>
+            <option value="YELLOW">Yellow</option>
+            <option value="RED">Red</option>
           </select>
           <span className="text-sm text-muted-foreground">
             {sorted.length} claim{sorted.length !== 1 ? "s" : ""}
@@ -1724,7 +1759,6 @@ export function ClaimsWorkbenchPage() {
                 <tr className="border-b border-border bg-muted/50 text-xs">
                   <th className="py-2 px-2 w-8" />
                   <SortHeader label="Claim ID" sortKeyName="claim_id" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
-                  <SortHeader label="Policy" sortKeyName="policy" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
                   <SortHeader label="Status" sortKeyName="decision" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-center" />
                   <SortHeader label="Rationale" sortKeyName="rationale" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-left" />
                   <SortHeader label="Conf." sortKeyName="confidence" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
@@ -1759,7 +1793,7 @@ export function ClaimsWorkbenchPage() {
           </div>
           {sorted.length === 0 && (
             <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-              {search || verdictFilter !== "all"
+              {search || verdictFilter !== "all" || datasetFilter !== "all"
                 ? "No claims match your filters."
                 : "No claims found."}
             </div>
@@ -1813,14 +1847,14 @@ function ClaimRow({
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const confidenceColor =
-    effective.confidence == null
-      ? ""
-      : effective.confidence >= 80
-        ? "text-foreground"
-        : effective.confidence >= 60
-          ? "text-amber-600 dark:text-amber-400"
-          : "text-rose-600 dark:text-rose-400";
+  const tierStyle =
+    claim.routing_tier === "GREEN"
+      ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300"
+      : claim.routing_tier === "YELLOW"
+        ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300"
+        : claim.routing_tier === "RED"
+          ? "bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300"
+          : "text-foreground";
 
   const isDenied = effective.decision === "DENY";
 
@@ -1861,10 +1895,6 @@ function ClaimRow({
             </button>
           </span>
         </td>
-        {/* Policy */}
-        <td className="py-2 px-2 text-xs text-muted-foreground">
-          {effective.policy || "-"}
-        </td>
         {/* Status */}
         <td className="py-2 px-2 text-center">
           <VerdictBadge verdict={effective.decision} />
@@ -1879,9 +1909,10 @@ function ClaimRow({
         {/* Confidence */}
         <td
           className={cn(
-            "py-2 px-2 text-right font-mono text-xs",
-            confidenceColor
+            "py-2 px-2 text-right font-mono text-xs rounded-sm",
+            tierStyle
           )}
+          title={claim.routing_tier ? `Tier: ${claim.routing_tier}` : undefined}
         >
           {effective.confidence != null
             ? `${effective.confidence.toFixed(0)}%`

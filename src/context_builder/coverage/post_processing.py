@@ -218,6 +218,39 @@ def apply_labor_linkage(
                 and 0 <= linked_part_idx < len(items)
             ) else None
 
+            # Guard: do not promote labor if the linked part is not COVERED.
+            # The LLM determines mechanical necessity (e.g. "wheel removal is
+            # needed for CV boot replacement") but that does not mean the
+            # labor is covered -- coverage depends on the part being covered.
+            if linked_part and linked_part.coverage_status != CoverageStatus.COVERED:
+                reasoning = (
+                    f"Labor is mechanically linked to "
+                    f"'{linked_part.description}' but that part is "
+                    f"{linked_part.coverage_status.value} -- skipping promotion"
+                )
+                skip_tb = TraceBuilder()
+                skip_tb.extend(item.decision_trace)
+                skip_tb.add(
+                    "labor_linkage_llm", TraceAction.SKIPPED,
+                    reasoning,
+                    detail={
+                        "strategy": "llm_labor_linkage",
+                        "linked_part_index": linked_part_idx,
+                        "linked_part_status": linked_part.coverage_status.value,
+                        "llm_confidence": verdict.get("confidence", 0),
+                        "llm_reasoning": verdict.get("reasoning", ""),
+                    },
+                    decision_source=DecisionSource.PROMOTION,
+                )
+                item.decision_trace = skip_tb.build()
+                logger.info(
+                    "Skipped labor promotion '%s': linked part '%s' is %s",
+                    item.description,
+                    linked_part.description,
+                    linked_part.coverage_status.value,
+                )
+                continue
+
             item.coverage_status = CoverageStatus.COVERED
             if linked_part:
                 item.coverage_category = linked_part.coverage_category
@@ -274,6 +307,153 @@ def apply_labor_linkage(
     return items
 
 
+def demote_labor_for_excluded_parts(
+    items: List[LineItemCoverage],
+    excluded_components: Optional[Dict[str, Any]] = None,
+    primary_repair: Optional[PrimaryRepairResult] = None,
+) -> List[LineItemCoverage]:
+    """Demote covered labor when it serves an excluded (NOT_COVERED) part.
+
+    After labor linkage, labor can end up COVERED via LLM category mapping
+    even though the part it actually serves is excluded by policy.  Example:
+    valve-cover replacement labor mapped to "culasses" (cylinder heads) even
+    though the valve cover itself is excluded.
+
+    This step catches that inconsistency and demotes the labor.
+
+    Skips demotion when:
+    - primary_repair is covered (labor is anchored to a legitimate repair)
+    - no excluded parts exist at all
+    - covered parts exist on the invoice (mixed invoice -- demote_orphan_labor
+      or per-item matching handles these)
+
+    Args:
+        items: Line items after labor linkage.
+        excluded_components: Policy excluded components dict (category -> parts).
+        primary_repair: Primary repair determination result.
+
+    Returns:
+        Updated list with labor for excluded parts demoted.
+    """
+    # If primary repair is legitimately covered, labor is anchored -- skip.
+    # But cross-validate: if the source item is not covered, the anchor
+    # is unreliable (e.g. LLM picked a covered category but the actual
+    # part is a consumable/excluded).
+    if primary_repair and primary_repair.is_covered:
+        source_idx = primary_repair.source_item_index
+        source_ok = True
+        if source_idx is not None and 0 <= source_idx < len(items):
+            if items[source_idx].coverage_status != CoverageStatus.COVERED:
+                source_ok = False
+        if source_ok:
+            return items
+
+    excluded_components = excluded_components or {}
+
+    # Build sets of excluded part info from actual line items
+    excluded_parts_on_invoice: List[LineItemCoverage] = []
+    excluded_categories: set = set()
+    excluded_matched_components: set = set()
+    for item in items:
+        if item.coverage_status != CoverageStatus.NOT_COVERED:
+            continue
+        if item.item_type not in ("parts", "part", "piece"):
+            continue
+        if not item.exclusion_reason:
+            continue
+        # Only consider policy-excluded parts (not just "not matched")
+        if item.exclusion_reason in (
+            "component_excluded", "exclusion_pattern", "consumable",
+        ):
+            excluded_parts_on_invoice.append(item)
+            if item.coverage_category:
+                excluded_categories.add(item.coverage_category.lower())
+            if item.matched_component:
+                excluded_matched_components.add(item.matched_component.lower())
+
+    if not excluded_parts_on_invoice:
+        return items
+
+    # Check if any covered parts exist on the invoice
+    has_covered_parts = any(
+        item.coverage_status == CoverageStatus.COVERED
+        and item.item_type in ("parts", "part", "piece")
+        for item in items
+    )
+
+    # If no covered parts at all, demote_orphan_labor handles it -- skip
+    if not has_covered_parts:
+        return items
+
+    # Mixed invoice: covered + excluded parts both present.
+    # Demote labor whose category/component maps to an excluded part.
+    demoted_count = 0
+    for item in items:
+        if item.item_type not in LABOR_TYPES:
+            continue
+        if item.coverage_status != CoverageStatus.COVERED:
+            continue
+
+        # Check if this labor's category or component matches an excluded part
+        labor_category = (item.coverage_category or "").lower()
+        labor_component = (item.matched_component or "").lower()
+
+        matches_excluded = False
+        if labor_component and labor_component in excluded_matched_components:
+            matches_excluded = True
+        elif labor_category and labor_category in excluded_categories:
+            # Category match -- but only if no covered part shares that category
+            has_covered_part_in_category = any(
+                p.coverage_status == CoverageStatus.COVERED
+                and p.item_type in ("parts", "part", "piece")
+                and (p.coverage_category or "").lower() == labor_category
+                for p in items
+            )
+            if not has_covered_part_in_category:
+                matches_excluded = True
+
+        if not matches_excluded:
+            continue
+
+        original_category = item.coverage_category
+        item.coverage_status = CoverageStatus.NOT_COVERED
+        item.exclusion_reason = "labor_for_excluded_part"
+        item.covered_amount = 0.0
+        item.not_covered_amount = item.total_price
+        item.match_reasoning += (
+            " [DEMOTED: labor serves an excluded part -- "
+            "labor coverage follows the part it serves]"
+        )
+        dem_tb = TraceBuilder()
+        dem_tb.extend(item.decision_trace)
+        dem_tb.add(
+            "excluded_part_labor_demotion", TraceAction.DEMOTED,
+            f"Labor linked to excluded part (category: {original_category})",
+            verdict=CoverageStatus.NOT_COVERED,
+            detail={
+                "reason": "labor_for_excluded_part",
+                "excluded_categories": sorted(excluded_categories),
+                "excluded_components": sorted(excluded_matched_components),
+            },
+            decision_source=DecisionSource.DEMOTION,
+        )
+        item.decision_trace = dem_tb.build()
+        demoted_count += 1
+        logger.info(
+            "Demoted labor '%s' (%s) from COVERED to NOT_COVERED: "
+            "serves excluded part",
+            item.description,
+            original_category,
+        )
+
+    if demoted_count:
+        logger.info(
+            "Demoted %d labor item(s) linked to excluded parts", demoted_count,
+        )
+
+    return items
+
+
 def demote_orphan_labor(
     items: List[LineItemCoverage],
     primary_repair: Optional[PrimaryRepairResult] = None,
@@ -306,17 +486,73 @@ def demote_orphan_labor(
         and item.item_type in ("parts", "part", "piece")
         for item in items
     )
-    if has_covered_parts:
+    has_non_ancillary_covered_part = any(
+        item.coverage_status == CoverageStatus.COVERED
+        and item.item_type in ("parts", "part", "piece")
+        and (item.matched_component or "").lower() != "ancillary hardware"
+        for item in items
+    )
+
+    # Ancillary hardware (nuts, bolts, screws) should not count as a
+    # covered-parts anchor by themselves -- they accompany a repair but
+    # don't establish that a repair is covered.
+    if has_non_ancillary_covered_part:
         return items
+    if has_covered_parts:
+        logger.info(
+            "Only ancillary hardware covered -- not counting as parts anchor"
+        )
 
     # Primary repair is covered — labor has a policy-level anchor even
     # without an explicit parts line item on the invoice.
+    # Two cross-validations:
+    # (a) If the source item is NOT covered, the anchor is unreliable.
+    # (b) If only ancillary hardware is covered (no real parts), and no
+    #     source item is set, the anchor is also unreliable.
     if primary_repair and primary_repair.is_covered:
-        logger.info(
-            "Skipping orphan labor demotion: primary repair '%s' is covered",
-            primary_repair.component,
-        )
-        return items
+        anchor_valid = True
+        source_idx = primary_repair.source_item_index
+        if source_idx is not None and 0 <= source_idx < len(items):
+            src = items[source_idx]
+            if src.coverage_status != CoverageStatus.COVERED:
+                anchor_valid = False
+                logger.info(
+                    "Primary repair '%s' is_covered=True but source item "
+                    "[%d] '%s' is %s -- ignoring anchor",
+                    primary_repair.component,
+                    source_idx,
+                    src.description,
+                    src.coverage_status.value,
+                )
+            elif src.item_type in LABOR_TYPES:
+                # Source item is labor, not a part -- the LLM picked a
+                # labor description as the primary repair.  If no real
+                # non-ancillary parts are covered, this is not a valid
+                # parts anchor.
+                if not has_non_ancillary_covered_part:
+                    anchor_valid = False
+                    logger.info(
+                        "Primary repair '%s' source is labor item [%d] '%s' "
+                        "and no non-ancillary parts covered -- ignoring anchor",
+                        primary_repair.component,
+                        source_idx,
+                        src.description,
+                    )
+        elif has_covered_parts and not has_non_ancillary_covered_part:
+            # No source item set AND only ancillary hardware covered --
+            # parts exist on the invoice but none are real covered parts.
+            anchor_valid = False
+            logger.info(
+                "Primary repair '%s' is_covered=True but no source item "
+                "and only ancillary hardware covered -- ignoring anchor",
+                primary_repair.component,
+            )
+        if anchor_valid:
+            logger.info(
+                "Skipping orphan labor demotion: primary repair '%s' is covered",
+                primary_repair.component,
+            )
+            return items
 
     # Repair context is covered — labor describes work on a covered
     # component even when the parts line item is REVIEW_NEEDED.

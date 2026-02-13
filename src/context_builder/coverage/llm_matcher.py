@@ -1614,16 +1614,22 @@ class LLMMatcher:
 
         Tries workspace prompt file first, then inline fallback.
         """
-        # Format line items with index, description, type, price, category
+        # Format line items with index, description, type, price, category,
+        # coverage status, and matched component (when available).
         item_lines = []
         for item in all_items:
             category = item.get("coverage_category") or "N/A"
-            item_lines.append(
+            status = item.get("coverage_status", "unknown")
+            line = (
                 f"  [{item['index']}] {item['description']} | "
                 f"type={item.get('item_type', 'unknown')} | "
                 f"price={item.get('total_price', 0):.2f} CHF | "
-                f"category={category}"
+                f"category={category} | status={status}"
             )
+            matched = item.get("matched_component")
+            if matched:
+                line += f" | identified_as={matched}"
+            item_lines.append(line)
         items_text = "\n".join(item_lines)
 
         # Format covered components

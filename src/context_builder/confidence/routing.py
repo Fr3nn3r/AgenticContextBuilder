@@ -1,14 +1,25 @@
-"""Claim routing engine with deterministic trigger checks.
+"""CCI-driven claim routing engine (v2).
 
-Evaluates 5 structural triggers to route claims into GREEN / YELLOW / RED
-tiers.  RED triggers override the verdict to REFER_TO_HUMAN.
+Uses the Composite Confidence Index as the **sole driver** of tier
+assignment.  Structural triggers are kept as informational annotations
+for the audit trail but do NOT affect the tier.
 
-Trigger summary:
-    RT-1  reconciliation_gate_fail       gate.status == "fail"           -> RED
-    RT-2  high_impact_data_gap           >= 1 HIGH-severity data gap     -> YELLOW (1) / RED (2+)
-    RT-3  coverage_complexity_extreme    > 25 line items                 -> YELLOW (26-35) / RED (36+)
-    RT-4  coverage_missing_on_approve    no coverage AND verdict APPROVE -> RED
-    RT-5  low_structural_cci             CCI < 0.55 AND verdict APPROVE -> RED
+Tier logic:
+    If verdict == REFER            -> RED  (always)
+    If CCI is None                 -> RED  (safety fallback)
+    If CCI >= cci_green_threshold  -> GREEN
+    If CCI >= cci_yellow_threshold -> YELLOW
+    If CCI < cci_yellow_threshold  -> RED
+
+Informational triggers (annotations only):
+    RT-1  reconciliation_gate_fail       gate.status == "fail"
+    RT-2  high_impact_data_gap           >= 1 HIGH-severity data gap
+    RT-3  coverage_complexity_extreme    > 25 line items
+    RT-5  low_structural_cci             CCI < 0.55 AND verdict APPROVE
+    RT-6  excluded_part_with_covered_labor  excluded parts + covered labor
+
+RT-4 (coverage_missing_on_approve) has been removed -- it was a
+pipeline-data concern, not a routing concern.
 
 Thresholds are constants with optional workspace-level override via
 ``config/confidence/routing_thresholds.yaml``.
@@ -28,19 +39,26 @@ from context_builder.schemas.routing import (
 
 logger = logging.getLogger(__name__)
 
-# ── Default thresholds ───────────────────────────────────────────────
+# -- Default thresholds -------------------------------------------------------
 
 DEFAULT_THRESHOLDS: Dict[str, Any] = {
-    # RT-2: high-impact data gaps
-    "high_impact_data_gap_yellow": 1,   # >= 1 HIGH gap -> YELLOW
-    "high_impact_data_gap_red": 2,      # >= 2 HIGH gaps -> RED
+    # CCI-driven tier thresholds (v2)
+    "cci_green_threshold": 0.70,
+    "cci_yellow_threshold": 0.55,
 
-    # RT-3: coverage complexity (line item count)
-    "complexity_yellow": 26,   # >= 26 items -> YELLOW
-    "complexity_red": 36,      # >= 36 items -> RED
+    # RT-2: high-impact data gaps (informational)
+    "high_impact_data_gap_yellow": 1,   # >= 1 HIGH gap
+    "high_impact_data_gap_red": 2,      # >= 2 HIGH gaps
 
-    # RT-5: low structural CCI
+    # RT-3: coverage complexity (informational)
+    "complexity_yellow": 26,   # >= 26 items
+    "complexity_red": 36,      # >= 36 items
+
+    # RT-5: low structural CCI (informational)
     "low_cci_threshold": 0.55,
+
+    # RT-6: excluded parts with covered labor (informational)
+    "excluded_part_labor_severity": "YELLOW",
 }
 
 
@@ -73,7 +91,7 @@ def load_thresholds(workspace_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 class ClaimRouter:
-    """Evaluates structural triggers to route claims into processing tiers."""
+    """CCI-driven router: assigns tier from CCI score, keeps triggers as annotations."""
 
     def __init__(self, thresholds: Optional[Dict[str, Any]] = None) -> None:
         self.thresholds = thresholds or dict(DEFAULT_THRESHOLDS)
@@ -89,69 +107,63 @@ class ClaimRouter:
         processing_result: Optional[Dict[str, Any]] = None,
         confidence_summary: Optional[Dict[str, Any]] = None,
     ) -> RoutingDecision:
-        """Evaluate all routing triggers and produce a RoutingDecision.
+        """Evaluate CCI-driven routing and produce a RoutingDecision.
 
-        Args:
-            claim_id: Claim identifier.
-            claim_run_id: Run identifier.
-            verdict: Original verdict (APPROVE, DENY, REFER).
-            reconciliation_report: Reconciliation report dict.
-            coverage_analysis: Coverage analysis dict.
-            processing_result: Assessment/processing result dict.
-            confidence_summary: CCI summary dict with composite_score.
-
-        Returns:
-            RoutingDecision with tier, all trigger results, and reason.
+        The tier is determined solely by the CCI score and the verdict.
+        Structural triggers are evaluated as informational annotations.
         """
         verdict_upper = verdict.upper().strip()
-        all_triggers: List[RoutingTriggerResult] = []
 
-        # RT-1: Reconciliation gate fail
-        all_triggers.append(self._check_reconciliation_gate(reconciliation_report))
+        # -- Extract CCI --
+        cci: Optional[float] = None
+        if confidence_summary:
+            cci = confidence_summary.get("composite_score")
 
-        # RT-2: High-impact data gaps
-        all_triggers.append(self._check_high_impact_data_gaps(processing_result))
-
-        # RT-3: Coverage complexity (extreme line item count)
-        all_triggers.append(self._check_coverage_complexity(coverage_analysis))
-
-        # RT-4: Coverage missing on APPROVE
-        all_triggers.append(
-            self._check_coverage_missing_on_approve(coverage_analysis, verdict_upper)
+        # -- CCI thresholds --
+        green_threshold = self.thresholds.get(
+            "cci_green_threshold", DEFAULT_THRESHOLDS["cci_green_threshold"]
+        )
+        yellow_threshold = self.thresholds.get(
+            "cci_yellow_threshold", DEFAULT_THRESHOLDS["cci_yellow_threshold"]
         )
 
-        # RT-5: Low structural CCI on APPROVE
+        # -- Determine tier from CCI --
+        if verdict_upper == "REFER":
+            tier = RoutingTier.RED
+            tier_reason = "Original verdict is REFER"
+        elif cci is None:
+            tier = RoutingTier.RED
+            tier_reason = "CCI not available (safety fallback)"
+        elif cci >= green_threshold:
+            tier = RoutingTier.GREEN
+            tier_reason = f"CCI {cci:.3f} >= {green_threshold} (GREEN threshold)"
+        elif cci >= yellow_threshold:
+            tier = RoutingTier.YELLOW
+            tier_reason = f"CCI {cci:.3f} >= {yellow_threshold} (YELLOW threshold)"
+        else:
+            tier = RoutingTier.RED
+            tier_reason = f"CCI {cci:.3f} < {yellow_threshold} (below YELLOW threshold)"
+
+        # -- Run informational triggers (annotations only) --
+        all_triggers: List[RoutingTriggerResult] = []
+        all_triggers.append(self._check_reconciliation_gate(reconciliation_report))
+        all_triggers.append(self._check_high_impact_data_gaps(processing_result))
+        all_triggers.append(self._check_coverage_complexity(coverage_analysis))
         all_triggers.append(
             self._check_low_structural_cci(confidence_summary, verdict_upper)
         )
+        all_triggers.append(
+            self._check_excluded_part_with_covered_labor(
+                coverage_analysis, verdict_upper,
+            )
+        )
 
-        # Determine tier: worst of all fired triggers
         fired = [t for t in all_triggers if t.fired]
-        if verdict_upper == "REFER":
-            # REFER verdicts always route to RED
-            tier = RoutingTier.RED
-            tier_reason = "Original verdict is REFER"
-        elif any(t.severity == RoutingTier.RED for t in fired):
-            tier = RoutingTier.RED
-            red_names = [t.name for t in fired if t.severity == RoutingTier.RED]
-            tier_reason = f"RED triggers: {', '.join(red_names)}"
-        elif any(t.severity == RoutingTier.YELLOW for t in fired):
-            tier = RoutingTier.YELLOW
-            yellow_names = [t.name for t in fired if t.severity == RoutingTier.YELLOW]
-            tier_reason = f"YELLOW triggers: {', '.join(yellow_names)}"
-        else:
-            tier = RoutingTier.GREEN
-            tier_reason = "No triggers fired"
 
-        # Determine routed verdict
+        # -- Verdict override: RED + APPROVE -> REFER --
         routed_verdict = None
         if tier == RoutingTier.RED and verdict_upper == "APPROVE":
             routed_verdict = "REFER"
-
-        # Extract structural CCI
-        structural_cci = None
-        if confidence_summary:
-            structural_cci = confidence_summary.get("composite_score")
 
         return RoutingDecision(
             claim_id=claim_id,
@@ -163,15 +175,17 @@ class ClaimRouter:
             triggers_fired=fired,
             all_triggers=all_triggers,
             tier_reason=tier_reason,
-            structural_cci=structural_cci,
+            structural_cci=cci,
+            cci_threshold_green=green_threshold,
+            cci_threshold_yellow=yellow_threshold,
         )
 
-    # ── Individual trigger checks ────────────────────────────────────
+    # -- Individual trigger checks (informational) -------------------------
 
     def _check_reconciliation_gate(
         self, reconciliation_report: Optional[Dict[str, Any]]
     ) -> RoutingTriggerResult:
-        """RT-1: Reconciliation gate fail -> RED."""
+        """RT-1: Reconciliation gate fail (informational)."""
         gate_status = None
         if reconciliation_report:
             gate = reconciliation_report.get("gate") or {}
@@ -195,7 +209,7 @@ class ClaimRouter:
     def _check_high_impact_data_gaps(
         self, processing_result: Optional[Dict[str, Any]]
     ) -> RoutingTriggerResult:
-        """RT-2: HIGH-severity data gaps -> YELLOW (1) / RED (2+)."""
+        """RT-2: HIGH-severity data gaps (informational)."""
         high_gaps = 0
         if processing_result:
             data_gaps = processing_result.get("data_gaps") or []
@@ -210,14 +224,14 @@ class ClaimRouter:
         if high_gaps >= red_threshold:
             fired = True
             severity = RoutingTier.RED
-            explanation = f"{high_gaps} HIGH-severity data gaps (>= {red_threshold} -> RED)"
+            explanation = f"{high_gaps} HIGH-severity data gaps (>= {red_threshold})"
         elif high_gaps >= yellow_threshold:
             fired = True
             severity = RoutingTier.YELLOW
-            explanation = f"{high_gaps} HIGH-severity data gap(s) (>= {yellow_threshold} -> YELLOW)"
+            explanation = f"{high_gaps} HIGH-severity data gap(s) (>= {yellow_threshold})"
         else:
             fired = False
-            severity = RoutingTier.YELLOW  # default if it were to fire
+            severity = RoutingTier.YELLOW
             explanation = f"{high_gaps} HIGH-severity data gaps (below threshold)"
 
         return RoutingTriggerResult(
@@ -233,7 +247,7 @@ class ClaimRouter:
     def _check_coverage_complexity(
         self, coverage_analysis: Optional[Dict[str, Any]]
     ) -> RoutingTriggerResult:
-        """RT-3: Extreme line item count -> YELLOW / RED."""
+        """RT-3: Extreme line item count (informational)."""
         n_items = 0
         if coverage_analysis:
             line_items = coverage_analysis.get("line_items") or []
@@ -245,11 +259,11 @@ class ClaimRouter:
         if n_items >= red_threshold:
             fired = True
             severity = RoutingTier.RED
-            explanation = f"{n_items} line items (>= {red_threshold} -> RED)"
+            explanation = f"{n_items} line items (>= {red_threshold})"
         elif n_items >= yellow_threshold:
             fired = True
             severity = RoutingTier.YELLOW
-            explanation = f"{n_items} line items (>= {yellow_threshold} -> YELLOW)"
+            explanation = f"{n_items} line items (>= {yellow_threshold})"
         else:
             fired = False
             severity = RoutingTier.YELLOW
@@ -265,41 +279,12 @@ class ClaimRouter:
             explanation=explanation,
         )
 
-    def _check_coverage_missing_on_approve(
-        self,
-        coverage_analysis: Optional[Dict[str, Any]],
-        verdict: str,
-    ) -> RoutingTriggerResult:
-        """RT-4: No coverage analysis AND verdict is APPROVE -> RED."""
-        has_coverage = coverage_analysis is not None and bool(
-            coverage_analysis.get("line_items")
-        )
-        fired = not has_coverage and verdict == "APPROVE"
-
-        return RoutingTriggerResult(
-            trigger_id="RT-4",
-            name="coverage_missing_on_approve",
-            fired=fired,
-            severity=RoutingTier.RED,
-            signal_value=has_coverage,
-            threshold="coverage required for APPROVE",
-            explanation=(
-                "APPROVE verdict without coverage analysis -> RED"
-                if fired
-                else (
-                    "Coverage analysis present"
-                    if has_coverage
-                    else "Not applicable (verdict is not APPROVE)"
-                )
-            ),
-        )
-
     def _check_low_structural_cci(
         self,
         confidence_summary: Optional[Dict[str, Any]],
         verdict: str,
     ) -> RoutingTriggerResult:
-        """RT-5: Low structural CCI on APPROVE -> RED."""
+        """RT-5: Low structural CCI on APPROVE (informational)."""
         cci = None
         if confidence_summary:
             cci = confidence_summary.get("composite_score")
@@ -319,12 +304,87 @@ class ClaimRouter:
             signal_value=cci,
             threshold=threshold,
             explanation=(
-                f"Structural CCI {cci:.3f} < {threshold} on APPROVE -> RED"
+                f"Structural CCI {cci:.3f} < {threshold} on APPROVE"
                 if fired
                 else (
                     f"CCI {cci:.3f} >= {threshold}"
                     if cci is not None
                     else "CCI not available"
                 )
+            ),
+        )
+
+    def _check_excluded_part_with_covered_labor(
+        self,
+        coverage_analysis: Optional[Dict[str, Any]],
+        verdict: str,
+    ) -> RoutingTriggerResult:
+        """RT-6: Excluded parts with covered labor but no covered parts (informational).
+
+        Safety net for cases where labor is marked COVERED but the only parts
+        on the invoice are excluded by policy.
+        Only fires on APPROVE verdicts (DENY claims are already denied).
+        """
+        severity_str = self.thresholds.get("excluded_part_labor_severity", "YELLOW")
+        severity = (
+            RoutingTier.RED if severity_str == "RED" else RoutingTier.YELLOW
+        )
+
+        if verdict != "APPROVE" or not coverage_analysis:
+            return RoutingTriggerResult(
+                trigger_id="RT-6",
+                name="excluded_part_with_covered_labor",
+                fired=False,
+                severity=severity,
+                signal_value=None,
+                threshold="excluded parts + covered labor + no covered parts",
+                explanation=(
+                    "Not applicable (verdict is not APPROVE)"
+                    if verdict != "APPROVE"
+                    else "No coverage analysis available"
+                ),
+            )
+
+        line_items = coverage_analysis.get("line_items") or []
+
+        has_excluded_parts = False
+        has_covered_labor = False
+        has_covered_parts = False
+
+        for li in line_items:
+            item_type = li.get("item_type", "")
+            status = str(li.get("coverage_status", "")).upper()
+
+            if item_type in ("parts", "part", "piece"):
+                if status == "COVERED":
+                    has_covered_parts = True
+                elif status == "NOT_COVERED" and li.get("exclusion_reason"):
+                    has_excluded_parts = True
+            elif item_type in ("labor", "labour", "main d'oeuvre", "arbeit"):
+                if status == "COVERED":
+                    has_covered_labor = True
+
+        fired = (
+            has_excluded_parts
+            and has_covered_labor
+            and not has_covered_parts
+        )
+
+        return RoutingTriggerResult(
+            trigger_id="RT-6",
+            name="excluded_part_with_covered_labor",
+            fired=fired,
+            severity=severity,
+            signal_value={
+                "excluded_parts": has_excluded_parts,
+                "covered_labor": has_covered_labor,
+                "covered_parts": has_covered_parts,
+            },
+            threshold="excluded parts + covered labor + no covered parts",
+            explanation=(
+                "Excluded parts with covered labor but no covered parts "
+                "-> inconsistency detected"
+                if fired
+                else "No excluded-part/labor inconsistency"
             ),
         )

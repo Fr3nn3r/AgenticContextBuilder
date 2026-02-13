@@ -1,12 +1,16 @@
-"""Pydantic models for the claim routing system.
+"""Pydantic models for the claim routing system (v2 -- CCI-driven).
 
-The routing system evaluates structural signals to classify claims into
-three tiers:
-- GREEN: auto-processable (high structural confidence)
-- YELLOW: assisted review (some concerns but manageable)
-- RED: manual review required (hard triggers fired)
+The routing system uses the Composite Confidence Index (CCI) as the sole
+driver of tier assignment:
+- GREEN: CCI >= 0.70 (auto-processable)
+- YELLOW: CCI >= 0.55 (assisted review)
+- RED: CCI < 0.55, CCI missing, or verdict is REFER
 
-RED triggers override the verdict to REFER_TO_HUMAN.
+Structural triggers (RT-1, RT-2, RT-3, RT-5, RT-6) are kept as
+informational annotations for audit trail but do NOT affect the tier.
+
+RED tier overrides the verdict to REFER_TO_HUMAN when original verdict
+is APPROVE.
 """
 
 from enum import Enum
@@ -49,7 +53,7 @@ class RoutingTriggerResult(BaseModel):
 class RoutingDecision(BaseModel):
     """Complete routing decision for a claim."""
 
-    schema_version: str = Field(default="routing_decision_v1")
+    schema_version: str = Field(default="routing_decision_v2")
     claim_id: str = Field(description="Claim identifier")
     claim_run_id: str = Field(description="Run that produced this decision")
     original_verdict: str = Field(
@@ -78,4 +82,12 @@ class RoutingDecision(BaseModel):
     structural_cci: Optional[float] = Field(
         default=None,
         description="CCI score computed without LLM self-reported confidence signals",
+    )
+    cci_threshold_green: float = Field(
+        default=0.70,
+        description="CCI threshold used for GREEN tier assignment",
+    )
+    cci_threshold_yellow: float = Field(
+        default=0.55,
+        description="CCI threshold used for YELLOW tier assignment",
     )

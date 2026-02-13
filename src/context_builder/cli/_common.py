@@ -23,7 +23,13 @@ def ensure_initialized() -> None:
 
 
 def setup_logging(*, verbose: bool = False, quiet: bool = False) -> None:
-    """Configure logging with Rich handler."""
+    """Configure logging with Rich handler.
+
+    Uses the shared stderr console from _console.py so that log messages
+    and Rich Progress bars coordinate rendering through a single Console.
+    """
+    from context_builder.cli._console import console as shared_console
+
     if verbose:
         level = logging.DEBUG
     elif quiet:
@@ -32,7 +38,7 @@ def setup_logging(*, verbose: bool = False, quiet: bool = False) -> None:
         level = logging.INFO
 
     handler = RichHandler(
-        console=None,  # Use default stderr
+        console=shared_console,
         show_time=True,
         show_path=False,
         markup=True,
